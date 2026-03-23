@@ -26,7 +26,7 @@ export async function GET() {
 
     const data = JSON.parse(text)
 
-    return Response.json(Array.isArray(data) ? data.slice(0, 10) : [])
+    return Response.json(Array.isArray(data) ? data.slice(0, 36) : [])
   } catch (error) {
     return Response.json(
       {

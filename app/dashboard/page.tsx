@@ -70,28 +70,81 @@ export default function DashboardPage() {
         <h1 className="mb-2 text-4xl font-bold">Dashboard</h1>
         <p className="mb-8 text-zinc-400">Clics registrados en LoboDeals</p>
 
-        <div className="mb-8 grid gap-4 md:grid-cols-3">
-          <div className="rounded-2xl border border-zinc-800 bg-zinc-900 p-5">
-            <p className="text-sm text-zinc-400">Total clics</p>
-            <p className="mt-2 text-3xl font-bold">{clicks.length}</p>
-          </div>
+        <div className="mb-8 grid gap-4 md:grid-cols-6">
+  <div className="rounded-2xl border border-zinc-800 bg-zinc-900 p-5">
+    <p className="text-sm text-zinc-400">Total clics</p>
+    <p className="mt-2 text-3xl font-bold">{clicks.length}</p>
+  </div>
 
-          <div className="rounded-2xl border border-zinc-800 bg-zinc-900 p-5">
-            <p className="text-sm text-zinc-400">Juegos únicos clickeados</p>
-            <p className="mt-2 text-3xl font-bold">{topGames.length}</p>
-          </div>
+  <div className="rounded-2xl border border-zinc-800 bg-zinc-900 p-5">
+    <p className="text-sm text-zinc-400">Juegos únicos clickeados</p>
+    <p className="mt-2 text-3xl font-bold">{topGames.length}</p>
+  </div>
 
-          <div className="rounded-2xl border border-zinc-800 bg-zinc-900 p-5">
-            <p className="text-sm text-zinc-400">Juego más popular</p>
-            <p className="mt-2 text-sm font-medium">
-              {topGames[0]?.title || 'Sin datos'}
-            </p>
-          </div>
+  <div className="rounded-2xl border border-zinc-800 bg-zinc-900 p-5">
+    <p className="text-sm text-zinc-400">Juego más popular</p>
+    <p className="mt-2 text-sm font-medium">
+      {topGames[0]?.title || 'Sin datos'}
+    </p>
+  </div>
+
+  <div className="rounded-2xl border border-zinc-800 bg-zinc-900 p-5">
+    <p className="text-sm text-zinc-400">Precio promedio clickeado</p>
+    <p className="mt-2 text-3xl font-bold">
+      $
+      {clicks.length > 0
+        ? (
+            clicks.reduce(
+              (sum, click) => sum + Number(click.sale_price),
+              0
+            ) / clicks.length
+          ).toFixed(2)
+        : '0.00'}
+    </p>
+  </div>
+
+  <div className="rounded-2xl border border-zinc-800 bg-zinc-900 p-5">
+    <p className="text-sm text-zinc-400">Último clic</p>
+    <p className="mt-2 text-sm font-medium">
+      {clicks[0]?.title || 'Sin datos'}
+    </p>
+  </div>
+
+  <div className="rounded-2xl border border-zinc-800 bg-zinc-900 p-5">
+    <p className="text-sm text-zinc-400">Precio más bajo clickeado</p>
+    <p className="mt-2 text-3xl font-bold">
+      $
+      {clicks.length > 0
+        ? Math.min(...clicks.map((click) => Number(click.sale_price))).toFixed(2)
+        : '0.00'}
+    </p>
+  </div>
+</div>
+<div className="mb-8 rounded-3xl border border-zinc-800 bg-zinc-900 p-6">
+  <h2 className="mb-4 text-2xl font-semibold">Top ofertas por clics</h2>
+
+  {topGames.length === 0 ? (
+    <p className="text-zinc-400">Todavía no hay datos suficientes.</p>
+  ) : (
+    <div className="grid gap-4 md:grid-cols-3">
+      {topGames.slice(0, 3).map((game, index) => (
+        <div
+          key={game.title}
+          className="rounded-2xl border border-zinc-800 bg-zinc-950 p-5"
+        >
+          <p className="text-sm text-zinc-400">Top #{index + 1}</p>
+          <h3 className="mt-2 text-lg font-bold">{game.title}</h3>
+          <p className="mt-2 text-sm text-zinc-400">
+            Último precio: ${game.lastPrice}
+          </p>
+          <p className="mt-3 text-2xl font-bold">{game.clicks} clics</p>
         </div>
-
+      ))}
+    </div>
+  )}
+</div>
         <div className="mb-8 rounded-3xl border border-zinc-800 bg-zinc-900 p-6">
           <h2 className="mb-4 text-2xl font-semibold">Ranking de interés</h2>
-
           {topGames.length === 0 ? (
             <p className="text-zinc-400">Todavía no hay clics registrados.</p>
           ) : (

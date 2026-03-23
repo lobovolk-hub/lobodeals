@@ -9,6 +9,25 @@ export async function POST(request: Request) {
   try {
     const body = await request.json()
 
+    const { data: existingRows, error: existingError } = await supabase
+      .from('wishlist')
+      .select('id')
+      .eq('deal_id', body.dealID)
+
+    if (existingError) {
+      return Response.json(
+        { success: false, error: existingError.message },
+        { status: 500 }
+      )
+    }
+
+    if (existingRows && existingRows.length > 0) {
+      return Response.json({
+        success: true,
+        alreadyExists: true,
+      })
+    }
+
     const { error } = await supabase.from('wishlist').insert([
       {
         deal_id: body.dealID,
@@ -26,10 +45,16 @@ export async function POST(request: Request) {
       )
     }
 
-    return Response.json({ success: true })
+    return Response.json({
+      success: true,
+      alreadyExists: false,
+    })
   } catch (error) {
     return Response.json(
-      { success: false, error: 'Error interno wishlist' },
+      {
+        success: false,
+        error: error instanceof Error ? error.message : 'Error interno wishlist',
+      },
       { status: 500 }
     )
   }

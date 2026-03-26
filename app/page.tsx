@@ -266,7 +266,7 @@ if (!alertsError && alertsData) {
   key={deal.dealID}
   className="overflow-hidden rounded-3xl border border-zinc-800 bg-zinc-900 shadow-lg transition hover:-translate-y-1"
 >
-                  <Link href={`/game/${encodeURIComponent(deal.dealID)}`}>
+                  <Link href={`/game/${deal.dealID}`}>
   <img
     src={deal.thumb}
     alt={deal.title}
@@ -277,7 +277,7 @@ if (!alertsError && alertsData) {
                   <div className="p-4">
                     <div className="mb-3 flex items-start justify-between gap-3">
                       <div>
-  <Link href={`/game/${encodeURIComponent(deal.dealID)}`}>
+  <Link href={`/game/${deal.dealID}`}>
     <h3 className="line-clamp-2 text-base font-bold leading-5 transition hover:text-emerald-300">
       {deal.title}
     </h3>

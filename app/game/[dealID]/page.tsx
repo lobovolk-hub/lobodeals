@@ -16,7 +16,24 @@ type Game = {
 
 export default function GamePage() {
   const params = useParams()
-const dealID = decodeURIComponent(params.dealID as string)
+
+const decodeDealId = (value: string) => {
+  let current = value
+
+  try {
+    while (current.includes('%')) {
+      const decoded = decodeURIComponent(current)
+      if (decoded === current) break
+      current = decoded
+    }
+  } catch {
+    return current
+  }
+
+  return current
+}
+
+const dealID = decodeDealId(params.dealID as string)
 
   const [game, setGame] = useState<Game | null>(null)
   const [loading, setLoading] = useState(true)

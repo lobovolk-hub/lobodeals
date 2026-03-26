@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react'
 import { supabase } from '@/lib/supabaseClient'
 import { useParams, useSearchParams } from 'next/navigation'
+import { getStoreName } from '@/lib/storeMap'
 
 type Game = {
   dealID: string
@@ -12,6 +13,7 @@ type Game = {
   normalPrice: string
   dealRating: string
   savings: string
+  storeID?: string
 }
 
 type RawgMeta = {
@@ -51,6 +53,7 @@ export default function GamePage() {
           normalPrice: searchParams.get('normalPrice') || '0',
           dealRating: searchParams.get('dealRating') || '',
           savings: searchParams.get('savings') || '0',
+          storeID: searchParams.get('storeID') || '',
         }
 
         setGame(gameFromUrl)
@@ -198,6 +201,10 @@ export default function GamePage() {
             ⭐ Top deal
           </span>
         )}
+
+        <span className="rounded-full border border-zinc-700 bg-zinc-800 px-3 py-1 text-xs text-zinc-300">
+          {getStoreName(game.storeID)}
+        </span>
       </div>
     </div>
 
@@ -266,8 +273,7 @@ export default function GamePage() {
         onClick={async () => {
           if (!userId) return
 
-          const targetPrice = prompt('Target price?')
-          if (!targetPrice) return
+          const targetPrice = game.salePrice
 
           const res = await fetch('/api/alerts', {
             method: 'POST',
@@ -492,7 +498,6 @@ export default function GamePage() {
                 if (!userId) return
 
                 const targetPrice = prompt('Target price?')
-                if (!targetPrice) return
 
                 const res = await fetch('/api/alerts', {
                   method: 'POST',

@@ -1,37 +1,30 @@
 export async function GET() {
   try {
-    const res = await fetch(
-      'https://www.cheapshark.com/api/1.0/deals?storeID=1&upperPrice=60',
-      {
-        cache: 'no-store',
-        headers: {
-          Accept: 'application/json',
-          'User-Agent': 'LoboDeals/1.0',
-        },
-      }
+    const baseUrl = 'https://www.cheapshark.com/api/1.0/deals'
+
+    const requests = [0, 1, 2].map((pageNumber) =>
+      fetch(
+        `${baseUrl}?storeID=1&pageSize=60&pageNumber=${pageNumber}&sortBy=Deal%20Rating&desc=1&lowerPrice=0`,
+        {
+          cache: 'no-store',
+        }
+      )
     )
 
-    const text = await res.text()
+    const responses = await Promise.all(requests)
+    const jsonArrays = await Promise.all(responses.map((res) => res.json()))
 
-    if (!res.ok) {
-      return Response.json(
-        {
-          error: 'CheapShark respondió con error',
-          status: res.status,
-          body: text.slice(0, 500),
-        },
-        { status: 500 }
-      )
-    }
+    const merged = jsonArrays.flat()
 
-    const data = JSON.parse(text)
+    const deduped = Array.from(
+      new Map(merged.map((deal: any) => [deal.dealID, deal])).values()
+    )
 
-    return Response.json(Array.isArray(data) ? data.slice(0, 36) : [])
+    return Response.json(deduped)
   } catch (error) {
     return Response.json(
       {
-        error: 'Error real al obtener deals',
-        detail: error instanceof Error ? error.message : 'Error desconocido',
+        error: error instanceof Error ? error.message : 'Failed to load deals',
       },
       { status: 500 }
     )

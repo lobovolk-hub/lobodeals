@@ -3,6 +3,7 @@
 import Link from 'next/link'
 import { useEffect, useMemo, useState } from 'react'
 import { supabase } from '@/lib/supabaseClient'
+import { getStoreName } from '@/lib/storeMap'
 
 type Deal = {
   dealID: string
@@ -21,7 +22,7 @@ export default function Home() {
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState('')
   const [filter, setFilter] = useState<'all' | 'cheap' | 'biggest'>('all')
-  const [visibleCount, setVisibleCount] = useState(12)
+ 
   const [wishlistMessage, setWishlistMessage] = useState('')
   const [alertMessage, setAlertMessage] = useState('')
   const [savedWishlistIds, setSavedWishlistIds] = useState<string[]>([])
@@ -99,8 +100,8 @@ export default function Home() {
   }, [deals, search, filter])
 
   const visibleDeals = useMemo(() => {
-    return filteredDeals.slice(0, visibleCount)
-  }, [filteredDeals, visibleCount])
+  return filteredDeals.slice(0, 4)
+}, [filteredDeals])
 
   const bestDeals = useMemo(() => {
     return [...filteredDeals]
@@ -227,9 +228,8 @@ export default function Home() {
             placeholder="Search deals..."
             value={search}
             onChange={(e) => {
-              setSearch(e.target.value)
-              setVisibleCount(12)
-            }}
+  setSearch(e.target.value)
+}}
             className="rounded-2xl border border-zinc-800 bg-zinc-900 px-4 py-3 text-zinc-100 outline-none placeholder:text-zinc-500"
           />
 
@@ -238,25 +238,22 @@ export default function Home() {
               label="All"
               active={filter === 'all'}
               onClick={() => {
-                setFilter('all')
-                setVisibleCount(12)
-              }}
+  setFilter('all')
+}}
             />
             <FilterButton
               label="Lowest price"
               active={filter === 'cheap'}
               onClick={() => {
-                setFilter('cheap')
-                setVisibleCount(12)
-              }}
+  setFilter('all')
+}}
             />
             <FilterButton
               label="Best discount"
               active={filter === 'biggest'}
               onClick={() => {
-                setFilter('biggest')
-                setVisibleCount(12)
-              }}
+  setFilter('all')
+}}
             />
           </div>
         </section>
@@ -289,7 +286,7 @@ export default function Home() {
                 </div>
 
                 <Link
-                  href="/games?page=1"
+                  href="/games?page=1&sort=best"
                   className="text-sm font-medium text-emerald-300 transition hover:text-emerald-200"
                 >
                   View all
@@ -323,7 +320,7 @@ export default function Home() {
                 </div>
 
                 <Link
-                  href="/games?page=1"
+                  href="/games?page=1&sort=top-rated"
                   className="text-sm font-medium text-emerald-300 transition hover:text-emerald-200"
                 >
                   View all
@@ -357,7 +354,7 @@ export default function Home() {
                 </div>
 
                 <Link
-                  href="/games?page=1"
+                  href="/games?page=1&sort=biggest-discount"
                   className="text-sm font-medium text-emerald-300 transition hover:text-emerald-200"
                 >
                   View all
@@ -390,9 +387,12 @@ export default function Home() {
                   </p>
                 </div>
 
-                <div className="rounded-2xl border border-zinc-800 bg-zinc-900 px-4 py-2 text-sm text-zinc-300">
-                  Showing: {visibleDeals.length} / {filteredDeals.length}
-                </div>
+                <Link
+  href="/games?page=1&sort=latest"
+  className="text-sm font-medium text-emerald-300 transition hover:text-emerald-200"
+>
+  View all
+</Link>
               </div>
 
               <div className="grid grid-cols-2 gap-5 lg:grid-cols-4">
@@ -411,16 +411,7 @@ export default function Home() {
                 ))}
               </div>
 
-              {visibleCount < filteredDeals.length && (
-                <div className="mt-8 flex justify-center">
-                  <button
-                    onClick={() => setVisibleCount((prev) => prev + 12)}
-                    className="rounded-full border border-zinc-700 bg-zinc-900 px-6 py-3 text-sm font-medium text-zinc-100 transition hover:bg-zinc-800"
-                  >
-                    Load more deals
-                  </button>
-                </div>
-              )}
+              
             </section>
           </>
         )}
@@ -485,7 +476,7 @@ function DealCard({
   return (
     <article className="overflow-hidden rounded-3xl border border-zinc-800 bg-zinc-900 shadow-lg transition hover:-translate-y-1">
       <Link
-        href={`/game/${encodeURIComponent(deal.dealID)}?title=${encodeURIComponent(deal.title)}&thumb=${encodeURIComponent(deal.thumb)}&salePrice=${encodeURIComponent(deal.salePrice)}&normalPrice=${encodeURIComponent(deal.normalPrice)}&dealRating=${encodeURIComponent(deal.dealRating || '')}&savings=${encodeURIComponent(deal.savings)}`}
+        href={`/game/${encodeURIComponent(deal.dealID)}?title=${encodeURIComponent(deal.title)}&thumb=${encodeURIComponent(deal.thumb)}&salePrice=${encodeURIComponent(deal.salePrice)}&normalPrice=${encodeURIComponent(deal.normalPrice)}&dealRating=${encodeURIComponent(deal.dealRating || '')}&savings=${encodeURIComponent(deal.savings)}&storeID=${encodeURIComponent(deal.storeID)}`}
       >
         <img
           src={deal.thumb}
@@ -498,7 +489,7 @@ function DealCard({
         <div className="mb-3 flex items-start justify-between gap-3">
           <div>
             <Link
-              href={`/game/${encodeURIComponent(deal.dealID)}?title=${encodeURIComponent(deal.title)}&thumb=${encodeURIComponent(deal.thumb)}&salePrice=${encodeURIComponent(deal.salePrice)}&normalPrice=${encodeURIComponent(deal.normalPrice)}&dealRating=${encodeURIComponent(deal.dealRating || '')}&savings=${encodeURIComponent(deal.savings)}`}
+              href={`/game/${encodeURIComponent(deal.dealID)}?title=${encodeURIComponent(deal.title)}&thumb=${encodeURIComponent(deal.thumb)}&salePrice=${encodeURIComponent(deal.salePrice)}&normalPrice=${encodeURIComponent(deal.normalPrice)}&dealRating=${encodeURIComponent(deal.dealRating || '')}&savings=${encodeURIComponent(deal.savings)}&storeID=${encodeURIComponent(deal.storeID)}`}
             >
               <h3 className="line-clamp-2 text-base font-bold leading-5 transition hover:text-emerald-300">
                 {deal.title}
@@ -512,9 +503,14 @@ function DealCard({
         </div>
 
         <div className="mb-4 rounded-2xl border border-zinc-800 bg-zinc-950 p-3">
-          <p className="text-xs uppercase tracking-wider text-zinc-500">
-            Current price
-          </p>
+  <div className="mb-2 flex items-center justify-between gap-2">
+    <p className="text-xs uppercase tracking-wider text-zinc-500">
+      Current price
+    </p>
+    <span className="rounded-full border border-zinc-700 bg-zinc-900 px-2 py-1 text-[10px] font-medium uppercase tracking-wider text-zinc-300">
+      {getStoreName(deal.storeID)}
+    </span>
+  </div>
           <div className="mt-2 flex items-end justify-between">
             <p className="text-3xl font-bold text-emerald-400">
               ${deal.salePrice}

@@ -26,8 +26,8 @@ export const metadata: Metadata = {
     images: [
       {
         url: '/og-lobodeals.png',
-        width: 1200,
-        height: 630,
+        width: 768,
+        height: 512,
         alt: 'LoboDeals by LoboVolk',
       },
     ],

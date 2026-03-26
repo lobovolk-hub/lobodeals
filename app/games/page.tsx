@@ -1,7 +1,7 @@
 'use client'
 
 import Link from 'next/link'
-import { useEffect, useMemo, useState } from 'react'
+import { Suspense, useEffect, useMemo, useState } from 'react'
 import { supabase } from '@/lib/supabaseClient'
 import { useSearchParams } from 'next/navigation'
 
@@ -19,6 +19,22 @@ type Deal = {
 const PAGE_SIZE = 36
 
 export default function GamesPage() {
+  return (
+    <Suspense
+      fallback={
+        <main className="min-h-screen bg-zinc-950 text-zinc-100">
+          <section className="mx-auto max-w-6xl px-4 py-10 sm:px-6">
+            Loading games...
+          </section>
+        </main>
+      }
+    >
+      <GamesPageContent />
+    </Suspense>
+  )
+}
+
+function GamesPageContent() {
   const searchParams = useSearchParams()
   const currentPage = Number(searchParams.get('page') || '1')
 

@@ -16,7 +16,7 @@ const geistMono = Geist_Mono({
 
 export const metadata: Metadata = {
   title: 'LoboDeals — The best video game deals',
-  description: 'Find ceap games, track prices, and create alerts on LoboDeals.',
+  description: 'Find cheap games, track prices, and create alerts on LoboDeals.',
 }
 
 export default function RootLayout({

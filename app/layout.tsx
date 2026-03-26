@@ -17,6 +17,30 @@ const geistMono = Geist_Mono({
 export const metadata: Metadata = {
   title: 'LoboDeals — The best video game deals',
   description: 'Find cheap games, track prices, and create alerts on LoboDeals.',
+  openGraph: {
+    title: 'LoboDeals — The best video game deals',
+    description:
+      'Find cheap games, track prices, and create alerts on LoboDeals.',
+    url: 'https://lobodeals.com',
+    siteName: 'LoboDeals',
+    images: [
+      {
+        url: '/og-lobodeals.png',
+        width: 1200,
+        height: 630,
+        alt: 'LoboDeals by LoboVolk',
+      },
+    ],
+    locale: 'en_US',
+    type: 'website',
+  },
+  twitter: {
+    card: 'summary_large_image',
+    title: 'LoboDeals — The best video game deals',
+    description:
+      'Find cheap games, track prices, and create alerts on LoboDeals.',
+    images: ['/og-lobodeals.png'],
+  },
 }
 
 export default function RootLayout({

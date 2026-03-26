@@ -21,8 +21,6 @@ export default function Home() {
   const [deals, setDeals] = useState<Deal[]>([])
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState('')
-  const [filter, setFilter] = useState<'all' | 'cheap' | 'biggest'>('all')
- 
   const [wishlistMessage, setWishlistMessage] = useState('')
   const [alertMessage, setAlertMessage] = useState('')
   const [savedWishlistIds, setSavedWishlistIds] = useState<string[]>([])
@@ -88,20 +86,12 @@ export default function Home() {
       list = list.filter((deal) => deal.title.toLowerCase().includes(term))
     }
 
-    if (filter === 'cheap') {
-      list.sort((a, b) => Number(a.salePrice) - Number(b.salePrice))
-    }
-
-    if (filter === 'biggest') {
-      list.sort((a, b) => Number(b.savings) - Number(a.savings))
-    }
-
     return list
-  }, [deals, search, filter])
+  }, [deals, search])
 
   const visibleDeals = useMemo(() => {
-  return filteredDeals.slice(0, 4)
-}, [filteredDeals])
+    return filteredDeals.slice(0, 4)
+  }, [filteredDeals])
 
   const bestDeals = useMemo(() => {
     return [...filteredDeals]
@@ -160,20 +150,8 @@ export default function Home() {
             </div>
           </div>
 
-          <div className="mb-6 grid gap-3 lg:grid-cols-[1.3fr_1fr]">
-            <div className="h-12 animate-pulse rounded-2xl bg-zinc-900" />
-            <div className="grid grid-cols-3 gap-3">
-              {[1, 2, 3].map((item) => (
-                <div
-                  key={item}
-                  className="h-12 animate-pulse rounded-2xl bg-zinc-900"
-                />
-              ))}
-            </div>
-          </div>
-
           <div className="grid grid-cols-2 gap-5 lg:grid-cols-4">
-            {Array.from({ length: 8 }).map((_, index) => (
+            {Array.from({ length: 4 }).map((_, index) => (
               <article
                 key={index}
                 className="overflow-hidden rounded-3xl border border-zinc-800 bg-zinc-900 shadow-lg"
@@ -222,40 +200,16 @@ export default function Home() {
           </div>
         </header>
 
-        <section className="mb-6 grid gap-3 lg:grid-cols-[1.3fr_1fr]">
+        <section className="mb-6">
           <input
             type="text"
             placeholder="Search deals..."
             value={search}
             onChange={(e) => {
-  setSearch(e.target.value)
-}}
-            className="rounded-2xl border border-zinc-800 bg-zinc-900 px-4 py-3 text-zinc-100 outline-none placeholder:text-zinc-500"
+              setSearch(e.target.value)
+            }}
+            className="w-full rounded-2xl border border-zinc-800 bg-zinc-900 px-4 py-3 text-zinc-100 outline-none placeholder:text-zinc-500"
           />
-
-          <div className="grid grid-cols-3 gap-3">
-            <FilterButton
-              label="All"
-              active={filter === 'all'}
-              onClick={() => {
-  setFilter('all')
-}}
-            />
-            <FilterButton
-              label="Lowest price"
-              active={filter === 'cheap'}
-              onClick={() => {
-  setFilter('all')
-}}
-            />
-            <FilterButton
-              label="Best discount"
-              active={filter === 'biggest'}
-              onClick={() => {
-  setFilter('all')
-}}
-            />
-          </div>
         </section>
 
         {wishlistMessage && (
@@ -272,7 +226,7 @@ export default function Home() {
 
         {filteredDeals.length === 0 ? (
           <div className="rounded-3xl border border-dashed border-zinc-700 bg-zinc-900 p-10 text-center text-zinc-400">
-            No results found. Try adjusting your search or filters.
+            No results found. Try adjusting your search.
           </div>
         ) : (
           <>
@@ -388,11 +342,11 @@ export default function Home() {
                 </div>
 
                 <Link
-  href="/games?page=1&sort=latest"
-  className="text-sm font-medium text-emerald-300 transition hover:text-emerald-200"
->
-  View all
-</Link>
+                  href="/games?page=1&sort=latest"
+                  className="text-sm font-medium text-emerald-300 transition hover:text-emerald-200"
+                >
+                  View all
+                </Link>
               </div>
 
               <div className="grid grid-cols-2 gap-5 lg:grid-cols-4">
@@ -410,8 +364,6 @@ export default function Home() {
                   />
                 ))}
               </div>
-
-              
             </section>
           </>
         )}
@@ -426,29 +378,6 @@ function MetricCard({ label, value }: { label: string; value: string }) {
       <p className="text-sm text-zinc-400">{label}</p>
       <p className="mt-1 text-xl font-bold">{value}</p>
     </div>
-  )
-}
-
-function FilterButton({
-  label,
-  active,
-  onClick,
-}: {
-  label: string
-  active: boolean
-  onClick: () => void
-}) {
-  return (
-    <button
-      onClick={onClick}
-      className={`rounded-2xl border px-4 py-3 text-sm font-medium transition ${
-        active
-          ? 'border-white bg-white text-black'
-          : 'border-zinc-800 bg-zinc-900 text-zinc-200 hover:bg-zinc-800'
-      }`}
-    >
-      {label}
-    </button>
   )
 }
 
@@ -503,14 +432,15 @@ function DealCard({
         </div>
 
         <div className="mb-4 rounded-2xl border border-zinc-800 bg-zinc-950 p-3">
-  <div className="mb-2 flex items-center justify-between gap-2">
-    <p className="text-xs uppercase tracking-wider text-zinc-500">
-      Current price
-    </p>
-    <span className="rounded-full border border-zinc-700 bg-zinc-900 px-2 py-1 text-[10px] font-medium uppercase tracking-wider text-zinc-300">
-      {getStoreName(deal.storeID)}
-    </span>
-  </div>
+          <div className="mb-2 flex items-center justify-between gap-2">
+            <p className="text-xs uppercase tracking-wider text-zinc-500">
+              Current price
+            </p>
+            <span className="rounded-full border border-zinc-700 bg-zinc-900 px-2 py-1 text-[10px] font-medium uppercase tracking-wider text-zinc-300">
+              {getStoreName(deal.storeID)}
+            </span>
+          </div>
+
           <div className="mt-2 flex items-end justify-between">
             <p className="text-3xl font-bold text-emerald-400">
               ${deal.salePrice}
@@ -574,8 +504,9 @@ function DealCard({
           <button
             onClick={async () => {
               try {
-                const targetPrice = (
-                  Math.max(Number(deal.salePrice) - 1, 0.5)
+                const targetPrice = Math.max(
+                  Number(deal.salePrice) - 1,
+                  0.5
                 ).toFixed(2)
 
                 const res = await fetch('/api/alerts', {

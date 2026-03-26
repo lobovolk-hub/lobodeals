@@ -94,7 +94,7 @@ const topAffiliateGames = useMemo(() => {
   if (loading) {
     return (
       <div className="min-h-screen bg-zinc-950 p-10 text-zinc-100">
-        Cargando dashboard...
+        Loading dashboard...
       </div>
     )
   }
@@ -105,30 +105,30 @@ const topAffiliateGames = useMemo(() => {
         <div className="mb-6">
   <h1 className="text-3xl font-bold">Dashboard</h1>
   <p className="mt-1 text-sm text-zinc-400">
-    Rendimiento y monetización de LoboDeals
+    LoboDeals Performance and Monetization
   </p>
 </div>
 
         <div className="mb-8 grid gap-4 md:grid-cols-4 xl:grid-cols-8">
   <div className="rounded-2xl border border-zinc-800 bg-zinc-900 p-4 shadow-lg shadow-black/20">
-    <p className="text-sm text-zinc-400">Total clics</p>
+    <p className="text-sm text-zinc-400">Total clicks</p>
     <p className="mt-2 text-3xl font-bold">{clicks.length}</p>
   </div>
 
   <div className="rounded-2xl border border-zinc-800 bg-zinc-900 p-4 shadow-lg shadow-black/20">
-    <p className="text-sm text-zinc-400">Juegos únicos clickeados</p>
+    <p className="text-sm text-zinc-400">Unique games clicked</p>
     <p className="mt-2 text-3xl font-bold">{topGames.length}</p>
   </div>
 
   <div className="rounded-2xl border border-zinc-800 bg-zinc-900 p-4 shadow-lg shadow-black/20">
-    <p className="text-sm text-zinc-400">Juego más popular</p>
+    <p className="text-sm text-zinc-400">Most popular game</p>
     <p className="mt-2 text-sm font-medium">
-      {topGames[0]?.title || 'Sin datos'}
+      {topGames[0]?.title || 'No data'}
     </p>
   </div>
 
   <div className="rounded-2xl border border-zinc-800 bg-zinc-900 p-4 shadow-lg shadow-black/20">
-    <p className="text-sm text-zinc-400">Precio promedio clickeado</p>
+    <p className="text-sm text-zinc-400">Average price clicked</p>
     <p className="mt-2 text-3xl font-bold">
       $
       {clicks.length > 0
@@ -143,14 +143,14 @@ const topAffiliateGames = useMemo(() => {
   </div>
 
   <div className="rounded-2xl border border-zinc-800 bg-zinc-900 p-4 shadow-lg shadow-black/20">
-    <p className="text-sm text-zinc-400">Último clic</p>
+    <p className="text-sm text-zinc-400">Last click</p>
     <p className="mt-2 text-sm font-medium">
-      {clicks[0]?.title || 'Sin datos'}
+      {clicks[0]?.title || 'No data'}
     </p>
   </div>
 
   <div className="rounded-2xl border border-zinc-800 bg-zinc-900 p-4 shadow-lg shadow-black/20">
-    <p className="text-sm text-zinc-400">Precio más bajo clickeado</p>
+    <p className="text-sm text-zinc-400">Lowest price clicked</p>
     <p className="mt-2 text-3xl font-bold">
       $
       {clicks.length > 0
@@ -175,11 +175,11 @@ const topAffiliateGames = useMemo(() => {
 </div>
 <div className="mb-10 rounded-3xl border border-zinc-800 bg-zinc-900 p-6">
   <h2 className="mb-4 text-xl font-semibold">
-    Top juegos por interés
+    Top games by interest
   </h2>
 
   {topGames.length === 0 ? (
-    <p className="text-zinc-400">Todavía no hay datos suficientes.</p>
+    <p className="text-zinc-400">Not enough data yet.</p>
   ) : (
     <div className="grid gap-4 md:grid-cols-3">
       {topGames.slice(0, 3).map((game, index) => (
@@ -190,9 +190,9 @@ const topAffiliateGames = useMemo(() => {
           <p className="text-sm text-zinc-400">Top #{index + 1}</p>
           <h3 className="mt-2 text-lg font-bold">{game.title}</h3>
           <p className="mt-2 text-sm text-zinc-400">
-            Último precio: ${game.lastPrice}
+            Last price: ${game.lastPrice}
           </p>
-          <p className="mt-3 text-2xl font-bold">{game.clicks} clics</p>
+          <p className="mt-3 text-2xl font-bold">{game.clicks} clicks</p>
         </div>
       ))}
     </div>
@@ -201,12 +201,12 @@ const topAffiliateGames = useMemo(() => {
 
 <div className="mb-10 rounded-3xl border border-zinc-800 bg-zinc-900 p-6">
   <h2 className="mb-4 text-xl font-semibold">
-    Juegos que generan ingresos
+    Revenue-generating games
   </h2>
 
   {topAffiliateGames.length === 0 ? (
     <p className="text-zinc-400">
-      Aún no hay clics affiliate registrados.
+      No affiliate clicks recorded yet.
     </p>
   ) : (
     <div className="grid gap-4 md:grid-cols-3">
@@ -215,10 +215,10 @@ const topAffiliateGames = useMemo(() => {
           key={game.title}
           className="rounded-2xl border border-zinc-800 bg-zinc-950 p-5"
         >
-          <p className="text-sm text-zinc-400">Affiliate #{index + 1}</p>
+          <p className="mt-2 text-sm text-zinc-400">Affiliate #{index + 1}</p>
           <h3 className="mt-2 text-lg font-bold">{game.title}</h3>
           <p className="mt-2 text-sm text-zinc-400">
-            Último precio: ${game.lastPrice}
+            Last price: ${game.lastPrice}
           </p>
           <p className="mt-3 text-2xl font-bold text-emerald-300">
             {game.clicks} clicks
@@ -231,10 +231,10 @@ const topAffiliateGames = useMemo(() => {
 
         <div className="mb-10 rounded-3xl border border-zinc-800 bg-zinc-900 p-6">
   <h2 className="mb-4 text-xl font-semibold">
-    Ranking general de clics
+    Overall clicks ranking
   </h2>
           {topGames.length === 0 ? (
-            <p className="text-zinc-400">Todavía no hay clics registrados.</p>
+            <p className="text-zinc-400">No clicks recorded yet.</p>
           ) : (
             <div className="space-y-3">
               {topGames.slice(0, 5).map((game, index) => (
@@ -250,14 +250,14 @@ const topAffiliateGames = useMemo(() => {
                     <div>
                       <p className="font-semibold">{game.title}</p>
                       <p className="text-sm text-zinc-400">
-                        Último precio clickeado: ${game.lastPrice}
+                        Last clicked price: ${game.lastPrice}
                       </p>
                     </div>
                   </div>
 
                   <div className="text-right">
                     <p className="text-2xl font-bold">{game.clicks}</p>
-                    <p className="text-sm text-zinc-400">clics</p>
+                    <p className="text-sm text-zinc-400">clicks</p>
                   </div>
                 </div>
               ))}
@@ -267,15 +267,15 @@ const topAffiliateGames = useMemo(() => {
 
         {clicks.length === 0 ? (
           <div className="rounded-3xl border border-dashed border-zinc-700 bg-zinc-900 p-10 text-center text-zinc-400">
-            No hay clics todavía.
+            No clicks yet.
           </div>
         ) : (
           <div className="overflow-hidden rounded-3xl border border-zinc-800 bg-zinc-900">
             <div className="grid grid-cols-4 border-b border-zinc-800 bg-zinc-950 px-5 py-4 text-sm font-medium text-zinc-400">
-              <span>Juego</span>
-              <span>Precio oferta</span>
-              <span>Precio normal</span>
-              <span>Fecha</span>
+              <span>Game</span>
+              <span>Deal price</span>
+              <span>Regular price</span>
+              <span>Date</span>
             </div>
 
             {clicks.map((click) => (

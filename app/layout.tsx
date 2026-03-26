@@ -20,8 +20,8 @@ const geistMono = Geist_Mono({
 </a>
 
 export const metadata: Metadata = {
-  title: "LoboDeals — Las mejores ofertas de videojuegos",
-  description: "Encuentra juegos baratos, sigue precios y crea alertas en LoboDeals.",
+  title: "LoboDeals — The best video game deals",
+  description: "Find cheap games, track prices, and create alerts on LoboDeals.",
 };
 
 export default function RootLayout({
@@ -37,35 +37,42 @@ export default function RootLayout({
       <body className="min-h-full flex flex-col bg-zinc-950 text-zinc-100">
   <nav className="border-b border-zinc-800 bg-zinc-900">
     <div className="mx-auto flex max-w-6xl items-center justify-between px-6 py-4">
-      <div className="text-lg font-bold">LoboDeals</div>
+      <a
+  href="/"
+  className="text-lg font-bold transition hover:text-emerald-300"
+>
+  LoboDeals
+</a>
 
       <div className="flex gap-4 text-sm">
-        <a
-          href="/"
-          className="rounded-lg px-3 py-2 transition hover:bg-zinc-800"
-        >
-          Home
-        </a>
+  <a
+    href="/"
+    className="rounded-lg px-3 py-2 transition hover:bg-zinc-800"
+  >
+    Home
+  </a>
 
-        <a
-          href="/dashboard"
-          className="rounded-lg px-3 py-2 transition hover:bg-zinc-800"
-        >
-          Dashboard
-        </a>
-        <a
-  href="/wishlist"
-  className="rounded-lg px-3 py-2 transition hover:bg-zinc-800"
->
-  Wishlist
-</a>
-<a
-  href="/alerts"
-  className="rounded-lg px-3 py-2 transition hover:bg-zinc-800"
->
-  Alerts
-</a>
-      </div>
+  <a
+    href="/wishlist"
+    className="rounded-lg px-3 py-2 transition hover:bg-zinc-800"
+  >
+    Wishlist
+  </a>
+
+  <a
+    href="/alerts"
+    className="rounded-lg px-3 py-2 transition hover:bg-zinc-800"
+  >
+    Alerts
+  </a>
+
+  <a
+    href="/login"
+    className="rounded-lg px-3 py-2 transition hover:bg-zinc-800"
+  >
+    Login
+  </a>
+</div>
     </div>
   </nav>
 

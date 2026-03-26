@@ -53,7 +53,7 @@ export default function WishlistPage() {
   if (loading) {
     return (
       <div className="min-h-screen bg-zinc-950 p-10 text-zinc-100">
-        Cargando wishlist...
+        Loading wishlist...
       </div>
     )
   }
@@ -63,7 +63,7 @@ export default function WishlistPage() {
       <main className="min-h-screen bg-zinc-950 text-zinc-100">
         <section className="mx-auto max-w-6xl px-6 py-10">
           <div className="rounded-3xl border border-dashed border-zinc-700 bg-zinc-900 p-10 text-center text-zinc-400">
-            Inicia sesión para ver tu lista de deseados.
+            Sign in to view your wishlist.
           </div>
         </section>
       </main>
@@ -73,10 +73,10 @@ export default function WishlistPage() {
   return (
     <main className="min-h-screen bg-zinc-950 text-zinc-100">
       <section className="mx-auto max-w-6xl px-6 py-10">
-        <h1 className="mb-6 text-4xl font-bold">Tu Wishlist</h1>
+        <h1 className="mb-6 text-4xl font-bold">Your Wishlist</h1>
 
         {items.length === 0 ? (
-          <p className="text-zinc-400">No tienes juegos guardados.</p>
+          <p className="text-zinc-400">You don't have any saved games.</p>
         ) : (
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
             {items.map((item) => (
@@ -126,7 +126,7 @@ export default function WishlistPage() {
     }}
     className="mt-4 w-full rounded-xl border border-red-500/30 bg-red-500/10 px-4 py-2 text-sm font-medium text-red-300 transition active:scale-[0.98] active:translate-y-[1px] hover:bg-red-500/20"
   >
-    Quitar de deseados
+    Remove from wishlist
   </button>
 </div>
               </div>

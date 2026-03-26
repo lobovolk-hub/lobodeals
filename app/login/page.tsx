@@ -41,13 +41,13 @@ export default function LoginPage() {
     if (error) {
       setMessage(`Error login: ${error.message}`)
     } else {
-      setMessage('Te enviamos un enlace de acceso a tu correo.')
+      setMessage('We sent you an access link to your email.')
     }
   }
 
   const handleSignOut = async () => {
     await supabase.auth.signOut()
-    setMessage('Sesión cerrada.')
+    setMessage('Session closed.')
     setUserEmail(null)
   }
 
@@ -60,27 +60,27 @@ export default function LoginPage() {
           </p>
           <h1 className="mt-2 text-3xl font-bold">Login</h1>
           <p className="mt-2 text-sm text-zinc-400">
-            Inicia sesión con tu correo para guardar tu wishlist y tus alertas.
+            Sign in with your email to save your wishlist and alerts.
           </p>
 
           {userEmail ? (
             <div className="mt-6 space-y-4">
               <div className="rounded-2xl border border-zinc-800 bg-zinc-950 px-4 py-3 text-sm text-zinc-300">
-                Sesión activa: {userEmail}
+                Active session: {userEmail}
               </div>
 
               <button
                 onClick={handleSignOut}
                 className="w-full rounded-2xl border border-zinc-700 px-4 py-3 font-medium"
               >
-                Cerrar sesión
+                Sign out
               </button>
             </div>
           ) : (
             <div className="mt-6 space-y-4">
               <input
                 type="email"
-                placeholder="Correo"
+                placeholder="Email"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 className="w-full rounded-2xl border border-zinc-700 bg-zinc-950 px-4 py-3 outline-none placeholder:text-zinc-500"
@@ -90,7 +90,7 @@ export default function LoginPage() {
                 onClick={handleOtpLogin}
                 className="w-full rounded-2xl bg-white px-4 py-3 font-semibold text-black"
               >
-                Enviar enlace de acceso
+                Send access link
               </button>
             </div>
           )}

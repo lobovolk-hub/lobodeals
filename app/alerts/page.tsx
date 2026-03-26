@@ -52,7 +52,7 @@ export default function AlertsPage() {
   if (loading) {
     return (
       <div className="min-h-screen bg-zinc-950 p-10 text-zinc-100">
-        Cargando alertas...
+        Loading alerts...
       </div>
     )
   }
@@ -62,7 +62,7 @@ export default function AlertsPage() {
       <main className="min-h-screen bg-zinc-950 text-zinc-100">
         <section className="mx-auto max-w-6xl px-6 py-10">
           <div className="rounded-3xl border border-dashed border-zinc-700 bg-zinc-900 p-10 text-center text-zinc-400">
-            Inicia sesión para ver tus alertas.
+            Sign in to view your alerts.
           </div>
         </section>
       </main>
@@ -77,17 +77,16 @@ export default function AlertsPage() {
             <p className="text-sm uppercase tracking-[0.3em] text-zinc-400">
               Alerts
             </p>
-            <h1 className="mt-1 text-3xl font-bold">Tus alertas de precio</h1>
+            <h1 className="mt-1 text-3xl font-bold">Your price alerts</h1>
             <p className="mt-2 text-sm text-zinc-400">
-              Revisa los juegos que estás monitoreando y el precio objetivo que
-              definiste.
+              Check the games you're monitoring and the target price you set.
             </p>
           </div>
 
           <div className="grid gap-3 p-5 md:grid-cols-3">
-            <MetricCard label="Alertas guardadas" value={String(alerts.length)} />
+            <MetricCard label="Saved alerts" value={String(alerts.length)} />
             <MetricCard
-              label="Precio objetivo promedio"
+              label="Average target price"
               value={
                 alerts.length > 0
                   ? `$${(
@@ -100,15 +99,15 @@ export default function AlertsPage() {
               }
             />
             <MetricCard
-              label="Última alerta"
-              value={alerts[0]?.title || 'Sin datos'}
+              label="Last alert"
+              value={alerts[0]?.title || 'No data'}
             />
           </div>
         </header>
 
         {alerts.length === 0 ? (
           <div className="rounded-3xl border border-dashed border-zinc-700 bg-zinc-900 p-10 text-center text-zinc-400">
-            No tienes alertas guardadas.
+            You don't have any saved alerts.
           </div>
         ) : (
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
@@ -125,13 +124,13 @@ export default function AlertsPage() {
                   </div>
 
                   <span className="rounded-full border border-cyan-500/30 bg-cyan-500/10 px-3 py-1 text-xs font-medium text-cyan-300">
-                    Activa
+                    Active
                   </span>
                 </div>
 
                 <div className="mb-4 rounded-2xl border border-zinc-800 bg-zinc-950 p-4">
                   <p className="text-xs uppercase tracking-wider text-zinc-500">
-                    Precio objetivo
+                    Target price
                   </p>
                   <p className="mt-2 text-3xl font-bold text-cyan-300">
                     ${alert.target_price}
@@ -139,8 +138,8 @@ export default function AlertsPage() {
                 </div>
 
                 <div className="space-y-2 text-sm text-zinc-400">
-  <p>Precio actual: ${alert.current_price}</p>
-  <p>Creada: {new Date(alert.created_at).toLocaleString()}</p>
+  <p>Current price: ${alert.current_price}</p>
+  <p>Created: {new Date(alert.created_at).toLocaleString()}</p>
 </div>
 
 <button
@@ -166,7 +165,7 @@ export default function AlertsPage() {
   }}
   className="mt-4 w-full rounded-xl border border-red-500/30 bg-red-500/10 px-4 py-2 text-sm font-medium text-red-300 transition active:scale-[0.98] active:translate-y-[1px] hover:bg-red-500/20"
 >
-  Quitar alerta
+  Remove alert
 </button>
               </article>
             ))}

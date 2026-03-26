@@ -181,23 +181,23 @@ if (!alertsError && alertsData) {
             <p className="text-sm uppercase tracking-[0.3em] text-zinc-400">
               LoboDeals
             </p>
-            <h1 className="mt-1 text-3xl font-bold">Ofertas reales de videojuegos</h1>
+            <h1 className="mt-1 text-3xl font-bold">The best video game deals</h1>
             <p className="mt-2 max-w-2xl text-sm text-zinc-400">
-  Descubre descuentos reales y explora precios en tiempo real.
+  Find cheap games, track prices, and create alerts.
 </p>
           </div>
 
           <div className="grid gap-3 p-5 md:grid-cols-3">
-            <MetricCard label="Ofertas cargadas" value={String(deals.length)} />
-            <MetricCard label="Precio promedio" value={`$${averagePrice}`} />
-            <MetricCard label="Mejor descuento" value={`${bestDiscount}%`} />
+            <MetricCard label="Deals loaded" value={String(deals.length)} />
+            <MetricCard label="Average price" value={`$${averagePrice}`} />
+            <MetricCard label="Best discount" value={`${bestDiscount}%`} />
           </div>
         </header>
 
         <section className="mb-6 grid gap-3 lg:grid-cols-[1.3fr_1fr]">
           <input
             type="text"
-            placeholder="Buscar una oferta..."
+            placeholder="Search deals..."
             value={search}
             onChange={(e) => {
               setSearch(e.target.value)
@@ -208,7 +208,7 @@ if (!alertsError && alertsData) {
 
           <div className="grid grid-cols-3 gap-3">
             <FilterButton
-              label="Todos"
+              label="All"
               active={filter === 'all'}
               onClick={() => {
                 setFilter('all')
@@ -216,7 +216,7 @@ if (!alertsError && alertsData) {
               }}
             />
             <FilterButton
-              label="Más baratos"
+              label="Lowest price"
               active={filter === 'cheap'}
               onClick={() => {
                 setFilter('cheap')
@@ -224,7 +224,7 @@ if (!alertsError && alertsData) {
               }}
             />
             <FilterButton
-              label="Mayor descuento"
+              label="Best discount"
               active={filter === 'biggest'}
               onClick={() => {
                 setFilter('biggest')
@@ -245,18 +245,18 @@ if (!alertsError && alertsData) {
 )}
         <section className="mb-5 flex items-center justify-between">
           <div>
-            <h2 className="text-2xl font-semibold">Deals disponibles</h2>
-            <p className="text-sm text-zinc-400">Resultados en tiempo real.</p>
+            <h2 className="text-2xl font-semibold">Available deals</h2>
+            <p className="text-sm text-zinc-400">Real-time results.</p>
           </div>
 
           <div className="rounded-2xl border border-zinc-800 bg-zinc-900 px-4 py-2 text-sm text-zinc-300">
-            Mostrando: {visibleDeals.length} / {filteredDeals.length}
+            Showing: {visibleDeals.length} / {filteredDeals.length}
           </div>
         </section>
 
         {filteredDeals.length === 0 ? (
           <div className="rounded-3xl border border-dashed border-zinc-700 bg-zinc-900 p-10 text-center text-zinc-400">
-            No hay resultados.
+            No results found. Try adjusting your search or filters?
           </div>
         ) : (
           <>
@@ -291,7 +291,7 @@ if (!alertsError && alertsData) {
 
                     <div className="mb-4 rounded-2xl border border-zinc-800 bg-zinc-950 p-3">
                       <p className="text-xs uppercase tracking-wider text-zinc-500">
-                        Precio actual
+                        Current price
                       </p>
                       <div className="mt-2 flex items-end justify-between">
                         <p className="text-3xl font-bold text-emerald-400">
@@ -323,22 +323,22 @@ if (!alertsError && alertsData) {
         const data = await res.json()
 
         if (data.success && data.action === 'removed') {
-  setWishlistMessage(`Quitado de deseados: ${deal.title}`)
+  setWishlistMessage(`Removed from wishlist: ${deal.title}`)
   setSavedWishlistIds((prev) =>
     prev.filter((id) => id !== deal.dealID)
   )
 } else if (data.success && data.action === 'added') {
-  setWishlistMessage(`Agregado a deseados: ${deal.title}`)
+  setWishlistMessage(`Added to wishlist: ${deal.title}`)
   setSavedWishlistIds((prev) =>
     prev.includes(deal.dealID) ? prev : [...prev, deal.dealID]
   )
 } else {
-  setWishlistMessage(`Error wishlist: ${data.error}`)
+  setWishlistMessage(`Wishlist error: ${data.error}`)
 }
 
         setTimeout(() => setWishlistMessage(''), 2500)
       } catch (error) {
-        setWishlistMessage('Error de conexión con wishlist')
+        setWishlistMessage('Wishlist connection error')
         setTimeout(() => setWishlistMessage(''), 2500)
       }
     }}
@@ -349,8 +349,8 @@ if (!alertsError && alertsData) {
 }`}
   >
     {savedWishlistIds.includes(deal.dealID)
-  ? 'Quitar de deseados'
-  : 'Agregar a deseados'}
+  ? 'Remove from wishlist'
+  : 'Add to wishlist'}
   </button>
 
   <button
@@ -375,20 +375,20 @@ if (!alertsError && alertsData) {
         const data = await res.json()
 
         if (data.success && data.action === 'removed') {
-  setAlertMessage(`Alerta eliminada para ${deal.title}`)
+  setAlertMessage(`Alert removed for ${deal.title}`)
   setSavedAlertIds((prev) => prev.filter((id) => id !== deal.dealID))
 } else if (data.success && data.action === 'added') {
-  setAlertMessage(`Alerta creada para ${deal.title} en $${targetPrice}`)
+  setAlertMessage(`Alert created for ${deal.title} at $${targetPrice}`)
   setSavedAlertIds((prev) =>
     prev.includes(deal.dealID) ? prev : [...prev, deal.dealID]
   )
 } else {
-  setAlertMessage(`Error alerta: ${data.error}`)
+  setAlertMessage(`Alert error: ${data.error}`)
 }
 
         setTimeout(() => setAlertMessage(''), 2500)
       } catch (error) {
-        setAlertMessage('Error de conexión con alerts')
+        setAlertMessage('Alerts connection error')
         setTimeout(() => setAlertMessage(''), 2500)
       }
     }}
@@ -398,7 +398,7 @@ if (!alertsError && alertsData) {
     : 'border border-emerald-500/30 bg-emerald-500/10 text-emerald-300 hover:bg-emerald-500/20'
 }`}
   >
-    {savedAlertIds.includes(deal.dealID) ? 'Quitar alerta' : 'Crear alerta'}
+    {savedAlertIds.includes(deal.dealID) ? 'Remove alert' : 'Create alert'}
   </button>
 
   <a
@@ -407,7 +407,7 @@ if (!alertsError && alertsData) {
   rel="noopener noreferrer"
   className="rounded-xl bg-white px-4 py-2 text-center text-sm font-semibold text-black transition hover:opacity-90 active:scale-[0.98] active:translate-y-[1px]"
 >
-  Ir a oferta
+  Go to deal
 </a>
 </div>
                   </div>
@@ -421,7 +421,7 @@ if (!alertsError && alertsData) {
   onClick={() => setVisibleCount((prev) => prev + 12)}
   className="rounded-full border border-zinc-700 bg-zinc-900 px-6 py-3 text-sm font-medium text-zinc-100 transition hover:bg-zinc-800"
 >
-  Cargar más ofertas
+  Load more deals
 </button>
               </div>
             )}

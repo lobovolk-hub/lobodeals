@@ -10,6 +10,7 @@ type Click = {
   sale_price: string
   normal_price: string
   created_at: string
+  click_type: string
 }
 
 export default function DashboardPage() {
@@ -55,6 +56,40 @@ export default function DashboardPage() {
 
     return Array.from(map.values()).sort((a, b) => b.clicks - a.clicks)
   }, [clicks])
+  
+  const affiliateClicks = clicks.filter(
+  (click) => click.click_type === 'affiliate'
+).length
+
+const fallbackClicks = clicks.filter(
+  (click) => click.click_type === 'fallback'
+).length
+const topAffiliateGames = useMemo(() => {
+  const affiliateOnly = clicks.filter(
+    (click) => click.click_type === 'affiliate'
+  )
+
+  const map = new Map<
+    string,
+    { title: string; clicks: number; lastPrice: string }
+  >()
+
+  for (const click of affiliateOnly) {
+    const existing = map.get(click.title)
+
+    if (existing) {
+      existing.clicks += 1
+    } else {
+      map.set(click.title, {
+        title: click.title,
+        clicks: 1,
+        lastPrice: click.sale_price,
+      })
+    }
+  }
+
+  return Array.from(map.values()).sort((a, b) => b.clicks - a.clicks)
+}, [clicks])
 
   if (loading) {
     return (
@@ -67,28 +102,32 @@ export default function DashboardPage() {
   return (
     <main className="min-h-screen bg-zinc-950 text-zinc-100">
       <section className="mx-auto max-w-6xl px-6 py-10">
-        <h1 className="mb-2 text-4xl font-bold">Dashboard</h1>
-        <p className="mb-8 text-zinc-400">Clics registrados en LoboDeals</p>
+        <div className="mb-6">
+  <h1 className="text-3xl font-bold">Dashboard</h1>
+  <p className="mt-1 text-sm text-zinc-400">
+    Rendimiento y monetización de LoboDeals
+  </p>
+</div>
 
-        <div className="mb-8 grid gap-4 md:grid-cols-6">
-  <div className="rounded-2xl border border-zinc-800 bg-zinc-900 p-5">
+        <div className="mb-8 grid gap-4 md:grid-cols-4 xl:grid-cols-8">
+  <div className="rounded-2xl border border-zinc-800 bg-zinc-900 p-4 shadow-lg shadow-black/20">
     <p className="text-sm text-zinc-400">Total clics</p>
     <p className="mt-2 text-3xl font-bold">{clicks.length}</p>
   </div>
 
-  <div className="rounded-2xl border border-zinc-800 bg-zinc-900 p-5">
+  <div className="rounded-2xl border border-zinc-800 bg-zinc-900 p-4 shadow-lg shadow-black/20">
     <p className="text-sm text-zinc-400">Juegos únicos clickeados</p>
     <p className="mt-2 text-3xl font-bold">{topGames.length}</p>
   </div>
 
-  <div className="rounded-2xl border border-zinc-800 bg-zinc-900 p-5">
+  <div className="rounded-2xl border border-zinc-800 bg-zinc-900 p-4 shadow-lg shadow-black/20">
     <p className="text-sm text-zinc-400">Juego más popular</p>
     <p className="mt-2 text-sm font-medium">
       {topGames[0]?.title || 'Sin datos'}
     </p>
   </div>
 
-  <div className="rounded-2xl border border-zinc-800 bg-zinc-900 p-5">
+  <div className="rounded-2xl border border-zinc-800 bg-zinc-900 p-4 shadow-lg shadow-black/20">
     <p className="text-sm text-zinc-400">Precio promedio clickeado</p>
     <p className="mt-2 text-3xl font-bold">
       $
@@ -103,14 +142,14 @@ export default function DashboardPage() {
     </p>
   </div>
 
-  <div className="rounded-2xl border border-zinc-800 bg-zinc-900 p-5">
+  <div className="rounded-2xl border border-zinc-800 bg-zinc-900 p-4 shadow-lg shadow-black/20">
     <p className="text-sm text-zinc-400">Último clic</p>
     <p className="mt-2 text-sm font-medium">
       {clicks[0]?.title || 'Sin datos'}
     </p>
   </div>
 
-  <div className="rounded-2xl border border-zinc-800 bg-zinc-900 p-5">
+  <div className="rounded-2xl border border-zinc-800 bg-zinc-900 p-4 shadow-lg shadow-black/20">
     <p className="text-sm text-zinc-400">Precio más bajo clickeado</p>
     <p className="mt-2 text-3xl font-bold">
       $
@@ -119,9 +158,25 @@ export default function DashboardPage() {
         : '0.00'}
     </p>
   </div>
+
+  <div className="rounded-2xl border border-zinc-800 bg-zinc-900 p-4 shadow-lg shadow-black/20">
+    <p className="text-sm text-zinc-400">Affiliate clicks</p>
+    <p className="mt-2 text-3xl font-bold text-emerald-300">
+      {affiliateClicks}
+    </p>
+  </div>
+
+  <div className="rounded-2xl border border-zinc-800 bg-zinc-900 p-4 shadow-lg shadow-black/20">
+    <p className="text-sm text-zinc-400">Fallback clicks</p>
+    <p className="mt-2 text-3xl font-bold text-cyan-300">
+      {fallbackClicks}
+    </p>
+  </div>
 </div>
-<div className="mb-8 rounded-3xl border border-zinc-800 bg-zinc-900 p-6">
-  <h2 className="mb-4 text-2xl font-semibold">Top ofertas por clics</h2>
+<div className="mb-10 rounded-3xl border border-zinc-800 bg-zinc-900 p-6">
+  <h2 className="mb-4 text-xl font-semibold">
+    Top juegos por interés
+  </h2>
 
   {topGames.length === 0 ? (
     <p className="text-zinc-400">Todavía no hay datos suficientes.</p>
@@ -143,8 +198,41 @@ export default function DashboardPage() {
     </div>
   )}
 </div>
-        <div className="mb-8 rounded-3xl border border-zinc-800 bg-zinc-900 p-6">
-          <h2 className="mb-4 text-2xl font-semibold">Ranking de interés</h2>
+
+<div className="mb-10 rounded-3xl border border-zinc-800 bg-zinc-900 p-6">
+  <h2 className="mb-4 text-xl font-semibold">
+    Juegos que generan ingresos
+  </h2>
+
+  {topAffiliateGames.length === 0 ? (
+    <p className="text-zinc-400">
+      Aún no hay clics affiliate registrados.
+    </p>
+  ) : (
+    <div className="grid gap-4 md:grid-cols-3">
+      {topAffiliateGames.slice(0, 3).map((game, index) => (
+        <div
+          key={game.title}
+          className="rounded-2xl border border-zinc-800 bg-zinc-950 p-5"
+        >
+          <p className="text-sm text-zinc-400">Affiliate #{index + 1}</p>
+          <h3 className="mt-2 text-lg font-bold">{game.title}</h3>
+          <p className="mt-2 text-sm text-zinc-400">
+            Último precio: ${game.lastPrice}
+          </p>
+          <p className="mt-3 text-2xl font-bold text-emerald-300">
+            {game.clicks} clicks
+          </p>
+        </div>
+      ))}
+    </div>
+  )}
+</div>
+
+        <div className="mb-10 rounded-3xl border border-zinc-800 bg-zinc-900 p-6">
+  <h2 className="mb-4 text-xl font-semibold">
+    Ranking general de clics
+  </h2>
           {topGames.length === 0 ? (
             <p className="text-zinc-400">Todavía no hay clics registrados.</p>
           ) : (

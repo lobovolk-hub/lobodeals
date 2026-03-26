@@ -1,6 +1,8 @@
 'use client'
 
+import { supabase } from '@/lib/supabaseClient'
 import { useEffect, useMemo, useState } from 'react'
+import Link from 'next/link'
 
 type Deal = {
   dealID: string
@@ -21,23 +23,58 @@ export default function Home() {
   const [visibleCount, setVisibleCount] = useState(12)
   const [wishlistMessage, setWishlistMessage] = useState('')
   const [alertMessage, setAlertMessage] = useState('')
+  const [savedWishlistIds, setSavedWishlistIds] = useState<string[]>([])
+  const [savedAlertIds, setSavedAlertIds] = useState<string[]>([])
+  const [userId, setUserId] = useState<string | null>(null)
 
   useEffect(() => {
-    const fetchDeals = async () => {
-      try {
-        const res = await fetch('/api/deals')
-        const data = await res.json()
-        setDeals(Array.isArray(data) ? data : [])
-      } catch (error) {
-        console.error(error)
-        setDeals([])
-      } finally {
-        setLoading(false)
-      }
+  const fetchDeals = async () => {
+    try {
+      const res = await fetch('/api/deals')
+      const data = await res.json()
+      setDeals(Array.isArray(data) ? data : [])
+    } catch (error) {
+      console.error(error)
+      setDeals([])
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const fetchSession = async () => {
+    const {
+      data: { session },
+    } = await supabase.auth.getSession()
+
+    const currentUserId = session?.user?.id ?? null
+    setUserId(currentUserId)
+
+    if (!currentUserId) {
+      setSavedWishlistIds([])
+      return
     }
 
-    fetchDeals()
-  }, [])
+    const { data, error } = await supabase
+      .from('wishlist')
+      .select('deal_id')
+      .eq('user_id', currentUserId)
+
+    if (!error && data) {
+      setSavedWishlistIds(data.map((item) => item.deal_id))
+    }
+    const { data: alertsData, error: alertsError } = await supabase
+  .from('alerts')
+  .select('deal_id')
+  .eq('user_id', currentUserId)
+
+if (!alertsError && alertsData) {
+  setSavedAlertIds(alertsData.map((item) => item.deal_id))
+}
+  }
+
+  fetchDeals()
+  fetchSession()
+}, [])
 
   const filteredDeals = useMemo(() => {
     let list = [...deals]
@@ -74,12 +111,67 @@ export default function Home() {
   }, [deals])
 
   if (loading) {
-    return (
-      <div className="min-h-screen bg-zinc-950 p-10 text-zinc-100">
-        Cargando ofertas...
-      </div>
-    )
-  }
+  return (
+    <main className="min-h-screen bg-zinc-950 text-zinc-100">
+      <section className="mx-auto max-w-6xl px-6 py-10">
+        <div className="mb-8 overflow-hidden rounded-3xl border border-zinc-800 bg-zinc-900 shadow-xl">
+          <div className="border-b border-zinc-800 p-5">
+            <div className="h-4 w-24 animate-pulse rounded bg-zinc-800" />
+            <div className="mt-3 h-8 w-72 animate-pulse rounded bg-zinc-800" />
+            <div className="mt-3 h-4 w-96 animate-pulse rounded bg-zinc-800" />
+          </div>
+
+          <div className="grid gap-3 p-5 md:grid-cols-3">
+            {[1, 2, 3].map((item) => (
+              <div
+                key={item}
+                className="rounded-2xl border border-zinc-800 bg-zinc-950 p-3"
+              >
+                <div className="h-4 w-28 animate-pulse rounded bg-zinc-800" />
+                <div className="mt-3 h-6 w-20 animate-pulse rounded bg-zinc-800" />
+              </div>
+            ))}
+          </div>
+        </div>
+
+        <div className="mb-6 grid gap-3 lg:grid-cols-[1.3fr_1fr]">
+          <div className="h-12 animate-pulse rounded-2xl bg-zinc-900" />
+          <div className="grid grid-cols-3 gap-3">
+            {[1, 2, 3].map((item) => (
+              <div
+                key={item}
+                className="h-12 animate-pulse rounded-2xl bg-zinc-900"
+              />
+            ))}
+          </div>
+        </div>
+
+        <div className="grid grid-cols-2 gap-5 lg:grid-cols-4">
+          {Array.from({ length: 8 }).map((_, index) => (
+            <article
+              key={index}
+              className="overflow-hidden rounded-3xl border border-zinc-800 bg-zinc-900 shadow-lg"
+            >
+              <div className="h-32 animate-pulse bg-zinc-800" />
+              <div className="p-4">
+                <div className="h-5 w-3/4 animate-pulse rounded bg-zinc-800" />
+                <div className="mt-3 rounded-2xl border border-zinc-800 bg-zinc-950 p-3">
+                  <div className="h-3 w-24 animate-pulse rounded bg-zinc-800" />
+                  <div className="mt-3 h-6 w-20 animate-pulse rounded bg-zinc-800" />
+                </div>
+                <div className="mt-3 grid gap-2">
+                  <div className="h-10 animate-pulse rounded-xl bg-zinc-800" />
+                  <div className="h-10 animate-pulse rounded-xl bg-zinc-800" />
+                  <div className="h-10 animate-pulse rounded-xl bg-zinc-700" />
+                </div>
+              </div>
+            </article>
+          ))}
+        </div>
+      </section>
+    </main>
+  )
+}
 
   return (
     <main className="min-h-screen bg-zinc-950 text-zinc-100">
@@ -141,8 +233,13 @@ export default function Home() {
             />
           </div>
         </section>
+{wishlistMessage && (
+  <div className="mb-5 rounded-2xl border border-emerald-500/20 bg-emerald-500/10 px-4 py-3 text-sm font-medium text-emerald-300 shadow-lg shadow-emerald-500/5">
+    {wishlistMessage}
+  </div>
+)}
 {alertMessage && (
-  <div className="mb-5 rounded-2xl border border-cyan-500/20 bg-cyan-500/10 px-4 py-3 text-sm text-cyan-300">
+  <div className="mb-5 rounded-2xl border border-cyan-500/20 bg-cyan-500/10 px-4 py-3 text-sm font-medium text-cyan-300 shadow-lg shadow-cyan-500/5">
     {alertMessage}
   </div>
 )}
@@ -166,21 +263,25 @@ export default function Home() {
             <div className="grid grid-cols-2 gap-5 lg:grid-cols-4">
               {visibleDeals.map((deal) => (
                 <article
-                  key={deal.dealID}
-                  className="overflow-hidden rounded-3xl border border-zinc-800 bg-zinc-900 shadow-lg transition hover:-translate-y-1"
-                >
-                  <img
-                    src={deal.thumb}
-                    alt={deal.title}
-                    className="h-32 w-full object-cover"
-                  />
+  key={deal.dealID}
+  className="overflow-hidden rounded-3xl border border-zinc-800 bg-zinc-900 shadow-lg transition hover:-translate-y-1"
+>
+                  <Link href={`/game/${encodeURIComponent(deal.dealID)}`}>
+  <img
+    src={deal.thumb}
+    alt={deal.title}
+    className="h-32 w-full object-cover transition hover:opacity-90"
+  />
+</Link>
 
                   <div className="p-4">
                     <div className="mb-3 flex items-start justify-between gap-3">
                       <div>
-  <h3 className="line-clamp-2 text-base font-bold leading-5">
-    {deal.title}
-  </h3>
+  <Link href={`/game/${encodeURIComponent(deal.dealID)}`}>
+    <h3 className="line-clamp-2 text-base font-bold leading-5 transition hover:text-emerald-300">
+      {deal.title}
+    </h3>
+  </Link>
 </div>
 
                       <span className="rounded-full border border-emerald-500/30 bg-emerald-500/10 px-3 py-1 text-xs font-medium text-emerald-300">
@@ -215,18 +316,25 @@ export default function Home() {
             salePrice: deal.salePrice,
             normalPrice: deal.normalPrice,
             thumb: deal.thumb,
+            userId,
           }),
         })
 
         const data = await res.json()
 
-        if (data.success && data.alreadyExists) {
-          setWishlistMessage(`Ya estaba en wishlist: ${deal.title}`)
-        } else if (data.success) {
-          setWishlistMessage(`Guardado en wishlist: ${deal.title}`)
-        } else {
-          setWishlistMessage(`Error wishlist: ${data.error}`)
-        }
+        if (data.success && data.action === 'removed') {
+  setWishlistMessage(`Quitado de deseados: ${deal.title}`)
+  setSavedWishlistIds((prev) =>
+    prev.filter((id) => id !== deal.dealID)
+  )
+} else if (data.success && data.action === 'added') {
+  setWishlistMessage(`Agregado a deseados: ${deal.title}`)
+  setSavedWishlistIds((prev) =>
+    prev.includes(deal.dealID) ? prev : [...prev, deal.dealID]
+  )
+} else {
+  setWishlistMessage(`Error wishlist: ${data.error}`)
+}
 
         setTimeout(() => setWishlistMessage(''), 2500)
       } catch (error) {
@@ -234,9 +342,15 @@ export default function Home() {
         setTimeout(() => setWishlistMessage(''), 2500)
       }
     }}
-    className="rounded-xl border border-zinc-700 px-4 py-2 text-sm font-medium text-zinc-100 transition hover:bg-zinc-800"
+    className={`rounded-xl px-4 py-2 text-sm font-medium transition active:scale-[0.98] active:translate-y-[1px] ${
+  savedWishlistIds.includes(deal.dealID)
+    ? 'border border-emerald-500/30 bg-emerald-500/10 text-emerald-300'
+    : 'border border-zinc-700 text-zinc-100 hover:bg-zinc-800'
+}`}
   >
-    Guardar
+    {savedWishlistIds.includes(deal.dealID)
+  ? 'Quitar de deseados'
+  : 'Agregar a deseados'}
   </button>
 
   <button
@@ -254,16 +368,23 @@ export default function Home() {
             title: deal.title,
             targetPrice,
             currentPrice: deal.salePrice,
+            userId,
           }),
         })
 
         const data = await res.json()
 
-        if (data.success) {
-          setAlertMessage(`Alerta creada para ${deal.title} en $${targetPrice}`)
-        } else {
-          setAlertMessage(`Error alerta: ${data.error}`)
-        }
+        if (data.success && data.action === 'removed') {
+  setAlertMessage(`Alerta eliminada para ${deal.title}`)
+  setSavedAlertIds((prev) => prev.filter((id) => id !== deal.dealID))
+} else if (data.success && data.action === 'added') {
+  setAlertMessage(`Alerta creada para ${deal.title} en $${targetPrice}`)
+  setSavedAlertIds((prev) =>
+    prev.includes(deal.dealID) ? prev : [...prev, deal.dealID]
+  )
+} else {
+  setAlertMessage(`Error alerta: ${data.error}`)
+}
 
         setTimeout(() => setAlertMessage(''), 2500)
       } catch (error) {
@@ -271,31 +392,23 @@ export default function Home() {
         setTimeout(() => setAlertMessage(''), 2500)
       }
     }}
-    className="rounded-xl border border-emerald-500/30 bg-emerald-500/10 px-4 py-2 text-sm font-medium text-emerald-300 transition hover:bg-emerald-500/20"
+    className={`rounded-xl px-4 py-2 text-sm font-medium transition active:scale-[0.98] active:translate-y-[1px] ${
+  savedAlertIds.includes(deal.dealID)
+    ? 'border border-cyan-500/30 bg-cyan-500/10 text-cyan-300'
+    : 'border border-emerald-500/30 bg-emerald-500/10 text-emerald-300 hover:bg-emerald-500/20'
+}`}
   >
-    Crear alerta
+    {savedAlertIds.includes(deal.dealID) ? 'Quitar alerta' : 'Crear alerta'}
   </button>
 
   <a
-    href={`https://www.cheapshark.com/redirect?dealID=${deal.dealID}`}
-    target="_blank"
-    rel="noopener noreferrer"
-    onClick={() => {
-      fetch('/api/track-click', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          dealID: deal.dealID,
-          title: deal.title,
-          salePrice: deal.salePrice,
-          normalPrice: deal.normalPrice,
-        }),
-      })
-    }}
-    className="rounded-xl bg-white px-4 py-2 text-center text-sm font-semibold text-black transition hover:opacity-90"
-  >
-    Ir a oferta
-  </a>
+  href={`/api/redirect?dealID=${encodeURIComponent(deal.dealID)}&title=${encodeURIComponent(deal.title)}&salePrice=${encodeURIComponent(deal.salePrice)}&normalPrice=${encodeURIComponent(deal.normalPrice)}`}
+  target="_blank"
+  rel="noopener noreferrer"
+  className="rounded-xl bg-white px-4 py-2 text-center text-sm font-semibold text-black transition hover:opacity-90 active:scale-[0.98] active:translate-y-[1px]"
+>
+  Ir a oferta
+</a>
 </div>
                   </div>
                 </article>

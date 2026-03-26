@@ -9,10 +9,20 @@ export async function POST(request: Request) {
   try {
     const body = await request.json()
 
+    const userId = body.userId
+
+    if (!userId) {
+      return Response.json(
+        { success: false, error: 'No autenticado' },
+        { status: 401 }
+      )
+    }
+
     const { data: existingRows, error: existingError } = await supabase
       .from('wishlist')
       .select('id')
       .eq('deal_id', body.dealID)
+      .eq('user_id', userId)
 
     if (existingError) {
       return Response.json(
@@ -22,9 +32,22 @@ export async function POST(request: Request) {
     }
 
     if (existingRows && existingRows.length > 0) {
+      const { error: deleteError } = await supabase
+        .from('wishlist')
+        .delete()
+        .eq('deal_id', body.dealID)
+        .eq('user_id', userId)
+
+      if (deleteError) {
+        return Response.json(
+          { success: false, error: deleteError.message },
+          { status: 500 }
+        )
+      }
+
       return Response.json({
         success: true,
-        alreadyExists: true,
+        action: 'removed',
       })
     }
 
@@ -35,6 +58,7 @@ export async function POST(request: Request) {
         sale_price: body.salePrice,
         normal_price: body.normalPrice,
         thumb: body.thumb,
+        user_id: userId,
       },
     ])
 
@@ -47,7 +71,7 @@ export async function POST(request: Request) {
 
     return Response.json({
       success: true,
-      alreadyExists: false,
+      action: 'added',
     })
   } catch (error) {
     return Response.json(

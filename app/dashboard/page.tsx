@@ -101,7 +101,7 @@ const topAffiliateGames = useMemo(() => {
 
   return (
     <main className="min-h-screen bg-zinc-950 text-zinc-100">
-      <section className="mx-auto max-w-6xl px-6 py-10">
+      <section className="mx-auto max-w-6xl px-4 py-10 sm:px-6">
         <div className="mb-6">
   <h1 className="text-3xl font-bold">Dashboard</h1>
   <p className="mt-1 text-sm text-zinc-400">

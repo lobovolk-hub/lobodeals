@@ -113,7 +113,7 @@ if (!alertsError && alertsData) {
   if (loading) {
   return (
     <main className="min-h-screen bg-zinc-950 text-zinc-100">
-      <section className="mx-auto max-w-6xl px-6 py-10">
+      <section className="mx-auto max-w-6xl px-4 py-10 sm:px-6">
         <div className="mb-8 overflow-hidden rounded-3xl border border-zinc-800 bg-zinc-900 shadow-xl">
           <div className="border-b border-zinc-800 p-5">
             <div className="h-4 w-24 animate-pulse rounded bg-zinc-800" />
@@ -175,7 +175,7 @@ if (!alertsError && alertsData) {
 
   return (
     <main className="min-h-screen bg-zinc-950 text-zinc-100">
-      <section className="mx-auto max-w-6xl px-6 py-10">
+      <section className="mx-auto max-w-6xl px-4 py-10 sm:px-6">
         <header className="mb-8 overflow-hidden rounded-3xl border border-zinc-800 bg-zinc-900 shadow-xl">
           <div className="border-b border-zinc-800 bg-gradient-to-r from-zinc-900 via-zinc-900 to-zinc-800 p-5">
             <p className="text-sm uppercase tracking-[0.3em] text-zinc-400">

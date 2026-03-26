@@ -14,7 +14,7 @@ const geistMono = Geist_Mono({
 
 <a
   href="/login"
-  className="rounded-lg px-3 py-2 transition hover:bg-zinc-800"
+  className="rounded-lg px-2 py-2 transition hover:bg-zinc-800 sm:px-3"
 >
   Login
 </a>
@@ -36,7 +36,7 @@ export default function RootLayout({
     >
       <body className="min-h-full flex flex-col bg-zinc-950 text-zinc-100">
   <nav className="border-b border-zinc-800 bg-zinc-900">
-    <div className="mx-auto flex max-w-6xl items-center justify-between px-6 py-4">
+    <div className="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-3 px-4 py-4 sm:px-6">
       <a
   href="/"
   className="text-lg font-bold transition hover:text-emerald-300"
@@ -44,31 +44,31 @@ export default function RootLayout({
   LoboDeals
 </a>
 
-      <div className="flex gap-4 text-sm">
+      <div className="flex flex-wrap justify-end gap-2 text-sm">
   <a
     href="/"
-    className="rounded-lg px-3 py-2 transition hover:bg-zinc-800"
+    className="rounded-lg px-2 py-2 transition hover:bg-zinc-800 sm:px-3"
   >
     Home
   </a>
 
   <a
     href="/wishlist"
-    className="rounded-lg px-3 py-2 transition hover:bg-zinc-800"
+    className="rounded-lg px-2 py-2 transition hover:bg-zinc-800 sm:px-3"
   >
     Wishlist
   </a>
 
   <a
     href="/alerts"
-    className="rounded-lg px-3 py-2 transition hover:bg-zinc-800"
+    className="rounded-lg px-2 py-2 transition hover:bg-zinc-800 sm:px-3"
   >
     Alerts
   </a>
 
   <a
     href="/login"
-    className="rounded-lg px-3 py-2 transition hover:bg-zinc-800"
+    className="rounded-lg px-2 py-2 transition hover:bg-zinc-800 sm:px-3"
   >
     Login
   </a>

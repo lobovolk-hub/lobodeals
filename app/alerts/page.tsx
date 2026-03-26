@@ -60,7 +60,7 @@ export default function AlertsPage() {
   if (!userId) {
     return (
       <main className="min-h-screen bg-zinc-950 text-zinc-100">
-        <section className="mx-auto max-w-6xl px-6 py-10">
+        <section className="mx-auto max-w-6xl px-4 py-10 sm:px-6">
           <div className="rounded-3xl border border-dashed border-zinc-700 bg-zinc-900 p-10 text-center text-zinc-400">
             Sign in to view your alerts.
           </div>
@@ -71,7 +71,7 @@ export default function AlertsPage() {
 
   return (
     <main className="min-h-screen bg-zinc-950 text-zinc-100">
-      <section className="mx-auto max-w-6xl px-6 py-10">
+      <section className="mx-auto max-w-6xl px-4 py-10 sm:px-6">
         <header className="mb-8 overflow-hidden rounded-3xl border border-zinc-800 bg-zinc-900 shadow-xl">
           <div className="border-b border-zinc-800 bg-gradient-to-r from-zinc-900 via-zinc-900 to-zinc-800 p-5">
             <p className="text-sm uppercase tracking-[0.3em] text-zinc-400">

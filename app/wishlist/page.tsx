@@ -61,7 +61,7 @@ export default function WishlistPage() {
   if (!userId) {
     return (
       <main className="min-h-screen bg-zinc-950 text-zinc-100">
-        <section className="mx-auto max-w-6xl px-6 py-10">
+        <section className="mx-auto max-w-6xl px-4 py-10 sm:px-6">
           <div className="rounded-3xl border border-dashed border-zinc-700 bg-zinc-900 p-10 text-center text-zinc-400">
             Sign in to view your wishlist.
           </div>
@@ -72,7 +72,7 @@ export default function WishlistPage() {
 
   return (
     <main className="min-h-screen bg-zinc-950 text-zinc-100">
-      <section className="mx-auto max-w-6xl px-6 py-10">
+      <section className="mx-auto max-w-6xl px-4 py-10 sm:px-6">
         <h1 className="mb-6 text-4xl font-bold">Your Wishlist</h1>
 
         {items.length === 0 ? (

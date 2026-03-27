@@ -28,11 +28,51 @@ type RawgScreenshot = {
   image: string
 }
 
+function normalizeTitle(value: string) {
+  return value
+    .toLowerCase()
+    .trim()
+    .replace(/[:\-–—]/g, ' ')
+    .replace(/\b(edition|collection|bundle|complete|ultimate|definitive|goty|game of the year)\b/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+}
+
+function scoreCandidate(inputTitle: string, candidateName: string) {
+  const inputRaw = inputTitle.trim().toLowerCase()
+  const candidateRaw = candidateName.trim().toLowerCase()
+
+  const inputNorm = normalizeTitle(inputTitle)
+  const candidateNorm = normalizeTitle(candidateName)
+
+  if (candidateRaw === inputRaw) return 100
+  if (candidateNorm === inputNorm) return 95
+  if (candidateRaw.startsWith(inputRaw)) return 85
+  if (candidateNorm.startsWith(inputNorm)) return 80
+  if (candidateRaw.includes(inputRaw)) return 70
+  if (candidateNorm.includes(inputNorm)) return 65
+  if (inputNorm.includes(candidateNorm)) return 55
+
+  const inputWords = new Set(inputNorm.split(' ').filter(Boolean))
+  const candidateWords = new Set(candidateNorm.split(' ').filter(Boolean))
+
+  let overlap = 0
+  for (const word of inputWords) {
+    if (candidateWords.has(word)) overlap += 1
+  }
+
+  if (overlap === 0) return 0
+
+  const ratio = overlap / Math.max(inputWords.size, candidateWords.size)
+  return Math.round(ratio * 50)
+}
+
 export async function GET(request: Request) {
   try {
     const { searchParams } = new URL(request.url)
     const title = searchParams.get('title')
     const dealID = searchParams.get('dealID')
+    const forceRefresh = searchParams.get('forceRefresh') === '1'
 
     if (!title) {
       return Response.json({ error: 'Missing title' }, { status: 400 })
@@ -48,31 +88,31 @@ export async function GET(request: Request) {
       return Response.json({ error: 'Missing RAWG_API_KEY' }, { status: 500 })
     }
 
-    // 1) Primero intentamos leer desde Supabase
-    const { data: cachedRow, error: cacheError } = await supabase
-      .from('game_metadata')
-      .select('*')
-      .eq('deal_id', dealID)
-      .maybeSingle()
+    if (!forceRefresh) {
+      const { data: cachedRow, error: cacheError } = await supabase
+        .from('game_metadata')
+        .select('*')
+        .eq('deal_id', dealID)
+        .maybeSingle()
 
-    if (!cacheError && cachedRow) {
-      return Response.json({
-        id: cachedRow.rawg_id,
-        name: cachedRow.title,
-        slug: cachedRow.slug,
-        description: cachedRow.description,
-        background_image: cachedRow.background_image,
-        rating: cachedRow.rating,
-        metacritic: cachedRow.metacritic,
-        released: cachedRow.released,
-        genres: cachedRow.genres || [],
-        platforms: cachedRow.platforms || [],
-        screenshots: cachedRow.screenshots || [],
-      })
+      if (!cacheError && cachedRow) {
+        return Response.json({
+          id: cachedRow.rawg_id,
+          name: cachedRow.title,
+          slug: cachedRow.slug,
+          description: cachedRow.description,
+          background_image: cachedRow.background_image,
+          rating: cachedRow.rating,
+          metacritic: cachedRow.metacritic,
+          released: cachedRow.released,
+          genres: cachedRow.genres || [],
+          platforms: cachedRow.platforms || [],
+          screenshots: cachedRow.screenshots || [],
+        })
+      }
     }
 
-    // 2) Si no existe cache, consultamos RAWG
-    const searchUrl = `https://api.rawg.io/api/games?key=${apiKey}&search=${encodeURIComponent(title)}&page_size=5`
+    const searchUrl = `https://api.rawg.io/api/games?key=${apiKey}&search=${encodeURIComponent(title)}&page_size=10`
 
     const searchRes = await fetch(searchUrl, {
       cache: 'no-store',
@@ -99,15 +139,20 @@ export async function GET(request: Request) {
       return Response.json({ error: 'Game not found in RAWG' }, { status: 404 })
     }
 
-    const normalizedTitle = title.trim().toLowerCase()
+    const rankedResults = (searchData.results as RawgSearchGame[])
+      .map((game) => ({
+        game,
+        score: scoreCandidate(title, game.name),
+      }))
+      .sort((a, b) => b.score - a.score)
 
-    const exactMatch =
-      searchData.results.find(
-        (game: RawgSearchGame) =>
-          game.name?.trim().toLowerCase() === normalizedTitle
-      ) || null
+    const bestMatch = rankedResults[0]
 
-    const game = (exactMatch || searchData.results[0]) as RawgSearchGame
+    if (!bestMatch || bestMatch.score < 25) {
+      return Response.json({ error: 'No strong RAWG match found' }, { status: 404 })
+    }
+
+    const game = bestMatch.game
 
     const detailUrl = `https://api.rawg.io/api/games/${game.id}?key=${apiKey}`
     const detailRes = await fetch(detailUrl, {
@@ -163,7 +208,6 @@ export async function GET(request: Request) {
       updated_at: new Date().toISOString(),
     }
 
-    // 3) Guardamos en cache
     const { data: existingRow } = await supabase
       .from('game_metadata')
       .select('id')

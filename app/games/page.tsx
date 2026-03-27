@@ -11,9 +11,11 @@ import {
   isAllowedStore,
 } from '@/lib/storeMap'
 import { getPlatformLabel } from '@/lib/platformMap'
+import { groupDealsByGame } from '@/lib/groupDeals'
 
 type Deal = {
   dealID: string
+  gameID?: string
   title: string
   thumb: string
   salePrice: string
@@ -22,7 +24,6 @@ type Deal = {
   dealRating: string
   metacriticScore?: string
   storeID: string
-  gameID?: string
 }
 
 const PAGE_SIZE = 36
@@ -141,24 +142,26 @@ function GamesPageContent() {
       list = list.filter((deal) => Number(deal.savings) >= 80)
     }
 
+    const grouped = groupDealsByGame(list)
+
     switch (sort) {
       case 'best':
-        return list.sort(
+        return grouped.sort(
           (a, b) => Number(b.dealRating || 0) - Number(a.dealRating || 0)
         )
       case 'top-rated':
-        return list
+        return grouped
           .filter((deal) => Number(deal.metacriticScore || 0) > 0)
           .sort(
             (a, b) =>
               Number(b.metacriticScore || 0) - Number(a.metacriticScore || 0)
           )
       case 'biggest-discount':
-        return list.sort((a, b) => Number(b.savings) - Number(a.savings))
+        return grouped.sort((a, b) => Number(b.savings) - Number(a.savings))
       case 'latest':
-        return list
+        return grouped
       default:
-        return list
+        return grouped
     }
   }, [deals, sort, query, priceFilter, storeFilter])
 
@@ -183,14 +186,14 @@ function GamesPageContent() {
 
   const pageDescription =
     sort === 'best'
-      ? 'Browse the strongest overall deals from approved stores.'
+      ? 'Browse the strongest games based on the best current approved deal.'
       : sort === 'top-rated'
-      ? 'Browse deals from approved stores for games with the best review scores.'
+      ? 'Browse games with the best review scores and an approved current deal.'
       : sort === 'biggest-discount'
-      ? 'Browse the highest discounts from approved stores.'
+      ? 'Browse games with the highest current discounts from approved stores.'
       : sort === 'latest'
-      ? 'Browse the latest deals from approved stores.'
-      : 'Browse the full approved deals catalog page by page.'
+      ? 'Browse the latest games loaded from approved stores.'
+      : 'Browse the full approved games catalog page by page.'
 
   const buildUrl = (
     page: number,
@@ -244,7 +247,7 @@ function GamesPageContent() {
         </header>
 
         <div className="mb-6 grid gap-3 lg:grid-cols-[1.4fr_auto]">
-          <div className="flex gap-2">
+          <div className="flex flex-col gap-2 sm:flex-row">
             <input
               type="text"
               value={searchInput}
@@ -290,7 +293,7 @@ function GamesPageContent() {
           <FilterLink label="Latest" href={buildUrl(1, { sort: 'latest' })} active={sort === 'latest'} />
         </div>
 
-        <div className="mb-8 flex flex-wrap items-center justify-between gap-4">
+        <div className="mb-8 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
           <p className="text-sm text-zinc-400">
             Page {safePage} of {totalPages} · {filteredDeals.length} results
             {storeFilter !== 'all' ? ` · ${getStoreName(storeFilter)}` : ''}
@@ -322,7 +325,7 @@ function GamesPageContent() {
             No games found for this view.
           </div>
         ) : (
-          <div className="grid grid-cols-2 gap-5 lg:grid-cols-4">
+          <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-4">
             {paginatedDeals.map((deal) => (
               <GameCatalogCard
                 key={deal.dealID}
@@ -382,47 +385,66 @@ function GameCatalogCard({
 }) {
   const discount = Math.round(Number(deal.savings))
   const logo = getStoreLogo(deal.storeID)
+  const salePriceNumber = Number(deal.salePrice || 0)
+  const normalPriceNumber = Number(deal.normalPrice || 0)
+  const hasValidNormalPrice =
+    !Number.isNaN(normalPriceNumber) &&
+    normalPriceNumber > 0 &&
+    normalPriceNumber > salePriceNumber
+
+  const gameHref = `/game/${encodeURIComponent(
+    deal.dealID
+  )}?title=${encodeURIComponent(deal.title)}&thumb=${encodeURIComponent(
+    deal.thumb
+  )}&salePrice=${encodeURIComponent(
+    deal.salePrice
+  )}&normalPrice=${encodeURIComponent(
+    deal.normalPrice
+  )}&dealRating=${encodeURIComponent(
+    deal.dealRating || ''
+  )}&savings=${encodeURIComponent(
+    deal.savings
+  )}&storeID=${encodeURIComponent(deal.storeID)}&gameID=${encodeURIComponent(
+    deal.gameID || ''
+  )}`
 
   return (
     <article className="overflow-hidden rounded-3xl border border-zinc-800 bg-zinc-900 shadow-lg transition hover:-translate-y-1">
-      <Link
-        href={`/game/${encodeURIComponent(deal.dealID)}?title=${encodeURIComponent(deal.title)}&thumb=${encodeURIComponent(deal.thumb)}&salePrice=${encodeURIComponent(deal.salePrice)}&normalPrice=${encodeURIComponent(deal.normalPrice)}&dealRating=${encodeURIComponent(deal.dealRating || '')}&savings=${encodeURIComponent(deal.savings)}&storeID=${encodeURIComponent(deal.storeID)}&gameID=${encodeURIComponent(deal.gameID || '')}`}
-      >
+      <Link href={gameHref}>
         <img
           src={deal.thumb}
           alt={deal.title}
-          className="h-32 w-full object-cover transition hover:opacity-90"
+          className="h-40 w-full object-cover transition hover:opacity-90"
         />
       </Link>
 
       <div className="p-4">
         <div className="mb-3 flex items-start justify-between gap-3">
-          <div>
-            <Link
-              href={`/game/${encodeURIComponent(deal.dealID)}?title=${encodeURIComponent(deal.title)}&thumb=${encodeURIComponent(deal.thumb)}&salePrice=${encodeURIComponent(deal.salePrice)}&normalPrice=${encodeURIComponent(deal.normalPrice)}&dealRating=${encodeURIComponent(deal.dealRating || '')}&savings=${encodeURIComponent(deal.savings)}&storeID=${encodeURIComponent(deal.storeID)}&gameID=${encodeURIComponent(deal.gameID || '')}`}
-            >
+          <div className="min-w-0">
+            <Link href={gameHref}>
               <h3 className="line-clamp-2 text-base font-bold leading-5 transition hover:text-emerald-300">
                 {deal.title}
               </h3>
             </Link>
           </div>
 
-          <span className="rounded-full border border-emerald-500/30 bg-emerald-500/10 px-2 py-1 text-xs font-medium text-emerald-300">
+          <span className="shrink-0 rounded-full border border-emerald-500/30 bg-emerald-500/10 px-2 py-1 text-xs font-medium text-emerald-300">
             -{discount}%
           </span>
         </div>
 
         <div className="mb-4 rounded-2xl border border-zinc-800 bg-zinc-950 p-3">
-          <div className="mb-2 flex items-center justify-between gap-2">
-  <div className="flex items-center gap-2">
-    <p className="text-xs uppercase tracking-wider text-zinc-500">
-      Current price
-    </p>
-    <span className="rounded-full border border-zinc-700 bg-zinc-900 px-2 py-1 text-[10px] font-medium uppercase tracking-wider text-zinc-300">
-      {getPlatformLabel(deal.storeID)}
-    </span>
-  </div>
-            <span className="inline-flex items-center gap-1 rounded-full border border-zinc-700 bg-zinc-900 px-2 py-1 text-[10px] font-medium uppercase tracking-wider text-zinc-300">
+          <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+            <div className="flex min-w-0 flex-wrap items-center gap-2">
+              <p className="text-xs uppercase tracking-wider text-zinc-500">
+                Current price
+              </p>
+              <span className="rounded-full border border-zinc-700 bg-zinc-900 px-2 py-1 text-[10px] font-medium uppercase tracking-wider text-zinc-300">
+                {getPlatformLabel(deal.storeID)}
+              </span>
+            </div>
+
+            <span className="inline-flex max-w-full items-center gap-1 rounded-full border border-zinc-700 bg-zinc-900 px-2 py-1 text-[10px] font-medium uppercase tracking-wider text-zinc-300">
               {logo && (
                 <img
                   src={logo}
@@ -430,16 +452,20 @@ function GameCatalogCard({
                   className="h-3.5 w-3.5 object-contain"
                 />
               )}
-              <span>{getStoreName(deal.storeID)}</span>
+              <span className="truncate">{getStoreName(deal.storeID)}</span>
             </span>
           </div>
-          <div className="mt-2 flex items-center justify-between gap-2">
+
+          <div className="mt-2 flex flex-wrap items-end justify-between gap-2">
             <span className="text-2xl font-bold text-emerald-400">
               ${deal.salePrice}
             </span>
-            <span className="text-sm text-zinc-400 line-through">
-              ${deal.normalPrice}
-            </span>
+
+            {hasValidNormalPrice ? (
+              <span className="text-sm text-zinc-400 line-through">
+                ${deal.normalPrice}
+              </span>
+            ) : null}
           </div>
         </div>
 

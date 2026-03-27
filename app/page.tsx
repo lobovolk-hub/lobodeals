@@ -5,9 +5,11 @@ import { useEffect, useMemo, useState } from 'react'
 import { supabase } from '@/lib/supabaseClient'
 import { getStoreLogo, getStoreName, isAllowedStore } from '@/lib/storeMap'
 import { getPlatformLabel } from '@/lib/platformMap'
+import { groupDealsByGame } from '@/lib/groupDeals'
 
 type Deal = {
   dealID: string
+  gameID?: string
   title: string
   salePrice: string
   normalPrice: string
@@ -16,7 +18,6 @@ type Deal = {
   storeID: string
   dealRating?: string
   metacriticScore?: string
-  gameID?: string
 }
 
 export default function Home() {
@@ -32,8 +33,29 @@ export default function Home() {
   useEffect(() => {
     const fetchDeals = async () => {
       try {
-        const res = await fetch('/api/deals')
-        const data = await res.json()
+        let data: unknown = null
+
+        try {
+          const res = await fetch('/api/deals/home')
+          const homeData = await res.json()
+
+          if (res.ok && Array.isArray(homeData)) {
+            data = homeData
+          } else {
+            const fallbackRes = await fetch('/api/deals')
+            const fallbackData = await fallbackRes.json()
+            data = Array.isArray(fallbackData) ? fallbackData : []
+          }
+        } catch {
+          try {
+            const fallbackRes = await fetch('/api/deals')
+            const fallbackData = await fallbackRes.json()
+            data = Array.isArray(fallbackData) ? fallbackData : []
+          } catch {
+            data = []
+          }
+        }
+
         setDeals(Array.isArray(data) ? data : [])
       } catch (error) {
         console.error(error)
@@ -90,7 +112,7 @@ export default function Home() {
       list = list.filter((deal) => deal.title.toLowerCase().includes(term))
     }
 
-    return list
+    return groupDealsByGame(list)
   }, [deals, search])
 
   const visibleDeals = useMemo(() => filteredDeals.slice(0, 4), [filteredDeals])
@@ -156,29 +178,6 @@ export default function Home() {
               ))}
             </div>
           </div>
-
-          <div className="grid grid-cols-2 gap-5 lg:grid-cols-4">
-            {Array.from({ length: 4 }).map((_, index) => (
-              <article
-                key={index}
-                className="overflow-hidden rounded-3xl border border-zinc-800 bg-zinc-900 shadow-lg"
-              >
-                <div className="h-32 animate-pulse bg-zinc-800" />
-                <div className="p-4">
-                  <div className="h-5 w-3/4 animate-pulse rounded bg-zinc-800" />
-                  <div className="mt-3 rounded-2xl border border-zinc-800 bg-zinc-950 p-3">
-                    <div className="h-3 w-24 animate-pulse rounded bg-zinc-800" />
-                    <div className="mt-3 h-6 w-20 animate-pulse rounded bg-zinc-800" />
-                  </div>
-                  <div className="mt-3 grid gap-2">
-                    <div className="h-10 animate-pulse rounded-xl bg-zinc-800" />
-                    <div className="h-10 animate-pulse rounded-xl bg-zinc-800" />
-                    <div className="h-10 animate-pulse rounded-xl bg-zinc-700" />
-                  </div>
-                </div>
-              </article>
-            ))}
-          </div>
         </section>
       </main>
     )
@@ -206,6 +205,43 @@ export default function Home() {
             <MetricCard label="Best discount" value={`${bestDiscount}%`} />
           </div>
         </header>
+
+        <section className="mb-6 grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
+          <Link
+            href="/catalog"
+            className="rounded-2xl bg-white px-4 py-3 text-center text-sm font-semibold text-black transition hover:opacity-90"
+          >
+            All Games
+          </Link>
+
+          <Link
+            href="/games?page=1&sort=all"
+            className="rounded-2xl border border-zinc-700 px-4 py-3 text-center text-sm font-medium transition hover:bg-zinc-800"
+          >
+            All Deals
+          </Link>
+
+          <Link
+            href="/pc"
+            className="rounded-2xl border border-zinc-700 px-4 py-3 text-center text-sm font-medium transition hover:bg-zinc-800"
+          >
+            PC
+          </Link>
+
+          <Link
+            href="/playstation"
+            className="rounded-2xl border border-zinc-700 px-4 py-3 text-center text-sm font-medium transition hover:bg-zinc-800"
+          >
+            PlayStation
+          </Link>
+
+          <Link
+            href="/xbox"
+            className="rounded-2xl border border-zinc-700 px-4 py-3 text-center text-sm font-medium transition hover:bg-zinc-800"
+          >
+            Xbox
+          </Link>
+        </section>
 
         <section className="mb-6">
           <input
@@ -324,8 +360,8 @@ function SectionBlock({
 }) {
   return (
     <section className="mb-12">
-      <div className="mb-4 flex items-center justify-between gap-3">
-        <div>
+      <div className="mb-4 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+        <div className="min-w-0">
           <h2 className="text-2xl font-bold">{title}</h2>
           <p className="text-sm text-zinc-400">{subtitle}</p>
         </div>
@@ -338,7 +374,7 @@ function SectionBlock({
         </Link>
       </div>
 
-      <div className="grid grid-cols-2 gap-5 lg:grid-cols-4">
+      <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-4">
         {deals.map((deal) => (
           <DealCard
             key={deal.dealID}
@@ -388,48 +424,66 @@ function DealCard({
   setAlertMessage,
 }: DealCardProps) {
   const logo = getStoreLogo(deal.storeID)
+  const salePriceNumber = Number(deal.salePrice || 0)
+  const normalPriceNumber = Number(deal.normalPrice || 0)
+  const hasValidNormalPrice =
+    !Number.isNaN(normalPriceNumber) &&
+    normalPriceNumber > 0 &&
+    normalPriceNumber > salePriceNumber
+
+  const gameHref = `/game/${encodeURIComponent(
+    deal.dealID
+  )}?title=${encodeURIComponent(deal.title)}&thumb=${encodeURIComponent(
+    deal.thumb
+  )}&salePrice=${encodeURIComponent(
+    deal.salePrice
+  )}&normalPrice=${encodeURIComponent(
+    deal.normalPrice
+  )}&dealRating=${encodeURIComponent(
+    deal.dealRating || ''
+  )}&savings=${encodeURIComponent(
+    deal.savings
+  )}&storeID=${encodeURIComponent(deal.storeID)}&gameID=${encodeURIComponent(
+    deal.gameID || ''
+  )}`
 
   return (
     <article className="overflow-hidden rounded-3xl border border-zinc-800 bg-zinc-900 shadow-lg transition hover:-translate-y-1">
-      <Link
-        href={`/game/${encodeURIComponent(deal.dealID)}?title=${encodeURIComponent(deal.title)}&thumb=${encodeURIComponent(deal.thumb)}&salePrice=${encodeURIComponent(deal.salePrice)}&normalPrice=${encodeURIComponent(deal.normalPrice)}&dealRating=${encodeURIComponent(deal.dealRating || '')}&savings=${encodeURIComponent(deal.savings)}&storeID=${encodeURIComponent(deal.storeID)}&gameID=${encodeURIComponent(deal.gameID || '')}`}
-      >
+      <Link href={gameHref}>
         <img
           src={deal.thumb}
           alt={deal.title}
-          className="h-32 w-full object-cover transition hover:opacity-90"
+          className="h-40 w-full object-cover transition hover:opacity-90"
         />
       </Link>
 
       <div className="p-4">
         <div className="mb-3 flex items-start justify-between gap-3">
-          <div>
-            <Link
-              href={`/game/${encodeURIComponent(deal.dealID)}?title=${encodeURIComponent(deal.title)}&thumb=${encodeURIComponent(deal.thumb)}&salePrice=${encodeURIComponent(deal.salePrice)}&normalPrice=${encodeURIComponent(deal.normalPrice)}&dealRating=${encodeURIComponent(deal.dealRating || '')}&savings=${encodeURIComponent(deal.savings)}&storeID=${encodeURIComponent(deal.storeID)}&gameID=${encodeURIComponent(deal.gameID || '')}`}
-            >
+          <div className="min-w-0">
+            <Link href={gameHref}>
               <h3 className="line-clamp-2 text-base font-bold leading-5 transition hover:text-emerald-300">
                 {deal.title}
               </h3>
             </Link>
           </div>
 
-          <span className="rounded-full border border-emerald-500/30 bg-emerald-500/10 px-3 py-1 text-xs font-medium text-emerald-300">
+          <span className="shrink-0 rounded-full border border-emerald-500/30 bg-emerald-500/10 px-3 py-1 text-xs font-medium text-emerald-300">
             -{Math.round(Number(deal.savings))}%
           </span>
         </div>
 
         <div className="mb-4 rounded-2xl border border-zinc-800 bg-zinc-950 p-3">
-          <div className="mb-2 flex items-center justify-between gap-2">
-  <div className="flex items-center gap-2">
-    <p className="text-xs uppercase tracking-wider text-zinc-500">
-      Current price
-    </p>
-    <span className="rounded-full border border-zinc-700 bg-zinc-900 px-2 py-1 text-[10px] font-medium uppercase tracking-wider text-zinc-300">
-      {getPlatformLabel(deal.storeID)}
-    </span>
-  </div>
+          <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+            <div className="flex min-w-0 flex-wrap items-center gap-2">
+              <p className="text-xs uppercase tracking-wider text-zinc-500">
+                Current price
+              </p>
+              <span className="rounded-full border border-zinc-700 bg-zinc-900 px-2 py-1 text-[10px] font-medium uppercase tracking-wider text-zinc-300">
+                {getPlatformLabel(deal.storeID)}
+              </span>
+            </div>
 
-            <span className="inline-flex items-center gap-1 rounded-full border border-zinc-700 bg-zinc-900 px-2 py-1 text-[10px] font-medium uppercase tracking-wider text-zinc-300">
+            <span className="inline-flex max-w-full items-center gap-1 rounded-full border border-zinc-700 bg-zinc-900 px-2 py-1 text-[10px] font-medium uppercase tracking-wider text-zinc-300">
               {logo && (
                 <img
                   src={logo}
@@ -437,17 +491,20 @@ function DealCard({
                   className="h-3.5 w-3.5 object-contain"
                 />
               )}
-              <span>{getStoreName(deal.storeID)}</span>
+              <span className="truncate">{getStoreName(deal.storeID)}</span>
             </span>
           </div>
 
-          <div className="mt-2 flex items-end justify-between">
+          <div className="mt-2 flex flex-wrap items-end justify-between gap-2">
             <p className="text-3xl font-bold text-emerald-400">
               ${deal.salePrice}
             </p>
-            <p className="text-sm text-zinc-400 line-through">
-              ${deal.normalPrice}
-            </p>
+
+            {hasValidNormalPrice ? (
+              <p className="text-sm text-zinc-400 line-through">
+                ${deal.normalPrice}
+              </p>
+            ) : null}
           </div>
         </div>
 

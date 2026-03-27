@@ -3,7 +3,8 @@
 import { useEffect, useState } from 'react'
 import { supabase } from '@/lib/supabaseClient'
 import { useParams, useSearchParams } from 'next/navigation'
-import { getStoreName } from '@/lib/storeMap'
+import { getStoreLogo, getStoreName } from '@/lib/storeMap'
+import { getPlatformLabel } from '@/lib/platformMap'
 
 type Game = {
   dealID: string
@@ -14,6 +15,7 @@ type Game = {
   dealRating: string
   savings: string
   storeID?: string
+  gameID?: string
 }
 
 type RawgMeta = {
@@ -41,6 +43,9 @@ export default function GamePage() {
   const [rawgMeta, setRawgMeta] = useState<RawgMeta | null>(null)
   const [rawgLoading, setRawgLoading] = useState(true)
   const [selectedScreenshot, setSelectedScreenshot] = useState<string | null>(null)
+  
+  const [historicalLow, setHistoricalLow] = useState<string | null>(null)
+const [historicalLowDate, setHistoricalLowDate] = useState<string | null>(null)
 
   useEffect(() => {
     const fetchData = async () => {
@@ -54,9 +59,26 @@ export default function GamePage() {
           dealRating: searchParams.get('dealRating') || '',
           savings: searchParams.get('savings') || '0',
           storeID: searchParams.get('storeID') || '',
+          gameID: searchParams.get('gameID') || '',
         }
 
         setGame(gameFromUrl)
+
+        if (gameFromUrl.gameID) {
+          try {
+            const pricingRes = await fetch(
+              `/api/game-pricing?gameID=${encodeURIComponent(gameFromUrl.gameID)}`
+            )
+
+            if (pricingRes.ok) {
+              const pricingData = await pricingRes.json()
+              setHistoricalLow(pricingData.cheapestPriceEver)
+              setHistoricalLowDate(pricingData.cheapestPriceEverDate)
+            }
+          } catch (error) {
+            console.error('Historical low error:', error)
+          }
+        }
 
         try {
   const rawgRes = await fetch(
@@ -202,13 +224,39 @@ export default function GamePage() {
           </span>
         )}
 
+        <span className="inline-flex items-center gap-2 rounded-full border border-zinc-700 bg-zinc-800 px-3 py-1 text-xs text-zinc-300">
+  {getStoreLogo(game.storeID) && (
+    <img
+      src={getStoreLogo(game.storeID)!}
+      alt={getStoreName(game.storeID)}
+      className="h-4 w-4 object-contain"
+    />
+  )}
+  <span>{getStoreName(game.storeID)}</span>
+</span>
+
         <span className="rounded-full border border-zinc-700 bg-zinc-800 px-3 py-1 text-xs text-zinc-300">
-          {getStoreName(game.storeID)}
+          {getPlatformLabel(game.storeID)}
         </span>
       </div>
     </div>
 
-    <div className="grid gap-3 sm:grid-cols-3">
+    <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+
+      <div className="rounded-2xl border border-zinc-800 bg-zinc-950/70 p-4">
+  <p className="text-xs uppercase tracking-wider text-zinc-500">
+    Historical low
+  </p>
+  <p className="mt-2 text-2xl font-bold text-pink-300">
+    {historicalLow ? `$${historicalLow}` : 'N/A'}
+  </p>
+  {historicalLowDate && (
+    <p className="mt-1 text-xs text-zinc-500">
+      Source date: {historicalLowDate}
+    </p>
+  )}
+</div>
+
       <div className="rounded-2xl border border-zinc-800 bg-zinc-950/70 p-4">
         <p className="text-xs uppercase tracking-wider text-zinc-500">
           Discount

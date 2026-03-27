@@ -3,7 +3,8 @@
 import Link from 'next/link'
 import { useEffect, useMemo, useState } from 'react'
 import { supabase } from '@/lib/supabaseClient'
-import { getStoreName } from '@/lib/storeMap'
+import { getStoreLogo, getStoreName, isAllowedStore } from '@/lib/storeMap'
+import { getPlatformLabel } from '@/lib/platformMap'
 
 type Deal = {
   dealID: string
@@ -15,6 +16,7 @@ type Deal = {
   storeID: string
   dealRating?: string
   metacriticScore?: string
+  gameID?: string
 }
 
 export default function Home() {
@@ -81,6 +83,8 @@ export default function Home() {
   const filteredDeals = useMemo(() => {
     let list = [...deals]
 
+    list = list.filter((deal) => isAllowedStore(deal.storeID))
+
     if (search.trim()) {
       const term = search.toLowerCase()
       list = list.filter((deal) => deal.title.toLowerCase().includes(term))
@@ -89,9 +93,7 @@ export default function Home() {
     return list
   }, [deals, search])
 
-  const visibleDeals = useMemo(() => {
-    return filteredDeals.slice(0, 4)
-  }, [filteredDeals])
+  const visibleDeals = useMemo(() => filteredDeals.slice(0, 4), [filteredDeals])
 
   const bestDeals = useMemo(() => {
     return [...filteredDeals]
@@ -116,15 +118,20 @@ export default function Home() {
   }, [filteredDeals])
 
   const averagePrice = useMemo(() => {
-    if (deals.length === 0) return '0.00'
-    const total = deals.reduce((sum, deal) => sum + Number(deal.salePrice), 0)
-    return (total / deals.length).toFixed(2)
-  }, [deals])
+    if (filteredDeals.length === 0) return '0.00'
+    const total = filteredDeals.reduce(
+      (sum, deal) => sum + Number(deal.salePrice),
+      0
+    )
+    return (total / filteredDeals.length).toFixed(2)
+  }, [filteredDeals])
 
   const bestDiscount = useMemo(() => {
-    if (deals.length === 0) return 0
-    return Math.max(...deals.map((deal) => Math.round(Number(deal.savings))))
-  }, [deals])
+    if (filteredDeals.length === 0) return 0
+    return Math.max(
+      ...filteredDeals.map((deal) => Math.round(Number(deal.savings)))
+    )
+  }, [filteredDeals])
 
   if (loading) {
     return (
@@ -194,7 +201,7 @@ export default function Home() {
           </div>
 
           <div className="grid gap-3 p-5 md:grid-cols-3">
-            <MetricCard label="Deals loaded" value={String(deals.length)} />
+            <MetricCard label="Deals loaded" value={String(filteredDeals.length)} />
             <MetricCard label="Average price" value={`$${averagePrice}`} />
             <MetricCard label="Best discount" value={`${bestDiscount}%`} />
           </div>
@@ -205,9 +212,7 @@ export default function Home() {
             type="text"
             placeholder="Search deals..."
             value={search}
-            onChange={(e) => {
-              setSearch(e.target.value)
-            }}
+            onChange={(e) => setSearch(e.target.value)}
             className="w-full rounded-2xl border border-zinc-800 bg-zinc-900 px-4 py-3 text-zinc-100 outline-none placeholder:text-zinc-500"
           />
         </section>
@@ -230,145 +235,125 @@ export default function Home() {
           </div>
         ) : (
           <>
-            <section className="mb-12">
-              <div className="mb-4 flex items-center justify-between gap-3">
-                <div>
-                  <h2 className="text-2xl font-bold">Best Deals</h2>
-                  <p className="text-sm text-zinc-400">
-                    Strong overall deals right now.
-                  </p>
-                </div>
+            <SectionBlock
+              title="Best Deals"
+              subtitle="Strong overall deals from approved stores."
+              href="/games?page=1&sort=best"
+              deals={bestDeals}
+              userId={userId}
+              savedWishlistIds={savedWishlistIds}
+              setSavedWishlistIds={setSavedWishlistIds}
+              savedAlertIds={savedAlertIds}
+              setSavedAlertIds={setSavedAlertIds}
+              setWishlistMessage={setWishlistMessage}
+              setAlertMessage={setAlertMessage}
+            />
 
-                <Link
-                  href="/games?page=1&sort=best"
-                  className="text-sm font-medium text-emerald-300 transition hover:text-emerald-200"
-                >
-                  View all
-                </Link>
-              </div>
+            <SectionBlock
+              title="Top Rated Deals"
+              subtitle="Deals from approved stores for games with the strongest review scores."
+              href="/games?page=1&sort=top-rated"
+              deals={topRatedDeals}
+              userId={userId}
+              savedWishlistIds={savedWishlistIds}
+              setSavedWishlistIds={setSavedWishlistIds}
+              savedAlertIds={savedAlertIds}
+              setSavedAlertIds={setSavedAlertIds}
+              setWishlistMessage={setWishlistMessage}
+              setAlertMessage={setAlertMessage}
+            />
 
-              <div className="grid grid-cols-2 gap-5 lg:grid-cols-4">
-                {bestDeals.map((deal) => (
-                  <DealCard
-                    key={deal.dealID}
-                    deal={deal}
-                    userId={userId}
-                    savedWishlistIds={savedWishlistIds}
-                    setSavedWishlistIds={setSavedWishlistIds}
-                    savedAlertIds={savedAlertIds}
-                    setSavedAlertIds={setSavedAlertIds}
-                    setWishlistMessage={setWishlistMessage}
-                    setAlertMessage={setAlertMessage}
-                  />
-                ))}
-              </div>
-            </section>
+            <SectionBlock
+              title="Biggest Discounts"
+              subtitle="The highest discounts from approved stores."
+              href="/games?page=1&sort=biggest-discount"
+              deals={biggestDiscounts}
+              userId={userId}
+              savedWishlistIds={savedWishlistIds}
+              setSavedWishlistIds={setSavedWishlistIds}
+              savedAlertIds={savedAlertIds}
+              setSavedAlertIds={setSavedAlertIds}
+              setWishlistMessage={setWishlistMessage}
+              setAlertMessage={setAlertMessage}
+            />
 
-            <section className="mb-12">
-              <div className="mb-4 flex items-center justify-between gap-3">
-                <div>
-                  <h2 className="text-2xl font-bold">Top Rated Deals</h2>
-                  <p className="text-sm text-zinc-400">
-                    Deals for games with the strongest review scores.
-                  </p>
-                </div>
-
-                <Link
-                  href="/games?page=1&sort=top-rated"
-                  className="text-sm font-medium text-emerald-300 transition hover:text-emerald-200"
-                >
-                  View all
-                </Link>
-              </div>
-
-              <div className="grid grid-cols-2 gap-5 lg:grid-cols-4">
-                {topRatedDeals.map((deal) => (
-                  <DealCard
-                    key={deal.dealID}
-                    deal={deal}
-                    userId={userId}
-                    savedWishlistIds={savedWishlistIds}
-                    setSavedWishlistIds={setSavedWishlistIds}
-                    savedAlertIds={savedAlertIds}
-                    setSavedAlertIds={setSavedAlertIds}
-                    setWishlistMessage={setWishlistMessage}
-                    setAlertMessage={setAlertMessage}
-                  />
-                ))}
-              </div>
-            </section>
-
-            <section className="mb-12">
-              <div className="mb-4 flex items-center justify-between gap-3">
-                <div>
-                  <h2 className="text-2xl font-bold">Biggest Discounts</h2>
-                  <p className="text-sm text-zinc-400">
-                    The highest discounts available right now.
-                  </p>
-                </div>
-
-                <Link
-                  href="/games?page=1&sort=biggest-discount"
-                  className="text-sm font-medium text-emerald-300 transition hover:text-emerald-200"
-                >
-                  View all
-                </Link>
-              </div>
-
-              <div className="grid grid-cols-2 gap-5 lg:grid-cols-4">
-                {biggestDiscounts.map((deal) => (
-                  <DealCard
-                    key={deal.dealID}
-                    deal={deal}
-                    userId={userId}
-                    savedWishlistIds={savedWishlistIds}
-                    setSavedWishlistIds={setSavedWishlistIds}
-                    savedAlertIds={savedAlertIds}
-                    setSavedAlertIds={setSavedAlertIds}
-                    setWishlistMessage={setWishlistMessage}
-                    setAlertMessage={setAlertMessage}
-                  />
-                ))}
-              </div>
-            </section>
-
-            <section className="mb-12">
-              <div className="mb-4 flex items-center justify-between gap-3">
-                <div>
-                  <h2 className="text-2xl font-bold">Latest Deals</h2>
-                  <p className="text-sm text-zinc-400">
-                    Fresh deals loaded in real time.
-                  </p>
-                </div>
-
-                <Link
-                  href="/games?page=1&sort=latest"
-                  className="text-sm font-medium text-emerald-300 transition hover:text-emerald-200"
-                >
-                  View all
-                </Link>
-              </div>
-
-              <div className="grid grid-cols-2 gap-5 lg:grid-cols-4">
-                {visibleDeals.map((deal) => (
-                  <DealCard
-                    key={deal.dealID}
-                    deal={deal}
-                    userId={userId}
-                    savedWishlistIds={savedWishlistIds}
-                    setSavedWishlistIds={setSavedWishlistIds}
-                    savedAlertIds={savedAlertIds}
-                    setSavedAlertIds={setSavedAlertIds}
-                    setWishlistMessage={setWishlistMessage}
-                    setAlertMessage={setAlertMessage}
-                  />
-                ))}
-              </div>
-            </section>
+            <SectionBlock
+              title="Latest Deals"
+              subtitle="Fresh deals from approved stores."
+              href="/games?page=1&sort=latest"
+              deals={visibleDeals}
+              userId={userId}
+              savedWishlistIds={savedWishlistIds}
+              setSavedWishlistIds={setSavedWishlistIds}
+              savedAlertIds={savedAlertIds}
+              setSavedAlertIds={setSavedAlertIds}
+              setWishlistMessage={setWishlistMessage}
+              setAlertMessage={setAlertMessage}
+            />
           </>
         )}
       </section>
     </main>
+  )
+}
+
+function SectionBlock({
+  title,
+  subtitle,
+  href,
+  deals,
+  userId,
+  savedWishlistIds,
+  setSavedWishlistIds,
+  savedAlertIds,
+  setSavedAlertIds,
+  setWishlistMessage,
+  setAlertMessage,
+}: {
+  title: string
+  subtitle: string
+  href: string
+  deals: Deal[]
+  userId: string | null
+  savedWishlistIds: string[]
+  setSavedWishlistIds: React.Dispatch<React.SetStateAction<string[]>>
+  savedAlertIds: string[]
+  setSavedAlertIds: React.Dispatch<React.SetStateAction<string[]>>
+  setWishlistMessage: React.Dispatch<React.SetStateAction<string>>
+  setAlertMessage: React.Dispatch<React.SetStateAction<string>>
+}) {
+  return (
+    <section className="mb-12">
+      <div className="mb-4 flex items-center justify-between gap-3">
+        <div>
+          <h2 className="text-2xl font-bold">{title}</h2>
+          <p className="text-sm text-zinc-400">{subtitle}</p>
+        </div>
+
+        <Link
+          href={href}
+          className="text-sm font-medium text-emerald-300 transition hover:text-emerald-200"
+        >
+          View all
+        </Link>
+      </div>
+
+      <div className="grid grid-cols-2 gap-5 lg:grid-cols-4">
+        {deals.map((deal) => (
+          <DealCard
+            key={deal.dealID}
+            deal={deal}
+            userId={userId}
+            savedWishlistIds={savedWishlistIds}
+            setSavedWishlistIds={setSavedWishlistIds}
+            savedAlertIds={savedAlertIds}
+            setSavedAlertIds={setSavedAlertIds}
+            setWishlistMessage={setWishlistMessage}
+            setAlertMessage={setAlertMessage}
+          />
+        ))}
+      </div>
+    </section>
   )
 }
 
@@ -402,10 +387,12 @@ function DealCard({
   setWishlistMessage,
   setAlertMessage,
 }: DealCardProps) {
+  const logo = getStoreLogo(deal.storeID)
+
   return (
     <article className="overflow-hidden rounded-3xl border border-zinc-800 bg-zinc-900 shadow-lg transition hover:-translate-y-1">
       <Link
-        href={`/game/${encodeURIComponent(deal.dealID)}?title=${encodeURIComponent(deal.title)}&thumb=${encodeURIComponent(deal.thumb)}&salePrice=${encodeURIComponent(deal.salePrice)}&normalPrice=${encodeURIComponent(deal.normalPrice)}&dealRating=${encodeURIComponent(deal.dealRating || '')}&savings=${encodeURIComponent(deal.savings)}&storeID=${encodeURIComponent(deal.storeID)}`}
+        href={`/game/${encodeURIComponent(deal.dealID)}?title=${encodeURIComponent(deal.title)}&thumb=${encodeURIComponent(deal.thumb)}&salePrice=${encodeURIComponent(deal.salePrice)}&normalPrice=${encodeURIComponent(deal.normalPrice)}&dealRating=${encodeURIComponent(deal.dealRating || '')}&savings=${encodeURIComponent(deal.savings)}&storeID=${encodeURIComponent(deal.storeID)}&gameID=${encodeURIComponent(deal.gameID || '')}`}
       >
         <img
           src={deal.thumb}
@@ -418,7 +405,7 @@ function DealCard({
         <div className="mb-3 flex items-start justify-between gap-3">
           <div>
             <Link
-              href={`/game/${encodeURIComponent(deal.dealID)}?title=${encodeURIComponent(deal.title)}&thumb=${encodeURIComponent(deal.thumb)}&salePrice=${encodeURIComponent(deal.salePrice)}&normalPrice=${encodeURIComponent(deal.normalPrice)}&dealRating=${encodeURIComponent(deal.dealRating || '')}&savings=${encodeURIComponent(deal.savings)}&storeID=${encodeURIComponent(deal.storeID)}`}
+              href={`/game/${encodeURIComponent(deal.dealID)}?title=${encodeURIComponent(deal.title)}&thumb=${encodeURIComponent(deal.thumb)}&salePrice=${encodeURIComponent(deal.salePrice)}&normalPrice=${encodeURIComponent(deal.normalPrice)}&dealRating=${encodeURIComponent(deal.dealRating || '')}&savings=${encodeURIComponent(deal.savings)}&storeID=${encodeURIComponent(deal.storeID)}&gameID=${encodeURIComponent(deal.gameID || '')}`}
             >
               <h3 className="line-clamp-2 text-base font-bold leading-5 transition hover:text-emerald-300">
                 {deal.title}
@@ -433,11 +420,24 @@ function DealCard({
 
         <div className="mb-4 rounded-2xl border border-zinc-800 bg-zinc-950 p-3">
           <div className="mb-2 flex items-center justify-between gap-2">
-            <p className="text-xs uppercase tracking-wider text-zinc-500">
-              Current price
-            </p>
-            <span className="rounded-full border border-zinc-700 bg-zinc-900 px-2 py-1 text-[10px] font-medium uppercase tracking-wider text-zinc-300">
-              {getStoreName(deal.storeID)}
+  <div className="flex items-center gap-2">
+    <p className="text-xs uppercase tracking-wider text-zinc-500">
+      Current price
+    </p>
+    <span className="rounded-full border border-zinc-700 bg-zinc-900 px-2 py-1 text-[10px] font-medium uppercase tracking-wider text-zinc-300">
+      {getPlatformLabel(deal.storeID)}
+    </span>
+  </div>
+
+            <span className="inline-flex items-center gap-1 rounded-full border border-zinc-700 bg-zinc-900 px-2 py-1 text-[10px] font-medium uppercase tracking-wider text-zinc-300">
+              {logo && (
+                <img
+                  src={logo}
+                  alt={getStoreName(deal.storeID)}
+                  className="h-3.5 w-3.5 object-contain"
+                />
+              )}
+              <span>{getStoreName(deal.storeID)}</span>
             </span>
           </div>
 

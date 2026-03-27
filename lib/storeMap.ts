@@ -84,7 +84,7 @@ export function getStoreLogo(storeID?: string) {
     case '13':
       return 'https://cdn.simpleicons.org/ubisoft/ffffff'
     case '15':
-      return 'https://cdn.simpleicons.org/fanatical/ffffff'
+      return '/stores/fanatical.svg'
     case '25':
       return 'https://cdn.simpleicons.org/epicgames/ffffff'
     default:

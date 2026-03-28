@@ -40,6 +40,8 @@ type CatalogSearchResult = {
 }
 
 const ALLOWED_STORE_IDS = new Set(['1', '3', '7', '8', '11', '13', '15', '25'])
+const searchCache = new Map<string, { expiresAt: number; data: CatalogSearchResult[] }>()
+const SEARCH_TTL_MS = 1000 * 60 * 5
 
 async function enrichGame(game: CheapSharkGame): Promise<CatalogSearchResult> {
   try {
@@ -95,14 +97,20 @@ async function enrichGame(game: CheapSharkGame): Promise<CatalogSearchResult> {
 export async function GET(request: Request) {
   try {
     const { searchParams } = new URL(request.url)
-    const title = searchParams.get('title')?.trim()
+    const rawTitle = searchParams.get('title')?.trim() || ''
+    const title = rawTitle.toLowerCase()
 
-    if (!title) {
-      return Response.json({ error: 'Missing title' }, { status: 400 })
+    if (title.length < 2) {
+      return Response.json([], { status: 200 })
+    }
+
+    const cached = searchCache.get(title)
+    if (cached && cached.expiresAt > Date.now()) {
+      return Response.json(cached.data, { status: 200 })
     }
 
     const url = `https://www.cheapshark.com/api/1.0/games?title=${encodeURIComponent(
-      title
+      rawTitle
     )}&limit=24&exact=0`
 
     const res = await fetch(url, {
@@ -114,10 +122,7 @@ export async function GET(request: Request) {
     })
 
     if (!res.ok) {
-      return Response.json(
-        { error: `CheapShark catalog search failed with ${res.status}` },
-        { status: 500 }
-      )
+      return Response.json([], { status: 200 })
     }
 
     const data = await res.json()
@@ -129,19 +134,17 @@ export async function GET(request: Request) {
       return true
     })
 
-    // Limitamos el enriquecimiento para no castigar demasiado la API.
-    const limited = cleaned.slice(0, 12)
-
+    const limited = cleaned.slice(0, 8)
     const enriched = await Promise.all(limited.map(enrichGame))
 
-    return Response.json(enriched)
+    searchCache.set(title, {
+      expiresAt: Date.now() + SEARCH_TTL_MS,
+      data: enriched,
+    })
+
+    return Response.json(enriched, { status: 200 })
   } catch (error) {
-    return Response.json(
-      {
-        error:
-          error instanceof Error ? error.message : 'Catalog search failed',
-      },
-      { status: 500 }
-    )
+    console.error('catalog search error', error)
+    return Response.json([], { status: 200 })
   }
 }

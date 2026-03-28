@@ -1,113 +1,162 @@
 export const runtime = 'nodejs'
 
-type CheapSharkDeal = {
+import { createClient } from '@supabase/supabase-js'
+
+type Deal = {
   dealID: string
+  gameID?: string
+  title: string
+  salePrice: string
+  normalPrice: string
+  savings: string
+  thumb: string
+  storeID: string
+  dealRating?: string
+  metacriticScore?: string
+}
+
+type CheapSharkDeal = {
+  dealID?: string
+  gameID?: string
   title?: string
   salePrice?: string
   normalPrice?: string
   savings?: string
   thumb?: string
   storeID?: string
-  gameID?: string
   dealRating?: string
   metacriticScore?: string
-  [key: string]: unknown
+}
+
+const ALLOWED_STORE_IDS = new Set(['1', '3', '7', '8', '11', '13', '15', '25'])
+const PAGE_COUNT = 4
+
+function getServiceSupabase() {
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL
+  const serviceRole = process.env.SUPABASE_SERVICE_ROLE_KEY
+
+  if (!url || !serviceRole) {
+    throw new Error('Missing Supabase env vars for deals cache')
+  }
+
+  return createClient(url, serviceRole)
+}
+
+async function readCache() {
+  const supabase = getServiceSupabase()
+
+  const { data, error } = await supabase
+    .from('deals_cache')
+    .select('payload, updated_at')
+    .eq('cache_key', 'cheapshark_deals_main')
+    .maybeSingle()
+
+  if (error || !data) return null
+
+  return data as { payload: Deal[]; updated_at: string }
+}
+
+async function writeCache(payload: Deal[]) {
+  const supabase = getServiceSupabase()
+
+  const { error } = await supabase.from('deals_cache').upsert(
+    {
+      cache_key: 'cheapshark_deals_main',
+      payload,
+      updated_at: new Date().toISOString(),
+    },
+    { onConflict: 'cache_key' }
+  )
+
+  if (error) {
+    throw error
+  }
 }
 
 async function fetchDealsPage(pageNumber: number) {
-  const baseUrl = 'https://www.cheapshark.com/api/1.0/deals'
+  const url = `https://www.cheapshark.com/api/1.0/deals?pageNumber=${pageNumber}&pageSize=60&sortBy=DealRating&desc=1`
 
-  const res = await fetch(
-    `${baseUrl}?pageSize=60&pageNumber=${pageNumber}&sortBy=Deal%20Rating&desc=1&lowerPrice=0`,
-    {
-      cache: 'no-store',
-      headers: {
-        Accept: 'application/json',
-        'User-Agent': 'LoboDeals/1.0',
-      },
-    }
-  )
+  const res = await fetch(url, {
+    cache: 'no-store',
+    headers: {
+      Accept: 'application/json',
+      'User-Agent': 'LoboDeals/1.0',
+    },
+  })
 
   if (!res.ok) {
     throw new Error(`CheapShark page ${pageNumber} failed with ${res.status}`)
   }
 
   const data = await res.json()
-  return Array.isArray(data) ? data : []
+  return Array.isArray(data) ? (data as CheapSharkDeal[]) : []
+}
+
+function isFresh(updatedAt: string, maxAgeMs: number) {
+  return Date.now() - new Date(updatedAt).getTime() <= maxAgeMs
 }
 
 export async function GET() {
+  const CACHE_TTL_MS = 1000 * 60 * 30
+
   try {
-    // Bajamos a 6 páginas, pero más estable.
-    // 6 x 60 = hasta 360 deals brutos.
-    const pageNumbers = Array.from({ length: 6 }, (_, i) => i)
+    const cached = await readCache()
 
-    const allResults: CheapSharkDeal[] = []
-    let successCount = 0
+    if (cached && isFresh(cached.updated_at, CACHE_TTL_MS)) {
+      return Response.json(cached.payload)
+    }
 
-    for (const pageNumber of pageNumbers) {
+    const allDeals: CheapSharkDeal[] = []
+
+    for (let page = 0; page < PAGE_COUNT; page += 1) {
       try {
-        const pageData = (await fetchDealsPage(pageNumber)) as CheapSharkDeal[]
-        allResults.push(...pageData)
-        successCount += 1
+        const pageDeals = await fetchDealsPage(page)
+        allDeals.push(...pageDeals)
       } catch (error) {
-        console.error(`Deals page ${pageNumber} failed`, error)
+        console.error(`Deals page ${page} failed`, error)
       }
     }
 
-    if (successCount === 0) {
-      return Response.json(
-        { error: 'Failed to load deals from CheapShark' },
-        { status: 500 }
-      )
+    const cleaned: Deal[] = allDeals
+      .filter((deal) => {
+        if (!deal.dealID) return false
+        if (!deal.title) return false
+        if (!deal.storeID || !ALLOWED_STORE_IDS.has(deal.storeID)) return false
+        return true
+      })
+      .map((deal) => ({
+        dealID: deal.dealID || '',
+        gameID: deal.gameID || '',
+        title: deal.title || '',
+        salePrice: deal.salePrice || '',
+        normalPrice: deal.normalPrice || '',
+        savings: deal.savings || '',
+        thumb: deal.thumb || '',
+        storeID: deal.storeID || '',
+        dealRating: deal.dealRating || '',
+        metacriticScore: deal.metacriticScore || '',
+      }))
+
+    if (cleaned.length > 0) {
+      await writeCache(cleaned)
+      return Response.json(cleaned)
     }
 
-    const cleaned = allResults.filter((deal) => {
-      if (!deal?.dealID) return false
-      if (!deal?.title || typeof deal.title !== 'string') return false
-      if (!deal?.storeID || typeof deal.storeID !== 'string') return false
-      if (!deal?.salePrice || !deal?.normalPrice) return false
-      if (!deal?.thumb || typeof deal.thumb !== 'string') return false
+    if (cached) {
+      return Response.json(cached.payload)
+    }
 
-      const salePrice = Number(deal.salePrice)
-      const normalPrice = Number(deal.normalPrice)
-
-      if (Number.isNaN(salePrice) || Number.isNaN(normalPrice)) return false
-      if (normalPrice <= 0) return false
-      if (salePrice < 0) return false
-
-      return true
-    })
-
-    const deduped = Array.from(
-      new Map(cleaned.map((deal) => [deal.dealID, deal])).values()
-    )
-
-    deduped.sort((a, b) => {
-      const aRating = Number(a.dealRating || 0)
-      const bRating = Number(b.dealRating || 0)
-
-      if (aRating !== bRating) {
-        return bRating - aRating
-      }
-
-      const aSavings = Number(a.savings || 0)
-      const bSavings = Number(b.savings || 0)
-
-      return bSavings - aSavings
-    })
-
-    return Response.json(deduped, {
-      headers: {
-        'Cache-Control': 'no-store',
-      },
-    })
+    return Response.json([])
   } catch (error) {
-    return Response.json(
-      {
-        error: error instanceof Error ? error.message : 'Failed to load deals',
-      },
-      { status: 500 }
-    )
+    console.error('api/deals error', error)
+
+    try {
+      const cached = await readCache()
+      if (cached) {
+        return Response.json(cached.payload)
+      }
+    } catch {}
+
+    return Response.json([])
   }
 }

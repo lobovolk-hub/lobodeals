@@ -3,6 +3,7 @@
 import Link from 'next/link'
 import { useEffect, useRef, useState } from 'react'
 import { supabase } from '@/lib/supabaseClient'
+import RegionSelector from '@/app/components/RegionSelector'
 
 export default function Navbar() {
   const [userEmail, setUserEmail] = useState<string | null>(null)
@@ -139,18 +140,22 @@ export default function Navbar() {
             </div>
 
             <Link
-              href="/wishlist"
+              href="/tracked"
               className="rounded-lg px-3 py-2 transition hover:bg-zinc-800"
             >
-              Wishlist
+              Tracked
             </Link>
 
-            <Link
-              href="/alerts"
-              className="rounded-lg px-3 py-2 transition hover:bg-zinc-800"
-            >
-              Alerts
-            </Link>
+            {userEmail ? (
+              <Link
+                href="/profile"
+                className="rounded-lg px-3 py-2 transition hover:bg-zinc-800"
+              >
+                Profile
+              </Link>
+            ) : null}
+
+            <RegionSelector compact />
 
             {userEmail ? (
               <>
@@ -258,20 +263,26 @@ export default function Navbar() {
               )}
 
               <Link
-                href="/wishlist"
+                href="/tracked"
                 onClick={closeMobileMenu}
                 className="rounded-xl px-3 py-3 transition hover:bg-zinc-800"
               >
-                Wishlist
+                Tracked
               </Link>
 
-              <Link
-                href="/alerts"
-                onClick={closeMobileMenu}
-                className="rounded-xl px-3 py-3 transition hover:bg-zinc-800"
-              >
-                Alerts
-              </Link>
+              {userEmail ? (
+                <Link
+                  href="/profile"
+                  onClick={closeMobileMenu}
+                  className="rounded-xl px-3 py-3 transition hover:bg-zinc-800"
+                >
+                  Profile
+                </Link>
+              ) : null}
+
+              <div className="pt-2">
+                <RegionSelector />
+              </div>
 
               {userEmail ? (
                 <>

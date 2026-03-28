@@ -1,7 +1,7 @@
 'use client'
 
 import Link from 'next/link'
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { supabase } from '@/lib/supabaseClient'
 import { getStoreLogo, getStoreName, isAllowedStore } from '@/lib/storeMap'
 import { getPlatformLabel } from '@/lib/platformMap'
@@ -20,6 +20,25 @@ type Deal = {
   metacriticScore?: string
 }
 
+type CatalogSuggestion = {
+  gameID: string
+  cheapestDealID?: string
+  external?: string
+  thumb?: string
+  cheapest?: string
+  normalPrice?: string
+  savings?: string
+  storeID?: string
+}
+
+type LightweightSuggestion = {
+  gameID: string
+  cheapestDealID?: string
+  external?: string
+  thumb?: string
+  cheapest?: string
+}
+
 export default function Home() {
   const [deals, setDeals] = useState<Deal[]>([])
   const [loading, setLoading] = useState(true)
@@ -29,6 +48,16 @@ export default function Home() {
   const [savedWishlistIds, setSavedWishlistIds] = useState<string[]>([])
   const [savedAlertIds, setSavedAlertIds] = useState<string[]>([])
   const [userId, setUserId] = useState<string | null>(null)
+
+  const [searchResults, setSearchResults] = useState<CatalogSuggestion[]>([])
+  const [searchLoading, setSearchLoading] = useState(false)
+  const [searchPerformed, setSearchPerformed] = useState(false)
+
+  const [suggestions, setSuggestions] = useState<LightweightSuggestion[]>([])
+  const [suggestionsLoading, setSuggestionsLoading] = useState(false)
+  const [showSuggestions, setShowSuggestions] = useState(false)
+
+  const suggestionBoxRef = useRef<HTMLDivElement | null>(null)
 
   useEffect(() => {
     const fetchDeals = async () => {
@@ -102,18 +131,77 @@ export default function Home() {
     fetchSession()
   }, [])
 
-  const filteredDeals = useMemo(() => {
-    let list = [...deals]
+    useEffect(() => {
+    const q = search.trim()
 
-    list = list.filter((deal) => isAllowedStore(deal.storeID))
-
-    if (search.trim()) {
-      const term = search.toLowerCase()
-      list = list.filter((deal) => deal.title.toLowerCase().includes(term))
+    if (q.length < 3) {
+      setSuggestions([])
+      setSuggestionsLoading(false)
+      return
     }
 
+    const timer = setTimeout(async () => {
+      try {
+        setSuggestionsLoading(true)
+        const res = await fetch(`/api/catalog-suggest?title=${encodeURIComponent(q)}`)
+        const data = await res.json()
+        setSuggestions(Array.isArray(data) ? data.slice(0, 5) : [])
+      } catch (error) {
+        console.error(error)
+        setSuggestions([])
+      } finally {
+        setSuggestionsLoading(false)
+      }
+    }, 400)
+
+    return () => clearTimeout(timer)
+  }, [search])
+
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (
+        suggestionBoxRef.current &&
+        !suggestionBoxRef.current.contains(event.target as Node)
+      ) {
+        setShowSuggestions(false)
+      }
+    }
+
+    document.addEventListener('mousedown', handleClickOutside)
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside)
+    }
+  }, [])
+
+  const runSearch = async () => {
+    const q = search.trim()
+    if (!q) {
+      setSearchResults([])
+      setSearchPerformed(false)
+      return
+    }
+
+    setSearchLoading(true)
+    setSearchPerformed(true)
+    setShowSuggestions(false)
+
+    try {
+      const res = await fetch(`/api/catalog-search?title=${encodeURIComponent(q)}`)
+      const data = await res.json()
+      setSearchResults(Array.isArray(data) ? data.slice(0, 8) : [])
+    } catch (error) {
+      console.error(error)
+      setSearchResults([])
+    } finally {
+      setSearchLoading(false)
+    }
+  }
+
+  const filteredDeals = useMemo(() => {
+    let list = [...deals]
+    list = list.filter((deal) => isAllowedStore(deal.storeID))
     return groupDealsByGame(list)
-  }, [deals, search])
+  }, [deals])
 
   const visibleDeals = useMemo(() => filteredDeals.slice(0, 4), [filteredDeals])
 
@@ -195,7 +283,7 @@ export default function Home() {
               The best video game deals
             </h1>
             <p className="mt-2 max-w-2xl text-sm text-zinc-400">
-              Find cheap games, track prices, and create alerts.
+              Find cheap games, track prices, and explore the catalog even when a game is not currently on sale.
             </p>
           </div>
 
@@ -243,14 +331,203 @@ export default function Home() {
           </Link>
         </section>
 
-        <section className="mb-6">
-          <input
-            type="text"
-            placeholder="Search deals..."
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            className="w-full rounded-2xl border border-zinc-800 bg-zinc-900 px-4 py-3 text-zinc-100 outline-none placeholder:text-zinc-500"
-          />
+        <section className="mb-8 rounded-3xl border border-zinc-800 bg-zinc-900 p-4 sm:p-5">
+          <div className="relative" ref={suggestionBoxRef}>
+            <div className="flex flex-col gap-3 sm:flex-row">
+              <input
+                type="text"
+                placeholder="Search any game from the catalog..."
+                value={search}
+                onChange={(e) => {
+                  setSearch(e.target.value)
+                  setShowSuggestions(true)
+                }}
+                onFocus={() => setShowSuggestions(true)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') runSearch()
+                }}
+                className="w-full rounded-2xl border border-zinc-800 bg-zinc-950 px-4 py-3 text-zinc-100 outline-none placeholder:text-zinc-500"
+              />
+              <button
+                onClick={runSearch}
+                className="rounded-2xl bg-white px-5 py-3 text-sm font-semibold text-black transition hover:opacity-90"
+              >
+                Search
+              </button>
+            </div>
+
+                        {showSuggestions && search.trim().length > 0 ? (
+              <div className="mt-3 overflow-hidden rounded-2xl border border-zinc-800 bg-zinc-950">
+                {search.trim().length < 3 ? (
+                  <div className="px-4 py-3 text-sm text-zinc-500">
+                    Type at least 3 letters.
+                  </div>
+                ) : suggestionsLoading ? (
+                  <div className="px-4 py-3 text-sm text-zinc-400">
+                    Loading suggestions...
+                  </div>
+                ) : suggestions.length > 0 ? (
+                  suggestions.map((item) => {
+                    const href =
+                      item.cheapestDealID && item.cheapest
+                        ? `/game/${encodeURIComponent(
+                            item.cheapestDealID || ''
+                          )}?title=${encodeURIComponent(
+                            item.external || ''
+                          )}&thumb=${encodeURIComponent(
+                            item.thumb || ''
+                          )}&salePrice=${encodeURIComponent(
+                            item.cheapest || ''
+                          )}&normalPrice=&dealRating=&savings=&gameID=${encodeURIComponent(
+                            item.gameID
+                          )}&storeID=`
+                        : '/catalog'
+
+                    return (
+                      <Link
+                        key={item.gameID}
+                        href={href}
+                        onClick={() => setShowSuggestions(false)}
+                        className="flex items-center gap-3 border-t border-zinc-800 px-4 py-3 transition first:border-t-0 hover:bg-zinc-900"
+                      >
+                        <div className="h-12 w-12 shrink-0 overflow-hidden rounded-xl bg-zinc-800">
+                          {item.thumb ? (
+                            <img
+                              src={item.thumb}
+                              alt={item.external || 'Game'}
+                              className="h-full w-full object-cover"
+                            />
+                          ) : null}
+                        </div>
+
+                        <div className="min-w-0">
+                          <p className="truncate text-sm font-medium text-zinc-100">
+                            {item.external}
+                          </p>
+                          <p className="text-xs text-zinc-500">
+                            {item.cheapest
+                              ? `Known price: $${item.cheapest}`
+                              : 'No active deal right now'}
+                          </p>
+                        </div>
+                      </Link>
+                    )
+                  })
+                ) : (
+                  <div className="px-4 py-3 text-sm text-zinc-500">
+                    No suggestions found.
+                  </div>
+                )}
+              </div>
+            ) : null}
+          </div>
+
+          {searchLoading ? (
+            <div className="mt-4 rounded-2xl border border-zinc-800 bg-zinc-950 p-4 text-sm text-zinc-400">
+              Searching games...
+            </div>
+          ) : searchPerformed ? (
+            searchResults.length > 0 ? (
+              <div className="mt-4 grid grid-cols-2 gap-4 lg:grid-cols-4">
+                {searchResults.map((game) => {
+                  const hasActiveDeal = !!game.cheapestDealID && !!game.cheapest
+                  const salePrice = Number(game.cheapest || 0)
+                  const normalPrice = Number(game.normalPrice || 0)
+                  const hasValidNormalPrice =
+                    !Number.isNaN(normalPrice) &&
+                    normalPrice > 0 &&
+                    normalPrice > salePrice
+
+                  return (
+                    <article
+                      key={game.gameID}
+                      className="overflow-hidden rounded-3xl border border-zinc-800 bg-zinc-950 shadow-lg"
+                    >
+                      <div className="h-32 w-full bg-zinc-800">
+                        {game.thumb ? (
+                          <img
+                            src={game.thumb}
+                            alt={game.external || 'Game'}
+                            className="h-full w-full object-cover"
+                          />
+                        ) : null}
+                      </div>
+
+                      <div className="p-4">
+                        <h2 className="line-clamp-2 text-base font-bold">
+                          {game.external}
+                        </h2>
+
+                        <div className="mt-3 rounded-2xl border border-zinc-800 bg-zinc-900 p-3">
+                          <p className="text-xs uppercase tracking-wider text-zinc-500">
+                            Best current known price
+                          </p>
+
+                          <div className="mt-2 flex items-end justify-between gap-2">
+                            <p className="text-2xl font-bold text-emerald-400">
+                              {game.cheapest ? `$${game.cheapest}` : 'No active deal'}
+                            </p>
+
+                            {hasValidNormalPrice ? (
+                              <p className="text-sm text-zinc-400 line-through">
+                                ${game.normalPrice}
+                              </p>
+                            ) : null}
+                          </div>
+
+                          {game.storeID ? (
+                            <div className="mt-3 inline-flex items-center gap-2 rounded-full border border-zinc-700 bg-zinc-950 px-3 py-1 text-xs text-zinc-300">
+                              {getStoreLogo(game.storeID) && (
+                                <img
+                                  src={getStoreLogo(game.storeID)!}
+                                  alt={getStoreName(game.storeID)}
+                                  className="h-4 w-4 object-contain"
+                                />
+                              )}
+                              <span>{getStoreName(game.storeID)}</span>
+                            </div>
+                          ) : null}
+                        </div>
+
+                        <div className="mt-4 grid gap-2">
+                          {hasActiveDeal ? (
+                            <Link
+                              href={`/game/${encodeURIComponent(
+                                game.cheapestDealID || ''
+                              )}?title=${encodeURIComponent(
+                                game.external || ''
+                              )}&thumb=${encodeURIComponent(
+                                game.thumb || ''
+                              )}&salePrice=${encodeURIComponent(
+                                game.cheapest || ''
+                              )}&normalPrice=${encodeURIComponent(
+                                game.normalPrice || ''
+                              )}&dealRating=&savings=${encodeURIComponent(
+                                game.savings || ''
+                              )}&gameID=${encodeURIComponent(
+                                game.gameID
+                              )}&storeID=${encodeURIComponent(game.storeID || '')}`}
+                              className="rounded-xl bg-white px-4 py-2 text-center text-sm font-semibold text-black transition hover:opacity-90"
+                            >
+                              Open game page
+                            </Link>
+                          ) : (
+                            <div className="rounded-xl border border-zinc-800 px-4 py-2 text-center text-sm text-zinc-500">
+                              No active deal right now
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    </article>
+                  )
+                })}
+              </div>
+            ) : (
+              <div className="mt-4 rounded-2xl border border-zinc-800 bg-zinc-950 p-4 text-sm text-zinc-400">
+                No games found.
+              </div>
+            )
+          ) : null}
         </section>
 
         {wishlistMessage && (
@@ -265,69 +542,61 @@ export default function Home() {
           </div>
         )}
 
-        {filteredDeals.length === 0 ? (
-          <div className="rounded-3xl border border-dashed border-zinc-700 bg-zinc-900 p-10 text-center text-zinc-400">
-            No results found. Try adjusting your search.
-          </div>
-        ) : (
-          <>
-            <SectionBlock
-              title="Best Deals"
-              subtitle="Strong overall deals from approved stores."
-              href="/games?page=1&sort=best"
-              deals={bestDeals}
-              userId={userId}
-              savedWishlistIds={savedWishlistIds}
-              setSavedWishlistIds={setSavedWishlistIds}
-              savedAlertIds={savedAlertIds}
-              setSavedAlertIds={setSavedAlertIds}
-              setWishlistMessage={setWishlistMessage}
-              setAlertMessage={setAlertMessage}
-            />
+        <SectionBlock
+          title="Best Deals"
+          subtitle="Strong overall deals from approved stores."
+          href="/games?page=1&sort=best"
+          deals={bestDeals}
+          userId={userId}
+          savedWishlistIds={savedWishlistIds}
+          setSavedWishlistIds={setSavedWishlistIds}
+          savedAlertIds={savedAlertIds}
+          setSavedAlertIds={setSavedAlertIds}
+          setWishlistMessage={setWishlistMessage}
+          setAlertMessage={setAlertMessage}
+        />
 
-            <SectionBlock
-              title="Top Rated Deals"
-              subtitle="Deals from approved stores for games with the strongest review scores."
-              href="/games?page=1&sort=top-rated"
-              deals={topRatedDeals}
-              userId={userId}
-              savedWishlistIds={savedWishlistIds}
-              setSavedWishlistIds={setSavedWishlistIds}
-              savedAlertIds={savedAlertIds}
-              setSavedAlertIds={setSavedAlertIds}
-              setWishlistMessage={setWishlistMessage}
-              setAlertMessage={setAlertMessage}
-            />
+        <SectionBlock
+          title="Top Rated Deals"
+          subtitle="Deals from approved stores for games with the strongest review scores."
+          href="/games?page=1&sort=top-rated"
+          deals={topRatedDeals}
+          userId={userId}
+          savedWishlistIds={savedWishlistIds}
+          setSavedWishlistIds={setSavedWishlistIds}
+          savedAlertIds={savedAlertIds}
+          setSavedAlertIds={setSavedAlertIds}
+          setWishlistMessage={setWishlistMessage}
+          setAlertMessage={setAlertMessage}
+        />
 
-            <SectionBlock
-              title="Biggest Discounts"
-              subtitle="The highest discounts from approved stores."
-              href="/games?page=1&sort=biggest-discount"
-              deals={biggestDiscounts}
-              userId={userId}
-              savedWishlistIds={savedWishlistIds}
-              setSavedWishlistIds={setSavedWishlistIds}
-              savedAlertIds={savedAlertIds}
-              setSavedAlertIds={setSavedAlertIds}
-              setWishlistMessage={setWishlistMessage}
-              setAlertMessage={setAlertMessage}
-            />
+        <SectionBlock
+          title="Biggest Discounts"
+          subtitle="The highest discounts from approved stores."
+          href="/games?page=1&sort=biggest-discount"
+          deals={biggestDiscounts}
+          userId={userId}
+          savedWishlistIds={savedWishlistIds}
+          setSavedWishlistIds={setSavedWishlistIds}
+          savedAlertIds={savedAlertIds}
+          setSavedAlertIds={setSavedAlertIds}
+          setWishlistMessage={setWishlistMessage}
+          setAlertMessage={setAlertMessage}
+        />
 
-            <SectionBlock
-              title="Latest Deals"
-              subtitle="Fresh deals from approved stores."
-              href="/games?page=1&sort=latest"
-              deals={visibleDeals}
-              userId={userId}
-              savedWishlistIds={savedWishlistIds}
-              setSavedWishlistIds={setSavedWishlistIds}
-              savedAlertIds={savedAlertIds}
-              setSavedAlertIds={setSavedAlertIds}
-              setWishlistMessage={setWishlistMessage}
-              setAlertMessage={setAlertMessage}
-            />
-          </>
-        )}
+        <SectionBlock
+          title="Latest Deals"
+          subtitle="Fresh deals from approved stores."
+          href="/games?page=1&sort=latest"
+          deals={visibleDeals}
+          userId={userId}
+          savedWishlistIds={savedWishlistIds}
+          setSavedWishlistIds={setSavedWishlistIds}
+          savedAlertIds={savedAlertIds}
+          setSavedAlertIds={setSavedAlertIds}
+          setWishlistMessage={setWishlistMessage}
+          setAlertMessage={setAlertMessage}
+        />
       </section>
     </main>
   )

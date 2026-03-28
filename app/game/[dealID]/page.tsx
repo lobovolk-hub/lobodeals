@@ -5,6 +5,7 @@ import { useParams, useSearchParams } from 'next/navigation'
 import { supabase } from '@/lib/supabaseClient'
 import { getStoreLogo, getStoreName } from '@/lib/storeMap'
 import { getPlatformLabel } from '@/lib/platformMap'
+import RegionNotice from '@/app/components/RegionNotice'
 
 type Game = {
   dealID: string
@@ -351,6 +352,10 @@ export default function GamePage() {
 
       <section className="relative mx-auto max-w-6xl px-4 py-12 sm:px-6">
         <div className="rounded-3xl border border-zinc-800 bg-zinc-900/90 p-6 backdrop-blur">
+          <div className="mb-6">
+            <RegionNotice />
+          </div>
+
           <div className="grid gap-6 lg:grid-cols-[320px_1fr]">
             <div>
               <img

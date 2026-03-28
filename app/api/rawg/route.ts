@@ -1,249 +1,260 @@
-import { createClient } from '@supabase/supabase-js'
+export const runtime = 'nodejs'
 
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY!
-)
-
-type RawgSearchGame = {
+type RawgSearchResult = {
   id: number
   name: string
   slug: string
+  released: string | null
+  background_image: string | null
+  platforms?: { platform?: { name?: string } }[]
 }
 
 type RawgDetail = {
-  id: number
   name: string
-  slug: string
-  description_raw: string
-  background_image: string
-  rating: number
-  metacritic: number | null
-  released: string
+  description_raw?: string
+  background_image?: string | null
+  rating?: number
+  metacritic?: number | null
+  released?: string
   genres?: { name: string }[]
-  platforms?: { platform: { name: string } }[]
+  platforms?: { platform?: { name?: string } }[]
 }
 
 type RawgScreenshot = {
   image: string
 }
 
+const detailCache = new Map<
+  string,
+  { expiresAt: number; data: unknown | null }
+>()
+
+const RAWG_TTL_MS = 1000 * 60 * 60 * 12
+
+const TITLE_ALIASES: Record<string, string> = {
+  'god of war': 'god of war (2018)',
+}
+
 function normalizeTitle(value: string) {
   return value
     .toLowerCase()
-    .trim()
-    .replace(/[:\-–—]/g, ' ')
-    .replace(/\b(edition|collection|bundle|complete|ultimate|definitive|goty|game of the year)\b/g, ' ')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(
+      /\b(digital|deluxe|edition|ultimate|complete|standard|bundle|collection|remastered|director'?s cut|game of the year|goty)\b/g,
+      ' '
+    )
+    .replace(/[^\w\s]/g, ' ')
     .replace(/\s+/g, ' ')
     .trim()
 }
 
-function scoreCandidate(inputTitle: string, candidateName: string) {
-  const inputRaw = inputTitle.trim().toLowerCase()
-  const candidateRaw = candidateName.trim().toLowerCase()
+function inferExpectedPlatforms(storeID: string | null) {
+  if (!storeID) return []
 
-  const inputNorm = normalizeTitle(inputTitle)
-  const candidateNorm = normalizeTitle(candidateName)
-
-  if (candidateRaw === inputRaw) return 100
-  if (candidateNorm === inputNorm) return 95
-  if (candidateRaw.startsWith(inputRaw)) return 85
-  if (candidateNorm.startsWith(inputNorm)) return 80
-  if (candidateRaw.includes(inputRaw)) return 70
-  if (candidateNorm.includes(inputNorm)) return 65
-  if (inputNorm.includes(candidateNorm)) return 55
-
-  const inputWords = new Set(inputNorm.split(' ').filter(Boolean))
-  const candidateWords = new Set(candidateNorm.split(' ').filter(Boolean))
-
-  let overlap = 0
-  for (const word of inputWords) {
-    if (candidateWords.has(word)) overlap += 1
+  // PC stores in tu proyecto actual
+  if (['1', '3', '7', '8', '11', '13', '15', '25'].includes(storeID)) {
+    return ['pc', 'linux', 'macos', 'mac', 'windows', 'steam']
   }
 
-  if (overlap === 0) return 0
+  return []
+}
 
-  const ratio = overlap / Math.max(inputWords.size, candidateWords.size)
-  return Math.round(ratio * 50)
+function candidatePlatformNames(candidate: RawgSearchResult) {
+  return Array.isArray(candidate.platforms)
+    ? candidate.platforms
+        .map((p) => p.platform?.name?.toLowerCase() || '')
+        .filter(Boolean)
+    : []
+}
+
+function scoreCandidate(
+  rawTitle: string,
+  candidate: RawgSearchResult,
+  expectedPlatforms: string[]
+) {
+  const normalizedQuery = normalizeTitle(rawTitle)
+  const aliasQuery = TITLE_ALIASES[normalizedQuery] || normalizedQuery
+  const normalizedCandidate = normalizeTitle(candidate.name || '')
+  const platforms = candidatePlatformNames(candidate)
+
+  let score = 0
+
+  // Texto
+  if (normalizedCandidate === aliasQuery) score += 150
+  else if (normalizedCandidate === normalizedQuery) score += 100
+  else if (normalizedCandidate.startsWith(aliasQuery)) score += 60
+  else if (normalizedCandidate.startsWith(normalizedQuery)) score += 40
+  else if (normalizedCandidate.includes(aliasQuery)) score += 30
+  else if (normalizedCandidate.includes(normalizedQuery)) score += 20
+
+  // Favorecer plataformas esperadas
+  if (expectedPlatforms.length > 0) {
+    const hasExpected = expectedPlatforms.some((expected) =>
+      platforms.some((platform) => platform.includes(expected))
+    )
+
+    if (hasExpected) score += 45
+    else score -= 40
+  }
+
+  // Penalizar casos raros web-only para títulos famosos ambiguos
+  if (
+    normalizedQuery === 'god of war' &&
+    platforms.length > 0 &&
+    platforms.every((platform) => platform.includes('web'))
+  ) {
+    score -= 120
+  }
+
+  // Favorecer God of War 2018 específicamente
+  if (
+    normalizedQuery === 'god of war' &&
+    (normalizedCandidate === 'god of war 2018' ||
+      normalizedCandidate === 'god of war (2018)' ||
+      normalizedCandidate.includes('2018'))
+  ) {
+    score += 80
+  }
+
+  return score
+}
+
+async function fetchJson(url: string) {
+  const res = await fetch(url, {
+    cache: 'no-store',
+    headers: {
+      Accept: 'application/json',
+      'User-Agent': 'LoboDeals/1.0',
+    },
+  })
+
+  if (!res.ok) {
+    throw new Error(`RAWG request failed with ${res.status}`)
+  }
+
+  return res.json()
 }
 
 export async function GET(request: Request) {
   try {
     const { searchParams } = new URL(request.url)
-    const title = searchParams.get('title')
-    const dealID = searchParams.get('dealID')
+    const rawTitle = searchParams.get('title')?.trim() || ''
+    const storeID = searchParams.get('storeID')?.trim() || ''
     const forceRefresh = searchParams.get('forceRefresh') === '1'
 
-    if (!title) {
-      return Response.json({ error: 'Missing title' }, { status: 400 })
-    }
-
-    if (!dealID) {
-      return Response.json({ error: 'Missing dealID' }, { status: 400 })
+    if (!rawTitle) {
+      return Response.json(null, { status: 200 })
     }
 
     const apiKey = process.env.RAWG_API_KEY
-
     if (!apiKey) {
-      return Response.json({ error: 'Missing RAWG_API_KEY' }, { status: 500 })
+      return Response.json(null, { status: 200 })
     }
 
-    if (!forceRefresh) {
-      const { data: cachedRow, error: cacheError } = await supabase
-        .from('game_metadata')
-        .select('*')
-        .eq('deal_id', dealID)
-        .maybeSingle()
+    const cacheKey = `${rawTitle.toLowerCase()}::${storeID}`
 
-      if (!cacheError && cachedRow) {
-        return Response.json({
-          id: cachedRow.rawg_id,
-          name: cachedRow.title,
-          slug: cachedRow.slug,
-          description: cachedRow.description,
-          background_image: cachedRow.background_image,
-          rating: cachedRow.rating,
-          metacritic: cachedRow.metacritic,
-          released: cachedRow.released,
-          genres: cachedRow.genres || [],
-          platforms: cachedRow.platforms || [],
-          screenshots: cachedRow.screenshots || [],
-        })
+    if (!forceRefresh) {
+      const cached = detailCache.get(cacheKey)
+      if (cached && cached.expiresAt > Date.now()) {
+        return Response.json(cached.data, { status: 200 })
       }
     }
 
-    const searchUrl = `https://api.rawg.io/api/games?key=${apiKey}&search=${encodeURIComponent(title)}&page_size=10`
+    const normalizedTitle = normalizeTitle(rawTitle)
+    const alias = TITLE_ALIASES[normalizedTitle]
+    const expectedPlatforms = inferExpectedPlatforms(storeID)
 
-    const searchRes = await fetch(searchUrl, {
-      cache: 'no-store',
-      headers: {
-        Accept: 'application/json',
-      },
-    })
+    const queryVariants = Array.from(
+      new Set([rawTitle, normalizedTitle, alias].filter(Boolean))
+    )
 
-    if (!searchRes.ok) {
-      const text = await searchRes.text()
-      return Response.json(
-        {
-          error: 'RAWG search failed',
-          status: searchRes.status,
-          body: text.slice(0, 500),
-        },
-        { status: 500 }
-      )
+    let candidates: RawgSearchResult[] = []
+
+    for (const variant of queryVariants) {
+      const searchUrl = `https://api.rawg.io/api/games?key=${apiKey}&search=${encodeURIComponent(
+        variant
+      )}&page_size=10`
+
+      const searchData = await fetchJson(searchUrl)
+      const results = Array.isArray(searchData?.results)
+        ? (searchData.results as RawgSearchResult[])
+        : []
+
+      candidates.push(...results)
     }
 
-    const searchData = await searchRes.json()
+    const deduped = Array.from(
+      new Map(candidates.map((item) => [item.id, item])).values()
+    )
 
-    if (!searchData.results || searchData.results.length === 0) {
-      return Response.json({ error: 'Game not found in RAWG' }, { status: 404 })
+    if (deduped.length === 0) {
+      detailCache.set(cacheKey, {
+        expiresAt: Date.now() + RAWG_TTL_MS,
+        data: null,
+      })
+      return Response.json(null, { status: 200 })
     }
 
-    const rankedResults = (searchData.results as RawgSearchGame[])
-      .map((game) => ({
-        game,
-        score: scoreCandidate(title, game.name),
+    const scored = deduped
+      .map((candidate) => ({
+        candidate,
+        score: scoreCandidate(rawTitle, candidate, expectedPlatforms),
       }))
       .sort((a, b) => b.score - a.score)
 
-    const bestMatch = rankedResults[0]
+    const best = scored[0]?.candidate
 
-    if (!bestMatch || bestMatch.score < 25) {
-      return Response.json({ error: 'No strong RAWG match found' }, { status: 404 })
+    if (!best || scored[0].score < 40) {
+      detailCache.set(cacheKey, {
+        expiresAt: Date.now() + RAWG_TTL_MS,
+        data: null,
+      })
+      return Response.json(null, { status: 200 })
     }
 
-    const game = bestMatch.game
-
-    const detailUrl = `https://api.rawg.io/api/games/${game.id}?key=${apiKey}`
-    const detailRes = await fetch(detailUrl, {
-      cache: 'no-store',
-      headers: {
-        Accept: 'application/json',
-      },
-    })
-
-    if (!detailRes.ok) {
-      const text = await detailRes.text()
-      return Response.json(
-        {
-          error: 'RAWG detail failed',
-          status: detailRes.status,
-          body: text.slice(0, 500),
-        },
-        { status: 500 }
-      )
-    }
-
-    const detailData = (await detailRes.json()) as RawgDetail
-
-    const screenshotsUrl = `https://api.rawg.io/api/games/${game.id}/screenshots?key=${apiKey}&page_size=6`
-    const screenshotsRes = await fetch(screenshotsUrl, {
-      cache: 'no-store',
-      headers: {
-        Accept: 'application/json',
-      },
-    })
+    const detailUrl = `https://api.rawg.io/api/games/${best.id}?key=${apiKey}`
+    const detail = (await fetchJson(detailUrl)) as RawgDetail
 
     let screenshots: string[] = []
-
-    if (screenshotsRes.ok) {
-      const screenshotsData = await screenshotsRes.json()
-      screenshots =
-        screenshotsData.results?.map((shot: RawgScreenshot) => shot.image) || []
+    try {
+      const screenshotsUrl = `https://api.rawg.io/api/games/${best.id}/screenshots?key=${apiKey}&page_size=6`
+      const screenshotsData = await fetchJson(screenshotsUrl)
+      screenshots = Array.isArray(screenshotsData?.results)
+        ? (screenshotsData.results as RawgScreenshot[])
+            .map((shot) => shot.image)
+            .filter(Boolean)
+        : []
+    } catch (error) {
+      console.error('RAWG screenshots error', error)
     }
 
     const payload = {
-      deal_id: dealID,
-      rawg_id: detailData.id,
-      title: detailData.name,
-      slug: detailData.slug,
-      description: detailData.description_raw,
-      background_image: detailData.background_image,
-      rating: detailData.rating,
-      metacritic: detailData.metacritic,
-      released: detailData.released,
-      genres: detailData.genres?.map((g) => g.name) || [],
-      platforms: detailData.platforms?.map((p) => p.platform.name) || [],
+      name: detail.name || best.name || rawTitle,
+      description: detail.description_raw || '',
+      background_image: detail.background_image || best.background_image || '',
+      rating: detail.rating || 0,
+      metacritic: detail.metacritic ?? null,
+      released: detail.released || best.released || '',
+      genres: Array.isArray(detail.genres)
+        ? detail.genres.map((g) => g.name).filter(Boolean)
+        : [],
+      platforms: Array.isArray(detail.platforms)
+        ? detail.platforms
+            .map((p) => p.platform?.name)
+            .filter(Boolean)
+        : [],
       screenshots,
-      updated_at: new Date().toISOString(),
     }
 
-    const { data: existingRow } = await supabase
-      .from('game_metadata')
-      .select('id')
-      .eq('deal_id', dealID)
-      .maybeSingle()
-
-    if (existingRow) {
-      await supabase.from('game_metadata').update(payload).eq('deal_id', dealID)
-    } else {
-      await supabase.from('game_metadata').insert([
-        {
-          ...payload,
-          created_at: new Date().toISOString(),
-        },
-      ])
-    }
-
-    return Response.json({
-      id: detailData.id,
-      name: detailData.name,
-      slug: detailData.slug,
-      description: detailData.description_raw,
-      background_image: detailData.background_image,
-      rating: detailData.rating,
-      metacritic: detailData.metacritic,
-      released: detailData.released,
-      genres: detailData.genres?.map((g) => g.name) || [],
-      platforms: detailData.platforms?.map((p) => p.platform.name) || [],
-      screenshots,
+    detailCache.set(cacheKey, {
+      expiresAt: Date.now() + RAWG_TTL_MS,
+      data: payload,
     })
+
+    return Response.json(payload, { status: 200 })
   } catch (error) {
-    return Response.json(
-      {
-        error: error instanceof Error ? error.message : 'Unknown RAWG error',
-      },
-      { status: 500 }
-    )
+    console.error('api/rawg error', error)
+    return Response.json(null, { status: 200 })
   }
 }

@@ -213,10 +213,10 @@ export default function GamePage() {
       try {
         const rawgRes = await fetch(
           `/api/rawg?dealID=${encodeURIComponent(
-            game.dealID
-          )}&title=${encodeURIComponent(game.title)}${
-            rawgRefreshKey > 0 ? '&forceRefresh=1' : ''
-          }`
+  game.dealID
+)}&title=${encodeURIComponent(game.title)}&storeID=${encodeURIComponent(
+  game.storeID || ''
+)}${rawgRefreshKey > 0 ? '&forceRefresh=1' : ''}`
         )
 
         if (!rawgRes.ok) {

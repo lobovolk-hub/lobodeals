@@ -15,6 +15,7 @@ const geistMono = Geist_Mono({
 })
 
 export const metadata: Metadata = {
+  metadataBase: new URL('https://www.lobodeals.com'),
   title: 'LoboDeals — The best video game deals',
   description: 'Find cheap games, track prices, and create alerts on LoboDeals.',
   openGraph: {

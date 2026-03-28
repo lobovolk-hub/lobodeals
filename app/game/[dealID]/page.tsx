@@ -61,8 +61,7 @@ export default function GamePage() {
   const [heroReady, setHeroReady] = useState(false)
 
   const [userId, setUserId] = useState<string | null>(null)
-  const [isInWishlist, setIsInWishlist] = useState(false)
-  const [hasAlert, setHasAlert] = useState(false)
+  const [isTracked, setIsTracked] = useState(false)
 
   const [rawgMeta, setRawgMeta] = useState<RawgMeta | null>(null)
   const [rawgLoading, setRawgLoading] = useState(true)
@@ -263,29 +262,18 @@ export default function GamePage() {
         setUserId(currentUserId)
 
         if (!currentUserId) {
-          setIsInWishlist(false)
-          setHasAlert(false)
+          setIsTracked(false)
           return
         }
 
-        const { data: wishlist } = await supabase
-          .from('wishlist')
+        const { data: tracked } = await supabase
+          .from('tracked_games')
           .select('deal_id')
           .eq('user_id', currentUserId)
           .eq('deal_id', game.dealID)
 
         if (!cancelled) {
-          setIsInWishlist(!!wishlist && wishlist.length > 0)
-        }
-
-        const { data: alerts } = await supabase
-          .from('alerts')
-          .select('deal_id')
-          .eq('user_id', currentUserId)
-          .eq('deal_id', game.dealID)
-
-        if (!cancelled) {
-          setHasAlert(!!alerts && alerts.length > 0)
+          setIsTracked(!!tracked && tracked.length > 0)
         }
       } catch (error) {
         console.error('Auth state error:', error)
@@ -485,73 +473,34 @@ export default function GamePage() {
                   onClick={async () => {
                     if (!userId || !game) return
 
-                    const res = await fetch('/api/wishlist', {
+                    const res = await fetch('/api/track', {
                       method: 'POST',
                       headers: { 'Content-Type': 'application/json' },
                       body: JSON.stringify({
+                        userId,
                         dealID: game.dealID,
+                        gameID: game.gameID,
                         title: game.title,
+                        thumb: game.thumb,
                         salePrice: game.salePrice,
                         normalPrice: game.normalPrice,
-                        thumb: game.thumb,
-                        userId,
+                        storeID: game.storeID,
                       }),
                     })
 
                     const data = await res.json()
 
-                    if (data.action === 'added') setIsInWishlist(true)
-                    if (data.action === 'removed') setIsInWishlist(false)
+                    if (data.action === 'added') setIsTracked(true)
+                    if (data.action === 'removed') setIsTracked(false)
                   }}
                   disabled={authLoading}
                   className={`rounded-xl px-4 py-3 text-sm font-medium transition active:scale-[0.98] ${
-                    isInWishlist
+                    isTracked
                       ? 'border border-emerald-500/30 bg-emerald-500/10 text-emerald-300'
                       : 'border border-zinc-700 hover:bg-zinc-800'
                   } ${authLoading ? 'opacity-60' : ''}`}
                 >
-                  {authLoading
-                    ? 'Loading...'
-                    : isInWishlist
-                    ? 'Remove from wishlist'
-                    : 'Add to wishlist'}
-                </button>
-
-                <button
-                  onClick={async () => {
-                    if (!userId || !game) return
-
-                    const targetPrice = game.salePrice
-
-                    const res = await fetch('/api/alerts', {
-                      method: 'POST',
-                      headers: { 'Content-Type': 'application/json' },
-                      body: JSON.stringify({
-                        dealID: game.dealID,
-                        title: game.title,
-                        targetPrice,
-                        currentPrice: game.salePrice,
-                        userId,
-                      }),
-                    })
-
-                    const data = await res.json()
-
-                    if (data.action === 'added') setHasAlert(true)
-                    if (data.action === 'removed') setHasAlert(false)
-                  }}
-                  disabled={authLoading}
-                  className={`rounded-xl px-4 py-3 text-sm font-medium transition active:scale-[0.98] ${
-                    hasAlert
-                      ? 'border border-cyan-500/30 bg-cyan-500/10 text-cyan-300'
-                      : 'border border-emerald-500/30 bg-emerald-500/10 text-emerald-300'
-                  } ${authLoading ? 'opacity-60' : ''}`}
-                >
-                  {authLoading
-                    ? 'Loading...'
-                    : hasAlert
-                    ? 'Remove alert'
-                    : 'Create alert'}
+                  {authLoading ? 'Loading...' : isTracked ? 'Tracked game' : 'Track game'}
                 </button>
 
                 <a

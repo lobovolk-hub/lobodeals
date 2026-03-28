@@ -1,35 +1,24 @@
 import type { Metadata } from 'next'
-import { Geist, Geist_Mono } from 'next/font/google'
 import './globals.css'
-import Navbar from './components/Navbar'
-import Footer from './components/Footer'
-
-const geistSans = Geist({
-  variable: '--font-geist-sans',
-  subsets: ['latin'],
-})
-
-const geistMono = Geist_Mono({
-  variable: '--font-geist-mono',
-  subsets: ['latin'],
-})
+import Navbar from '@/app/components/Navbar'
 
 export const metadata: Metadata = {
   metadataBase: new URL('https://www.lobodeals.com'),
   title: 'LoboDeals — The best video game deals',
-  description: 'Find cheap games, track prices, and create alerts on LoboDeals.',
+  description:
+    'Find cheap games, track prices, and explore deals across trusted stores with LoboDeals.',
   openGraph: {
     title: 'LoboDeals — The best video game deals',
     description:
-      'Find cheap games, track prices, and create alerts on LoboDeals.',
-    url: 'https://lobodeals.com',
+      'Find cheap games, track prices, and explore deals across trusted stores with LoboDeals.',
+    url: 'https://www.lobodeals.com',
     siteName: 'LoboDeals',
     images: [
       {
         url: '/og-lobodeals.png',
-        width: 768,
-        height: 512,
-        alt: 'LoboDeals by LoboVolk',
+        width: 1200,
+        height: 630,
+        alt: 'LoboDeals',
       },
     ],
     locale: 'en_US',
@@ -39,8 +28,13 @@ export const metadata: Metadata = {
     card: 'summary_large_image',
     title: 'LoboDeals — The best video game deals',
     description:
-      'Find cheap games, track prices, and create alerts on LoboDeals.',
+      'Find cheap games, track prices, and explore deals across trusted stores with LoboDeals.',
     images: ['/og-lobodeals.png'],
+  },
+  icons: {
+    icon: '/favicon.ico',
+    shortcut: '/favicon.ico',
+    apple: '/favicon.ico',
   },
 }
 
@@ -50,15 +44,11 @@ export default function RootLayout({
   children: React.ReactNode
 }>) {
   return (
-    <html
-      lang="en"
-      className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
-    >
-      <body className="min-h-full flex flex-col bg-zinc-950 text-zinc-100">
-  <Navbar />
-  {children}
-  <Footer />
-</body>
+    <html lang="en">
+      <body>
+        <Navbar />
+        {children}
+      </body>
     </html>
   )
 }

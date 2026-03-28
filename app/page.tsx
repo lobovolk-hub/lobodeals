@@ -43,10 +43,8 @@ export default function Home() {
   const [deals, setDeals] = useState<Deal[]>([])
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState('')
-  const [wishlistMessage, setWishlistMessage] = useState('')
-  const [alertMessage, setAlertMessage] = useState('')
-  const [savedWishlistIds, setSavedWishlistIds] = useState<string[]>([])
-  const [savedAlertIds, setSavedAlertIds] = useState<string[]>([])
+  const [trackMessage, setTrackMessage] = useState('')
+  const [trackedIds, setTrackedIds] = useState<string[]>([])
   const [userId, setUserId] = useState<string | null>(null)
 
   const [searchResults, setSearchResults] = useState<CatalogSuggestion[]>([])
@@ -103,27 +101,17 @@ export default function Home() {
       setUserId(currentUserId)
 
       if (!currentUserId) {
-        setSavedWishlistIds([])
-        setSavedAlertIds([])
+        setTrackedIds([])
         return
       }
 
-      const { data: wishlistData, error: wishlistError } = await supabase
-        .from('wishlist')
+      const { data: trackedData, error: trackedError } = await supabase
+        .from('tracked_games')
         .select('deal_id')
         .eq('user_id', currentUserId)
 
-      if (!wishlistError && wishlistData) {
-        setSavedWishlistIds(wishlistData.map((item) => item.deal_id))
-      }
-
-      const { data: alertsData, error: alertsError } = await supabase
-        .from('alerts')
-        .select('deal_id')
-        .eq('user_id', currentUserId)
-
-      if (!alertsError && alertsData) {
-        setSavedAlertIds(alertsData.map((item) => item.deal_id))
+      if (!trackedError && trackedData) {
+        setTrackedIds(trackedData.map((item) => item.deal_id))
       }
     }
 
@@ -131,7 +119,7 @@ export default function Home() {
     fetchSession()
   }, [])
 
-    useEffect(() => {
+  useEffect(() => {
     const q = search.trim()
 
     if (q.length < 3) {
@@ -143,7 +131,9 @@ export default function Home() {
     const timer = setTimeout(async () => {
       try {
         setSuggestionsLoading(true)
-        const res = await fetch(`/api/catalog-suggest?title=${encodeURIComponent(q)}`)
+        const res = await fetch(
+          `/api/catalog-suggest?title=${encodeURIComponent(q)}`
+        )
         const data = await res.json()
         setSuggestions(Array.isArray(data) ? data.slice(0, 5) : [])
       } catch (error) {
@@ -283,7 +273,8 @@ export default function Home() {
               The best video game deals
             </h1>
             <p className="mt-2 max-w-2xl text-sm text-zinc-400">
-              Find cheap games, track prices, and explore the catalog even when a game is not currently on sale.
+              Find cheap games, track prices, and explore the catalog even when a
+              game is not currently on sale.
             </p>
           </div>
 
@@ -356,7 +347,7 @@ export default function Home() {
               </button>
             </div>
 
-                        {showSuggestions && search.trim().length > 0 ? (
+            {showSuggestions && search.trim().length > 0 ? (
               <div className="mt-3 overflow-hidden rounded-2xl border border-zinc-800 bg-zinc-950">
                 {search.trim().length < 3 ? (
                   <div className="px-4 py-3 text-sm text-zinc-500">
@@ -530,15 +521,9 @@ export default function Home() {
           ) : null}
         </section>
 
-        {wishlistMessage && (
+        {trackMessage && (
           <div className="mb-5 rounded-2xl border border-emerald-500/20 bg-emerald-500/10 px-4 py-3 text-sm font-medium text-emerald-300 shadow-lg shadow-emerald-500/5">
-            {wishlistMessage}
-          </div>
-        )}
-
-        {alertMessage && (
-          <div className="mb-5 rounded-2xl border border-cyan-500/20 bg-cyan-500/10 px-4 py-3 text-sm font-medium text-cyan-300 shadow-lg shadow-cyan-500/5">
-            {alertMessage}
+            {trackMessage}
           </div>
         )}
 
@@ -548,12 +533,9 @@ export default function Home() {
           href="/games?page=1&sort=best"
           deals={bestDeals}
           userId={userId}
-          savedWishlistIds={savedWishlistIds}
-          setSavedWishlistIds={setSavedWishlistIds}
-          savedAlertIds={savedAlertIds}
-          setSavedAlertIds={setSavedAlertIds}
-          setWishlistMessage={setWishlistMessage}
-          setAlertMessage={setAlertMessage}
+          trackedIds={trackedIds}
+          setTrackedIds={setTrackedIds}
+          setTrackMessage={setTrackMessage}
         />
 
         <SectionBlock
@@ -562,12 +544,9 @@ export default function Home() {
           href="/games?page=1&sort=top-rated"
           deals={topRatedDeals}
           userId={userId}
-          savedWishlistIds={savedWishlistIds}
-          setSavedWishlistIds={setSavedWishlistIds}
-          savedAlertIds={savedAlertIds}
-          setSavedAlertIds={setSavedAlertIds}
-          setWishlistMessage={setWishlistMessage}
-          setAlertMessage={setAlertMessage}
+          trackedIds={trackedIds}
+          setTrackedIds={setTrackedIds}
+          setTrackMessage={setTrackMessage}
         />
 
         <SectionBlock
@@ -576,12 +555,9 @@ export default function Home() {
           href="/games?page=1&sort=biggest-discount"
           deals={biggestDiscounts}
           userId={userId}
-          savedWishlistIds={savedWishlistIds}
-          setSavedWishlistIds={setSavedWishlistIds}
-          savedAlertIds={savedAlertIds}
-          setSavedAlertIds={setSavedAlertIds}
-          setWishlistMessage={setWishlistMessage}
-          setAlertMessage={setAlertMessage}
+          trackedIds={trackedIds}
+          setTrackedIds={setTrackedIds}
+          setTrackMessage={setTrackMessage}
         />
 
         <SectionBlock
@@ -590,12 +566,9 @@ export default function Home() {
           href="/games?page=1&sort=latest"
           deals={visibleDeals}
           userId={userId}
-          savedWishlistIds={savedWishlistIds}
-          setSavedWishlistIds={setSavedWishlistIds}
-          savedAlertIds={savedAlertIds}
-          setSavedAlertIds={setSavedAlertIds}
-          setWishlistMessage={setWishlistMessage}
-          setAlertMessage={setAlertMessage}
+          trackedIds={trackedIds}
+          setTrackedIds={setTrackedIds}
+          setTrackMessage={setTrackMessage}
         />
       </section>
     </main>
@@ -608,24 +581,18 @@ function SectionBlock({
   href,
   deals,
   userId,
-  savedWishlistIds,
-  setSavedWishlistIds,
-  savedAlertIds,
-  setSavedAlertIds,
-  setWishlistMessage,
-  setAlertMessage,
+  trackedIds,
+  setTrackedIds,
+  setTrackMessage,
 }: {
   title: string
   subtitle: string
   href: string
   deals: Deal[]
   userId: string | null
-  savedWishlistIds: string[]
-  setSavedWishlistIds: React.Dispatch<React.SetStateAction<string[]>>
-  savedAlertIds: string[]
-  setSavedAlertIds: React.Dispatch<React.SetStateAction<string[]>>
-  setWishlistMessage: React.Dispatch<React.SetStateAction<string>>
-  setAlertMessage: React.Dispatch<React.SetStateAction<string>>
+  trackedIds: string[]
+  setTrackedIds: React.Dispatch<React.SetStateAction<string[]>>
+  setTrackMessage: React.Dispatch<React.SetStateAction<string>>
 }) {
   return (
     <section className="mb-12">
@@ -649,12 +616,9 @@ function SectionBlock({
             key={deal.dealID}
             deal={deal}
             userId={userId}
-            savedWishlistIds={savedWishlistIds}
-            setSavedWishlistIds={setSavedWishlistIds}
-            savedAlertIds={savedAlertIds}
-            setSavedAlertIds={setSavedAlertIds}
-            setWishlistMessage={setWishlistMessage}
-            setAlertMessage={setAlertMessage}
+            trackedIds={trackedIds}
+            setTrackedIds={setTrackedIds}
+            setTrackMessage={setTrackMessage}
           />
         ))}
       </div>
@@ -674,23 +638,17 @@ function MetricCard({ label, value }: { label: string; value: string }) {
 type DealCardProps = {
   deal: Deal
   userId: string | null
-  savedWishlistIds: string[]
-  setSavedWishlistIds: React.Dispatch<React.SetStateAction<string[]>>
-  savedAlertIds: string[]
-  setSavedAlertIds: React.Dispatch<React.SetStateAction<string[]>>
-  setWishlistMessage: React.Dispatch<React.SetStateAction<string>>
-  setAlertMessage: React.Dispatch<React.SetStateAction<string>>
+  trackedIds: string[]
+  setTrackedIds: React.Dispatch<React.SetStateAction<string[]>>
+  setTrackMessage: React.Dispatch<React.SetStateAction<string>>
 }
 
 function DealCard({
   deal,
   userId,
-  savedWishlistIds,
-  setSavedWishlistIds,
-  savedAlertIds,
-  setSavedAlertIds,
-  setWishlistMessage,
-  setAlertMessage,
+  trackedIds,
+  setTrackedIds,
+  setTrackMessage,
 }: DealCardProps) {
   const logo = getStoreLogo(deal.storeID)
   const salePriceNumber = Number(deal.salePrice || 0)
@@ -781,109 +739,56 @@ function DealCard({
           <button
             onClick={async () => {
               try {
-                const res = await fetch('/api/wishlist', {
+                const res = await fetch('/api/track', {
                   method: 'POST',
                   headers: { 'Content-Type': 'application/json' },
                   body: JSON.stringify({
+                    userId,
                     dealID: deal.dealID,
+                    gameID: deal.gameID,
                     title: deal.title,
+                    thumb: deal.thumb,
                     salePrice: deal.salePrice,
                     normalPrice: deal.normalPrice,
-                    thumb: deal.thumb,
-                    userId,
+                    storeID: deal.storeID,
                   }),
                 })
 
                 const data = await res.json()
 
                 if (data.success && data.action === 'removed') {
-                  setWishlistMessage(`Removed from wishlist: ${deal.title}`)
-                  setSavedWishlistIds((prev) =>
-                    prev.filter((id) => id !== deal.dealID)
-                  )
+                  setTrackMessage(`Removed tracked game: ${deal.title}`)
+                  setTrackedIds((prev) => prev.filter((id) => id !== deal.dealID))
                 } else if (data.success && data.action === 'added') {
-                  setWishlistMessage(`Added to wishlist: ${deal.title}`)
-                  setSavedWishlistIds((prev) =>
+                  setTrackMessage(`Tracked game: ${deal.title}`)
+                  setTrackedIds((prev) =>
                     prev.includes(deal.dealID) ? prev : [...prev, deal.dealID]
                   )
                 } else {
-                  setWishlistMessage(`Wishlist error: ${data.error}`)
+                  setTrackMessage(`Track error: ${data.error}`)
                 }
 
-                setTimeout(() => setWishlistMessage(''), 2500)
+                setTimeout(() => setTrackMessage(''), 2500)
               } catch {
-                setWishlistMessage('Wishlist connection error')
-                setTimeout(() => setWishlistMessage(''), 2500)
+                setTrackMessage('Track connection error')
+                setTimeout(() => setTrackMessage(''), 2500)
               }
             }}
             className={`rounded-xl px-4 py-2 text-sm font-medium transition active:scale-[0.98] active:translate-y-[1px] ${
-              savedWishlistIds.includes(deal.dealID)
+              trackedIds.includes(deal.dealID)
                 ? 'border border-emerald-500/30 bg-emerald-500/10 text-emerald-300'
                 : 'border border-zinc-700 text-zinc-100 hover:bg-zinc-800'
             }`}
           >
-            {savedWishlistIds.includes(deal.dealID)
-              ? 'Remove from wishlist'
-              : 'Add to wishlist'}
-          </button>
-
-          <button
-            onClick={async () => {
-              try {
-                const targetPrice = Math.max(
-                  Number(deal.salePrice) - 1,
-                  0.5
-                ).toFixed(2)
-
-                const res = await fetch('/api/alerts', {
-                  method: 'POST',
-                  headers: { 'Content-Type': 'application/json' },
-                  body: JSON.stringify({
-                    dealID: deal.dealID,
-                    title: deal.title,
-                    targetPrice,
-                    currentPrice: deal.salePrice,
-                    userId,
-                  }),
-                })
-
-                const data = await res.json()
-
-                if (data.success && data.action === 'removed') {
-                  setAlertMessage(`Alert removed for ${deal.title}`)
-                  setSavedAlertIds((prev) =>
-                    prev.filter((id) => id !== deal.dealID)
-                  )
-                } else if (data.success && data.action === 'added') {
-                  setAlertMessage(
-                    `Alert created for ${deal.title} at $${targetPrice}`
-                  )
-                  setSavedAlertIds((prev) =>
-                    prev.includes(deal.dealID) ? prev : [...prev, deal.dealID]
-                  )
-                } else {
-                  setAlertMessage(`Alert error: ${data.error}`)
-                }
-
-                setTimeout(() => setAlertMessage(''), 2500)
-              } catch {
-                setAlertMessage('Alerts connection error')
-                setTimeout(() => setAlertMessage(''), 2500)
-              }
-            }}
-            className={`rounded-xl px-4 py-2 text-sm font-medium transition active:scale-[0.98] active:translate-y-[1px] ${
-              savedAlertIds.includes(deal.dealID)
-                ? 'border border-cyan-500/30 bg-cyan-500/10 text-cyan-300'
-                : 'border border-emerald-500/30 bg-emerald-500/10 text-emerald-300 hover:bg-emerald-500/20'
-            }`}
-          >
-            {savedAlertIds.includes(deal.dealID)
-              ? 'Remove alert'
-              : 'Create alert'}
+            {trackedIds.includes(deal.dealID) ? 'Tracked game' : 'Track game'}
           </button>
 
           <a
-            href={`/api/redirect?dealID=${encodeURIComponent(deal.dealID)}&title=${encodeURIComponent(deal.title)}&salePrice=${encodeURIComponent(deal.salePrice)}&normalPrice=${encodeURIComponent(deal.normalPrice)}`}
+            href={`/api/redirect?dealID=${encodeURIComponent(
+              deal.dealID
+            )}&title=${encodeURIComponent(deal.title)}&salePrice=${encodeURIComponent(
+              deal.salePrice
+            )}&normalPrice=${encodeURIComponent(deal.normalPrice)}`}
             target="_blank"
             rel="noopener noreferrer"
             className="rounded-xl bg-white px-4 py-2 text-center text-sm font-semibold text-black transition hover:opacity-90 active:scale-[0.98] active:translate-y-[1px]"

@@ -58,8 +58,8 @@ function PCPageContent() {
   const [deals, setDeals] = useState<Deal[]>([])
   const [loading, setLoading] = useState(true)
   const [userId, setUserId] = useState<string | null>(null)
-  const [savedWishlistIds, setSavedWishlistIds] = useState<string[]>([])
-  const [savedAlertIds, setSavedAlertIds] = useState<string[]>([])
+  const [trackedIds, setTrackedIds] = useState<string[]>([])
+  const [trackMessage, setTrackMessage] = useState('')
   const [searchInput, setSearchInput] = useState(query)
 
   useEffect(() => {
@@ -89,27 +89,17 @@ function PCPageContent() {
       setUserId(currentUserId)
 
       if (!currentUserId) {
-        setSavedWishlistIds([])
-        setSavedAlertIds([])
+        setTrackedIds([])
         return
       }
 
-      const { data: wishlistData } = await supabase
-        .from('wishlist')
+      const { data: trackedData } = await supabase
+        .from('tracked_games')
         .select('deal_id')
         .eq('user_id', currentUserId)
 
-      if (wishlistData) {
-        setSavedWishlistIds(wishlistData.map((item) => item.deal_id))
-      }
-
-      const { data: alertsData } = await supabase
-        .from('alerts')
-        .select('deal_id')
-        .eq('user_id', currentUserId)
-
-      if (alertsData) {
-        setSavedAlertIds(alertsData.map((item) => item.deal_id))
+      if (trackedData) {
+        setTrackedIds(trackedData.map((item) => item.deal_id))
       }
     }
 
@@ -226,13 +216,21 @@ function PCPageContent() {
           </p>
           <h1 className="mt-1 text-3xl font-bold">PC Deals</h1>
           <p className="mt-2 text-zinc-400">
-            Browse approved PC game deals from stores like Steam, GOG, Epic Games Store, Ubisoft Connect, EA, Fanatical, Humble Store, and Green Man Gaming.
+            Browse approved PC game deals from stores like Steam, GOG, Epic Games
+            Store, Ubisoft Connect, EA, Fanatical, Humble Store, and Green Man
+            Gaming.
           </p>
         </header>
 
         <div className="mb-6">
           <RegionNotice />
         </div>
+
+        {trackMessage ? (
+          <div className="mb-5 rounded-2xl border border-emerald-500/20 bg-emerald-500/10 px-4 py-3 text-sm font-medium text-emerald-300">
+            {trackMessage}
+          </div>
+        ) : null}
 
         <div className="mb-6 grid gap-3 lg:grid-cols-[1.4fr_auto]">
           <div className="flex flex-col gap-2 sm:flex-row">
@@ -255,10 +253,26 @@ function PCPageContent() {
           </div>
 
           <div className="flex flex-wrap gap-2">
-            <PriceChip label="All prices" active={priceFilter === 'all'} onClick={() => applyPrice('all')} />
-            <PriceChip label="Under $5" active={priceFilter === 'under-5'} onClick={() => applyPrice('under-5')} />
-            <PriceChip label="Under $10" active={priceFilter === 'under-10'} onClick={() => applyPrice('under-10')} />
-            <PriceChip label="80%+ off" active={priceFilter === 'over-80'} onClick={() => applyPrice('over-80')} />
+            <PriceChip
+              label="All prices"
+              active={priceFilter === 'all'}
+              onClick={() => applyPrice('all')}
+            />
+            <PriceChip
+              label="Under $5"
+              active={priceFilter === 'under-5'}
+              onClick={() => applyPrice('under-5')}
+            />
+            <PriceChip
+              label="Under $10"
+              active={priceFilter === 'under-10'}
+              onClick={() => applyPrice('under-10')}
+            />
+            <PriceChip
+              label="80%+ off"
+              active={priceFilter === 'over-80'}
+              onClick={() => applyPrice('over-80')}
+            />
           </div>
         </div>
 
@@ -274,16 +288,37 @@ function PCPageContent() {
         </div>
 
         <div className="mb-6 flex flex-wrap gap-2">
-          <FilterLink label="All PC Deals" href={buildUrl(1, { sort: 'all' })} active={sort === 'all'} />
-          <FilterLink label="Best Deals" href={buildUrl(1, { sort: 'best' })} active={sort === 'best'} />
-          <FilterLink label="Top Rated" href={buildUrl(1, { sort: 'top-rated' })} active={sort === 'top-rated'} />
-          <FilterLink label="Biggest Discounts" href={buildUrl(1, { sort: 'biggest-discount' })} active={sort === 'biggest-discount'} />
-          <FilterLink label="Latest" href={buildUrl(1, { sort: 'latest' })} active={sort === 'latest'} />
+          <FilterLink
+            label="All PC Deals"
+            href={buildUrl(1, { sort: 'all' })}
+            active={sort === 'all'}
+          />
+          <FilterLink
+            label="Best Deals"
+            href={buildUrl(1, { sort: 'best' })}
+            active={sort === 'best'}
+          />
+          <FilterLink
+            label="Top Rated"
+            href={buildUrl(1, { sort: 'top-rated' })}
+            active={sort === 'top-rated'}
+          />
+          <FilterLink
+            label="Biggest Discounts"
+            href={buildUrl(1, { sort: 'biggest-discount' })}
+            active={sort === 'biggest-discount'}
+          />
+          <FilterLink
+            label="Latest"
+            href={buildUrl(1, { sort: 'latest' })}
+            active={sort === 'latest'}
+          />
         </div>
 
         <div className="mb-8 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
           <p className="text-sm text-zinc-400">
-            Page {safePage} of {totalPages} · {filteredDeals.length} PC game results
+            Page {safePage} of {totalPages} · {filteredDeals.length} PC game
+            results
             {storeFilter !== 'all' ? ` · ${getStoreName(storeFilter)}` : ''}
           </p>
 
@@ -291,7 +326,9 @@ function PCPageContent() {
             <Link
               href={buildUrl(Math.max(1, safePage - 1))}
               className={`rounded-lg border border-zinc-700 px-4 py-2 text-sm transition ${
-                safePage === 1 ? 'pointer-events-none opacity-40' : 'hover:bg-zinc-800'
+                safePage === 1
+                  ? 'pointer-events-none opacity-40'
+                  : 'hover:bg-zinc-800'
               }`}
             >
               Previous
@@ -300,7 +337,9 @@ function PCPageContent() {
             <Link
               href={buildUrl(Math.min(totalPages, safePage + 1))}
               className={`rounded-lg border border-zinc-700 px-4 py-2 text-sm transition ${
-                safePage === totalPages ? 'pointer-events-none opacity-40' : 'hover:bg-zinc-800'
+                safePage === totalPages
+                  ? 'pointer-events-none opacity-40'
+                  : 'hover:bg-zinc-800'
               }`}
             >
               Next
@@ -319,10 +358,9 @@ function PCPageContent() {
                 key={deal.dealID}
                 deal={deal}
                 userId={userId}
-                savedWishlistIds={savedWishlistIds}
-                setSavedWishlistIds={setSavedWishlistIds}
-                savedAlertIds={savedAlertIds}
-                setSavedAlertIds={setSavedAlertIds}
+                trackedIds={trackedIds}
+                setTrackedIds={setTrackedIds}
+                setTrackMessage={setTrackMessage}
               />
             ))}
           </div>
@@ -332,7 +370,9 @@ function PCPageContent() {
           <Link
             href={buildUrl(Math.max(1, safePage - 1))}
             className={`rounded-lg border border-zinc-700 px-4 py-2 text-sm transition ${
-              safePage === 1 ? 'pointer-events-none opacity-40' : 'hover:bg-zinc-800'
+              safePage === 1
+                ? 'pointer-events-none opacity-40'
+                : 'hover:bg-zinc-800'
             }`}
           >
             Previous
@@ -345,7 +385,9 @@ function PCPageContent() {
           <Link
             href={buildUrl(Math.min(totalPages, safePage + 1))}
             className={`rounded-lg border border-zinc-700 px-4 py-2 text-sm transition ${
-              safePage === totalPages ? 'pointer-events-none opacity-40' : 'hover:bg-zinc-800'
+              safePage === totalPages
+                ? 'pointer-events-none opacity-40'
+                : 'hover:bg-zinc-800'
             }`}
           >
             Next
@@ -359,17 +401,15 @@ function PCPageContent() {
 function GameCatalogCard({
   deal,
   userId,
-  savedWishlistIds,
-  setSavedWishlistIds,
-  savedAlertIds,
-  setSavedAlertIds,
+  trackedIds,
+  setTrackedIds,
+  setTrackMessage,
 }: {
   deal: Deal
   userId: string | null
-  savedWishlistIds: string[]
-  setSavedWishlistIds: React.Dispatch<React.SetStateAction<string[]>>
-  savedAlertIds: string[]
-  setSavedAlertIds: React.Dispatch<React.SetStateAction<string[]>>
+  trackedIds: string[]
+  setTrackedIds: React.Dispatch<React.SetStateAction<string[]>>
+  setTrackMessage: React.Dispatch<React.SetStateAction<string>>
 }) {
   const discount = Math.round(Number(deal.savings))
   const logo = getStoreLogo(deal.storeID)
@@ -460,75 +500,59 @@ function GameCatalogCard({
         <div className="grid gap-2">
           <button
             onClick={async () => {
-              if (!userId) return
-              const res = await fetch('/api/wishlist', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                  dealID: deal.dealID,
-                  title: deal.title,
-                  salePrice: deal.salePrice,
-                  normalPrice: deal.normalPrice,
-                  thumb: deal.thumb,
-                  userId,
-                }),
-              })
-              const data = await res.json()
-              if (data.action === 'removed') {
-                setSavedWishlistIds((prev) => prev.filter((id) => id !== deal.dealID))
-              } else if (data.action === 'added') {
-                setSavedWishlistIds((prev) =>
-                  prev.includes(deal.dealID) ? prev : [...prev, deal.dealID]
-                )
+              try {
+                const res = await fetch('/api/track', {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({
+                    userId,
+                    dealID: deal.dealID,
+                    gameID: deal.gameID,
+                    title: deal.title,
+                    thumb: deal.thumb,
+                    salePrice: deal.salePrice,
+                    normalPrice: deal.normalPrice,
+                    storeID: deal.storeID,
+                  }),
+                })
+
+                const data = await res.json()
+
+                if (data.success && data.action === 'removed') {
+                  setTrackMessage(`Removed tracked game: ${deal.title}`)
+                  setTrackedIds((prev) => prev.filter((id) => id !== deal.dealID))
+                } else if (data.success && data.action === 'added') {
+                  setTrackMessage(`Tracked game: ${deal.title}`)
+                  setTrackedIds((prev) =>
+                    prev.includes(deal.dealID) ? prev : [...prev, deal.dealID]
+                  )
+                } else {
+                  setTrackMessage(`Track error: ${data.error}`)
+                }
+
+                setTimeout(() => setTrackMessage(''), 2500)
+              } catch {
+                setTrackMessage('Track connection error')
+                setTimeout(() => setTrackMessage(''), 2500)
               }
             }}
             className={`rounded-xl px-4 py-2 text-sm font-medium transition active:scale-[0.98] active:translate-y-[1px] ${
-              savedWishlistIds.includes(deal.dealID)
+              trackedIds.includes(deal.dealID)
                 ? 'border border-emerald-500/30 bg-emerald-500/10 text-emerald-300'
                 : 'border border-zinc-700 text-zinc-100 hover:bg-zinc-800'
             }`}
           >
-            {savedWishlistIds.includes(deal.dealID)
-              ? 'Remove from wishlist'
-              : 'Add to wishlist'}
-          </button>
-
-          <button
-            onClick={async () => {
-              if (!userId) return
-              const res = await fetch('/api/alerts', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                  dealID: deal.dealID,
-                  title: deal.title,
-                  targetPrice: deal.salePrice,
-                  currentPrice: deal.salePrice,
-                  userId,
-                }),
-              })
-              const data = await res.json()
-              if (data.action === 'removed') {
-                setSavedAlertIds((prev) => prev.filter((id) => id !== deal.dealID))
-              } else if (data.action === 'added') {
-                setSavedAlertIds((prev) =>
-                  prev.includes(deal.dealID) ? prev : [...prev, deal.dealID]
-                )
-              }
-            }}
-            className={`rounded-xl px-4 py-2 text-sm font-medium transition active:scale-[0.98] active:translate-y-[1px] ${
-              savedAlertIds.includes(deal.dealID)
-                ? 'border border-cyan-500/30 bg-cyan-500/10 text-cyan-300'
-                : 'border border-emerald-500/30 bg-emerald-500/10 text-emerald-300 hover:bg-emerald-500/20'
-            }`}
-          >
-            {savedAlertIds.includes(deal.dealID)
-              ? 'Remove alert'
-              : 'Create alert'}
+            {trackedIds.includes(deal.dealID) ? 'Tracked game' : 'Track game'}
           </button>
 
           <a
-            href={`/api/redirect?dealID=${encodeURIComponent(deal.dealID)}&title=${encodeURIComponent(deal.title)}&salePrice=${encodeURIComponent(deal.salePrice)}&normalPrice=${encodeURIComponent(deal.normalPrice)}`}
+            href={`/api/redirect?dealID=${encodeURIComponent(
+              deal.dealID
+            )}&title=${encodeURIComponent(
+              deal.title
+            )}&salePrice=${encodeURIComponent(
+              deal.salePrice
+            )}&normalPrice=${encodeURIComponent(deal.normalPrice)}`}
             target="_blank"
             rel="noopener noreferrer"
             className="rounded-xl bg-white px-4 py-2 text-center text-sm font-semibold text-black transition hover:opacity-90 active:scale-[0.98] active:translate-y-[1px]"

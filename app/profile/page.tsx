@@ -14,8 +14,7 @@ import {
 export default function ProfilePage() {
   const [loading, setLoading] = useState(true)
   const [userEmail, setUserEmail] = useState<string | null>(null)
-  const [wishlistCount, setWishlistCount] = useState(0)
-  const [alertsCount, setAlertsCount] = useState(0)
+  const [trackedCount, setTrackedCount] = useState(0)
   const [region, setRegion] = useState<RegionCode>('GLOBAL')
 
   useEffect(() => {
@@ -65,23 +64,16 @@ export default function ProfilePage() {
         setUserEmail(currentUserEmail)
 
         if (!currentUserId) {
-          setWishlistCount(0)
-          setAlertsCount(0)
+          setTrackedCount(0)
           return
         }
 
-        const { count: wishlistTotal } = await supabase
-          .from('wishlist')
+        const { count } = await supabase
+          .from('tracked_games')
           .select('*', { count: 'exact', head: true })
           .eq('user_id', currentUserId)
 
-        const { count: alertsTotal } = await supabase
-          .from('alerts')
-          .select('*', { count: 'exact', head: true })
-          .eq('user_id', currentUserId)
-
-        setWishlistCount(wishlistTotal || 0)
-        setAlertsCount(alertsTotal || 0)
+        setTrackedCount(count || 0)
       } catch (error) {
         console.error(error)
       } finally {
@@ -113,8 +105,7 @@ export default function ProfilePage() {
           <div className="rounded-3xl border border-zinc-800 bg-zinc-900 p-8">
             <h2 className="text-xl font-bold">Sign in to view your profile</h2>
             <p className="mt-2 text-zinc-400">
-              Your profile will show tracked games, active alerts, and future
-              account preferences.
+              Your profile will show tracked games and future account preferences.
             </p>
 
             <div className="mt-5">
@@ -147,31 +138,22 @@ export default function ProfilePage() {
               </div>
             </div>
 
-            <div className="mb-8 grid gap-3 sm:grid-cols-3">
+            <div className="mb-8 grid gap-3 sm:grid-cols-2">
               <div className="rounded-2xl border border-zinc-800 bg-zinc-900 p-4">
                 <p className="text-xs uppercase tracking-wider text-zinc-500">
-                  Saved games
+                  Tracked games
                 </p>
                 <p className="mt-2 text-2xl font-bold text-emerald-300">
-                  {loading ? '...' : wishlistCount}
+                  {loading ? '...' : trackedCount}
                 </p>
               </div>
 
               <div className="rounded-2xl border border-zinc-800 bg-zinc-900 p-4">
                 <p className="text-xs uppercase tracking-wider text-zinc-500">
-                  Alerts active
-                </p>
-                <p className="mt-2 text-2xl font-bold text-cyan-300">
-                  {loading ? '...' : alertsCount}
-                </p>
-              </div>
-
-              <div className="rounded-2xl border border-zinc-800 bg-zinc-900 p-4">
-                <p className="text-xs uppercase tracking-wider text-zinc-500">
-                  Total tracked intent
+                  Tracking status
                 </p>
                 <p className="mt-2 text-2xl font-bold text-zinc-100">
-                  {loading ? '...' : wishlistCount + alertsCount}
+                  {loading ? '...' : trackedCount > 0 ? 'Active' : 'Starting'}
                 </p>
               </div>
             </div>
@@ -207,8 +189,8 @@ export default function ProfilePage() {
               <div className="rounded-3xl border border-zinc-800 bg-zinc-900 p-6">
                 <h2 className="text-lg font-bold">What comes next</h2>
                 <p className="mt-3 text-sm leading-6 text-zinc-400">
-                  This profile is the base for future preferences like favorite
-                  platform, improved notifications, and deeper account settings.
+                  This profile is the base for future preferences like email notifications,
+                  favorite platforms, and deeper account settings.
                 </p>
 
                 <div className="mt-4 flex flex-wrap gap-2">
@@ -217,7 +199,7 @@ export default function ProfilePage() {
                   </span>
 
                   <span className="rounded-full border border-zinc-700 bg-zinc-800 px-3 py-1 text-xs text-zinc-300">
-                    Tracking-ready
+                    Track-ready
                   </span>
 
                   <span className="rounded-full border border-zinc-700 bg-zinc-800 px-3 py-1 text-xs text-zinc-300">

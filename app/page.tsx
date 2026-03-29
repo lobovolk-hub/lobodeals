@@ -987,10 +987,10 @@ function DealCard({
                 const data = await res.json()
 
                 if (data.success && data.action === 'removed') {
-                  pushTrackMessage(setTrackMessage, `Removed from tracked: ${item.title}`)
+                  pushTrackMessage(setTrackMessage, `Removed from tracked: ${deal.title}`)
                   setTrackedIds((prev) => prev.filter((id) => id !== deal.dealID))
                 } else if (data.success && data.action === 'added') {
-                  pushTrackMessage(setTrackMessage, `Added to tracked: ${item.title}`)
+                  pushTrackMessage(setTrackMessage, `Added to tracked: ${deal.title}`)
                   setTrackedIds((prev) =>
                     prev.includes(deal.dealID) ? prev : [...prev, deal.dealID]
                   )

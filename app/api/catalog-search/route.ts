@@ -56,7 +56,7 @@ function getServiceSupabase() {
 }
 
 function makeCacheKey(title: string) {
-  return `catalog_search::${title.toLowerCase().trim()}`
+  return `catalog_search_v2::${title.toLowerCase().trim()}`
 }
 
 function isFresh(updatedAt: string, maxAgeMs: number) {
@@ -91,6 +91,21 @@ async function writeCache(cacheKey: string, payload: CatalogSearchResult[]) {
   if (error) throw error
 }
 
+function stripUnapprovedDealFields(game: CheapSharkGame): CatalogSearchResult {
+  return {
+    gameID: game.gameID,
+    steamAppID: game.steamAppID || '',
+    external: game.external || '',
+    internalName: game.internalName || '',
+    thumb: game.thumb || '',
+    cheapest: '',
+    cheapestDealID: '',
+    normalPrice: '',
+    storeID: '',
+    savings: '',
+  }
+}
+
 async function enrichGame(game: CheapSharkGame): Promise<CatalogSearchResult> {
   try {
     const res = await fetch(
@@ -107,9 +122,7 @@ async function enrichGame(game: CheapSharkGame): Promise<CatalogSearchResult> {
     )
 
     if (!res.ok) {
-      return {
-        ...game,
-      }
+      return stripUnapprovedDealFields(game)
     }
 
     const detail = (await res.json()) as CheapSharkGameDetail
@@ -122,23 +135,23 @@ async function enrichGame(game: CheapSharkGame): Promise<CatalogSearchResult> {
     const bestApprovedDeal = approvedDeals[0]
 
     if (!bestApprovedDeal) {
-      return {
-        ...game,
-      }
+      return stripUnapprovedDealFields(game)
     }
 
     return {
-      ...game,
-      cheapest: bestApprovedDeal.price || game.cheapest || '',
-      cheapestDealID: bestApprovedDeal.dealID || game.cheapestDealID || '',
+      gameID: game.gameID,
+      steamAppID: game.steamAppID || '',
+      external: game.external || '',
+      internalName: game.internalName || '',
+      thumb: game.thumb || '',
+      cheapest: bestApprovedDeal.price || '',
+      cheapestDealID: bestApprovedDeal.dealID || '',
       normalPrice: bestApprovedDeal.retailPrice || '',
       storeID: bestApprovedDeal.storeID || '',
       savings: bestApprovedDeal.savings || '',
     }
   } catch {
-    return {
-      ...game,
-    }
+    return stripUnapprovedDealFields(game)
   }
 }
 

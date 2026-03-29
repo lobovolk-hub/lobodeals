@@ -51,6 +51,13 @@ type SteamSpotlightItem = {
   url: string
 }
 
+type DealsStats = {
+  dealsIndexed: number
+  steamIndexed: number
+  dealsUpdatedAt: string | null
+  steamUpdatedAt: string | null
+}
+
 function pushTrackMessage(
   setTrackMessage: React.Dispatch<React.SetStateAction<string>>,
   message: string
@@ -67,6 +74,13 @@ export default function Home() {
   const [trackMessage, setTrackMessage] = useState('')
   const [trackedIds, setTrackedIds] = useState<string[]>([])
   const [userId, setUserId] = useState<string | null>(null)
+
+  const [dealsStats, setDealsStats] = useState<DealsStats>({
+    dealsIndexed: 0,
+    steamIndexed: 0,
+    dealsUpdatedAt: null,
+    steamUpdatedAt: null,
+  })
 
   const [searchResults, setSearchResults] = useState<CatalogSuggestion[]>([])
   const [searchLoading, setSearchLoading] = useState(false)
@@ -93,6 +107,20 @@ try {
 
         const steamRes = await fetch('/api/steam-spotlight?limit=12')
         const steamData = await steamRes.json()
+
+        try {
+          const statsRes = await fetch('/api/deals-stats')
+          const statsData = await statsRes.json()
+
+          setDealsStats({
+            dealsIndexed: Number(statsData?.dealsIndexed || 0),
+            steamIndexed: Number(statsData?.steamIndexed || 0),
+            dealsUpdatedAt: statsData?.dealsUpdatedAt || null,
+            steamUpdatedAt: statsData?.steamUpdatedAt || null,
+          })
+        } catch (statsError) {
+          console.error('Failed to fetch deals stats', statsError)
+        }
 
         setDeals(Array.isArray(mainDeals) ? mainDeals : [])
         setSteamSpotlight(Array.isArray(steamData) ? steamData : [])
@@ -288,12 +316,26 @@ try {
             <p className="mt-2 max-w-2xl text-sm text-zinc-400">
   Find game deals across a much larger indexed inventory, track what matters, and jump into game pages without leaving the LoboDeals flow too early.
 </p>
+            <p className="mt-3 text-xs text-zinc-500">
+              {dealsStats.dealsIndexed > 0
+                ? `${dealsStats.dealsIndexed} deals currently indexed in cache`
+                : 'Building indexed deal coverage'}
+              {dealsStats.steamIndexed > 0
+                ? ` · ${dealsStats.steamIndexed} Steam offers cached`
+                : ''}
+            </p>
           </div>
 
           <div className="grid gap-3 p-5 md:grid-cols-3">
-            <MetricCard label="Deals indexed" value={String(filteredDeals.length)} />
-<MetricCard label="Steam visible" value={String(steamSpotlight.length)} />
-<MetricCard label="Best discount" value={`${bestDiscount}%`} />
+            <MetricCard
+              label="Deals indexed"
+              value={String(dealsStats.dealsIndexed || filteredDeals.length)}
+            />
+            <MetricCard
+              label="Steam cached"
+              value={String(dealsStats.steamIndexed || steamSpotlight.length)}
+            />
+            <MetricCard label="Best discount" value={`${bestDiscount}%`} />
           </div>
         </header>
 

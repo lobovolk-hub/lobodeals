@@ -18,6 +18,18 @@ type CatalogGame = {
   savings?: string
 }
 
+type SteamCatalogFeatured = {
+  steamAppID: string
+  title: string
+  salePrice: string
+  normalPrice: string
+  savings: string
+  thumb: string
+  storeID: string
+  platform: string
+  url: string
+}
+
 export default function CatalogPage() {
   const [query, setQuery] = useState('')
   const [results, setResults] = useState<CatalogGame[]>([])
@@ -27,6 +39,9 @@ export default function CatalogPage() {
   const [suggestions, setSuggestions] = useState<CatalogGame[]>([])
   const [suggestionsLoading, setSuggestionsLoading] = useState(false)
   const [showSuggestions, setShowSuggestions] = useState(false)
+
+const [steamFeatured, setSteamFeatured] = useState<SteamCatalogFeatured[]>([])
+const [steamFeaturedLoading, setSteamFeaturedLoading] = useState(true)
 
   const suggestionBoxRef = useRef<HTMLDivElement | null>(null)
 
@@ -72,6 +87,62 @@ export default function CatalogPage() {
     }
   }, [])
 
+useEffect(() => {
+  let cancelled = false
+
+  const loadSteamFeatured = async () => {
+    try {
+      setSteamFeaturedLoading(true)
+
+      const res = await fetch('/api/steam-spotlight?limit=8')
+      const data = await res.json()
+
+      if (!cancelled) {
+        setSteamFeatured(Array.isArray(data) ? data.slice(0, 8) : [])
+      }
+    } catch (error) {
+      console.error(error)
+      if (!cancelled) {
+        setSteamFeatured([])
+      }
+    } finally {
+      if (!cancelled) {
+        setSteamFeaturedLoading(false)
+      }
+    }
+  }
+
+  loadSteamFeatured()
+
+  return () => {
+    cancelled = true
+  }
+}, [])
+
+const buildGameHref = (item: CatalogGame) => {
+  if (item.cheapestDealID && item.cheapest) {
+    return `/game/${encodeURIComponent(
+      item.cheapestDealID || ''
+    )}?title=${encodeURIComponent(
+      item.external || ''
+    )}&thumb=${encodeURIComponent(
+      item.thumb || ''
+    )}&salePrice=${encodeURIComponent(
+      item.cheapest || ''
+    )}&normalPrice=${encodeURIComponent(
+      item.normalPrice || ''
+    )}&dealRating=&savings=${encodeURIComponent(
+      item.savings || ''
+    )}&gameID=${encodeURIComponent(
+      item.gameID
+    )}&storeID=${encodeURIComponent(item.storeID || '')}`
+  }
+
+  return `/catalog/${encodeURIComponent(item.gameID)}?title=${encodeURIComponent(
+    item.external || ''
+  )}&thumb=${encodeURIComponent(item.thumb || '')}`
+}
+
   const runSearch = async () => {
     if (!query.trim()) return
 
@@ -102,8 +173,8 @@ export default function CatalogPage() {
           </p>
           <h1 className="mt-1 text-3xl font-bold">All Games Search</h1>
           <p className="mt-2 text-zinc-400">
-            Search games even if they are not currently on sale.
-          </p>
+  Search the catalog even when a game is not on sale, or jump into featured Steam pages right away.
+</p>
         </header>
 
         <div className="mb-6">
@@ -146,35 +217,18 @@ export default function CatalogPage() {
                 </div>
               ) : suggestions.length > 0 ? (
                 suggestions.map((item) => {
-                  const href =
-                    item.cheapestDealID && item.cheapest
-                      ? `/game/${encodeURIComponent(
-                          item.cheapestDealID || ''
-                        )}?title=${encodeURIComponent(
-                          item.external || ''
-                        )}&thumb=${encodeURIComponent(
-                          item.thumb || ''
-                        )}&salePrice=${encodeURIComponent(
-                          item.cheapest || ''
-                        )}&normalPrice=${encodeURIComponent(
-                          item.normalPrice || ''
-                        )}&dealRating=&savings=${encodeURIComponent(
-                          item.savings || ''
-                        )}&gameID=${encodeURIComponent(
-                          item.gameID
-                        )}&storeID=${encodeURIComponent(item.storeID || '')}`
-                      : '#'
+  const href = buildGameHref(item)
 
-                  return (
-                    <button
-                      key={item.gameID}
-                      type="button"
-                      onClick={() => {
-                        setQuery(item.external || '')
-                        setShowSuggestions(false)
-                      }}
-                      className="flex w-full items-center gap-3 border-t border-zinc-800 px-4 py-3 text-left transition first:border-t-0 hover:bg-zinc-800"
-                    >
+  return (
+    <Link
+      key={item.gameID}
+      href={href}
+      onClick={() => {
+        setQuery(item.external || '')
+        setShowSuggestions(false)
+      }}
+      className="flex w-full items-center gap-3 border-t border-zinc-800 px-4 py-3 text-left transition first:border-t-0 hover:bg-zinc-800"
+    >
                       <div className="h-12 w-12 shrink-0 overflow-hidden rounded-xl bg-zinc-800">
                         {item.thumb ? (
                           <img
@@ -196,16 +250,10 @@ export default function CatalogPage() {
                         </p>
                       </div>
 
-                      {item.cheapestDealID && item.cheapest ? (
-                        <Link
-                          href={href}
-                          onClick={(e) => e.stopPropagation()}
-                          className="rounded-lg border border-zinc-700 px-3 py-2 text-xs text-zinc-200 transition hover:bg-zinc-700"
-                        >
-                          Open
-                        </Link>
-                      ) : null}
-                    </button>
+                      <span className="rounded-lg border border-zinc-700 px-3 py-2 text-xs text-zinc-200 transition">
+  Open
+</span>
+                    </Link>
                   )
                 })
               ) : (
@@ -222,6 +270,128 @@ export default function CatalogPage() {
             Searching catalog...
           </div>
         )}
+
+{!searched ? (
+  <section className="mb-10">
+    <div className="mb-4 flex items-center justify-between gap-3">
+      <div>
+        <h2 className="text-xl font-bold text-white">Steam featured</h2>
+        <p className="mt-1 text-sm text-zinc-400">
+          Quick entry points from the Steam layer while the wider catalog keeps growing.
+        </p>
+      </div>
+
+      <Link
+        href="/pc?sort=steam-spotlight"
+        className="text-sm font-medium text-emerald-300 transition hover:text-emerald-200"
+      >
+        View Steam Spotlight
+      </Link>
+    </div>
+
+    {steamFeaturedLoading ? (
+      <div className="rounded-2xl border border-zinc-800 bg-zinc-900 p-4 text-sm text-zinc-400">
+        Loading featured Steam games...
+      </div>
+    ) : steamFeatured.length === 0 ? (
+      <div className="rounded-2xl border border-zinc-800 bg-zinc-900 p-4 text-sm text-zinc-400">
+        No featured Steam games available right now.
+      </div>
+    ) : (
+      <div className="grid grid-cols-2 gap-5 lg:grid-cols-4">
+        {steamFeatured.map((item) => {
+          const salePrice = Number(item.salePrice || 0)
+          const normalPrice = Number(item.normalPrice || 0)
+          const hasValidNormalPrice =
+            !Number.isNaN(normalPrice) &&
+            normalPrice > 0 &&
+            normalPrice > salePrice
+
+          const href = `/game/${encodeURIComponent(
+            `steam-${item.steamAppID}`
+          )}?title=${encodeURIComponent(item.title)}&thumb=${encodeURIComponent(
+            item.thumb
+          )}&salePrice=${encodeURIComponent(
+            item.salePrice
+          )}&normalPrice=${encodeURIComponent(
+            item.normalPrice
+          )}&dealRating=&metacriticScore=&savings=${encodeURIComponent(
+            item.savings
+          )}&storeID=${encodeURIComponent(
+            item.storeID || '1'
+          )}&gameID=&steamAppID=${encodeURIComponent(
+            item.steamAppID
+          )}&steamUrl=${encodeURIComponent(
+            item.url
+          )}&source=${encodeURIComponent('steam-spotlight')}`
+
+          return (
+            <article
+              key={item.steamAppID}
+              className="overflow-hidden rounded-3xl border border-zinc-800 bg-zinc-900 shadow-lg"
+            >
+              <Link href={href} className="block h-32 w-full bg-zinc-800">
+                {item.thumb ? (
+                  <img
+                    src={item.thumb}
+                    alt={item.title}
+                    className="h-full w-full object-cover"
+                  />
+                ) : null}
+              </Link>
+
+              <div className="p-4">
+                <Link href={href}>
+                  <h2 className="line-clamp-2 text-base font-bold transition hover:text-emerald-300">
+                    {item.title}
+                  </h2>
+                </Link>
+
+                <div className="mt-3 rounded-2xl border border-zinc-800 bg-zinc-950 p-3">
+                  <p className="text-xs uppercase tracking-wider text-zinc-500">
+                    Featured Steam price
+                  </p>
+
+                  <div className="mt-2 flex items-end justify-between gap-2">
+                    <p className="text-2xl font-bold text-emerald-400">
+                      ${item.salePrice}
+                    </p>
+
+                    {hasValidNormalPrice ? (
+                      <p className="text-sm text-zinc-400 line-through">
+                        ${item.normalPrice}
+                      </p>
+                    ) : null}
+                  </div>
+
+                  <div className="mt-3 inline-flex items-center gap-2 rounded-full border border-zinc-700 bg-zinc-900 px-3 py-1 text-xs text-zinc-300">
+                    {getStoreLogo(item.storeID) && (
+                      <img
+                        src={getStoreLogo(item.storeID)!}
+                        alt={getStoreName(item.storeID)}
+                        className="h-4 w-4 object-contain"
+                      />
+                    )}
+                    <span>{getStoreName(item.storeID)}</span>
+                  </div>
+                </div>
+
+                <div className="mt-4 grid gap-2">
+                  <Link
+                    href={href}
+                    className="rounded-xl bg-white px-4 py-2 text-center text-sm font-semibold text-black transition hover:opacity-90"
+                  >
+                    Open game page
+                  </Link>
+                </div>
+              </div>
+            </article>
+          )
+        })}
+      </div>
+    )}
+  </section>
+) : null}
 
         {!loading && searched && results.length === 0 && (
           <div className="rounded-2xl border border-zinc-800 bg-zinc-900 p-4 text-sm text-zinc-400">

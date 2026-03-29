@@ -39,6 +39,13 @@ type SteamSpotlightItem = {
   url: string
 }
 
+type DealsStats = {
+  dealsIndexed: number
+  steamIndexed: number
+  dealsUpdatedAt: string | null
+  steamUpdatedAt: string | null
+}
+
 const PAGE_SIZE = 36
 
 const STEAM_PREVIEW_LIMIT = 4
@@ -110,6 +117,12 @@ function PCPageContent() {
   const [userId, setUserId] = useState<string | null>(null)
   const [trackedIds, setTrackedIds] = useState<string[]>([])
   const [trackMessage, setTrackMessage] = useState('')
+  const [dealsStats, setDealsStats] = useState<DealsStats>({
+    dealsIndexed: 0,
+    steamIndexed: 0,
+    dealsUpdatedAt: null,
+    steamUpdatedAt: null,
+  })
   const [searchInput, setSearchInput] = useState(query)
 
   useEffect(() => {
@@ -119,16 +132,24 @@ function PCPageContent() {
   useEffect(() => {
     const fetchDeals = async () => {
       try {
-        const [dealsRes, steamRes] = await Promise.all([
-          fetch('/api/deals'),
-          fetch('/api/steam-spotlight'),
-        ])
+        const [dealsRes, steamRes, statsRes] = await Promise.all([
+  fetch('/api/deals'),
+  fetch('/api/steam-spotlight'),
+  fetch('/api/deals-stats'),
+])
 
         const dealsData = await dealsRes.json()
         const steamData = await steamRes.json()
+        const statsData = await statsRes.json()
 
         setDeals(Array.isArray(dealsData) ? dealsData : [])
         setSteamSpotlight(Array.isArray(steamData) ? steamData : [])
+        setDealsStats({
+          dealsIndexed: Number(statsData?.dealsIndexed || 0),
+          steamIndexed: Number(statsData?.steamIndexed || 0),
+          dealsUpdatedAt: statsData?.dealsUpdatedAt || null,
+          steamUpdatedAt: statsData?.steamUpdatedAt || null,
+        })
       } catch (error) {
         console.error(error)
         setDeals([])
@@ -403,6 +424,40 @@ const hasActiveFilters =
 </p>
         </header>
 
+        <div className="mb-6 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+          <div className="rounded-2xl border border-zinc-800 bg-zinc-900 p-4">
+            <p className="text-xs uppercase tracking-wider text-zinc-500">
+              PC deals indexed
+            </p>
+            <p className="mt-2 text-2xl font-bold text-white">
+              {dealsStats.dealsIndexed || deals.length}
+            </p>
+          </div>
+
+          <div className="rounded-2xl border border-zinc-800 bg-zinc-900 p-4">
+            <p className="text-xs uppercase tracking-wider text-zinc-500">
+              Steam offers cached
+            </p>
+            <p className="mt-2 text-2xl font-bold text-white">
+              {dealsStats.steamIndexed || steamSpotlight.length}
+            </p>
+          </div>
+
+          <div className="rounded-2xl border border-zinc-800 bg-zinc-900 p-4">
+            <p className="text-xs uppercase tracking-wider text-zinc-500">
+              Results in this view
+            </p>
+            <p className="mt-2 text-2xl font-bold text-white">{totalItems}</p>
+          </div>
+
+          <div className="rounded-2xl border border-zinc-800 bg-zinc-900 p-4">
+            <p className="text-xs uppercase tracking-wider text-zinc-500">
+              Pages available
+            </p>
+            <p className="mt-2 text-2xl font-bold text-white">{totalPages}</p>
+          </div>
+        </div>
+
         <div className="mb-6">
           <RegionNotice />
         </div>
@@ -524,8 +579,14 @@ const hasActiveFilters =
         <div className="mb-8 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
           <p className="text-sm text-zinc-400">
   Page {safePage} of {totalPages} · {totalItems}{' '}
-  {isSteamSpotlightMode ? 'Steam results' : 'PC results'}
+  {isSteamSpotlightMode ? 'Steam results in this view' : 'PC results in this view'}
   {storeFilter !== 'all' ? ` · ${getStoreName(storeFilter)}` : ''}
+  {!isSteamSpotlightMode && dealsStats.dealsIndexed > 0
+    ? ` · ${dealsStats.dealsIndexed} indexed total`
+    : ''}
+  {isSteamSpotlightMode && dealsStats.steamIndexed > 0
+    ? ` · ${dealsStats.steamIndexed} cached total`
+    : ''}
 </p>
 
           <div className="flex items-center gap-2">

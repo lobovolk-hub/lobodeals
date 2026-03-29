@@ -57,6 +57,65 @@ function SectionLoading({ text }: { text: string }) {
   )
 }
 
+function formatMoney(value?: string | number | null) {
+  const amount = Number(value ?? 0)
+
+  if (!Number.isFinite(amount) || amount <= 0) {
+    return 'N/A'
+  }
+
+  return `$${amount.toFixed(2)}`
+}
+
+function formatHistoricalDate(value?: string | null) {
+  if (!value) return null
+
+  const date = new Date(value)
+
+  if (Number.isNaN(date.getTime())) {
+    return value
+  }
+
+  return date.toLocaleDateString('en-US', {
+    year: 'numeric',
+    month: 'short',
+    day: 'numeric',
+  })
+}
+
+function getReleaseYear(value?: string | null) {
+  if (!value) return 'N/A'
+
+  const date = new Date(value)
+
+  if (Number.isNaN(date.getTime())) {
+    return 'N/A'
+  }
+
+  return String(date.getFullYear())
+}
+
+function getReleaseLabel(value?: string | null) {
+  if (!value) return 'No release date available'
+
+  const date = new Date(value)
+
+  if (Number.isNaN(date.getTime())) {
+    return value
+  }
+
+  return date.toLocaleDateString('en-US', {
+    year: 'numeric',
+    month: 'short',
+    day: 'numeric',
+  })
+}
+
+function cleanDescription(text?: string) {
+  if (!text) return ''
+  return text.trim()
+}
+
 export default function GamePage() {
   const params = useParams()
   const searchParams = useSearchParams()
@@ -87,82 +146,82 @@ export default function GamePage() {
 
   useEffect(() => {
     const gameFromUrl: Game = {
-  dealID,
-  title: searchParams.get('title') || 'Game',
-  thumb: searchParams.get('thumb') || '',
-  salePrice: searchParams.get('salePrice') || '0',
-  normalPrice: searchParams.get('normalPrice') || '',
-  dealRating: searchParams.get('dealRating') || '',
-  savings: searchParams.get('savings') || '0',
-  storeID: searchParams.get('storeID') || '',
-  gameID: searchParams.get('gameID') || '',
-  metacriticScore: searchParams.get('metacriticScore') || '',
-  steamAppID: searchParams.get('steamAppID') || '',
-  steamUrl: searchParams.get('steamUrl') || '',
-  source: searchParams.get('source') || '',
-}
+      dealID,
+      title: searchParams.get('title') || 'Game',
+      thumb: searchParams.get('thumb') || '',
+      salePrice: searchParams.get('salePrice') || '0',
+      normalPrice: searchParams.get('normalPrice') || '',
+      dealRating: searchParams.get('dealRating') || '',
+      savings: searchParams.get('savings') || '0',
+      storeID: searchParams.get('storeID') || '',
+      gameID: searchParams.get('gameID') || '',
+      metacriticScore: searchParams.get('metacriticScore') || '',
+      steamAppID: searchParams.get('steamAppID') || '',
+      steamUrl: searchParams.get('steamUrl') || '',
+      source: searchParams.get('source') || '',
+    }
 
     setGame(gameFromUrl)
     setHeroReady(true)
   }, [dealID, searchParams])
 
-useEffect(() => {
-  if (!game) return
+  useEffect(() => {
+    if (!game) return
 
-  const isSteamInternalGame =
-    game.source === 'steam-spotlight' ||
-    game.dealID.startsWith('steam-') ||
-    !!game.steamAppID
+    const isSteamInternalGame =
+      game.source === 'steam-spotlight' ||
+      game.dealID.startsWith('steam-') ||
+      !!game.steamAppID
 
-  if (!isSteamInternalGame || !game.steamAppID) {
-    setSteamDetailLoaded(true)
-    return
-  }
-
-  let cancelled = false
-
-  const loadSteamDetail = async () => {
-    try {
-      const res = await fetch(
-        `/api/steam-game?steamAppID=${encodeURIComponent(game.steamAppID || '')}`
-      )
-
-      if (!res.ok) {
-        if (!cancelled) setSteamDetailLoaded(true)
-        return
-      }
-
-      const data = await res.json()
-
-      if (cancelled) return
-
-      setGame((prev) =>
-        prev
-          ? {
-              ...prev,
-              title: data.title || prev.title,
-              thumb: data.thumb || prev.thumb,
-              salePrice: data.salePrice || prev.salePrice,
-              normalPrice: data.normalPrice || prev.normalPrice,
-              savings: data.savings || prev.savings,
-              storeID: data.storeID || prev.storeID,
-              steamUrl: data.url || prev.steamUrl,
-            }
-          : prev
-      )
-    } catch (error) {
-      console.error('Steam detail error:', error)
-    } finally {
-      if (!cancelled) setSteamDetailLoaded(true)
+    if (!isSteamInternalGame || !game.steamAppID) {
+      setSteamDetailLoaded(true)
+      return
     }
-  }
 
-  loadSteamDetail()
+    let cancelled = false
 
-  return () => {
-    cancelled = true
-  }
-}, [game?.dealID, game?.steamAppID, game?.source])
+    const loadSteamDetail = async () => {
+      try {
+        const res = await fetch(
+          `/api/steam-game?steamAppID=${encodeURIComponent(game.steamAppID || '')}`
+        )
+
+        if (!res.ok) {
+          if (!cancelled) setSteamDetailLoaded(true)
+          return
+        }
+
+        const data = await res.json()
+
+        if (cancelled) return
+
+        setGame((prev) =>
+          prev
+            ? {
+                ...prev,
+                title: data.title || prev.title,
+                thumb: data.thumb || prev.thumb,
+                salePrice: data.salePrice || prev.salePrice,
+                normalPrice: data.normalPrice || prev.normalPrice,
+                savings: data.savings || prev.savings,
+                storeID: data.storeID || prev.storeID,
+                steamUrl: data.url || prev.steamUrl,
+              }
+            : prev
+        )
+      } catch (error) {
+        console.error('Steam detail error:', error)
+      } finally {
+        if (!cancelled) setSteamDetailLoaded(true)
+      }
+    }
+
+    loadSteamDetail()
+
+    return () => {
+      cancelled = true
+    }
+  }, [game?.dealID, game?.steamAppID, game?.source])
 
   useEffect(() => {
     if (!game) return
@@ -174,22 +233,22 @@ useEffect(() => {
 
       try {
         const relatedRes = await fetch(
-  `/api/game-deals?gameID=${encodeURIComponent(
-    game.gameID || ''
-  )}&title=${encodeURIComponent(
-    game.title
-  )}&steamAppID=${encodeURIComponent(
-    game.steamAppID || ''
-  )}&steamUrl=${encodeURIComponent(
-    game.steamUrl || ''
-  )}&steamSalePrice=${encodeURIComponent(
-    game.salePrice || ''
-  )}&steamNormalPrice=${encodeURIComponent(
-    game.normalPrice || ''
-  )}&steamSavings=${encodeURIComponent(
-    game.savings || ''
-  )}&thumb=${encodeURIComponent(game.thumb || '')}`
-)
+          `/api/game-deals?gameID=${encodeURIComponent(
+            game.gameID || ''
+          )}&title=${encodeURIComponent(
+            game.title
+          )}&steamAppID=${encodeURIComponent(
+            game.steamAppID || ''
+          )}&steamUrl=${encodeURIComponent(
+            game.steamUrl || ''
+          )}&steamSalePrice=${encodeURIComponent(
+            game.salePrice || ''
+          )}&steamNormalPrice=${encodeURIComponent(
+            game.normalPrice || ''
+          )}&steamSavings=${encodeURIComponent(
+            game.savings || ''
+          )}&thumb=${encodeURIComponent(game.thumb || '')}`
+        )
 
         if (!relatedRes.ok) {
           if (!cancelled) setRelatedDeals([])
@@ -207,39 +266,56 @@ useEffect(() => {
           (deal: RelatedDeal) => deal.dealID === game.dealID
         )
 
-        if (exactMatch) {
-          setGame((prev) =>
-            prev
-              ? {
-                  ...prev,
-                  salePrice:
-                    exactMatch.salePrice && exactMatch.salePrice !== ''
-                      ? exactMatch.salePrice
-                      : prev.salePrice,
-                  normalPrice:
-                    exactMatch.normalPrice && exactMatch.normalPrice !== ''
-                      ? exactMatch.normalPrice
-                      : prev.normalPrice,
-                  savings:
-                    exactMatch.savings && exactMatch.savings !== ''
-                      ? exactMatch.savings
-                      : prev.savings,
-                  storeID:
-                    exactMatch.storeID && exactMatch.storeID !== ''
-                      ? exactMatch.storeID
-                      : prev.storeID,
-                  thumb:
-                    exactMatch.thumb && exactMatch.thumb !== ''
-                      ? exactMatch.thumb
-                      : prev.thumb,
-                  metacriticScore:
-                    exactMatch.metacriticScore && exactMatch.metacriticScore !== ''
-                      ? exactMatch.metacriticScore
-                      : prev.metacriticScore,
-                }
-              : prev
-          )
-        }
+        const firstGameIDFromRelated = deals.find(
+          (deal: RelatedDeal) => deal.gameID && deal.gameID !== ''
+        )?.gameID
+
+        setGame((prev) => {
+          if (!prev) return prev
+
+          const nextGameID =
+            prev.gameID && prev.gameID !== '' ? prev.gameID : firstGameIDFromRelated || ''
+
+          if (exactMatch) {
+            return {
+              ...prev,
+              salePrice:
+                exactMatch.salePrice && exactMatch.salePrice !== ''
+                  ? exactMatch.salePrice
+                  : prev.salePrice,
+              normalPrice:
+                exactMatch.normalPrice && exactMatch.normalPrice !== ''
+                  ? exactMatch.normalPrice
+                  : prev.normalPrice,
+              savings:
+                exactMatch.savings && exactMatch.savings !== ''
+                  ? exactMatch.savings
+                  : prev.savings,
+              storeID:
+                exactMatch.storeID && exactMatch.storeID !== ''
+                  ? exactMatch.storeID
+                  : prev.storeID,
+              thumb:
+                exactMatch.thumb && exactMatch.thumb !== ''
+                  ? exactMatch.thumb
+                  : prev.thumb,
+              metacriticScore:
+                exactMatch.metacriticScore && exactMatch.metacriticScore !== ''
+                  ? exactMatch.metacriticScore
+                  : prev.metacriticScore,
+              gameID: nextGameID,
+            }
+          }
+
+          if (nextGameID && nextGameID !== prev.gameID) {
+            return {
+              ...prev,
+              gameID: nextGameID,
+            }
+          }
+
+          return prev
+        })
       } catch (error) {
         console.error('Related deals error:', error)
         if (!cancelled) setRelatedDeals([])
@@ -248,8 +324,34 @@ useEffect(() => {
       }
     }
 
+    loadRelatedDeals()
+
+    return () => {
+      cancelled = true
+    }
+  }, [
+    game?.dealID,
+    game?.gameID,
+    game?.title,
+    game?.steamAppID,
+    game?.steamUrl,
+    game?.salePrice,
+    game?.normalPrice,
+    game?.savings,
+    game?.thumb,
+  ])
+
+  useEffect(() => {
+    if (!game) return
+
+    let cancelled = false
+    const resolvedGameID =
+      game.gameID ||
+      relatedDeals.find((deal) => deal.gameID && deal.gameID !== '')?.gameID ||
+      ''
+
     const loadHistoricalLow = async () => {
-      if (!game.gameID) {
+      if (!resolvedGameID) {
         if (!cancelled) {
           setHistoricalLow(null)
           setHistoricalLowDate(null)
@@ -262,7 +364,7 @@ useEffect(() => {
 
       try {
         const pricingRes = await fetch(
-          `/api/game-pricing?gameID=${encodeURIComponent(game.gameID)}`
+          `/api/game-pricing?gameID=${encodeURIComponent(resolvedGameID)}`
         )
 
         if (!pricingRes.ok) {
@@ -276,8 +378,8 @@ useEffect(() => {
         const pricingData = await pricingRes.json()
 
         if (!cancelled) {
-          setHistoricalLow(pricingData.cheapestPriceEver)
-          setHistoricalLowDate(pricingData.cheapestPriceEverDate)
+          setHistoricalLow(pricingData.cheapestPriceEver || null)
+          setHistoricalLowDate(pricingData.cheapestPriceEverDate || null)
         }
       } catch (error) {
         console.error('Historical low error:', error)
@@ -289,6 +391,18 @@ useEffect(() => {
         if (!cancelled) setHistoricalLowLoading(false)
       }
     }
+
+    loadHistoricalLow()
+
+    return () => {
+      cancelled = true
+    }
+  }, [game?.gameID, relatedDeals])
+
+  useEffect(() => {
+    if (!game) return
+
+    let cancelled = false
 
     const loadRawg = async () => {
       setRawgLoading(true)
@@ -317,14 +431,12 @@ useEffect(() => {
       }
     }
 
-    loadRelatedDeals()
-    loadHistoricalLow()
     loadRawg()
 
     return () => {
       cancelled = true
     }
-  }, [game?.dealID, game?.gameID, game?.title, rawgRefreshKey])
+  }, [game?.dealID, game?.title, game?.storeID, rawgRefreshKey])
 
   useEffect(() => {
     if (!game) return
@@ -390,10 +502,6 @@ useEffect(() => {
         )
       : 0
 
-  const savingsAmount = hasValidNormalPrice
-    ? normalPriceNumber - salePriceNumber
-    : 0
-
   const metacriticValue =
     rawgMeta?.metacritic != null && rawgMeta?.metacritic !== 0
       ? rawgMeta.metacritic
@@ -401,28 +509,28 @@ useEffect(() => {
       ? Number(game.metacriticScore)
       : null
 
-const isSteamInternalGame =
-  game?.source === 'steam-spotlight' ||
-  game?.dealID?.startsWith('steam-') ||
-  !!game?.steamUrl
+  const isSteamInternalGame =
+    game?.source === 'steam-spotlight' ||
+    game?.dealID?.startsWith('steam-') ||
+    !!game?.steamUrl
 
-const primaryDealHref =
-  isSteamInternalGame && game?.steamUrl
-    ? game.steamUrl
-    : `/api/redirect?dealID=${encodeURIComponent(
-        game?.dealID || ''
-      )}&title=${encodeURIComponent(
-        game?.title || ''
-      )}&salePrice=${encodeURIComponent(
-        game?.salePrice || ''
-      )}&normalPrice=${encodeURIComponent(game?.normalPrice || '')}`
+  const primaryDealHref =
+    isSteamInternalGame && game?.steamUrl
+      ? game.steamUrl
+      : `/api/redirect?dealID=${encodeURIComponent(
+          game?.dealID || ''
+        )}&title=${encodeURIComponent(
+          game?.title || ''
+        )}&salePrice=${encodeURIComponent(
+          game?.salePrice || ''
+        )}&normalPrice=${encodeURIComponent(game?.normalPrice || '')}`
 
-const primaryDealLabel =
-  isSteamInternalGame && game?.steamUrl
-    ? `Open Steam — $${game?.salePrice || '0'}`
-    : `Open best deal — $${game?.salePrice || '0'}`
-  
-      const dealLabel = useMemo(() => {
+  const primaryDealLabel =
+    isSteamInternalGame && game?.steamUrl
+      ? `Open Steam — $${game?.salePrice || '0'}`
+      : `Open best deal — $${game?.salePrice || '0'}`
+
+  const dealLabel = useMemo(() => {
     if (displayDiscount >= 85) {
       return { text: '🔥 Brutal deal', color: 'text-red-400' }
     }
@@ -432,12 +540,27 @@ const primaryDealLabel =
     if (displayDiscount >= 50) {
       return { text: '👍 Good discount', color: 'text-cyan-400' }
     }
-    return { text: '📉 Average deal', color: 'text-zinc-400' }
-  }, [displayDiscount])
+    if (relatedDeals.length > 0) {
+      return { text: '🛒 Available now', color: 'text-zinc-300' }
+    }
+    return { text: '📦 Catalog entry', color: 'text-zinc-400' }
+  }, [displayDiscount, relatedDeals.length])
+
+  const overview = cleanDescription(rawgMeta?.description)
+const releaseYear = getReleaseYear(rawgMeta?.released)
+const releaseLabel = getReleaseLabel(rawgMeta?.released)
+
+const discountedRelatedDeals = relatedDeals.filter((deal) => {
+  const sale = Number(deal.salePrice || 0)
+  const normal = Number(deal.normalPrice || 0)
+  const savings = Number(deal.savings || 0)
+
+  return (normal > sale && sale > 0) || savings > 0
+})
 
   if (!heroReady || !game || !steamDetailLoaded) {
-  return <div className="p-10 text-white">Loading...</div>
-}
+    return <div className="p-10 text-white">Loading...</div>
+  }
 
   return (
     <main className="relative min-h-screen text-zinc-100">
@@ -483,14 +606,14 @@ const primaryDealLabel =
                   Refresh game metadata
                 </button>
 
-                <div className="mt-4 flex flex-wrap items-center gap-4">
+                <div className="mt-4 flex flex-wrap items-end gap-4">
                   <span className="text-4xl font-bold text-emerald-400">
-                    ${game.salePrice}
+                    {formatMoney(game.salePrice)}
                   </span>
 
                   {hasValidNormalPrice ? (
                     <span className="text-lg text-zinc-400 line-through">
-                      ${game.normalPrice}
+                      {formatMoney(game.normalPrice)}
                     </span>
                   ) : null}
                 </div>
@@ -499,18 +622,6 @@ const primaryDealLabel =
                   {displayDiscount > 0 ? (
                     <span className="rounded-full border border-emerald-500/30 bg-emerald-500/10 px-3 py-1 text-xs font-medium text-emerald-300">
                       -{displayDiscount}%
-                    </span>
-                  ) : null}
-
-                  {savingsAmount > 0 ? (
-                    <span className="rounded-full border border-zinc-700 bg-zinc-800 px-3 py-1 text-xs text-zinc-300">
-                      You save ${savingsAmount.toFixed(2)}
-                    </span>
-                  ) : null}
-
-                  {Number(game.dealRating) >= 9 ? (
-                    <span className="rounded-full border border-cyan-500/30 bg-cyan-500/10 px-3 py-1 text-xs font-medium text-cyan-300">
-                      ⭐ Top deal
                     </span>
                   ) : null}
 
@@ -529,12 +640,11 @@ const primaryDealLabel =
                     {getPlatformLabel(game.storeID)}
                   </span>
 
-{isSteamInternalGame ? (
-  <span className="rounded-full border border-emerald-500/30 bg-emerald-500/10 px-3 py-1 text-xs text-emerald-300">
-    Steam featured
-  </span>
-) : null}
-
+                  {isSteamInternalGame ? (
+                    <span className="rounded-full border border-emerald-500/30 bg-emerald-500/10 px-3 py-1 text-xs text-emerald-300">
+                      Steam featured
+                    </span>
+                  ) : null}
                 </div>
               </div>
 
@@ -548,42 +658,51 @@ const primaryDealLabel =
                   ) : (
                     <>
                       <p className="mt-2 text-2xl font-bold text-pink-300">
-                        {historicalLow ? `$${historicalLow}` : 'N/A'}
+                        {historicalLow ? formatMoney(historicalLow) : 'N/A'}
                       </p>
-                      {historicalLowDate ? (
-                        <p className="mt-1 text-xs text-zinc-500">
-                          Source date: {historicalLowDate}
-                        </p>
-                      ) : null}
+                      <p className="mt-1 text-xs text-zinc-500">
+                        {historicalLowDate
+                          ? `Source date: ${formatHistoricalDate(historicalLowDate)}`
+                          : 'No historical date available'}
+                      </p>
                     </>
                   )}
                 </div>
 
                 <div className="rounded-2xl border border-zinc-800 bg-zinc-950/70 p-4">
                   <p className="text-xs uppercase tracking-wider text-zinc-500">
-                    Discount
-                  </p>
-                  <p className="mt-2 text-2xl font-bold text-emerald-300">
-                    {displayDiscount > 0 ? `-${displayDiscount}%` : 'N/A'}
-                  </p>
-                </div>
-
-                <div className="rounded-2xl border border-zinc-800 bg-zinc-950/70 p-4">
-                  <p className="text-xs uppercase tracking-wider text-zinc-500">
-                    Deal rating
+                    Metacritic
                   </p>
                   <p className="mt-2 text-2xl font-bold text-cyan-300">
-                    {game.dealRating || 'N/A'}
+                    {metacriticValue != null && !Number.isNaN(metacriticValue)
+                      ? metacriticValue
+                      : 'N/A'}
+                  </p>
+                  <p className="mt-1 text-xs text-zinc-500">
+                    RAWG metadata
                   </p>
                 </div>
 
                 <div className="rounded-2xl border border-zinc-800 bg-zinc-950/70 p-4">
+  <p className="text-xs uppercase tracking-wider text-zinc-500">
+    Active deals
+  </p>
+  <p className="mt-2 text-2xl font-bold text-emerald-300">
+    {relatedDealsLoading ? '…' : discountedRelatedDeals.length}
+  </p>
+  <p className="mt-1 text-xs text-zinc-500">
+    Discounted offers only
+  </p>
+</div>
+
+                <div className="rounded-2xl border border-zinc-800 bg-zinc-950/70 p-4">
                   <p className="text-xs uppercase tracking-wider text-zinc-500">
-                    You save
+                    Release date
                   </p>
-                  <p className="mt-2 text-2xl font-bold text-yellow-300">
-                    {savingsAmount > 0 ? `$${savingsAmount.toFixed(2)}` : 'N/A'}
+                  <p className="mt-2 text-2xl font-bold text-zinc-100">
+                    {releaseYear}
                   </p>
+                  <p className="mt-1 text-xs text-zinc-500">{releaseLabel}</p>
                 </div>
               </div>
 
@@ -619,17 +738,21 @@ const primaryDealLabel =
                       : 'border border-zinc-700 hover:bg-zinc-800'
                   } ${authLoading ? 'opacity-60' : ''}`}
                 >
-                  {authLoading ? 'Loading...' : isTracked ? 'Tracked game' : 'Track game'}
+                  {authLoading
+                    ? 'Loading...'
+                    : isTracked
+                    ? 'Tracked game'
+                    : 'Track game'}
                 </button>
 
                 <a
-  href={primaryDealHref}
-  target="_blank"
-  rel="noopener noreferrer"
-  className="rounded-xl bg-white px-5 py-3 text-center text-sm font-bold text-black transition hover:opacity-90 active:scale-[0.98]"
->
-  {primaryDealLabel}
-</a>
+                  href={primaryDealHref}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="rounded-xl bg-white px-5 py-3 text-center text-sm font-bold text-black transition hover:opacity-90 active:scale-[0.98]"
+                >
+                  {primaryDealLabel}
+                </a>
               </div>
 
               <div className="rounded-2xl border border-zinc-800 bg-zinc-950/50 p-3">
@@ -666,124 +789,74 @@ const primaryDealLabel =
 
             <p className="mt-3 text-sm leading-6 text-zinc-300">
               {displayDiscount >= 85
-                ? 'This game is a BRUTAL deal and clearly falls into the recommended purchase category if you were already interested.'
+                ? 'This game is a brutal deal and clearly falls into the recommended purchase category if you were already interested.'
                 : displayDiscount >= 70
-                ? "It's a strong and quite attractive discount. It's well worth considering if it was on your radar."
+                ? "It's a strong and attractive discount. Well worth considering if it was already on your radar."
                 : displayDiscount >= 50
-                ? "It has a good discount, although it doesn't necessarily seem like a historic steal. It's still an interesting purchase."
-                : 'It is currently listed in the catalog, but this specific deal is not especially aggressive right now. Worth tracking.'}
+                ? "It has a good discount, although it doesn't necessarily look like a historic steal. Still a solid opportunity."
+                : relatedDeals.length > 0
+                ? 'This game is available right now in approved stores, even if the current pricing is not especially aggressive.'
+                : 'This game is currently part of the catalog, but there are no approved active deals visible right now.'}
             </p>
 
             <div className="mt-4 flex flex-wrap gap-2">
               <span className="rounded-full border border-zinc-700 bg-zinc-800 px-3 py-1 text-xs text-zinc-300">
-                Current price: ${game.salePrice}
+                Current price: {formatMoney(game.salePrice)}
               </span>
 
               {hasValidNormalPrice ? (
                 <span className="rounded-full border border-zinc-700 bg-zinc-800 px-3 py-1 text-xs text-zinc-300">
-                  Regular price: ${game.normalPrice}
+                  Regular price: {formatMoney(game.normalPrice)}
                 </span>
               ) : null}
 
-              {savingsAmount > 0 ? (
+              {displayDiscount > 0 ? (
                 <span className="rounded-full border border-zinc-700 bg-zinc-800 px-3 py-1 text-xs text-zinc-300">
-                  Savings: ${savingsAmount.toFixed(2)}
+                  Discount: -{displayDiscount}%
                 </span>
               ) : null}
             </div>
           </div>
 
-          <div className="mt-6 rounded-2xl border border-zinc-800 bg-zinc-950/70 p-5">
-            <h2 className="text-lg font-semibold">Game Information</h2>
+          {rawgLoading ? (
+            <div className="mt-6 rounded-2xl border border-zinc-800 bg-zinc-950/70 p-5">
+              <SectionLoading text="Loading game overview..." />
+            </div>
+          ) : overview ? (
+            <div className="mt-6 rounded-2xl border border-zinc-800 bg-zinc-950/70 p-5">
+              <h2 className="text-lg font-semibold">Overview</h2>
 
-            {rawgLoading ? (
-              <SectionLoading text="Loading metadata..." />
-            ) : rawgMeta ? (
-              <>
-                <div className="mt-4 grid gap-3 sm:grid-cols-3">
-                  <div className="rounded-2xl border border-zinc-800 bg-zinc-900/60 p-4">
-                    <p className="text-xs uppercase tracking-wider text-zinc-500">
-                      Rating RAWG
-                    </p>
-                    <p className="mt-2 text-2xl font-bold text-cyan-300">
-                      {rawgMeta.rating ?? 'N/A'}
-                    </p>
-                  </div>
+              {Array.isArray(rawgMeta?.genres) && rawgMeta.genres.length > 0 ? (
+  <div className="mt-4 flex flex-wrap gap-2">
+    {rawgMeta.genres.map((genre) => (
+      <span
+        key={genre}
+        className="rounded-full border border-zinc-700 bg-zinc-800 px-3 py-1 text-xs text-zinc-300"
+      >
+        {genre}
+      </span>
+    ))}
+  </div>
+) : null}
 
-                  <div className="rounded-2xl border border-zinc-800 bg-zinc-900/60 p-4">
-                    <p className="text-xs uppercase tracking-wider text-zinc-500">
-                      Metacritic
-                    </p>
-                    <p className="mt-2 text-2xl font-bold text-emerald-300">
-                      {metacriticValue != null && !Number.isNaN(metacriticValue)
-                        ? metacriticValue
-                        : 'N/A'}
-                    </p>
-                  </div>
+              {Array.isArray(rawgMeta?.platforms) && rawgMeta.platforms.length > 0 ? (
+  <div className="mt-4 flex flex-wrap gap-2">
+    {rawgMeta.platforms.map((platform) => (
+      <span
+        key={platform}
+        className="rounded-full border border-zinc-700 bg-zinc-800 px-3 py-1 text-xs text-zinc-300"
+      >
+        {platform}
+      </span>
+    ))}
+  </div>
+) : null}
 
-                  <div className="rounded-2xl border border-zinc-800 bg-zinc-900/60 p-4">
-                    <p className="text-xs uppercase tracking-wider text-zinc-500">
-                      Release Date
-                    </p>
-                    <p className="mt-2 text-sm font-bold text-zinc-200">
-                      {rawgMeta.released || 'N/A'}
-                    </p>
-                  </div>
-                </div>
-
-                {rawgMeta.genres?.length > 0 ? (
-                  <div className="mt-4">
-                    <p className="mb-2 text-xs uppercase tracking-wider text-zinc-500">
-                      Genres
-                    </p>
-                    <div className="flex flex-wrap gap-2">
-                      {rawgMeta.genres.map((genre) => (
-                        <span
-                          key={genre}
-                          className="rounded-full border border-zinc-700 bg-zinc-800 px-3 py-1 text-xs text-zinc-300"
-                        >
-                          {genre}
-                        </span>
-                      ))}
-                    </div>
-                  </div>
-                ) : null}
-
-                {rawgMeta.platforms?.length > 0 ? (
-                  <div className="mt-4">
-                    <p className="mb-2 text-xs uppercase tracking-wider text-zinc-500">
-                      Platforms
-                    </p>
-                    <div className="flex flex-wrap gap-2">
-                      {rawgMeta.platforms.map((platform) => (
-                        <span
-                          key={platform}
-                          className="rounded-full border border-zinc-700 bg-zinc-800 px-3 py-1 text-xs text-zinc-300"
-                        >
-                          {platform}
-                        </span>
-                      ))}
-                    </div>
-                  </div>
-                ) : null}
-
-                {rawgMeta.description ? (
-                  <div className="mt-4">
-                    <p className="mb-2 text-xs uppercase tracking-wider text-zinc-500">
-                      Description
-                    </p>
-                    <p className="text-sm leading-6 text-zinc-300">
-                      {rawgMeta.description}
-                    </p>
-                  </div>
-                ) : null}
-              </>
-            ) : (
-              <p className="mt-3 text-sm text-zinc-400">
-                No additional metadata found for this game.
+              <p className="mt-4 whitespace-pre-line text-sm leading-7 text-zinc-300">
+                {overview}
               </p>
-            )}
-          </div>
+            </div>
+          ) : null}
 
           <section className="mt-10">
             <div className="mb-4">
@@ -809,6 +882,17 @@ const primaryDealLabel =
                     relatedNormalPrice > 0 &&
                     relatedNormalPrice > relatedSalePrice
 
+                  const relatedDiscount =
+                    relatedHasValidNormal && relatedSalePrice > 0
+                      ? Math.round(
+                          ((relatedNormalPrice - relatedSalePrice) /
+                            relatedNormalPrice) *
+                            100
+                        )
+                      : Number(deal.savings || 0) > 0
+                      ? Math.round(Number(deal.savings || 0))
+                      : 0
+
                   return (
                     <div
                       key={deal.dealID}
@@ -832,6 +916,16 @@ const primaryDealLabel =
                               Current card
                             </span>
                           ) : null}
+
+                          {relatedDiscount > 0 ? (
+                            <span className="rounded-full border border-cyan-500/30 bg-cyan-500/10 px-3 py-1 text-xs text-cyan-300">
+                              {relatedDiscount}% off
+                            </span>
+                          ) : (
+                            <span className="rounded-full border border-zinc-700 bg-zinc-800 px-3 py-1 text-xs text-zinc-300">
+                              Available now
+                            </span>
+                          )}
                         </div>
 
                         <p className="mt-2 truncate text-sm text-zinc-400">
@@ -842,13 +936,17 @@ const primaryDealLabel =
                       <div className="flex items-center gap-3">
                         <div className="text-right">
                           <p className="text-xl font-bold text-emerald-400">
-                            ${deal.salePrice}
+                            {formatMoney(deal.salePrice)}
                           </p>
                           {relatedHasValidNormal ? (
                             <p className="text-sm text-zinc-400 line-through">
-                              ${deal.normalPrice}
+                              {formatMoney(deal.normalPrice)}
                             </p>
-                          ) : null}
+                          ) : (
+                            <p className="text-sm text-zinc-500">
+                              Regular store price
+                            </p>
+                          )}
                         </div>
 
                         <a
@@ -861,13 +959,21 @@ const primaryDealLabel =
           deal.title || ''
         )}&salePrice=${encodeURIComponent(
           deal.salePrice || ''
-        )}&normalPrice=${encodeURIComponent(deal.normalPrice || '')}`
+        )}&normalPrice=${encodeURIComponent(
+          deal.normalPrice || ''
+        )}`
   }
   target="_blank"
   rel="noopener noreferrer"
   className="rounded-xl border border-zinc-700 px-4 py-2 text-sm font-medium transition hover:bg-zinc-800"
 >
-  {deal.dealID?.startsWith('steam-') ? 'Open Steam' : 'Open deal'}
+  {deal.dealID?.startsWith('steam-')
+    ? relatedDiscount > 0
+      ? 'Open Steam deal'
+      : 'Open Steam'
+    : relatedDiscount > 0
+    ? 'Open deal'
+    : 'Open store'}
 </a>
                       </div>
                     </div>
@@ -887,16 +993,15 @@ const primaryDealLabel =
           <button
             type="button"
             onClick={() => setSelectedScreenshot(null)}
-            className="absolute right-6 top-6 rounded-full border border-zinc-700 bg-zinc-900 px-4 py-2 text-sm font-medium text-zinc-100 transition hover:bg-zinc-800"
+            className="absolute right-4 top-4 rounded-full border border-zinc-700 bg-zinc-900 px-4 py-2 text-sm text-zinc-200 transition hover:bg-zinc-800"
           >
             Close
           </button>
 
           <img
             src={selectedScreenshot}
-            alt="Selected screenshot"
-            className="max-h-[85vh] max-w-[90vw] rounded-2xl object-contain shadow-2xl"
-            onClick={(e) => e.stopPropagation()}
+            alt="Expanded screenshot"
+            className="max-h-[90vh] max-w-[90vw] rounded-2xl border border-zinc-800 shadow-2xl"
           />
         </div>
       ) : null}

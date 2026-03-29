@@ -1,11 +1,13 @@
 'use client'
 
+export const dynamic = 'force-dynamic'
 import Link from 'next/link'
 import { useEffect, useMemo, useState } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import RegionNotice from '@/app/components/RegionNotice'
 import { getStoreLogo, getStoreName, isAllowedStore } from '@/lib/storeMap'
 import { supabase } from '@/lib/supabaseClient'
+
 
 type Deal = {
   dealID: string

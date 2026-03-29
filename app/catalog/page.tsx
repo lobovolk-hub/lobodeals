@@ -18,6 +18,11 @@ type CatalogGame = {
   savings?: string
 }
 
+type CatalogStats = {
+  steamCatalogSize: number
+  updatedAt: string | null
+}
+
 type SteamCatalogFeatured = {
   steamAppID: string
   title: string
@@ -40,12 +45,28 @@ export default function CatalogPage() {
   const [suggestionsLoading, setSuggestionsLoading] = useState(false)
   const [showSuggestions, setShowSuggestions] = useState(false)
 
-const [steamFeatured, setSteamFeatured] = useState<SteamCatalogFeatured[]>([])
-const [steamFeaturedLoading, setSteamFeaturedLoading] = useState(true)
+  const [catalogStats, setCatalogStats] = useState<CatalogStats>({
+    steamCatalogSize: 0,
+    updatedAt: null,
+  })
+
+  const [steamFeatured, setSteamFeatured] = useState<SteamCatalogFeatured[]>([])
+  const [steamFeaturedLoading, setSteamFeaturedLoading] = useState(true)
+
+    const buildCanonicalHref = (title: string) => {
+    const slug = title
+      .toLowerCase()
+      .trim()
+      .replace(/[^a-z0-9\s-]/g, '')
+      .replace(/\s+/g, '-')
+      .replace(/-+/g, '-')
+
+    return `/pc/${encodeURIComponent(slug)}`
+  }
 
   const suggestionBoxRef = useRef<HTMLDivElement | null>(null)
 
-    useEffect(() => {
+  useEffect(() => {
     const q = query.trim()
 
     if (q.length < 3) {
@@ -57,7 +78,9 @@ const [steamFeaturedLoading, setSteamFeaturedLoading] = useState(true)
     const timer = setTimeout(async () => {
       try {
         setSuggestionsLoading(true)
-        const res = await fetch(`/api/catalog-suggest?title=${encodeURIComponent(q)}`)
+        const res = await fetch(
+          `/api/catalog-suggest?title=${encodeURIComponent(q)}`
+        )
         const data = await res.json()
         setSuggestions(Array.isArray(data) ? data.slice(0, 5) : [])
       } catch (error) {
@@ -70,6 +93,32 @@ const [steamFeaturedLoading, setSteamFeaturedLoading] = useState(true)
 
     return () => clearTimeout(timer)
   }, [query])
+
+  useEffect(() => {
+    let cancelled = false
+
+    const loadCatalogStats = async () => {
+      try {
+        const res = await fetch('/api/catalog-stats')
+        const data = await res.json()
+
+        if (!cancelled) {
+          setCatalogStats({
+            steamCatalogSize: Number(data?.steamCatalogSize || 0),
+            updatedAt: data?.updatedAt || null,
+          })
+        }
+      } catch (error) {
+        console.error(error)
+      }
+    }
+
+    loadCatalogStats()
+
+    return () => {
+      cancelled = true
+    }
+  }, [])
 
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
@@ -87,61 +136,41 @@ const [steamFeaturedLoading, setSteamFeaturedLoading] = useState(true)
     }
   }, [])
 
-useEffect(() => {
-  let cancelled = false
+  useEffect(() => {
+    let cancelled = false
 
-  const loadSteamFeatured = async () => {
-    try {
-      setSteamFeaturedLoading(true)
+    const loadSteamFeatured = async () => {
+      try {
+        setSteamFeaturedLoading(true)
 
-      const res = await fetch('/api/steam-spotlight?limit=8')
-      const data = await res.json()
+        const res = await fetch('/api/steam-spotlight?limit=8')
+        const data = await res.json()
 
-      if (!cancelled) {
-        setSteamFeatured(Array.isArray(data) ? data.slice(0, 8) : [])
-      }
-    } catch (error) {
-      console.error(error)
-      if (!cancelled) {
-        setSteamFeatured([])
-      }
-    } finally {
-      if (!cancelled) {
-        setSteamFeaturedLoading(false)
+        if (!cancelled) {
+          setSteamFeatured(Array.isArray(data) ? data.slice(0, 8) : [])
+        }
+      } catch (error) {
+        console.error(error)
+        if (!cancelled) {
+          setSteamFeatured([])
+        }
+      } finally {
+        if (!cancelled) {
+          setSteamFeaturedLoading(false)
+        }
       }
     }
+
+    loadSteamFeatured()
+
+    return () => {
+      cancelled = true
+    }
+  }, [])
+
+    const buildGameHref = (item: CatalogGame) => {
+    return buildCanonicalHref(item.external || 'game')
   }
-
-  loadSteamFeatured()
-
-  return () => {
-    cancelled = true
-  }
-}, [])
-
-const buildGameHref = (item: CatalogGame) => {
-  if (item.cheapestDealID && item.cheapest) {
-    return `/game/${encodeURIComponent(
-      item.cheapestDealID || ''
-    )}?title=${encodeURIComponent(
-      item.external || ''
-    )}&thumb=${encodeURIComponent(
-      item.thumb || ''
-    )}&salePrice=${encodeURIComponent(
-      item.cheapest || ''
-    )}&normalPrice=${encodeURIComponent(
-      item.normalPrice || ''
-    )}&dealRating=&savings=${encodeURIComponent(
-      item.savings || ''
-    )}&gameID=${encodeURIComponent(
-      item.gameID
-    )}&storeID=${encodeURIComponent(item.storeID || '')}`
-  }
-
-  return `/catalog/${encodeURIComponent(item.gameID)}?title=${encodeURIComponent(
-    item.external || ''
-  )}&thumb=${encodeURIComponent(item.thumb || '')}`
-}
 
   const runSearch = async () => {
     if (!query.trim()) return
@@ -173,12 +202,44 @@ const buildGameHref = (item: CatalogGame) => {
           </p>
           <h1 className="mt-1 text-3xl font-bold">All Games Search</h1>
           <p className="mt-2 text-zinc-400">
-  Search the catalog even when a game is not on sale, or jump into featured Steam pages right away.
-</p>
+            Search games even if they are not currently on sale, with a much
+            larger Steam catalog behind the lookup layer.
+          </p>
         </header>
 
         <div className="mb-6">
           <RegionNotice />
+        </div>
+
+        <div className="mb-8 grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+          <div className="rounded-2xl border border-zinc-800 bg-zinc-900 p-4">
+            <p className="text-xs uppercase tracking-wider text-zinc-500">
+              Steam catalog size
+            </p>
+            <p className="mt-2 text-2xl font-bold text-white">
+              {catalogStats.steamCatalogSize || 0}
+            </p>
+          </div>
+
+          <div className="rounded-2xl border border-zinc-800 bg-zinc-900 p-4">
+            <p className="text-xs uppercase tracking-wider text-zinc-500">
+              Search layer
+            </p>
+            <p className="mt-2 text-2xl font-bold text-white">Catalog</p>
+            <p className="mt-1 text-xs text-zinc-500">
+              Game lookup even without active deals
+            </p>
+          </div>
+
+          <div className="rounded-2xl border border-zinc-800 bg-zinc-900 p-4">
+            <p className="text-xs uppercase tracking-wider text-zinc-500">
+              Steam featured
+            </p>
+            <p className="mt-2 text-2xl font-bold text-white">8</p>
+            <p className="mt-1 text-xs text-zinc-500">
+              Quick entry points before searching
+            </p>
+          </div>
         </div>
 
         <div className="mb-8" ref={suggestionBoxRef}>
@@ -205,7 +266,7 @@ const buildGameHref = (item: CatalogGame) => {
             </button>
           </div>
 
-                    {showSuggestions && query.trim().length > 0 ? (
+          {showSuggestions && query.trim().length > 0 ? (
             <div className="mt-3 overflow-hidden rounded-2xl border border-zinc-800 bg-zinc-900">
               {query.trim().length < 3 ? (
                 <div className="px-4 py-3 text-sm text-zinc-500">
@@ -217,18 +278,18 @@ const buildGameHref = (item: CatalogGame) => {
                 </div>
               ) : suggestions.length > 0 ? (
                 suggestions.map((item) => {
-  const href = buildGameHref(item)
+                  const href = buildGameHref(item)
 
-  return (
-    <Link
-      key={item.gameID}
-      href={href}
-      onClick={() => {
-        setQuery(item.external || '')
-        setShowSuggestions(false)
-      }}
-      className="flex w-full items-center gap-3 border-t border-zinc-800 px-4 py-3 text-left transition first:border-t-0 hover:bg-zinc-800"
-    >
+                  return (
+                    <Link
+                      key={item.gameID}
+                      href={href}
+                      onClick={() => {
+                        setQuery(item.external || '')
+                        setShowSuggestions(false)
+                      }}
+                      className="flex w-full items-center gap-3 border-t border-zinc-800 px-4 py-3 text-left transition first:border-t-0 hover:bg-zinc-800"
+                    >
                       <div className="h-12 w-12 shrink-0 overflow-hidden rounded-xl bg-zinc-800">
                         {item.thumb ? (
                           <img
@@ -251,8 +312,8 @@ const buildGameHref = (item: CatalogGame) => {
                       </div>
 
                       <span className="rounded-lg border border-zinc-700 px-3 py-2 text-xs text-zinc-200 transition">
-  Open
-</span>
+                        Open
+                      </span>
                     </Link>
                   )
                 })
@@ -271,127 +332,112 @@ const buildGameHref = (item: CatalogGame) => {
           </div>
         )}
 
-{!searched ? (
-  <section className="mb-10">
-    <div className="mb-4 flex items-center justify-between gap-3">
-      <div>
-        <h2 className="text-xl font-bold text-white">Steam featured</h2>
-        <p className="mt-1 text-sm text-zinc-400">
-          Quick entry points from the Steam layer while the wider catalog keeps growing.
-        </p>
-      </div>
-
-      <Link
-        href="/pc?sort=steam-spotlight"
-        className="text-sm font-medium text-emerald-300 transition hover:text-emerald-200"
-      >
-        View Steam Spotlight
-      </Link>
-    </div>
-
-    {steamFeaturedLoading ? (
-      <div className="rounded-2xl border border-zinc-800 bg-zinc-900 p-4 text-sm text-zinc-400">
-        Loading featured Steam games...
-      </div>
-    ) : steamFeatured.length === 0 ? (
-      <div className="rounded-2xl border border-zinc-800 bg-zinc-900 p-4 text-sm text-zinc-400">
-        No featured Steam games available right now.
-      </div>
-    ) : (
-      <div className="grid grid-cols-2 gap-5 lg:grid-cols-4">
-        {steamFeatured.map((item) => {
-          const salePrice = Number(item.salePrice || 0)
-          const normalPrice = Number(item.normalPrice || 0)
-          const hasValidNormalPrice =
-            !Number.isNaN(normalPrice) &&
-            normalPrice > 0 &&
-            normalPrice > salePrice
-
-          const href = `/game/${encodeURIComponent(
-            `steam-${item.steamAppID}`
-          )}?title=${encodeURIComponent(item.title)}&thumb=${encodeURIComponent(
-            item.thumb
-          )}&salePrice=${encodeURIComponent(
-            item.salePrice
-          )}&normalPrice=${encodeURIComponent(
-            item.normalPrice
-          )}&dealRating=&metacriticScore=&savings=${encodeURIComponent(
-            item.savings
-          )}&storeID=${encodeURIComponent(
-            item.storeID || '1'
-          )}&gameID=&steamAppID=${encodeURIComponent(
-            item.steamAppID
-          )}&steamUrl=${encodeURIComponent(
-            item.url
-          )}&source=${encodeURIComponent('steam-spotlight')}`
-
-          return (
-            <article
-              key={item.steamAppID}
-              className="overflow-hidden rounded-3xl border border-zinc-800 bg-zinc-900 shadow-lg"
-            >
-              <Link href={href} className="block h-32 w-full bg-zinc-800">
-                {item.thumb ? (
-                  <img
-                    src={item.thumb}
-                    alt={item.title}
-                    className="h-full w-full object-cover"
-                  />
-                ) : null}
-              </Link>
-
-              <div className="p-4">
-                <Link href={href}>
-                  <h2 className="line-clamp-2 text-base font-bold transition hover:text-emerald-300">
-                    {item.title}
-                  </h2>
-                </Link>
-
-                <div className="mt-3 rounded-2xl border border-zinc-800 bg-zinc-950 p-3">
-                  <p className="text-xs uppercase tracking-wider text-zinc-500">
-                    Featured Steam price
-                  </p>
-
-                  <div className="mt-2 flex items-end justify-between gap-2">
-                    <p className="text-2xl font-bold text-emerald-400">
-                      ${item.salePrice}
-                    </p>
-
-                    {hasValidNormalPrice ? (
-                      <p className="text-sm text-zinc-400 line-through">
-                        ${item.normalPrice}
-                      </p>
-                    ) : null}
-                  </div>
-
-                  <div className="mt-3 inline-flex items-center gap-2 rounded-full border border-zinc-700 bg-zinc-900 px-3 py-1 text-xs text-zinc-300">
-                    {getStoreLogo(item.storeID) && (
-                      <img
-                        src={getStoreLogo(item.storeID)!}
-                        alt={getStoreName(item.storeID)}
-                        className="h-4 w-4 object-contain"
-                      />
-                    )}
-                    <span>{getStoreName(item.storeID)}</span>
-                  </div>
-                </div>
-
-                <div className="mt-4 grid gap-2">
-                  <Link
-                    href={href}
-                    className="rounded-xl bg-white px-4 py-2 text-center text-sm font-semibold text-black transition hover:opacity-90"
-                  >
-                    Open game page
-                  </Link>
-                </div>
+        {!searched ? (
+          <section className="mb-10">
+            <div className="mb-4 flex items-center justify-between gap-3">
+              <div>
+                <h2 className="text-xl font-bold text-white">Steam featured</h2>
+                <p className="mt-1 text-sm text-zinc-400">
+                  Quick entry points from the Steam layer while the wider
+                  catalog keeps growing.
+                </p>
               </div>
-            </article>
-          )
-        })}
-      </div>
-    )}
-  </section>
-) : null}
+
+              <Link
+                href="/pc?sort=steam-spotlight"
+                className="text-sm font-medium text-emerald-300 transition hover:text-emerald-200"
+              >
+                View Steam Spotlight
+              </Link>
+            </div>
+
+            {steamFeaturedLoading ? (
+              <div className="rounded-2xl border border-zinc-800 bg-zinc-900 p-4 text-sm text-zinc-400">
+                Loading featured Steam games...
+              </div>
+            ) : steamFeatured.length === 0 ? (
+              <div className="rounded-2xl border border-zinc-800 bg-zinc-900 p-4 text-sm text-zinc-400">
+                No featured Steam games available right now.
+              </div>
+            ) : (
+              <div className="grid grid-cols-2 gap-5 lg:grid-cols-4">
+                {steamFeatured.map((item) => {
+                  const salePrice = Number(item.salePrice || 0)
+                  const normalPrice = Number(item.normalPrice || 0)
+                  const hasValidNormalPrice =
+                    !Number.isNaN(normalPrice) &&
+                    normalPrice > 0 &&
+                    normalPrice > salePrice
+
+                                    const href = buildCanonicalHref(item.title)
+
+                  return (
+                    <article
+                      key={item.steamAppID}
+                      className="overflow-hidden rounded-3xl border border-zinc-800 bg-zinc-900 shadow-lg"
+                    >
+                      <Link href={href} className="block h-32 w-full bg-zinc-800">
+                        {item.thumb ? (
+                          <img
+                            src={item.thumb}
+                            alt={item.title}
+                            className="h-full w-full object-cover"
+                          />
+                        ) : null}
+                      </Link>
+
+                      <div className="p-4">
+                        <Link href={href}>
+                          <h2 className="line-clamp-2 text-base font-bold transition hover:text-emerald-300">
+                            {item.title}
+                          </h2>
+                        </Link>
+
+                        <div className="mt-3 rounded-2xl border border-zinc-800 bg-zinc-950 p-3">
+                          <p className="text-xs uppercase tracking-wider text-zinc-500">
+                            Featured Steam price
+                          </p>
+
+                          <div className="mt-2 flex items-end justify-between gap-2">
+                            <p className="text-2xl font-bold text-emerald-400">
+                              ${item.salePrice}
+                            </p>
+
+                            {hasValidNormalPrice ? (
+                              <p className="text-sm text-zinc-400 line-through">
+                                ${item.normalPrice}
+                              </p>
+                            ) : null}
+                          </div>
+
+                          <div className="mt-3 inline-flex items-center gap-2 rounded-full border border-zinc-700 bg-zinc-900 px-3 py-1 text-xs text-zinc-300">
+                            {getStoreLogo(item.storeID) && (
+                              <img
+                                src={getStoreLogo(item.storeID)!}
+                                alt={getStoreName(item.storeID)}
+                                className="h-4 w-4 object-contain"
+                              />
+                            )}
+                            <span>{getStoreName(item.storeID)}</span>
+                          </div>
+                        </div>
+
+                        <div className="mt-4 grid gap-2">
+                          <Link
+                            href={href}
+                            className="rounded-xl bg-white px-4 py-2 text-center text-sm font-semibold text-black transition hover:opacity-90"
+                          >
+                            Open game page
+                          </Link>
+                        </div>
+                      </div>
+                    </article>
+                  )
+                })}
+              </div>
+            )}
+          </section>
+        ) : null}
 
         {!loading && searched && results.length === 0 && (
           <div className="rounded-2xl border border-zinc-800 bg-zinc-900 p-4 text-sm text-zinc-400">
@@ -402,7 +448,6 @@ const buildGameHref = (item: CatalogGame) => {
         {!loading && results.length > 0 && (
           <div className="grid grid-cols-2 gap-5 lg:grid-cols-4">
             {results.map((game) => {
-              const hasActiveDeal = !!game.cheapestDealID && !!game.cheapest
               const salePrice = Number(game.cheapest || 0)
               const normalPrice = Number(game.normalPrice || 0)
               const hasValidNormalPrice =
@@ -410,12 +455,14 @@ const buildGameHref = (item: CatalogGame) => {
                 normalPrice > 0 &&
                 normalPrice > salePrice
 
+              const href = buildGameHref(game)
+
               return (
                 <article
                   key={game.gameID}
                   className="overflow-hidden rounded-3xl border border-zinc-800 bg-zinc-900 shadow-lg"
                 >
-                  <div className="h-32 w-full bg-zinc-800">
+                  <Link href={href} className="block h-32 w-full bg-zinc-800">
                     {game.thumb ? (
                       <img
                         src={game.thumb}
@@ -423,12 +470,14 @@ const buildGameHref = (item: CatalogGame) => {
                         className="h-full w-full object-cover"
                       />
                     ) : null}
-                  </div>
+                  </Link>
 
                   <div className="p-4">
-                    <h2 className="line-clamp-2 text-base font-bold">
-                      {game.external}
-                    </h2>
+                    <Link href={href}>
+                      <h2 className="line-clamp-2 text-base font-bold transition hover:text-emerald-300">
+                        {game.external}
+                      </h2>
+                    </Link>
 
                     <div className="mt-3 rounded-2xl border border-zinc-800 bg-zinc-950 p-3">
                       <p className="text-xs uppercase tracking-wider text-zinc-500">
@@ -466,32 +515,12 @@ const buildGameHref = (item: CatalogGame) => {
                     </div>
 
                     <div className="mt-4 grid gap-2">
-                      {hasActiveDeal ? (
-                        <Link
-                          href={`/game/${encodeURIComponent(
-                            game.cheapestDealID || ''
-                          )}?title=${encodeURIComponent(
-                            game.external || ''
-                          )}&thumb=${encodeURIComponent(
-                            game.thumb || ''
-                          )}&salePrice=${encodeURIComponent(
-                            game.cheapest || ''
-                          )}&normalPrice=${encodeURIComponent(
-                            game.normalPrice || ''
-                          )}&dealRating=&savings=${encodeURIComponent(
-                            game.savings || ''
-                          )}&gameID=${encodeURIComponent(
-                            game.gameID
-                          )}&storeID=${encodeURIComponent(game.storeID || '')}`}
-                          className="rounded-xl bg-white px-4 py-2 text-center text-sm font-semibold text-black transition hover:opacity-90"
-                        >
-                          Open game page
-                        </Link>
-                      ) : (
-                        <div className="rounded-xl border border-zinc-800 px-4 py-2 text-center text-sm text-zinc-500">
-                          No active deal right now
-                        </div>
-                      )}
+                      <Link
+                        href={href}
+                        className="rounded-xl bg-white px-4 py-2 text-center text-sm font-semibold text-black transition hover:opacity-90"
+                      >
+                        Open game page
+                      </Link>
                     </div>
                   </div>
                 </article>

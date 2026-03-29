@@ -54,8 +54,15 @@ type SteamSpotlightItem = {
 type DealsStats = {
   dealsIndexed: number
   steamIndexed: number
+  steamSpotlightIndexed: number
   dealsUpdatedAt: string | null
   steamUpdatedAt: string | null
+  steamSpotlightUpdatedAt: string | null
+}
+
+type CatalogStats = {
+  steamCatalogSize: number
+  updatedAt: string | null
 }
 
 function pushTrackMessage(
@@ -64,6 +71,31 @@ function pushTrackMessage(
 ) {
   setTrackMessage(message)
   window.setTimeout(() => setTrackMessage(''), 2500)
+}
+
+function slugify(value: string) {
+  return value
+    .toLowerCase()
+    .trim()
+    .replace(/[^a-z0-9\s-]/g, '')
+    .replace(/\s+/g, '-')
+    .replace(/-+/g, '-')
+}
+
+function buildSteamCanonicalHref(item: SteamSpotlightItem) {
+  const slug = slugify(item.title)
+  return `/pc/${encodeURIComponent(slug)}`
+}
+
+function buildCatalogCanonicalHref(item: CatalogSuggestion | LightweightSuggestion) {
+  const title = item.external || 'game'
+  const slug = slugify(title)
+  return `/pc/${encodeURIComponent(slug)}`
+}
+
+function buildDealCanonicalHref(deal: Deal) {
+  const slug = slugify(deal.title)
+  return `/pc/${encodeURIComponent(slug)}`
 }
 
 export default function Home() {
@@ -78,8 +110,15 @@ export default function Home() {
   const [dealsStats, setDealsStats] = useState<DealsStats>({
     dealsIndexed: 0,
     steamIndexed: 0,
+    steamSpotlightIndexed: 0,
     dealsUpdatedAt: null,
     steamUpdatedAt: null,
+    steamSpotlightUpdatedAt: null,
+  })
+
+  const [catalogStats, setCatalogStats] = useState<CatalogStats>({
+    steamCatalogSize: 0,
+    updatedAt: null,
   })
 
   const [searchResults, setSearchResults] = useState<CatalogSuggestion[]>([])
@@ -97,16 +136,28 @@ export default function Home() {
       try {
         let mainDeals: unknown = null
 
-try {
-  const res = await fetch('/api/deals?limit=600')
-  const data = await res.json()
-  mainDeals = Array.isArray(data) ? data : []
-} catch {
-  mainDeals = []
-}
+        try {
+          const res = await fetch('/api/deals?limit=600')
+          const data = await res.json()
+          mainDeals = Array.isArray(data) ? data : []
+        } catch {
+          mainDeals = []
+        }
 
         const steamRes = await fetch('/api/steam-spotlight?limit=12')
         const steamData = await steamRes.json()
+
+        try {
+          const catalogStatsRes = await fetch('/api/catalog-stats')
+          const catalogStatsData = await catalogStatsRes.json()
+
+          setCatalogStats({
+            steamCatalogSize: Number(catalogStatsData?.steamCatalogSize || 0),
+            updatedAt: catalogStatsData?.updatedAt || null,
+          })
+        } catch (catalogStatsError) {
+          console.error('Failed to fetch catalog stats', catalogStatsError)
+        }
 
         try {
           const statsRes = await fetch('/api/deals-stats')
@@ -115,8 +166,10 @@ try {
           setDealsStats({
             dealsIndexed: Number(statsData?.dealsIndexed || 0),
             steamIndexed: Number(statsData?.steamIndexed || 0),
+            steamSpotlightIndexed: Number(statsData?.steamSpotlightIndexed || 0),
             dealsUpdatedAt: statsData?.dealsUpdatedAt || null,
             steamUpdatedAt: statsData?.steamUpdatedAt || null,
+            steamSpotlightUpdatedAt: statsData?.steamSpotlightUpdatedAt || null,
           })
         } catch (statsError) {
           console.error('Failed to fetch deals stats', statsError)
@@ -258,22 +311,6 @@ try {
       .slice(0, 4)
   }, [filteredDeals])
 
-  const averagePrice = useMemo(() => {
-    if (filteredDeals.length === 0) return '0.00'
-    const total = filteredDeals.reduce(
-      (sum, deal) => sum + Number(deal.salePrice),
-      0
-    )
-    return (total / filteredDeals.length).toFixed(2)
-  }, [filteredDeals])
-
-  const bestDiscount = useMemo(() => {
-    if (filteredDeals.length === 0) return 0
-    return Math.max(
-      ...filteredDeals.map((deal) => Math.round(Number(deal.savings)))
-    )
-  }, [filteredDeals])
-
   if (loading) {
     return (
       <main className="min-h-screen bg-zinc-950 text-zinc-100">
@@ -314,28 +351,34 @@ try {
               The best video game deals
             </h1>
             <p className="mt-2 max-w-2xl text-sm text-zinc-400">
-  Find game deals across a much larger indexed inventory, track what matters, and jump into game pages without leaving the LoboDeals flow too early.
-</p>
+              Explore a Steam-first PC deals layer, jump into canonical game pages, and track what matters without splitting the experience across multiple routes.
+            </p>
             <p className="mt-3 text-xs text-zinc-500">
-              {dealsStats.dealsIndexed > 0
-                ? `${dealsStats.dealsIndexed} deals currently indexed in cache`
-                : 'Building indexed deal coverage'}
+              {catalogStats.steamCatalogSize > 0
+                ? `${catalogStats.steamCatalogSize} Steam titles in current catalog reach`
+                : 'Building catalog size signal'}
               {dealsStats.steamIndexed > 0
-                ? ` · ${dealsStats.steamIndexed} Steam offers cached`
+                ? ` · ${dealsStats.steamIndexed} Steam deals cached`
+                : ''}
+              {dealsStats.steamSpotlightIndexed > 0
+                ? ` · ${dealsStats.steamSpotlightIndexed} curated spotlight entries`
                 : ''}
             </p>
           </div>
 
           <div className="grid gap-3 p-5 md:grid-cols-3">
             <MetricCard
-              label="Deals indexed"
-              value={String(dealsStats.dealsIndexed || filteredDeals.length)}
+              label="Steam catalog size"
+              value={String(catalogStats.steamCatalogSize || 0)}
             />
             <MetricCard
-              label="Steam cached"
+              label="Steam deals cached"
               value={String(dealsStats.steamIndexed || steamSpotlight.length)}
             />
-            <MetricCard label="Best discount" value={`${bestDiscount}%`} />
+            <MetricCard
+              label="PC focus"
+              value="Steam-first"
+            />
           </div>
         </header>
 
@@ -348,7 +391,7 @@ try {
           </Link>
 
           <Link
-            href="/games?page=1&sort=all"
+            href="/pc"
             className="rounded-2xl border border-zinc-700 px-4 py-3 text-center text-sm font-medium transition hover:bg-zinc-800"
           >
             All Deals
@@ -413,20 +456,7 @@ try {
                   </div>
                 ) : suggestions.length > 0 ? (
                   suggestions.map((item) => {
-                    const href =
-                      item.cheapestDealID && item.cheapest
-                        ? `/game/${encodeURIComponent(
-                            item.cheapestDealID || ''
-                          )}?title=${encodeURIComponent(
-                            item.external || ''
-                          )}&thumb=${encodeURIComponent(
-                            item.thumb || ''
-                          )}&salePrice=${encodeURIComponent(
-                            item.cheapest || ''
-                          )}&normalPrice=&dealRating=&savings=&gameID=${encodeURIComponent(
-                            item.gameID
-                          )}&storeID=`
-                        : '/catalog'
+                    const href = buildCatalogCanonicalHref(item)
 
                     return (
                       <Link
@@ -475,7 +505,6 @@ try {
             searchResults.length > 0 ? (
               <div className="mt-4 grid grid-cols-2 gap-4 lg:grid-cols-4">
                 {searchResults.map((game) => {
-                  const hasActiveDeal = !!game.cheapestDealID && !!game.cheapest
                   const salePrice = Number(game.cheapest || 0)
                   const normalPrice = Number(game.normalPrice || 0)
                   const hasValidNormalPrice =
@@ -535,32 +564,12 @@ try {
                         </div>
 
                         <div className="mt-4 grid gap-2">
-                          {hasActiveDeal ? (
-                            <Link
-                              href={`/game/${encodeURIComponent(
-                                game.cheapestDealID || ''
-                              )}?title=${encodeURIComponent(
-                                game.external || ''
-                              )}&thumb=${encodeURIComponent(
-                                game.thumb || ''
-                              )}&salePrice=${encodeURIComponent(
-                                game.cheapest || ''
-                              )}&normalPrice=${encodeURIComponent(
-                                game.normalPrice || ''
-                              )}&dealRating=&savings=${encodeURIComponent(
-                                game.savings || ''
-                              )}&gameID=${encodeURIComponent(
-                                game.gameID
-                              )}&storeID=${encodeURIComponent(game.storeID || '')}`}
-                              className="rounded-xl bg-white px-4 py-2 text-center text-sm font-semibold text-black transition hover:opacity-90"
-                            >
-                              Open game page
-                            </Link>
-                          ) : (
-                            <div className="rounded-xl border border-zinc-800 px-4 py-2 text-center text-sm text-zinc-500">
-                              No active deal right now
-                            </div>
-                          )}
+                          <Link
+                            href={buildCatalogCanonicalHref(game)}
+                            className="rounded-xl bg-white px-4 py-2 text-center text-sm font-semibold text-black transition hover:opacity-90"
+                          >
+                            Open game page
+                          </Link>
                         </div>
                       </div>
                     </article>
@@ -583,18 +592,18 @@ try {
 
         {steamSpotlight.length > 0 ? (
           <SteamSpotlightSection
-  items={steamSpotlight.slice(0, 4)}
-  userId={userId}
-  trackedIds={trackedIds}
-  setTrackedIds={setTrackedIds}
-  setTrackMessage={setTrackMessage}
-/>
+            items={steamSpotlight.slice(0, 4)}
+            userId={userId}
+            trackedIds={trackedIds}
+            setTrackedIds={setTrackedIds}
+            setTrackMessage={setTrackMessage}
+          />
         ) : null}
 
         <SectionBlock
           title="Best Deals"
           subtitle="Strong overall deals from approved stores."
-          href="/games?page=1&sort=best"
+          href="/pc?sort=best"
           deals={bestDeals}
           userId={userId}
           trackedIds={trackedIds}
@@ -604,8 +613,8 @@ try {
 
         <SectionBlock
           title="Best Rated by Metacritic"
-          subtitle="The highest-rated games currently visible in the live deal inventory."
-          href="/games?page=1&sort=top-rated"
+          subtitle="The highest-rated games currently visible in the curated front page layer."
+          href="/pc?sort=top-rated"
           deals={metacriticTop}
           userId={userId}
           trackedIds={trackedIds}
@@ -616,7 +625,7 @@ try {
         <SectionBlock
           title="Biggest Discounts"
           subtitle="The highest discounts from approved stores."
-          href="/games?page=1&sort=biggest-discount"
+          href="/pc?sort=biggest-discount"
           deals={biggestDiscounts}
           userId={userId}
           trackedIds={trackedIds}
@@ -626,8 +635,8 @@ try {
 
         <SectionBlock
           title="Latest Deals"
-          subtitle="Fresh deals from approved stores."
-          href="/games?page=1&sort=latest"
+          subtitle="A curated front page mix. Use PC for broader browsing and Steam Deals for the deeper Steam discount layer."
+          href="/pc?sort=latest"
           deals={visibleDeals}
           userId={userId}
           trackedIds={trackedIds}
@@ -657,16 +666,16 @@ function SteamSpotlightSection({
       <div className="mb-4 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
         <div className="min-w-0">
           <h2 className="text-2xl font-bold">Steam Spotlight</h2>
-<p className="text-sm text-zinc-400">
-  Featured Steam deals inside LoboDeals, with internal game pages and a cleaner PC-first flow.
-</p>
+          <p className="text-sm text-zinc-400">
+            Curated highlights from the larger Steam deals layer, all routed into the same canonical PC game page experience.
+          </p>
         </div>
 
         <Link
-          href="/pc"
+          href="/pc?sort=steam-spotlight"
           className="text-sm font-medium text-emerald-300 transition hover:text-emerald-200"
         >
-          Explore PC
+          View all Steam Deals
         </Link>
       </div>
 
@@ -680,29 +689,7 @@ function SteamSpotlightSection({
             normalPrice > salePrice
           const steamDealID = `steam-${item.steamAppID}`
           const isTracked = trackedIds.includes(steamDealID)
-          const gameHref = `/game/${encodeURIComponent(
-            `steam-${item.steamAppID}`
-          )}?title=${encodeURIComponent(item.title)}&thumb=${encodeURIComponent(
-            item.thumb
-          )}&salePrice=${encodeURIComponent(
-            item.salePrice
-          )}&normalPrice=${encodeURIComponent(
-            item.normalPrice
-          )}&dealRating=${encodeURIComponent(
-            ''
-          )}&metacriticScore=${encodeURIComponent(
-            ''
-          )}&savings=${encodeURIComponent(
-            item.savings
-          )}&storeID=${encodeURIComponent(
-            item.storeID || '1'
-          )}&gameID=${encodeURIComponent(
-            ''
-          )}&steamAppID=${encodeURIComponent(
-            item.steamAppID
-          )}&steamUrl=${encodeURIComponent(
-            item.url
-          )}&source=${encodeURIComponent('steam-spotlight')}`
+          const gameHref = buildSteamCanonicalHref(item)
 
           return (
             <article
@@ -766,7 +753,7 @@ function SteamSpotlightSection({
                   </div>
                 </div>
 
-                                <div className="grid gap-2">
+                <div className="grid gap-2">
                   <button
                     onClick={async () => {
                       if (!userId) {
@@ -928,23 +915,7 @@ function DealCard({
     normalPriceNumber > 0 &&
     normalPriceNumber > salePriceNumber
 
-  const gameHref = `/game/${encodeURIComponent(
-    deal.dealID
-  )}?title=${encodeURIComponent(deal.title)}&thumb=${encodeURIComponent(
-    deal.thumb
-  )}&salePrice=${encodeURIComponent(
-    deal.salePrice
-  )}&normalPrice=${encodeURIComponent(
-    deal.normalPrice
-  )}&dealRating=${encodeURIComponent(
-    deal.dealRating || ''
-  )}&metacriticScore=${encodeURIComponent(
-    deal.metacriticScore || ''
-  )}&savings=${encodeURIComponent(
-    deal.savings
-  )}&storeID=${encodeURIComponent(deal.storeID)}&gameID=${encodeURIComponent(
-    deal.gameID || ''
-  )}`
+  const gameHref = buildDealCanonicalHref(deal)
 
   return (
     <article className="overflow-hidden rounded-3xl border border-zinc-800 bg-zinc-900 shadow-lg transition hover:-translate-y-1">
@@ -1055,18 +1026,12 @@ function DealCard({
             {trackedIds.includes(deal.dealID) ? 'Tracked game' : 'Track game'}
           </button>
 
-          <a
-            href={`/api/redirect?dealID=${encodeURIComponent(
-              deal.dealID
-            )}&title=${encodeURIComponent(deal.title)}&salePrice=${encodeURIComponent(
-              deal.salePrice
-            )}&normalPrice=${encodeURIComponent(deal.normalPrice)}`}
-            target="_blank"
-            rel="noopener noreferrer"
+          <Link
+            href={gameHref}
             className="rounded-xl bg-white px-4 py-2 text-center text-sm font-semibold text-black transition hover:opacity-90 active:scale-[0.98] active:translate-y-[1px]"
           >
-            Go to deal
-          </a>
+            Open game page
+          </Link>
         </div>
       </div>
     </article>

@@ -19,8 +19,8 @@ export default function Footer() {
           <Link href="/" className="transition hover:text-zinc-200">
             Home
           </Link>
-          <Link href="/games?page=1" className="transition hover:text-zinc-200">
-            All Games
+                    <Link href="/pc?page=1&sort=all" className="transition hover:text-zinc-200">
+            PC Deals
           </Link>
           <Link href="/wishlist" className="transition hover:text-zinc-200">
             Wishlist

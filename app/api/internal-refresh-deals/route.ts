@@ -39,7 +39,27 @@ type SteamFeaturedResponse = {
   new_releases?: SteamFeaturedBucket
 }
 
-type SteamSpotlightItem = {
+type SteamSearchResponse = {
+  success?: number
+  total_count?: number
+  results_html?: string
+}
+
+type SteamSalesPageDebug = {
+  start: number
+  totalCount: number
+  htmlLength: number
+  rawAnchorCount: number
+  parsedItems: number
+}
+
+type SteamSalesDebugSummary = {
+  pageSummaries: SteamSalesPageDebug[]
+  totalCollectedBeforeDedupe: number
+  totalAfterDedupe: number
+}
+
+type SteamStoreItem = {
   steamAppID: string
   title: string
   salePrice: string
@@ -52,10 +72,15 @@ type SteamSpotlightItem = {
 }
 
 const ALLOWED_STORE_IDS = new Set(['1', '3', '7', '8', '11', '13', '15', '25'])
+
 const PAGE_COUNT = 24
 const PAGE_SIZE = 60
 const FETCH_DELAY_MS = 350
+
 const STEAM_SPOTLIGHT_LIMIT = 60
+const STEAM_SALES_PAGE_SIZE = 100
+const STEAM_SALES_PAGE_COUNT = 12
+const STEAM_SALES_LIMIT = 1200
 
 function getServiceSupabase() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL
@@ -209,7 +234,7 @@ function getSteamPlatforms(item: SteamFeaturedItem) {
 }
 
 function scoreSteamItem(
-  item: SteamSpotlightItem,
+  item: SteamStoreItem,
   source: 'specials' | 'top_sellers' | 'new_releases'
 ) {
   const savings = Number(item.savings || 0)
@@ -235,7 +260,7 @@ function scoreSteamItem(
   return score
 }
 
-function toSteamSpotlightItem(item: SteamFeaturedItem): SteamSpotlightItem | null {
+function toSteamSpotlightItem(item: SteamFeaturedItem): SteamStoreItem | null {
   if (!item.id || !item.name) return null
 
   const discountPercent = Number(item.discount_percent || 0)
@@ -245,7 +270,7 @@ function toSteamSpotlightItem(item: SteamFeaturedItem): SteamSpotlightItem | nul
   if (discountPercent <= 0) return null
   if (originalPrice <= 0) return null
 
-  const result: SteamSpotlightItem = {
+  const result: SteamStoreItem = {
     steamAppID: String(item.id),
     title: item.name || '',
     salePrice: (finalPrice / 100).toFixed(2),
@@ -271,7 +296,7 @@ function extractSteamItems(
 
   return list
     .map(toSteamSpotlightItem)
-    .filter((item): item is SteamSpotlightItem => !!item)
+    .filter((item): item is SteamStoreItem => !!item)
     .map((item) => ({
       ...item,
       __score: scoreSteamItem(item, source),
@@ -279,7 +304,7 @@ function extractSteamItems(
     }))
 }
 
-async function fetchSteamSpotlightUS(): Promise<SteamSpotlightItem[]> {
+async function fetchSteamSpotlightUS(): Promise<SteamStoreItem[]> {
   try {
     const res = await fetch(
       'https://store.steampowered.com/api/featuredcategories?cc=us&l=en',
@@ -306,7 +331,7 @@ async function fetchSteamSpotlightUS(): Promise<SteamSpotlightItem[]> {
 
     const bestByApp = new Map<
       string,
-      SteamSpotlightItem & { __score: number; __source: string }
+      SteamStoreItem & { __score: number; __source: string }
     >()
 
     for (const item of allCandidates) {
@@ -327,6 +352,243 @@ async function fetchSteamSpotlightUS(): Promise<SteamSpotlightItem[]> {
   }
 }
 
+function decodeHtml(text: string) {
+  return text
+    .replace(/&amp;/g, '&')
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'")
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, ' ')
+    .replace(/&nbsp;/g, ' ')
+    .trim()
+}
+
+function stripHtml(text: string) {
+  return decodeHtml(text.replace(/<[^>]+>/g, '').replace(/\s+/g, ' ').trim())
+}
+
+function parseUsdPrice(raw: string) {
+  const cleaned = stripHtml(raw).replace(/[^0-9.,]/g, '').replace(/,/g, '')
+  const amount = Number(cleaned)
+
+  if (!Number.isFinite(amount) || amount <= 0) return ''
+  return amount.toFixed(2)
+}
+
+function parseDiscount(raw: string) {
+  const cleaned = stripHtml(raw).replace(/[^0-9-]/g, '')
+  const amount = Number(cleaned)
+
+  if (!Number.isFinite(amount) || amount <= 0) return ''
+  return String(Math.abs(amount))
+}
+
+function scoreSteamSalesItem(item: SteamStoreItem) {
+  const savings = Number(item.savings || 0)
+  const normalPrice = Number(item.normalPrice || 0)
+  const salePrice = Number(item.salePrice || 0)
+  const penalty = penalizeLowValueContent(item.title || '')
+
+  let score = 0
+
+  score += Math.min(savings, 95) * 1.6
+  score += Math.min(normalPrice, 70) * 0.7
+
+  if (normalPrice >= 20) score += 10
+  if (normalPrice >= 40) score += 12
+  if (salePrice > 0 && salePrice <= 3) score -= 6
+
+  score -= penalty
+
+  return score
+}
+
+function extractSteamSalesFromHtml(html: string): {
+  items: SteamStoreItem[]
+  rawAnchorCount: number
+} {
+  const rows = html.split('<a ').slice(1)
+  const items: SteamStoreItem[] = []
+
+  for (const partial of rows) {
+    const row = `<a ${partial}`
+
+    if (!row.includes('/app/')) continue
+
+    const appIdMatch =
+      row.match(/data-ds-appid="(\d+)"/) || row.match(/\/app\/(\d+)/)
+    const hrefMatch = row.match(/href="([^"]+)"/)
+    const titleMatch = row.match(/<span class="title">([\s\S]*?)<\/span>/)
+    const imageMatch = row.match(/<img[^>]+src="([^"]+)"/)
+
+    const steamAppID = appIdMatch?.[1] || ''
+    const title = stripHtml(titleMatch?.[1] || '')
+    const thumb = imageMatch?.[1] || ''
+    const url = hrefMatch?.[1] || ''
+
+    // Sacamos el descuento desde cualquier span/fragmento que contenga %
+    const savingsMatch = row.match(/-?\d+%/)
+    const savings = parseDiscount(savingsMatch?.[0] || '')
+
+    // En vez de depender del bloque HTML específico de Steam,
+    // extraemos todos los valores monetarios en dólares de la fila.
+    const rowText = stripHtml(
+      row
+        .replace(/<br\s*\/?>/gi, ' ')
+        .replace(/\s+/g, ' ')
+        .trim()
+    )
+
+    const moneyMatches = rowText.match(/\$[0-9][0-9.,]*/g) || []
+
+    let normalPrice = ''
+    let salePrice = ''
+
+    if (moneyMatches.length >= 2) {
+      normalPrice = parseUsdPrice(moneyMatches[0])
+      salePrice = parseUsdPrice(moneyMatches[moneyMatches.length - 1])
+    } else if (moneyMatches.length === 1) {
+      salePrice = parseUsdPrice(moneyMatches[0])
+      normalPrice = salePrice
+    }
+
+    if (!steamAppID || !title || !salePrice || !normalPrice || !url) {
+      continue
+    }
+
+    if (Number(normalPrice) <= 0 || Number(salePrice) <= 0) continue
+
+    // Para steam_sales_us solo queremos descuentos reales
+    if (!savings || Number(normalPrice) <= Number(salePrice)) continue
+    if (penalizeLowValueContent(title) >= 80) continue
+
+    items.push({
+      steamAppID,
+      title,
+      salePrice,
+      normalPrice,
+      savings,
+      thumb,
+      storeID: '1',
+      platform: 'PC',
+      url,
+    })
+  }
+
+  return {
+    items,
+    rawAnchorCount: rows.length,
+  }
+}
+
+async function fetchSteamSalesPage(start: number, count: number) {
+  const url =
+    `https://store.steampowered.com/search/results/?query=&start=${start}` +
+    `&count=${count}&dynamic_data=&sort_by=_ASC&specials=1&infinite=1` +
+    `&supportedlang=english&snr=1_7_7_230_7&cc=us`
+
+  const res = await fetch(url, {
+    cache: 'no-store',
+    headers: {
+      Accept: 'application/json',
+      'User-Agent': 'LoboDeals/1.0',
+    },
+  })
+
+  if (!res.ok) {
+    throw new Error(`Steam sales page failed with ${res.status}`)
+  }
+
+  const data = (await res.json()) as SteamSearchResponse
+  const html = typeof data?.results_html === 'string' ? data.results_html : ''
+  const parsed = extractSteamSalesFromHtml(html)
+
+  return {
+    totalCount: Number(data?.total_count || 0),
+    items: parsed.items,
+    debug: {
+      start,
+      totalCount: Number(data?.total_count || 0),
+      htmlLength: html.length,
+      rawAnchorCount: parsed.rawAnchorCount,
+      parsedItems: parsed.items.length,
+    } satisfies SteamSalesPageDebug,
+  }
+}
+
+async function fetchSteamSalesUS(): Promise<{
+  items: SteamStoreItem[]
+  debug: SteamSalesDebugSummary
+}> {
+    try {
+    const collected: SteamStoreItem[] = []
+    const bestByApp = new Map<string, SteamStoreItem & { __score: number }>()
+    const pageSummaries: SteamSalesPageDebug[] = []
+    let reportedTotalCount = 0
+
+    for (let page = 0; page < STEAM_SALES_PAGE_COUNT; page += 1) {
+      const start = page * STEAM_SALES_PAGE_SIZE
+            const { totalCount, items, debug } = await fetchSteamSalesPage(
+        start,
+        STEAM_SALES_PAGE_SIZE
+      )
+
+            pageSummaries.push(debug)
+      reportedTotalCount = Math.max(reportedTotalCount, totalCount)
+
+      for (const item of items) {
+        const scored = {
+          ...item,
+          __score: scoreSteamSalesItem(item),
+        }
+
+        const existing = bestByApp.get(item.steamAppID)
+        if (!existing || scored.__score > existing.__score) {
+          bestByApp.set(item.steamAppID, scored)
+        }
+      }
+
+      collected.push(...items)
+
+      if (items.length < Math.floor(STEAM_SALES_PAGE_SIZE * 0.6)) {
+        break
+      }
+
+      if (reportedTotalCount > 0 && start + STEAM_SALES_PAGE_SIZE >= reportedTotalCount) {
+        break
+      }
+
+      if (page < STEAM_SALES_PAGE_COUNT - 1) {
+        await sleep(FETCH_DELAY_MS)
+      }
+    }
+
+        const items = [...bestByApp.values()]
+      .sort((a, b) => b.__score - a.__score)
+      .slice(0, STEAM_SALES_LIMIT)
+      .map(({ __score, ...item }) => item)
+
+    return {
+      items,
+      debug: {
+        pageSummaries,
+        totalCollectedBeforeDedupe: collected.length,
+        totalAfterDedupe: items.length,
+      },
+    }
+  } catch (error) {
+    console.error('Steam sales refresh failed', error)
+    return {
+      items: [],
+      debug: {
+        pageSummaries: [],
+        totalCollectedBeforeDedupe: 0,
+        totalAfterDedupe: 0,
+      },
+    }
+  }
+}
+
 export async function POST(request: Request) {
   try {
     const authHeader = request.headers.get('authorization')
@@ -344,38 +606,38 @@ export async function POST(request: Request) {
     }
 
     const allDeals: CheapSharkDeal[] = []
-let consecutiveFailures = 0
-let consecutiveShortPages = 0
+    let consecutiveFailures = 0
+    let consecutiveShortPages = 0
 
-for (let page = 0; page < PAGE_COUNT; page += 1) {
-  try {
-    const pageDeals = await fetchDealsPage(page)
+    for (let page = 0; page < PAGE_COUNT; page += 1) {
+      try {
+        const pageDeals = await fetchDealsPage(page)
 
-    allDeals.push(...pageDeals)
-    consecutiveFailures = 0
+        allDeals.push(...pageDeals)
+        consecutiveFailures = 0
 
-    if (pageDeals.length < PAGE_SIZE * 0.5) {
-      consecutiveShortPages += 1
-    } else {
-      consecutiveShortPages = 0
+        if (pageDeals.length < PAGE_SIZE * 0.5) {
+          consecutiveShortPages += 1
+        } else {
+          consecutiveShortPages = 0
+        }
+
+        if (consecutiveShortPages >= 2) {
+          break
+        }
+      } catch (error) {
+        console.error(`Refresh page ${page} failed`, error)
+        consecutiveFailures += 1
+
+        if (consecutiveFailures >= 2) {
+          break
+        }
+      }
+
+      if (page < PAGE_COUNT - 1) {
+        await sleep(FETCH_DELAY_MS)
+      }
     }
-
-    if (consecutiveShortPages >= 2) {
-      break
-    }
-  } catch (error) {
-    console.error(`Refresh page ${page} failed`, error)
-    consecutiveFailures += 1
-
-    if (consecutiveFailures >= 2) {
-      break
-    }
-  }
-
-  if (page < PAGE_COUNT - 1) {
-    await sleep(FETCH_DELAY_MS)
-  }
-}
 
     const cleaned = allDeals
       .filter((deal) => {
@@ -398,7 +660,13 @@ for (let page = 0; page < PAGE_COUNT; page += 1) {
       }))
       .sort((a, b) => scoreDeal(b) - scoreDeal(a))
 
-    const steamSpotlight = await fetchSteamSpotlightUS()
+        const [steamSpotlight, steamSalesResult] = await Promise.all([
+      fetchSteamSpotlightUS(),
+      fetchSteamSalesUS(),
+    ])
+
+    const steamSales = steamSalesResult.items
+    const steamSalesDebug = steamSalesResult.debug
 
     const supabase = getServiceSupabase()
 
@@ -413,24 +681,41 @@ for (let page = 0; page < PAGE_COUNT; page += 1) {
 
     if (dealsError) throw dealsError
 
-    const { error: steamError } = await supabase.from('deals_cache').upsert(
+    const { error: steamSpotlightError } = await supabase
+      .from('deals_cache')
+      .upsert(
+        {
+          cache_key: 'steam_spotlight_us',
+          payload: steamSpotlight,
+          updated_at: new Date().toISOString(),
+        },
+        { onConflict: 'cache_key' }
+      )
+
+    if (steamSpotlightError) throw steamSpotlightError
+
+    const { error: steamSalesError } = await supabase.from('deals_cache').upsert(
       {
-        cache_key: 'steam_spotlight_us',
-        payload: steamSpotlight,
+        cache_key: 'steam_sales_us',
+        payload: steamSales,
         updated_at: new Date().toISOString(),
       },
       { onConflict: 'cache_key' }
     )
 
-    if (steamError) throw steamError
+    if (steamSalesError) throw steamSalesError
 
-    return Response.json({
-  success: true,
-  cheapsharkCount: cleaned.length,
-  steamSpotlightCount: steamSpotlight.length,
-  pagesAttempted: PAGE_COUNT,
-  pageSize: PAGE_SIZE,
-})
+        return Response.json({
+      success: true,
+      cheapsharkCount: cleaned.length,
+      steamSpotlightCount: steamSpotlight.length,
+      steamSalesCount: steamSales.length,
+      pagesAttempted: PAGE_COUNT,
+      pageSize: PAGE_SIZE,
+      steamSalesPagesAttempted: STEAM_SALES_PAGE_COUNT,
+      steamSalesPageSize: STEAM_SALES_PAGE_SIZE,
+      steamSalesDebug,
+    })
   } catch (error) {
     console.error('internal-refresh-deals error', error)
 

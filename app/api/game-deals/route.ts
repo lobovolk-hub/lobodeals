@@ -40,6 +40,7 @@ type RelatedDeal = {
   storeID?: string
   dealRating?: string
   metacriticScore?: string
+  steamUrl?: string
 }
 
 const ALLOWED_STORE_IDS = new Set(['1', '3', '7', '8', '11', '13', '15', '25'])
@@ -53,19 +54,55 @@ function normalizeTitle(value: string) {
     .trim()
 }
 
+function titleBase(value: string) {
+  return normalizeTitle(value)
+    .replace(/\b(deluxe edition|ultimate edition|complete edition|gold edition|definitive edition|remastered|season pass|deluxe pack|bundle|dlc|add on|addon)\b/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+}
+
+function titleDistance(rawA: string, rawB: string) {
+  const a = normalizeTitle(rawA)
+  const b = normalizeTitle(rawB)
+  if (a === b) return 100
+  const baseA = titleBase(rawA)
+  const baseB = titleBase(rawB)
+  if (baseA && baseA === baseB) return 80
+  if (a.startsWith(`${b} `) || b.startsWith(`${a} `)) return 40
+  if (baseA.startsWith(`${baseB} `) || baseB.startsWith(`${baseA} `)) return 20
+  return 0
+}
+
 function dedupeDeals(deals: RelatedDeal[]) {
-  const seen = new Set<string>()
-  const result: RelatedDeal[] = []
+  const bestByStore = new Map<string, RelatedDeal>()
 
   for (const deal of deals) {
-    const key = `${deal.storeID || ''}-${deal.dealID || ''}-${deal.salePrice || ''}`
+    const key = `${deal.storeID || ''}`
+    const existing = bestByStore.get(key)
 
-    if (seen.has(key)) continue
-    seen.add(key)
-    result.push(deal)
+    if (!existing) {
+      bestByStore.set(key, deal)
+      continue
+    }
+
+    const currentPrice = Number(deal.salePrice || 999999)
+    const existingPrice = Number(existing.salePrice || 999999)
+
+    if (currentPrice < existingPrice) {
+      bestByStore.set(key, deal)
+      continue
+    }
+
+    if (currentPrice === existingPrice) {
+      const currentSavings = Number(deal.savings || 0)
+      const existingSavings = Number(existing.savings || 0)
+      if (currentSavings > existingSavings) {
+        bestByStore.set(key, deal)
+      }
+    }
   }
 
-  return result
+  return Array.from(bestByStore.values())
 }
 
 export async function GET(request: Request) {
@@ -81,19 +118,17 @@ export async function GET(request: Request) {
     const thumb = searchParams.get('thumb')
 
     if (!gameID && !title && !steamAppID) {
-      return Response.json(
-        { error: 'Missing gameID, title or steamAppID' },
-        { status: 400 }
-      )
+      return Response.json({ error: 'Missing gameID, title or steamAppID' }, { status: 400 })
     }
 
     const results: RelatedDeal[] = []
+    const requestedTitle = title || ''
 
     if (steamAppID) {
       results.push({
         dealID: `steam-${steamAppID}`,
         gameID: '',
-        title: title || '',
+        title: requestedTitle,
         salePrice: steamSalePrice || '',
         normalPrice: steamNormalPrice || '',
         savings: steamSavings || '',
@@ -101,6 +136,7 @@ export async function GET(request: Request) {
         storeID: '1',
         dealRating: '',
         metacriticScore: '',
+        steamUrl: steamUrl || '',
       })
     }
 
@@ -118,41 +154,33 @@ export async function GET(request: Request) {
 
       if (res.ok) {
         const data = (await res.json()) as CheapSharkGameDetail
-        const infoTitle = data?.info?.title || title || ''
+        const infoTitle = data?.info?.title || requestedTitle || ''
         const infoThumb = data?.info?.thumb || thumb || ''
         const deals = Array.isArray(data?.deals) ? data.deals : []
 
         const approvedDeals = deals
-  .filter((deal) => {
-    if (!deal.storeID || !ALLOWED_STORE_IDS.has(deal.storeID)) return false
-
-    // Si ya tenemos una fila Steam interna para este juego,
-    // no duplicamos la fila de Steam que venga de CheapShark.
-    if (steamAppID && deal.storeID === '1') return false
-
-    return true
-  })
-  .map((deal) => ({
-    dealID: deal.dealID || '',
-    gameID,
-    title: infoTitle,
-    salePrice: deal.price || '',
-    normalPrice: deal.retailPrice || '',
-    savings: deal.savings || '',
-    thumb: infoThumb,
-    storeID: deal.storeID || '',
-  }))
+          .filter((deal) => {
+            if (!deal.storeID || !ALLOWED_STORE_IDS.has(deal.storeID)) return false
+            if (steamAppID && deal.storeID === '1') return false
+            return true
+          })
+          .map((deal) => ({
+            dealID: deal.dealID || '',
+            gameID,
+            title: infoTitle,
+            salePrice: deal.price || '',
+            normalPrice: deal.retailPrice || '',
+            savings: deal.savings || '',
+            thumb: infoThumb,
+            storeID: deal.storeID || '',
+            steamUrl: undefined,
+          }))
 
         results.push(...approvedDeals)
       }
-    } else if (title) {
-      const rawTitle = title || ''
-      const normalizedBase = normalizeTitle(rawTitle)
-
+    } else if (requestedTitle) {
       const res = await fetch(
-        `https://www.cheapshark.com/api/1.0/deals?title=${encodeURIComponent(
-          rawTitle
-        )}&pageSize=60&sortBy=Price`,
+        `https://www.cheapshark.com/api/1.0/deals?title=${encodeURIComponent(requestedTitle)}&pageSize=60&sortBy=Price`,
         {
           cache: 'no-store',
           headers: {
@@ -167,34 +195,26 @@ export async function GET(request: Request) {
         const deals = Array.isArray(data) ? (data as CheapSharkDealSearch[]) : []
 
         const filtered = deals
-  .filter((deal) => {
-    if (!deal.storeID || !ALLOWED_STORE_IDS.has(deal.storeID)) return false
-    if (!deal.title) return false
+          .filter((deal) => {
+            if (!deal.storeID || !ALLOWED_STORE_IDS.has(deal.storeID)) return false
+            if (!deal.title) return false
+            if (steamAppID && deal.storeID === '1') return false
 
-    // Si ya tenemos una fila Steam interna para este juego,
-    // no duplicamos la fila de Steam que venga de CheapShark.
-    if (steamAppID && deal.storeID === '1') return false
-
-    const normalizedDeal = normalizeTitle(deal.title)
-
-    return (
-      normalizedDeal === normalizedBase ||
-      normalizedDeal.startsWith(`${normalizedBase} `) ||
-      normalizedBase.startsWith(`${normalizedDeal} `)
-    )
-  })
-  .map((deal) => ({
-    dealID: deal.dealID || '',
-    gameID: deal.gameID || '',
-    title: deal.title || rawTitle,
-    salePrice: deal.salePrice || '',
-    normalPrice: deal.normalPrice || '',
-    savings: deal.savings || '',
-    thumb: deal.thumb || thumb || '',
-    storeID: deal.storeID || '',
-    dealRating: deal.dealRating || '',
-    metacriticScore: deal.metacriticScore || '',
-  }))
+            return titleDistance(requestedTitle, deal.title) >= 80
+          })
+          .map((deal) => ({
+            dealID: deal.dealID || '',
+            gameID: deal.gameID || '',
+            title: deal.title || requestedTitle,
+            salePrice: deal.salePrice || '',
+            normalPrice: deal.normalPrice || '',
+            savings: deal.savings || '',
+            thumb: deal.thumb || thumb || '',
+            storeID: deal.storeID || '',
+            dealRating: deal.dealRating || '',
+            metacriticScore: deal.metacriticScore || '',
+            steamUrl: undefined,
+          }))
 
         results.push(...filtered)
       }
@@ -206,13 +226,7 @@ export async function GET(request: Request) {
       return aPrice - bPrice
     })
 
-    return Response.json(
-      deduped.map((deal) => ({
-        ...deal,
-        steamUrl:
-          deal.dealID === `steam-${steamAppID}` && steamUrl ? steamUrl : undefined,
-      }))
-    )
+    return Response.json(deduped)
   } catch (error) {
     return Response.json(
       {

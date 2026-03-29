@@ -56,8 +56,8 @@ export default function Navbar() {
   }
 
   return (
-    <nav className="border-b border-zinc-800 bg-zinc-900/95 backdrop-blur">
-      <div className="mx-auto max-w-6xl px-4 py-4 sm:px-6">
+    <nav className="sticky top-0 z-[100] border-b border-zinc-800 bg-zinc-900/95 backdrop-blur">
+      <div className="mx-auto max-w-7xl px-4 py-4 sm:px-6">
         <div className="flex items-center justify-between gap-3">
           <Link
             href="/"
@@ -85,7 +85,7 @@ export default function Navbar() {
               Catalog
             </Link>
 
-            <div className="relative" ref={dropdownRef}>
+            <div className="relative z-[120]" ref={dropdownRef}>
               <button
                 type="button"
                 onClick={() => setPlatformsOpen((prev) => !prev)}
@@ -95,17 +95,9 @@ export default function Navbar() {
               </button>
 
               {platformsOpen && (
-                <div className="absolute right-0 z-50 mt-2 w-52 overflow-hidden rounded-2xl border border-zinc-800 bg-zinc-900 shadow-2xl">
+                <div className="absolute right-0 top-full z-[130] mt-2 w-56 overflow-hidden rounded-2xl border border-zinc-800 bg-zinc-900 shadow-2xl ring-1 ring-black/30">
                   <Link
-                    href="/games?page=1&sort=all"
-                    onClick={() => setPlatformsOpen(false)}
-                    className="block px-4 py-3 text-sm transition hover:bg-zinc-800"
-                  >
-                    All Platform Deals
-                  </Link>
-
-                  <Link
-                    href="/pc"
+                    href="/pc?page=1&sort=all"
                     onClick={() => setPlatformsOpen(false)}
                     className="block px-4 py-3 text-sm transition hover:bg-zinc-800"
                   >
@@ -113,9 +105,21 @@ export default function Navbar() {
                   </Link>
 
                   <Link
-                    href="/playstation"
+                    href="/pc?page=1&sort=steam-spotlight"
                     onClick={() => setPlatformsOpen(false)}
                     className="block px-4 py-3 text-sm transition hover:bg-zinc-800"
+                  >
+                    Steam Deals
+                  </Link>
+
+                  <div className="border-t border-zinc-800 px-4 py-2 text-[11px] uppercase tracking-[0.25em] text-zinc-500">
+                    Coming later
+                  </div>
+
+                  <Link
+                    href="/playstation"
+                    onClick={() => setPlatformsOpen(false)}
+                    className="block px-4 py-3 text-sm text-zinc-400 transition hover:bg-zinc-800"
                   >
                     PlayStation
                   </Link>
@@ -123,7 +127,7 @@ export default function Navbar() {
                   <Link
                     href="/xbox"
                     onClick={() => setPlatformsOpen(false)}
-                    className="block px-4 py-3 text-sm transition hover:bg-zinc-800"
+                    className="block px-4 py-3 text-sm text-zinc-400 transition hover:bg-zinc-800"
                   >
                     Xbox
                   </Link>
@@ -131,7 +135,7 @@ export default function Navbar() {
                   <Link
                     href="/nintendo"
                     onClick={() => setPlatformsOpen(false)}
-                    className="block px-4 py-3 text-sm transition hover:bg-zinc-800"
+                    className="block px-4 py-3 text-sm text-zinc-400 transition hover:bg-zinc-800"
                   >
                     Nintendo
                   </Link>
@@ -221,15 +225,7 @@ export default function Navbar() {
               {mobilePlatformsOpen && (
                 <div className="grid gap-2 rounded-xl border border-zinc-800 bg-zinc-950 p-2">
                   <Link
-                    href="/games?page=1&sort=all"
-                    onClick={closeMobileMenu}
-                    className="rounded-lg px-3 py-2 transition hover:bg-zinc-800"
-                  >
-                    All Platform Deals
-                  </Link>
-
-                  <Link
-                    href="/pc"
+                    href="/pc?page=1&sort=all"
                     onClick={closeMobileMenu}
                     className="rounded-lg px-3 py-2 transition hover:bg-zinc-800"
                   >
@@ -237,9 +233,21 @@ export default function Navbar() {
                   </Link>
 
                   <Link
-                    href="/playstation"
+                    href="/pc?page=1&sort=steam-spotlight"
                     onClick={closeMobileMenu}
                     className="rounded-lg px-3 py-2 transition hover:bg-zinc-800"
+                  >
+                    Steam Deals
+                  </Link>
+
+                  <div className="px-3 py-2 text-[11px] uppercase tracking-[0.25em] text-zinc-500">
+                    Coming later
+                  </div>
+
+                  <Link
+                    href="/playstation"
+                    onClick={closeMobileMenu}
+                    className="rounded-lg px-3 py-2 text-zinc-400 transition hover:bg-zinc-800"
                   >
                     PlayStation
                   </Link>
@@ -247,7 +255,7 @@ export default function Navbar() {
                   <Link
                     href="/xbox"
                     onClick={closeMobileMenu}
-                    className="rounded-lg px-3 py-2 transition hover:bg-zinc-800"
+                    className="rounded-lg px-3 py-2 text-zinc-400 transition hover:bg-zinc-800"
                   >
                     Xbox
                   </Link>
@@ -255,7 +263,7 @@ export default function Navbar() {
                   <Link
                     href="/nintendo"
                     onClick={closeMobileMenu}
-                    className="rounded-lg px-3 py-2 transition hover:bg-zinc-800"
+                    className="rounded-lg px-3 py-2 text-zinc-400 transition hover:bg-zinc-800"
                   >
                     Nintendo
                   </Link>
@@ -280,26 +288,20 @@ export default function Navbar() {
                 </Link>
               ) : null}
 
-              <div className="pt-2">
+              <div className="px-3 py-2">
                 <RegionSelector />
               </div>
 
               {userEmail ? (
-                <>
-                  <div className="rounded-xl px-3 py-3 text-zinc-400">
-                    Signed in
-                  </div>
-
-                  <button
-                    onClick={async () => {
-                      await supabase.auth.signOut()
-                      closeMobileMenu()
-                    }}
-                    className="rounded-xl px-3 py-3 text-left transition hover:bg-zinc-800"
-                  >
-                    Sign out
-                  </button>
-                </>
+                <button
+                  onClick={async () => {
+                    await supabase.auth.signOut()
+                    closeMobileMenu()
+                  }}
+                  className="rounded-xl px-3 py-3 text-left transition hover:bg-zinc-800"
+                >
+                  Sign out
+                </button>
               ) : (
                 <Link
                   href="/login"

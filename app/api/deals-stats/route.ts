@@ -6,7 +6,7 @@ type Deal = {
   dealID: string
 }
 
-type SteamSpotlightItem = {
+type SteamStoreItem = {
   steamAppID: string
 }
 
@@ -25,32 +25,44 @@ export async function GET() {
   try {
     const supabase = getServiceSupabase()
 
-    const [{ data: dealsCache }, { data: steamCache }] = await Promise.all([
-      supabase
-        .from('deals_cache')
-        .select('payload, updated_at')
-        .eq('cache_key', 'cheapshark_deals_main')
-        .maybeSingle(),
-      supabase
-        .from('deals_cache')
-        .select('payload, updated_at')
-        .eq('cache_key', 'steam_spotlight_us')
-        .maybeSingle(),
-    ])
+    const [{ data: dealsCache }, { data: steamSpotlightCache }, { data: steamSalesCache }] =
+      await Promise.all([
+        supabase
+          .from('deals_cache')
+          .select('payload, updated_at')
+          .eq('cache_key', 'cheapshark_deals_main')
+          .maybeSingle(),
+        supabase
+          .from('deals_cache')
+          .select('payload, updated_at')
+          .eq('cache_key', 'steam_spotlight_us')
+          .maybeSingle(),
+        supabase
+          .from('deals_cache')
+          .select('payload, updated_at')
+          .eq('cache_key', 'steam_sales_us')
+          .maybeSingle(),
+      ])
 
     const deals = Array.isArray(dealsCache?.payload)
       ? (dealsCache.payload as Deal[])
       : []
 
-    const steam = Array.isArray(steamCache?.payload)
-      ? (steamCache.payload as SteamSpotlightItem[])
+    const steamSpotlight = Array.isArray(steamSpotlightCache?.payload)
+      ? (steamSpotlightCache.payload as SteamStoreItem[])
+      : []
+
+    const steamSales = Array.isArray(steamSalesCache?.payload)
+      ? (steamSalesCache.payload as SteamStoreItem[])
       : []
 
     return Response.json({
       dealsIndexed: deals.length,
-      steamIndexed: steam.length,
+      steamIndexed: steamSales.length,
+      steamSpotlightIndexed: steamSpotlight.length,
       dealsUpdatedAt: dealsCache?.updated_at || null,
-      steamUpdatedAt: steamCache?.updated_at || null,
+      steamUpdatedAt: steamSalesCache?.updated_at || null,
+      steamSpotlightUpdatedAt: steamSpotlightCache?.updated_at || null,
     })
   } catch (error) {
     console.error('api/deals-stats error', error)
@@ -58,8 +70,10 @@ export async function GET() {
     return Response.json({
       dealsIndexed: 0,
       steamIndexed: 0,
+      steamSpotlightIndexed: 0,
       dealsUpdatedAt: null,
       steamUpdatedAt: null,
+      steamSpotlightUpdatedAt: null,
     })
   }
 }

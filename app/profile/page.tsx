@@ -177,11 +177,11 @@ export default function ProfilePage() {
                     Search all games
                   </Link>
 
-                  <Link
-                    href="/games?page=1&sort=all"
+                                    <Link
+                    href="/pc?page=1&sort=all"
                     className="rounded-xl border border-zinc-700 px-4 py-3 text-sm font-medium transition hover:bg-zinc-800"
                   >
-                    Browse all deals
+                    Browse PC deals
                   </Link>
                 </div>
               </div>

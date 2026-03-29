@@ -60,11 +60,11 @@ export default function XboxPage() {
               Search all games
             </Link>
 
-            <Link
-              href="/games?page=1&sort=all"
+                        <Link
+              href="/pc?page=1&sort=all"
               className="rounded-2xl border border-zinc-700 px-4 py-3 text-center text-sm font-medium transition hover:bg-zinc-800"
             >
-              Browse all deals
+              Browse PC deals
             </Link>
 
             <Link

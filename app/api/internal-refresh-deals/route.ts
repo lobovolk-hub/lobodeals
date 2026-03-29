@@ -441,16 +441,25 @@ function extractSteamSalesFromHtml(html: string): {
 
     const moneyMatches = rowText.match(/\$[0-9][0-9.,]*/g) || []
 
-    let normalPrice = ''
-    let salePrice = ''
+let normalPrice = ''
+let salePrice = ''
 
-    if (moneyMatches.length >= 2) {
-      normalPrice = parseUsdPrice(moneyMatches[0])
-      salePrice = parseUsdPrice(moneyMatches[moneyMatches.length - 1])
-    } else if (moneyMatches.length === 1) {
-      salePrice = parseUsdPrice(moneyMatches[0])
-      normalPrice = salePrice
-    }
+if (moneyMatches.length >= 2) {
+  const firstMatch = moneyMatches[0]
+  const lastMatch = moneyMatches[moneyMatches.length - 1]
+
+  if (firstMatch && lastMatch) {
+    normalPrice = parseUsdPrice(firstMatch)
+    salePrice = parseUsdPrice(lastMatch)
+  }
+} else if (moneyMatches.length === 1) {
+  const onlyMatch = moneyMatches[0]
+
+  if (onlyMatch) {
+    salePrice = parseUsdPrice(onlyMatch)
+    normalPrice = salePrice
+  }
+}
 
     if (!steamAppID || !title || !salePrice || !normalPrice || !url) {
       continue

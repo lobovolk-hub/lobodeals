@@ -137,9 +137,17 @@ function GamesPageContent() {
 
     switch (sort) {
       case 'best':
-        return grouped.sort(
-          (a, b) => Number(b.dealRating || 0) - Number(a.dealRating || 0)
-        )
+        return grouped.sort((a, b) => {
+          const aScore =
+            Number(a.dealRating || 0) * 10 +
+            Number(a.metacriticScore || 0) * 2 +
+            Number(a.savings || 0) * 0.5
+          const bScore =
+            Number(b.dealRating || 0) * 10 +
+            Number(b.metacriticScore || 0) * 2 +
+            Number(b.savings || 0) * 0.5
+          return bScore - aScore
+        })
       case 'top-rated':
         return grouped
           .filter((deal) => Number(deal.metacriticScore || 0) > 0)
@@ -428,6 +436,8 @@ function GameDealCard({
     deal.normalPrice
   )}&dealRating=${encodeURIComponent(
     deal.dealRating || ''
+  )}&metacriticScore=${encodeURIComponent(
+    deal.metacriticScore || ''
   )}&savings=${encodeURIComponent(
     deal.savings
   )}&storeID=${encodeURIComponent(deal.storeID)}&gameID=${encodeURIComponent(

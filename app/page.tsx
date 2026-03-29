@@ -39,8 +39,29 @@ type LightweightSuggestion = {
   cheapest?: string
 }
 
+type SteamSpotlightItem = {
+  steamAppID: string
+  title: string
+  salePrice: string
+  normalPrice: string
+  savings: string
+  thumb: string
+  storeID: string
+  platform: string
+  url: string
+}
+
+function pushTrackMessage(
+  setTrackMessage: React.Dispatch<React.SetStateAction<string>>,
+  message: string
+) {
+  setTrackMessage(message)
+  window.setTimeout(() => setTrackMessage(''), 2500)
+}
+
 export default function Home() {
   const [deals, setDeals] = useState<Deal[]>([])
+  const [steamSpotlight, setSteamSpotlight] = useState<SteamSpotlightItem[]>([])
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState('')
   const [trackMessage, setTrackMessage] = useState('')
@@ -60,33 +81,25 @@ export default function Home() {
   useEffect(() => {
     const fetchDeals = async () => {
       try {
-        let data: unknown = null
+        let mainDeals: unknown = null
 
-        try {
-          const res = await fetch('/api/deals/home')
-          const homeData = await res.json()
+try {
+  const res = await fetch('/api/deals?limit=600')
+  const data = await res.json()
+  mainDeals = Array.isArray(data) ? data : []
+} catch {
+  mainDeals = []
+}
 
-          if (res.ok && Array.isArray(homeData)) {
-            data = homeData
-          } else {
-            const fallbackRes = await fetch('/api/deals')
-            const fallbackData = await fallbackRes.json()
-            data = Array.isArray(fallbackData) ? fallbackData : []
-          }
-        } catch {
-          try {
-            const fallbackRes = await fetch('/api/deals')
-            const fallbackData = await fallbackRes.json()
-            data = Array.isArray(fallbackData) ? fallbackData : []
-          } catch {
-            data = []
-          }
-        }
+        const steamRes = await fetch('/api/steam-spotlight?limit=12')
+        const steamData = await steamRes.json()
 
-        setDeals(Array.isArray(data) ? data : [])
+        setDeals(Array.isArray(mainDeals) ? mainDeals : [])
+        setSteamSpotlight(Array.isArray(steamData) ? steamData : [])
       } catch (error) {
         console.error(error)
         setDeals([])
+        setSteamSpotlight([])
       } finally {
         setLoading(false)
       }
@@ -201,7 +214,7 @@ export default function Home() {
       .slice(0, 4)
   }, [filteredDeals])
 
-  const topRatedDeals = useMemo(() => {
+  const metacriticTop = useMemo(() => {
     return [...filteredDeals]
       .filter((deal) => Number(deal.metacriticScore || 0) > 0)
       .sort(
@@ -273,15 +286,14 @@ export default function Home() {
               The best video game deals
             </h1>
             <p className="mt-2 max-w-2xl text-sm text-zinc-400">
-              Find cheap games, track prices, and explore the catalog even when a
-              game is not currently on sale.
-            </p>
+  Find game deals across a much larger indexed inventory, track what matters, and jump into game pages without leaving the LoboDeals flow too early.
+</p>
           </div>
 
           <div className="grid gap-3 p-5 md:grid-cols-3">
-            <MetricCard label="Deals loaded" value={String(filteredDeals.length)} />
-            <MetricCard label="Average price" value={`$${averagePrice}`} />
-            <MetricCard label="Best discount" value={`${bestDiscount}%`} />
+            <MetricCard label="Deals indexed" value={String(filteredDeals.length)} />
+<MetricCard label="Steam visible" value={String(steamSpotlight.length)} />
+<MetricCard label="Best discount" value={`${bestDiscount}%`} />
           </div>
         </header>
 
@@ -527,6 +539,16 @@ export default function Home() {
           </div>
         )}
 
+        {steamSpotlight.length > 0 ? (
+          <SteamSpotlightSection
+  items={steamSpotlight.slice(0, 4)}
+  userId={userId}
+  trackedIds={trackedIds}
+  setTrackedIds={setTrackedIds}
+  setTrackMessage={setTrackMessage}
+/>
+        ) : null}
+
         <SectionBlock
           title="Best Deals"
           subtitle="Strong overall deals from approved stores."
@@ -539,10 +561,10 @@ export default function Home() {
         />
 
         <SectionBlock
-          title="Top Rated Deals"
-          subtitle="Deals from approved stores for games with the strongest review scores."
+          title="Best Rated by Metacritic"
+          subtitle="The highest-rated games currently visible in the live deal inventory."
           href="/games?page=1&sort=top-rated"
-          deals={topRatedDeals}
+          deals={metacriticTop}
           userId={userId}
           trackedIds={trackedIds}
           setTrackedIds={setTrackedIds}
@@ -572,6 +594,212 @@ export default function Home() {
         />
       </section>
     </main>
+  )
+}
+
+function SteamSpotlightSection({
+  items,
+  userId,
+  trackedIds,
+  setTrackedIds,
+  setTrackMessage,
+}: {
+  items: SteamSpotlightItem[]
+  userId: string | null
+  trackedIds: string[]
+  setTrackedIds: React.Dispatch<React.SetStateAction<string[]>>
+  setTrackMessage: React.Dispatch<React.SetStateAction<string>>
+}) {
+  return (
+    <section className="mb-12">
+      <div className="mb-4 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+        <div className="min-w-0">
+          <h2 className="text-2xl font-bold">Steam Spotlight</h2>
+<p className="text-sm text-zinc-400">
+  Featured Steam deals inside LoboDeals, with internal game pages and a cleaner PC-first flow.
+</p>
+        </div>
+
+        <Link
+          href="/pc"
+          className="text-sm font-medium text-emerald-300 transition hover:text-emerald-200"
+        >
+          Explore PC
+        </Link>
+      </div>
+
+      <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-4">
+        {items.map((item) => {
+          const salePrice = Number(item.salePrice || 0)
+          const normalPrice = Number(item.normalPrice || 0)
+          const hasValidNormalPrice =
+            !Number.isNaN(normalPrice) &&
+            normalPrice > 0 &&
+            normalPrice > salePrice
+          const steamDealID = `steam-${item.steamAppID}`
+          const isTracked = trackedIds.includes(steamDealID)
+          const gameHref = `/game/${encodeURIComponent(
+            `steam-${item.steamAppID}`
+          )}?title=${encodeURIComponent(item.title)}&thumb=${encodeURIComponent(
+            item.thumb
+          )}&salePrice=${encodeURIComponent(
+            item.salePrice
+          )}&normalPrice=${encodeURIComponent(
+            item.normalPrice
+          )}&dealRating=${encodeURIComponent(
+            ''
+          )}&metacriticScore=${encodeURIComponent(
+            ''
+          )}&savings=${encodeURIComponent(
+            item.savings
+          )}&storeID=${encodeURIComponent(
+            item.storeID || '1'
+          )}&gameID=${encodeURIComponent(
+            ''
+          )}&steamAppID=${encodeURIComponent(
+            item.steamAppID
+          )}&steamUrl=${encodeURIComponent(
+            item.url
+          )}&source=${encodeURIComponent('steam-spotlight')}`
+
+          return (
+            <article
+              key={item.steamAppID}
+              className="overflow-hidden rounded-3xl border border-zinc-800 bg-zinc-900 shadow-lg transition hover:-translate-y-1"
+            >
+              <Link href={gameHref}>
+                <img
+                  src={item.thumb}
+                  alt={item.title}
+                  className="h-40 w-full object-cover transition hover:opacity-90"
+                />
+              </Link>
+
+              <div className="p-4">
+                <div className="mb-3 flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <Link href={gameHref}>
+                      <h3 className="line-clamp-2 text-base font-bold leading-5 transition hover:text-emerald-300">
+                        {item.title}
+                      </h3>
+                    </Link>
+                  </div>
+
+                  <span className="shrink-0 rounded-full border border-emerald-500/30 bg-emerald-500/10 px-3 py-1 text-xs font-medium text-emerald-300">
+                    -{Math.round(Number(item.savings || 0))}%
+                  </span>
+                </div>
+
+                <div className="mb-4 rounded-2xl border border-zinc-800 bg-zinc-950 p-3">
+                  <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+                    <div className="flex min-w-0 flex-wrap items-center gap-2">
+                      <p className="text-xs uppercase tracking-wider text-zinc-500">
+                        Current price
+                      </p>
+                      <span className="rounded-full border border-zinc-700 bg-zinc-900 px-2 py-1 text-[10px] font-medium uppercase tracking-wider text-zinc-300">
+                        PC
+                      </span>
+                    </div>
+
+                    <span className="inline-flex max-w-full items-center gap-1 rounded-full border border-zinc-700 bg-zinc-900 px-2 py-1 text-[10px] font-medium uppercase tracking-wider text-zinc-300">
+                      <img
+                        src={getStoreLogo('1') || ''}
+                        alt={getStoreName('1')}
+                        className="h-3.5 w-3.5 object-contain"
+                      />
+                      <span className="truncate">{getStoreName('1')}</span>
+                    </span>
+                  </div>
+
+                  <div className="mt-2 flex flex-wrap items-end justify-between gap-2">
+                    <p className="text-3xl font-bold text-emerald-400">
+                      ${item.salePrice}
+                    </p>
+
+                    {hasValidNormalPrice ? (
+                      <p className="text-sm text-zinc-400 line-through">
+                        ${item.normalPrice}
+                      </p>
+                    ) : null}
+                  </div>
+                </div>
+
+                                <div className="grid gap-2">
+                  <button
+                    onClick={async () => {
+                      if (!userId) {
+                        pushTrackMessage(setTrackMessage, 'Sign in to track games.')
+                        return
+                      }
+
+                      try {
+                        const res = await fetch('/api/track', {
+                          method: 'POST',
+                          headers: { 'Content-Type': 'application/json' },
+                          body: JSON.stringify({
+                            userId,
+                            dealID: steamDealID,
+                            gameID: '',
+                            title: item.title,
+                            thumb: item.thumb,
+                            salePrice: item.salePrice,
+                            normalPrice: item.normalPrice,
+                            storeID: item.storeID || '1',
+                          }),
+                        })
+
+                        const data = await res.json()
+
+                        if (data.success && data.action === 'added') {
+                          setTrackedIds((prev) =>
+                            prev.includes(steamDealID) ? prev : [...prev, steamDealID]
+                          )
+                          pushTrackMessage(setTrackMessage, `Tracked game: ${item.title}`)
+                          return
+                        }
+
+                        if (data.success && data.action === 'removed') {
+                          setTrackedIds((prev) => prev.filter((id) => id !== steamDealID))
+                          pushTrackMessage(setTrackMessage, `Removed tracked game: ${item.title}`)
+                          return
+                        }
+
+                        pushTrackMessage(setTrackMessage, `Track error: ${data.error || 'Unknown error'}`)
+                      } catch {
+                        pushTrackMessage(setTrackMessage, 'Track connection error')
+                      }
+                    }}
+                    className={`rounded-xl px-4 py-2 text-center text-sm font-medium transition ${
+                      isTracked
+                        ? 'border border-emerald-500/30 bg-emerald-500/10 text-emerald-300'
+                        : 'border border-zinc-700 hover:bg-zinc-800'
+                    }`}
+                  >
+                    {isTracked ? 'Tracked' : 'Track game'}
+                  </button>
+
+                  <Link
+                    href={gameHref}
+                    className="rounded-xl bg-white px-4 py-2 text-center text-sm font-semibold text-black transition hover:opacity-90"
+                  >
+                    Open game page
+                  </Link>
+
+                  <a
+                    href={item.url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="rounded-xl border border-zinc-700 px-4 py-2 text-center text-sm font-medium transition hover:bg-zinc-800"
+                  >
+                    Open Steam
+                  </a>
+                </div>
+              </div>
+            </article>
+          )
+        })}
+      </div>
+    </section>
   )
 }
 
@@ -668,6 +896,8 @@ function DealCard({
     deal.normalPrice
   )}&dealRating=${encodeURIComponent(
     deal.dealRating || ''
+  )}&metacriticScore=${encodeURIComponent(
+    deal.metacriticScore || ''
   )}&savings=${encodeURIComponent(
     deal.savings
   )}&storeID=${encodeURIComponent(deal.storeID)}&gameID=${encodeURIComponent(
@@ -757,10 +987,10 @@ function DealCard({
                 const data = await res.json()
 
                 if (data.success && data.action === 'removed') {
-                  setTrackMessage(`Removed tracked game: ${deal.title}`)
+                  pushTrackMessage(setTrackMessage, `Removed from tracked: ${item.title}`)
                   setTrackedIds((prev) => prev.filter((id) => id !== deal.dealID))
                 } else if (data.success && data.action === 'added') {
-                  setTrackMessage(`Tracked game: ${deal.title}`)
+                  pushTrackMessage(setTrackMessage, `Added to tracked: ${item.title}`)
                   setTrackedIds((prev) =>
                     prev.includes(deal.dealID) ? prev : [...prev, deal.dealID]
                   )
@@ -770,7 +1000,7 @@ function DealCard({
 
                 setTimeout(() => setTrackMessage(''), 2500)
               } catch {
-                setTrackMessage('Track connection error')
+                pushTrackMessage(setTrackMessage, 'Could not update tracked right now')
                 setTimeout(() => setTrackMessage(''), 2500)
               }
             }}

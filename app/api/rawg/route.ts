@@ -1,5 +1,7 @@
 export const runtime = 'nodejs'
 
+import { createClient } from '@supabase/supabase-js'
+
 type RawgSearchResult = {
   id: number
   name: string
@@ -24,15 +26,21 @@ type RawgScreenshot = {
   image: string
 }
 
-const detailCache = new Map<
-  string,
-  { expiresAt: number; data: unknown | null }
->()
-
 const RAWG_TTL_MS = 1000 * 60 * 60 * 12
 
 const TITLE_ALIASES: Record<string, string> = {
   'god of war': 'god of war (2018)',
+}
+
+function getServiceSupabase() {
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL
+  const serviceRole = process.env.SUPABASE_SERVICE_ROLE_KEY
+
+  if (!url || !serviceRole) {
+    throw new Error('Missing Supabase env vars for RAWG cache')
+  }
+
+  return createClient(url, serviceRole)
 }
 
 function normalizeTitle(value: string) {
@@ -52,7 +60,6 @@ function normalizeTitle(value: string) {
 function inferExpectedPlatforms(storeID: string | null) {
   if (!storeID) return []
 
-  // PC stores in tu proyecto actual
   if (['1', '3', '7', '8', '11', '13', '15', '25'].includes(storeID)) {
     return ['pc', 'linux', 'macos', 'mac', 'windows', 'steam']
   }
@@ -80,7 +87,6 @@ function scoreCandidate(
 
   let score = 0
 
-  // Texto
   if (normalizedCandidate === aliasQuery) score += 150
   else if (normalizedCandidate === normalizedQuery) score += 100
   else if (normalizedCandidate.startsWith(aliasQuery)) score += 60
@@ -88,7 +94,6 @@ function scoreCandidate(
   else if (normalizedCandidate.includes(aliasQuery)) score += 30
   else if (normalizedCandidate.includes(normalizedQuery)) score += 20
 
-  // Favorecer plataformas esperadas
   if (expectedPlatforms.length > 0) {
     const hasExpected = expectedPlatforms.some((expected) =>
       platforms.some((platform) => platform.includes(expected))
@@ -98,7 +103,6 @@ function scoreCandidate(
     else score -= 40
   }
 
-  // Penalizar casos raros web-only para títulos famosos ambiguos
   if (
     normalizedQuery === 'god of war' &&
     platforms.length > 0 &&
@@ -107,7 +111,6 @@ function scoreCandidate(
     score -= 120
   }
 
-  // Favorecer God of War 2018 específicamente
   if (
     normalizedQuery === 'god of war' &&
     (normalizedCandidate === 'god of war 2018' ||
@@ -118,6 +121,42 @@ function scoreCandidate(
   }
 
   return score
+}
+
+function makeCacheKey(rawTitle: string, storeID: string) {
+  return `rawg_meta::${rawTitle.toLowerCase().trim()}::${storeID || 'none'}`
+}
+
+function isFresh(updatedAt: string, maxAgeMs: number) {
+  return Date.now() - new Date(updatedAt).getTime() <= maxAgeMs
+}
+
+async function readCache(cacheKey: string) {
+  const supabase = getServiceSupabase()
+
+  const { data, error } = await supabase
+    .from('deals_cache')
+    .select('payload, updated_at')
+    .eq('cache_key', cacheKey)
+    .maybeSingle()
+
+  if (error || !data) return null
+  return data as { payload: unknown | null; updated_at: string }
+}
+
+async function writeCache(cacheKey: string, payload: unknown | null) {
+  const supabase = getServiceSupabase()
+
+  const { error } = await supabase.from('deals_cache').upsert(
+    {
+      cache_key: cacheKey,
+      payload,
+      updated_at: new Date().toISOString(),
+    },
+    { onConflict: 'cache_key' }
+  )
+
+  if (error) throw error
 }
 
 async function fetchJson(url: string) {
@@ -152,12 +191,12 @@ export async function GET(request: Request) {
       return Response.json(null, { status: 200 })
     }
 
-    const cacheKey = `${rawTitle.toLowerCase()}::${storeID}`
+    const cacheKey = makeCacheKey(rawTitle, storeID)
 
     if (!forceRefresh) {
-      const cached = detailCache.get(cacheKey)
-      if (cached && cached.expiresAt > Date.now()) {
-        return Response.json(cached.data, { status: 200 })
+      const cached = await readCache(cacheKey)
+      if (cached && isFresh(cached.updated_at, RAWG_TTL_MS)) {
+        return Response.json(cached.payload, { status: 200 })
       }
     }
 
@@ -189,10 +228,7 @@ export async function GET(request: Request) {
     )
 
     if (deduped.length === 0) {
-      detailCache.set(cacheKey, {
-        expiresAt: Date.now() + RAWG_TTL_MS,
-        data: null,
-      })
+      await writeCache(cacheKey, null)
       return Response.json(null, { status: 200 })
     }
 
@@ -206,10 +242,7 @@ export async function GET(request: Request) {
     const best = scored[0]?.candidate
 
     if (!best || scored[0].score < 40) {
-      detailCache.set(cacheKey, {
-        expiresAt: Date.now() + RAWG_TTL_MS,
-        data: null,
-      })
+      await writeCache(cacheKey, null)
       return Response.json(null, { status: 200 })
     }
 
@@ -247,10 +280,7 @@ export async function GET(request: Request) {
       screenshots,
     }
 
-    detailCache.set(cacheKey, {
-      expiresAt: Date.now() + RAWG_TTL_MS,
-      data: payload,
-    })
+    await writeCache(cacheKey, payload)
 
     return Response.json(payload, { status: 200 })
   } catch (error) {

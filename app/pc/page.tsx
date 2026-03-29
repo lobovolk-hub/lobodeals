@@ -27,7 +27,56 @@ type Deal = {
   storeID: string
 }
 
+type SteamSpotlightItem = {
+  steamAppID: string
+  title: string
+  salePrice: string
+  normalPrice: string
+  savings: string
+  thumb: string
+  storeID: string
+  platform: string
+  url: string
+}
+
 const PAGE_SIZE = 36
+
+const STEAM_PREVIEW_LIMIT = 4
+
+function normalizeSteamTitle(value: string) {
+  return value
+    .toLowerCase()
+    .trim()
+    .replace(/[:\-–—]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+}
+
+function shouldShowSteamPreview(options: {
+  currentPage: number
+  query: string
+  storeFilter: string
+  priceFilter: string
+  sort: string
+}) {
+  const { currentPage, query, storeFilter, priceFilter, sort } = options
+
+  if (sort === 'steam-spotlight') return false
+  if (currentPage !== 1) return false
+  if (query.trim()) return false
+  if (storeFilter !== 'all') return false
+  if (priceFilter !== 'all') return false
+
+  return true
+}
+
+function pushTrackMessage(
+  setTrackMessage: React.Dispatch<React.SetStateAction<string>>,
+  message: string
+) {
+  setTrackMessage(message)
+  window.setTimeout(() => setTrackMessage(''), 2500)
+}
 
 export default function PCPage() {
   return (
@@ -56,6 +105,7 @@ function PCPageContent() {
   const storeFilter = searchParams.get('store') || 'all'
 
   const [deals, setDeals] = useState<Deal[]>([])
+  const [steamSpotlight, setSteamSpotlight] = useState<SteamSpotlightItem[]>([])
   const [loading, setLoading] = useState(true)
   const [userId, setUserId] = useState<string | null>(null)
   const [trackedIds, setTrackedIds] = useState<string[]>([])
@@ -69,12 +119,20 @@ function PCPageContent() {
   useEffect(() => {
     const fetchDeals = async () => {
       try {
-        const res = await fetch('/api/deals')
-        const data = await res.json()
-        setDeals(Array.isArray(data) ? data : [])
+        const [dealsRes, steamRes] = await Promise.all([
+          fetch('/api/deals'),
+          fetch('/api/steam-spotlight'),
+        ])
+
+        const dealsData = await dealsRes.json()
+        const steamData = await steamRes.json()
+
+        setDeals(Array.isArray(dealsData) ? dealsData : [])
+        setSteamSpotlight(Array.isArray(steamData) ? steamData : [])
       } catch (error) {
         console.error(error)
         setDeals([])
+        setSteamSpotlight([])
       } finally {
         setLoading(false)
       }
@@ -149,6 +207,8 @@ function PCPageContent() {
           )
       case 'biggest-discount':
         return grouped.sort((a, b) => Number(b.savings) - Number(a.savings))
+      case 'steam-spotlight':
+        return []
       case 'latest':
         return grouped
       default:
@@ -156,13 +216,131 @@ function PCPageContent() {
     }
   }, [deals, sort, query, priceFilter, storeFilter])
 
-  const totalPages = Math.max(1, Math.ceil(filteredDeals.length / PAGE_SIZE))
+  const filteredSteamSpotlight = useMemo(() => {
+    let list = [...steamSpotlight]
+
+    if (query.trim()) {
+      const normalized = query.trim().toLowerCase()
+      list = list.filter((deal) => deal.title.toLowerCase().includes(normalized))
+    }
+
+    if (storeFilter !== 'all' && storeFilter !== '1') {
+      return []
+    }
+
+    if (priceFilter === 'under-5') {
+      list = list.filter((deal) => Number(deal.salePrice) < 5)
+    }
+
+    if (priceFilter === 'under-10') {
+      list = list.filter((deal) => Number(deal.salePrice) < 10)
+    }
+
+    if (priceFilter === 'over-80') {
+      list = list.filter((deal) => Number(deal.savings) >= 80)
+    }
+
+    return list
+  }, [steamSpotlight, query, storeFilter, priceFilter])
+
+const showSteamPreview = useMemo(() => {
+  return shouldShowSteamPreview({
+    currentPage,
+    query,
+    storeFilter,
+    priceFilter,
+    sort,
+  })
+}, [currentPage, query, storeFilter, priceFilter, sort])
+
+const steamPreviewItems = useMemo(() => {
+  if (!showSteamPreview) return []
+  if (!steamSpotlight.length) return []
+
+  const seenTitles = new Set<string>()
+  const cheapSharkTitles = new Set(
+    filteredDeals.map((deal) => normalizeSteamTitle(deal.title))
+  )
+
+  const result: SteamSpotlightItem[] = []
+
+  const rankedSteam = [...filteredSteamSpotlight].sort((a, b) => {
+    const aSavings = Number(a.savings || 0)
+    const bSavings = Number(b.savings || 0)
+
+    if (bSavings !== aSavings) {
+      return bSavings - aSavings
+    }
+
+    const aPrice = Number(a.salePrice || 999999)
+    const bPrice = Number(b.salePrice || 999999)
+
+    return aPrice - bPrice
+  })
+
+  for (const item of rankedSteam) {
+    const normalizedTitle = normalizeSteamTitle(item.title)
+
+    if (seenTitles.has(normalizedTitle)) continue
+    seenTitles.add(normalizedTitle)
+
+    if (cheapSharkTitles.has(normalizedTitle)) continue
+
+    result.push(item)
+
+    if (result.length >= STEAM_PREVIEW_LIMIT) break
+  }
+
+  return result
+}, [showSteamPreview, steamSpotlight, filteredSteamSpotlight, filteredDeals])
+
+const activeFilterLabels = [
+  query.trim() ? `Search: "${query.trim()}"` : null,
+  storeFilter !== 'all' ? `Store: ${getStoreName(storeFilter)}` : null,
+  priceFilter === 'under-5'
+    ? 'Price: Under $5'
+    : priceFilter === 'under-10'
+    ? 'Price: Under $10'
+    : priceFilter === 'over-80'
+    ? 'Price: 80%+ off'
+    : null,
+  sort === 'best'
+    ? 'Sort: Best Deals'
+    : sort === 'top-rated'
+    ? 'Sort: Top Rated'
+    : sort === 'biggest-discount'
+    ? 'Sort: Biggest Discounts'
+    : sort === 'latest'
+    ? 'Sort: Latest'
+    : sort === 'steam-spotlight'
+    ? 'Sort: Steam Spotlight'
+    : null,
+].filter(Boolean) as string[]
+
+const hasActiveFilters =
+  !!query.trim() ||
+  storeFilter !== 'all' ||
+  priceFilter !== 'all' ||
+  sort !== 'all'
+
+  const isSteamSpotlightMode = sort === 'steam-spotlight'
+
+  const totalItems = isSteamSpotlightMode
+    ? filteredSteamSpotlight.length
+    : filteredDeals.length
+
+  const totalPages = Math.max(1, Math.ceil(totalItems / PAGE_SIZE))
   const safePage = Math.min(currentPage, totalPages)
 
   const paginatedDeals = useMemo(() => {
     const start = (safePage - 1) * PAGE_SIZE
+
+    if (isSteamSpotlightMode) {
+      return filteredSteamSpotlight.slice(start, start + PAGE_SIZE)
+    }
+
     return filteredDeals.slice(start, start + PAGE_SIZE)
-  }, [filteredDeals, safePage])
+  }, [filteredDeals, filteredSteamSpotlight, safePage, isSteamSpotlightMode])
 
   const buildUrl = (
     page: number,
@@ -197,6 +375,10 @@ function PCPageContent() {
     router.push(buildUrl(1, { store: value }))
   }
 
+  const resetFilters = () => {
+    router.push('/pc?page=1&sort=all')
+  }
+
   if (loading) {
     return (
       <main className="min-h-screen bg-zinc-950 text-zinc-100">
@@ -216,10 +398,9 @@ function PCPageContent() {
           </p>
           <h1 className="mt-1 text-3xl font-bold">PC Deals</h1>
           <p className="mt-2 text-zinc-400">
-            Browse approved PC game deals from stores like Steam, GOG, Epic Games
-            Store, Ubisoft Connect, EA, Fanatical, Humble Store, and Green Man
-            Gaming.
-          </p>
+  Browse curated PC deals from trusted stores, with a stronger Steam layer
+  built directly into LoboDeals.
+</p>
         </header>
 
         <div className="mb-6">
@@ -287,7 +468,7 @@ function PCPageContent() {
           ))}
         </div>
 
-        <div className="mb-6 flex flex-wrap gap-2">
+        <div className="mb-8 flex flex-wrap gap-2">
           <FilterLink
             label="All PC Deals"
             href={buildUrl(1, { sort: 'all' })}
@@ -313,14 +494,39 @@ function PCPageContent() {
             href={buildUrl(1, { sort: 'latest' })}
             active={sort === 'latest'}
           />
+          <FilterLink
+            label="Steam Spotlight"
+            href={buildUrl(1, { sort: 'steam-spotlight' })}
+            active={sort === 'steam-spotlight'}
+          />
         </div>
+
+{hasActiveFilters ? (
+  <div className="mb-6 flex flex-wrap items-center gap-2">
+    {activeFilterLabels.map((label) => (
+      <span
+        key={label}
+        className="rounded-full border border-zinc-700 bg-zinc-900 px-3 py-1 text-xs text-zinc-300"
+      >
+        {label}
+      </span>
+    ))}
+
+    <button
+      onClick={resetFilters}
+      className="rounded-full border border-emerald-500/30 bg-emerald-500/10 px-3 py-1 text-xs font-medium text-emerald-300 transition hover:bg-emerald-500/15"
+    >
+      Reset all
+    </button>
+  </div>
+) : null}
 
         <div className="mb-8 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
           <p className="text-sm text-zinc-400">
-            Page {safePage} of {totalPages} · {filteredDeals.length} PC game
-            results
-            {storeFilter !== 'all' ? ` · ${getStoreName(storeFilter)}` : ''}
-          </p>
+  Page {safePage} of {totalPages} · {totalItems}{' '}
+  {isSteamSpotlightMode ? 'Steam results' : 'PC results'}
+  {storeFilter !== 'all' ? ` · ${getStoreName(storeFilter)}` : ''}
+</p>
 
           <div className="flex items-center gap-2">
             <Link
@@ -347,22 +553,120 @@ function PCPageContent() {
           </div>
         </div>
 
+{showSteamPreview && steamPreviewItems.length > 0 ? (
+  <section className="mb-8 rounded-3xl border border-emerald-500/20 bg-gradient-to-br from-emerald-500/10 via-zinc-900 to-zinc-950 p-4 sm:p-5">
+    <div className="mb-4 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+      <div>
+        <div className="mb-2 inline-flex rounded-full border border-emerald-500/30 bg-emerald-500/10 px-3 py-1 text-[11px] font-medium uppercase tracking-wider text-emerald-300">
+          Steam-first layer
+        </div>
+
+        <h2 className="text-lg font-bold text-white">Steam Picks</h2>
+<p className="text-sm text-zinc-400">
+  Quick Steam highlights inside PC, without sending the user out of the main flow too early.
+</p>
+      </div>
+
+      <Link
+        href={buildUrl(1, { sort: 'steam-spotlight' })}
+        className="text-sm font-medium text-emerald-300 transition hover:text-emerald-200"
+      >
+        View full Steam Spotlight
+      </Link>
+    </div>
+
+    <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
+      {steamPreviewItems.map((item) => (
+        <SteamSpotlightCard
+  key={item.steamAppID}
+  item={item}
+  userId={userId}
+  trackedIds={trackedIds}
+  setTrackedIds={setTrackedIds}
+  setTrackMessage={setTrackMessage}
+/>
+      ))}
+    </div>
+  </section>
+) : null}
+
         {paginatedDeals.length === 0 ? (
-          <div className="rounded-3xl border border-dashed border-zinc-700 bg-zinc-900 p-10 text-center text-zinc-400">
-            No PC games found for this view.
-          </div>
+  <div className="rounded-3xl border border-dashed border-zinc-700 bg-zinc-900 p-10 text-center">
+    <div className="mx-auto max-w-2xl">
+      <h2 className="text-xl font-bold text-white">
+  {isSteamSpotlightMode
+    ? 'No Steam deals match this view'
+    : 'No PC deals match this view'}
+</h2>
+
+<p className="mt-3 text-sm text-zinc-400">
+  {hasActiveFilters
+    ? 'Your current search and filter combination did not return visible results.'
+    : 'There are no visible deals in this section right now.'}
+</p>
+
+      {activeFilterLabels.length > 0 ? (
+        <div className="mt-5 flex flex-wrap justify-center gap-2">
+          {activeFilterLabels.map((label) => (
+            <span
+              key={label}
+              className="rounded-full border border-zinc-700 bg-zinc-950 px-3 py-1 text-xs text-zinc-300"
+            >
+              {label}
+            </span>
+          ))}
+        </div>
+      ) : null}
+
+      <div className="mt-6 flex flex-wrap justify-center gap-3">
+        <button
+          onClick={resetFilters}
+          className="rounded-xl bg-white px-4 py-2 text-sm font-semibold text-black transition hover:opacity-90"
+        >
+          Reset filters
+        </button>
+
+        {!isSteamSpotlightMode ? (
+          <Link
+            href={buildUrl(1, { sort: 'steam-spotlight' })}
+            className="rounded-xl border border-zinc-700 px-4 py-2 text-sm font-medium text-zinc-200 transition hover:bg-zinc-800"
+          >
+            Try Steam Spotlight
+          </Link>
         ) : (
+          <Link
+            href={buildUrl(1, { sort: 'all' })}
+            className="rounded-xl border border-zinc-700 px-4 py-2 text-sm font-medium text-zinc-200 transition hover:bg-zinc-800"
+          >
+            Back to all PC deals
+          </Link>
+        )}
+      </div>
+    </div>
+  </div>
+) : (
           <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-4">
-            {paginatedDeals.map((deal) => (
-              <GameCatalogCard
-                key={deal.dealID}
-                deal={deal}
-                userId={userId}
-                trackedIds={trackedIds}
-                setTrackedIds={setTrackedIds}
-                setTrackMessage={setTrackMessage}
-              />
-            ))}
+            {isSteamSpotlightMode
+              ? (paginatedDeals as SteamSpotlightItem[]).map((deal) => (
+                  <SteamSpotlightCard
+                    key={deal.steamAppID}
+                    item={deal}
+                    userId={userId}
+                    trackedIds={trackedIds}
+                    setTrackedIds={setTrackedIds}
+                    setTrackMessage={setTrackMessage}
+                  />
+                ))
+              : (paginatedDeals as Deal[]).map((deal) => (
+                  <GameCatalogCard
+                    key={deal.dealID}
+                    deal={deal}
+                    userId={userId}
+                    trackedIds={trackedIds}
+                    setTrackedIds={setTrackedIds}
+                    setTrackMessage={setTrackMessage}
+                  />
+                ))}
           </div>
         )}
 
@@ -398,6 +702,183 @@ function PCPageContent() {
   )
 }
 
+function SteamSpotlightCard({
+  item,
+  userId,
+  trackedIds,
+  setTrackedIds,
+  setTrackMessage,
+}: {
+  item: SteamSpotlightItem
+  userId: string | null
+  trackedIds: string[]
+  setTrackedIds: React.Dispatch<React.SetStateAction<string[]>>
+  setTrackMessage: React.Dispatch<React.SetStateAction<string>>
+}) {
+  const salePrice = Number(item.salePrice || 0)
+  const normalPrice = Number(item.normalPrice || 0)
+  const hasValidNormalPrice =
+    !Number.isNaN(normalPrice) && normalPrice > 0 && normalPrice > salePrice
+  const steamDealID = `steam-${item.steamAppID}`
+  const isTracked = Array.isArray(trackedIds) && trackedIds.includes(steamDealID)
+  const gameHref = `/game/${encodeURIComponent(
+    `steam-${item.steamAppID}`
+  )}?title=${encodeURIComponent(item.title)}&thumb=${encodeURIComponent(
+    item.thumb
+  )}&salePrice=${encodeURIComponent(
+    item.salePrice
+  )}&normalPrice=${encodeURIComponent(
+    item.normalPrice
+  )}&dealRating=${encodeURIComponent(
+    ''
+  )}&metacriticScore=${encodeURIComponent(
+    ''
+  )}&savings=${encodeURIComponent(
+    item.savings
+  )}&storeID=${encodeURIComponent(
+    item.storeID || '1'
+  )}&gameID=${encodeURIComponent(
+    ''
+  )}&steamAppID=${encodeURIComponent(
+    item.steamAppID
+  )}&steamUrl=${encodeURIComponent(
+    item.url
+  )}&source=${encodeURIComponent('steam-spotlight')}`
+
+  return (
+    <article className="overflow-hidden rounded-3xl border border-zinc-800 bg-zinc-900 shadow-lg transition hover:-translate-y-1">
+      <Link href={gameHref}>
+        <img
+          src={item.thumb}
+          alt={item.title}
+          className="h-40 w-full object-cover transition hover:opacity-90"
+        />
+      </Link>
+
+      <div className="p-4">
+        <div className="mb-3 flex items-start justify-between gap-3">
+          <div className="min-w-0">
+            <Link href={gameHref}>
+              <h3 className="line-clamp-2 text-base font-bold leading-5 transition hover:text-emerald-300">
+                {item.title}
+              </h3>
+            </Link>
+          </div>
+
+          <span className="shrink-0 rounded-full border border-emerald-500/30 bg-emerald-500/10 px-2 py-1 text-xs font-medium text-emerald-300">
+            -{Math.round(Number(item.savings || 0))}%
+          </span>
+        </div>
+
+        <div className="mb-4 rounded-2xl border border-zinc-800 bg-zinc-950 p-3">
+          <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+            <div className="flex min-w-0 flex-wrap items-center gap-2">
+              <p className="text-xs uppercase tracking-wider text-zinc-500">
+                Current price
+              </p>
+              <span className="rounded-full border border-zinc-700 bg-zinc-900 px-2 py-1 text-[10px] font-medium uppercase tracking-wider text-zinc-300">
+                PC
+              </span>
+            </div>
+
+            <span className="inline-flex max-w-full items-center gap-1 rounded-full border border-zinc-700 bg-zinc-900 px-2 py-1 text-[10px] font-medium uppercase tracking-wider text-zinc-300">
+              <img
+                src={getStoreLogo('1') || ''}
+                alt={getStoreName('1')}
+                className="h-3.5 w-3.5 object-contain"
+              />
+              <span className="truncate">{getStoreName('1')}</span>
+            </span>
+          </div>
+
+          <div className="mt-2 flex flex-wrap items-end justify-between gap-2">
+            <span className="text-2xl font-bold text-emerald-400">
+              ${item.salePrice}
+            </span>
+
+            {hasValidNormalPrice ? (
+              <span className="text-sm text-zinc-400 line-through">
+                ${item.normalPrice}
+              </span>
+            ) : null}
+          </div>
+        </div>
+
+                <div className="grid gap-2">
+          <button
+            onClick={async () => {
+              if (!userId) {
+                pushTrackMessage(setTrackMessage, 'Sign in to track games')
+                return
+              }
+
+              try {
+                const res = await fetch('/api/track', {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({
+                    userId,
+                    dealID: steamDealID,
+                    gameID: '',
+                    title: item.title,
+                    thumb: item.thumb,
+                    salePrice: item.salePrice,
+                    normalPrice: item.normalPrice,
+                    storeID: item.storeID || '1',
+                  }),
+                })
+
+                const data = await res.json()
+
+                if (data.success && data.action === 'added') {
+                  setTrackedIds((prev) =>
+                    prev.includes(steamDealID) ? prev : [...prev, steamDealID]
+                  )
+                  pushTrackMessage(setTrackMessage, `Added to tracked: ${item.title}`)
+                  return
+                }
+
+                if (data.success && data.action === 'removed') {
+                  setTrackedIds((prev) => prev.filter((id) => id !== steamDealID))
+                  pushTrackMessage(setTrackMessage, `Removed from tracked: ${item.title}`)
+                  return
+                }
+
+                pushTrackMessage(setTrackMessage, `Track error: ${data.error || 'Unknown error'}`)
+              } catch {
+                pushTrackMessage(setTrackMessage, 'Could not update tracked right now')
+              }
+            }}
+            className={`rounded-xl px-4 py-2 text-center text-sm font-medium transition ${
+              isTracked
+                ? 'border border-emerald-500/30 bg-emerald-500/10 text-emerald-300'
+                : 'border border-zinc-700 hover:bg-zinc-800'
+            }`}
+          >
+            {isTracked ? 'Tracked' : 'Track game'}
+          </button>
+
+          <Link
+            href={gameHref}
+            className="rounded-xl bg-white px-4 py-2 text-center text-sm font-semibold text-black transition hover:opacity-90"
+          >
+            Open game page
+          </Link>
+
+          <a
+            href={item.url}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="rounded-xl border border-zinc-700 px-4 py-2 text-center text-sm font-medium transition hover:bg-zinc-800"
+          >
+            Open Steam
+          </a>
+        </div>
+      </div>
+    </article>
+  )
+}
+
 function GameCatalogCard({
   deal,
   userId,
@@ -430,6 +911,8 @@ function GameCatalogCard({
     deal.normalPrice
   )}&dealRating=${encodeURIComponent(
     deal.dealRating || ''
+  )}&metacriticScore=${encodeURIComponent(
+    deal.metacriticScore || ''
   )}&savings=${encodeURIComponent(
     deal.savings
   )}&storeID=${encodeURIComponent(deal.storeID)}&gameID=${encodeURIComponent(

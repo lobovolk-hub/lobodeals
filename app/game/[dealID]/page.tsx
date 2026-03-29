@@ -17,6 +17,10 @@ type Game = {
   savings: string
   storeID?: string
   gameID?: string
+  metacriticScore?: string
+  steamAppID?: string
+  steamUrl?: string
+  source?: string
 }
 
 type RelatedDeal = {
@@ -30,6 +34,7 @@ type RelatedDeal = {
   storeID?: string
   dealRating?: string
   metacriticScore?: string
+  steamUrl?: string
 }
 
 type RawgMeta = {
@@ -59,6 +64,7 @@ export default function GamePage() {
 
   const [game, setGame] = useState<Game | null>(null)
   const [heroReady, setHeroReady] = useState(false)
+  const [steamDetailLoaded, setSteamDetailLoaded] = useState(false)
 
   const [userId, setUserId] = useState<string | null>(null)
   const [isTracked, setIsTracked] = useState(false)
@@ -81,20 +87,82 @@ export default function GamePage() {
 
   useEffect(() => {
     const gameFromUrl: Game = {
-      dealID,
-      title: searchParams.get('title') || 'Game',
-      thumb: searchParams.get('thumb') || '',
-      salePrice: searchParams.get('salePrice') || '0',
-      normalPrice: searchParams.get('normalPrice') || '',
-      dealRating: searchParams.get('dealRating') || '',
-      savings: searchParams.get('savings') || '0',
-      storeID: searchParams.get('storeID') || '',
-      gameID: searchParams.get('gameID') || '',
-    }
+  dealID,
+  title: searchParams.get('title') || 'Game',
+  thumb: searchParams.get('thumb') || '',
+  salePrice: searchParams.get('salePrice') || '0',
+  normalPrice: searchParams.get('normalPrice') || '',
+  dealRating: searchParams.get('dealRating') || '',
+  savings: searchParams.get('savings') || '0',
+  storeID: searchParams.get('storeID') || '',
+  gameID: searchParams.get('gameID') || '',
+  metacriticScore: searchParams.get('metacriticScore') || '',
+  steamAppID: searchParams.get('steamAppID') || '',
+  steamUrl: searchParams.get('steamUrl') || '',
+  source: searchParams.get('source') || '',
+}
 
     setGame(gameFromUrl)
     setHeroReady(true)
   }, [dealID, searchParams])
+
+useEffect(() => {
+  if (!game) return
+
+  const isSteamInternalGame =
+    game.source === 'steam-spotlight' ||
+    game.dealID.startsWith('steam-') ||
+    !!game.steamAppID
+
+  if (!isSteamInternalGame || !game.steamAppID) {
+    setSteamDetailLoaded(true)
+    return
+  }
+
+  let cancelled = false
+
+  const loadSteamDetail = async () => {
+    try {
+      const res = await fetch(
+        `/api/steam-game?steamAppID=${encodeURIComponent(game.steamAppID || '')}`
+      )
+
+      if (!res.ok) {
+        if (!cancelled) setSteamDetailLoaded(true)
+        return
+      }
+
+      const data = await res.json()
+
+      if (cancelled) return
+
+      setGame((prev) =>
+        prev
+          ? {
+              ...prev,
+              title: data.title || prev.title,
+              thumb: data.thumb || prev.thumb,
+              salePrice: data.salePrice || prev.salePrice,
+              normalPrice: data.normalPrice || prev.normalPrice,
+              savings: data.savings || prev.savings,
+              storeID: data.storeID || prev.storeID,
+              steamUrl: data.url || prev.steamUrl,
+            }
+          : prev
+      )
+    } catch (error) {
+      console.error('Steam detail error:', error)
+    } finally {
+      if (!cancelled) setSteamDetailLoaded(true)
+    }
+  }
+
+  loadSteamDetail()
+
+  return () => {
+    cancelled = true
+  }
+}, [game?.dealID, game?.steamAppID, game?.source])
 
   useEffect(() => {
     if (!game) return
@@ -106,10 +174,22 @@ export default function GamePage() {
 
       try {
         const relatedRes = await fetch(
-          `/api/game-deals?gameID=${encodeURIComponent(
-            game.gameID || ''
-          )}&title=${encodeURIComponent(game.title)}`
-        )
+  `/api/game-deals?gameID=${encodeURIComponent(
+    game.gameID || ''
+  )}&title=${encodeURIComponent(
+    game.title
+  )}&steamAppID=${encodeURIComponent(
+    game.steamAppID || ''
+  )}&steamUrl=${encodeURIComponent(
+    game.steamUrl || ''
+  )}&steamSalePrice=${encodeURIComponent(
+    game.salePrice || ''
+  )}&steamNormalPrice=${encodeURIComponent(
+    game.normalPrice || ''
+  )}&steamSavings=${encodeURIComponent(
+    game.savings || ''
+  )}&thumb=${encodeURIComponent(game.thumb || '')}`
+)
 
         if (!relatedRes.ok) {
           if (!cancelled) setRelatedDeals([])
@@ -152,6 +232,10 @@ export default function GamePage() {
                     exactMatch.thumb && exactMatch.thumb !== ''
                       ? exactMatch.thumb
                       : prev.thumb,
+                  metacriticScore:
+                    exactMatch.metacriticScore && exactMatch.metacriticScore !== ''
+                      ? exactMatch.metacriticScore
+                      : prev.metacriticScore,
                 }
               : prev
           )
@@ -212,10 +296,10 @@ export default function GamePage() {
       try {
         const rawgRes = await fetch(
           `/api/rawg?dealID=${encodeURIComponent(
-  game.dealID
-)}&title=${encodeURIComponent(game.title)}&storeID=${encodeURIComponent(
-  game.storeID || ''
-)}${rawgRefreshKey > 0 ? '&forceRefresh=1' : ''}`
+            game.dealID
+          )}&title=${encodeURIComponent(game.title)}&storeID=${encodeURIComponent(
+            game.storeID || ''
+          )}${rawgRefreshKey > 0 ? '&forceRefresh=1' : ''}`
         )
 
         if (!rawgRes.ok) {
@@ -310,7 +394,35 @@ export default function GamePage() {
     ? normalPriceNumber - salePriceNumber
     : 0
 
-  const dealLabel = useMemo(() => {
+  const metacriticValue =
+    rawgMeta?.metacritic != null && rawgMeta?.metacritic !== 0
+      ? rawgMeta.metacritic
+      : game?.metacriticScore
+      ? Number(game.metacriticScore)
+      : null
+
+const isSteamInternalGame =
+  game?.source === 'steam-spotlight' ||
+  game?.dealID?.startsWith('steam-') ||
+  !!game?.steamUrl
+
+const primaryDealHref =
+  isSteamInternalGame && game?.steamUrl
+    ? game.steamUrl
+    : `/api/redirect?dealID=${encodeURIComponent(
+        game?.dealID || ''
+      )}&title=${encodeURIComponent(
+        game?.title || ''
+      )}&salePrice=${encodeURIComponent(
+        game?.salePrice || ''
+      )}&normalPrice=${encodeURIComponent(game?.normalPrice || '')}`
+
+const primaryDealLabel =
+  isSteamInternalGame && game?.steamUrl
+    ? `Open Steam — $${game?.salePrice || '0'}`
+    : `Open best deal — $${game?.salePrice || '0'}`
+  
+      const dealLabel = useMemo(() => {
     if (displayDiscount >= 85) {
       return { text: '🔥 Brutal deal', color: 'text-red-400' }
     }
@@ -323,9 +435,9 @@ export default function GamePage() {
     return { text: '📉 Average deal', color: 'text-zinc-400' }
   }, [displayDiscount])
 
-  if (!heroReady || !game) {
-    return <div className="p-10 text-white">Loading...</div>
-  }
+  if (!heroReady || !game || !steamDetailLoaded) {
+  return <div className="p-10 text-white">Loading...</div>
+}
 
   return (
     <main className="relative min-h-screen text-zinc-100">
@@ -416,6 +528,13 @@ export default function GamePage() {
                   <span className="rounded-full border border-zinc-700 bg-zinc-800 px-3 py-1 text-xs text-zinc-300">
                     {getPlatformLabel(game.storeID)}
                   </span>
+
+{isSteamInternalGame ? (
+  <span className="rounded-full border border-emerald-500/30 bg-emerald-500/10 px-3 py-1 text-xs text-emerald-300">
+    Steam featured
+  </span>
+) : null}
+
                 </div>
               </div>
 
@@ -504,19 +623,13 @@ export default function GamePage() {
                 </button>
 
                 <a
-                  href={`/api/redirect?dealID=${encodeURIComponent(
-                    game.dealID
-                  )}&title=${encodeURIComponent(
-                    game.title
-                  )}&salePrice=${encodeURIComponent(
-                    game.salePrice
-                  )}&normalPrice=${encodeURIComponent(game.normalPrice)}`}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="rounded-xl bg-white px-5 py-3 text-center text-sm font-bold text-black transition hover:opacity-90 active:scale-[0.98]"
-                >
-                  Go to best deal — ${game.salePrice}
-                </a>
+  href={primaryDealHref}
+  target="_blank"
+  rel="noopener noreferrer"
+  className="rounded-xl bg-white px-5 py-3 text-center text-sm font-bold text-black transition hover:opacity-90 active:scale-[0.98]"
+>
+  {primaryDealLabel}
+</a>
               </div>
 
               <div className="rounded-2xl border border-zinc-800 bg-zinc-950/50 p-3">
@@ -602,7 +715,9 @@ export default function GamePage() {
                       Metacritic
                     </p>
                     <p className="mt-2 text-2xl font-bold text-emerald-300">
-                      {rawgMeta.metacritic ?? 'N/A'}
+                      {metacriticValue != null && !Number.isNaN(metacriticValue)
+                        ? metacriticValue
+                        : 'N/A'}
                     </p>
                   </div>
 
@@ -737,21 +852,23 @@ export default function GamePage() {
                         </div>
 
                         <a
-                          href={`/api/redirect?dealID=${encodeURIComponent(
-                            deal.dealID || ''
-                          )}&title=${encodeURIComponent(
-                            deal.title || ''
-                          )}&salePrice=${encodeURIComponent(
-                            deal.salePrice || ''
-                          )}&normalPrice=${encodeURIComponent(
-                            deal.normalPrice || ''
-                          )}`}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="rounded-xl bg-white px-4 py-2 text-sm font-semibold text-black transition hover:opacity-90"
-                        >
-                          Go to deal
-                        </a>
+  href={
+    deal.dealID?.startsWith('steam-') && deal.steamUrl
+      ? deal.steamUrl
+      : `/api/redirect?dealID=${encodeURIComponent(
+          deal.dealID || ''
+        )}&title=${encodeURIComponent(
+          deal.title || ''
+        )}&salePrice=${encodeURIComponent(
+          deal.salePrice || ''
+        )}&normalPrice=${encodeURIComponent(deal.normalPrice || '')}`
+  }
+  target="_blank"
+  rel="noopener noreferrer"
+  className="rounded-xl border border-zinc-700 px-4 py-2 text-sm font-medium transition hover:bg-zinc-800"
+>
+  {deal.dealID?.startsWith('steam-') ? 'Open Steam' : 'Open deal'}
+</a>
                       </div>
                     </div>
                   )

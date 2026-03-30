@@ -26,6 +26,12 @@ type PcStoreOfferRow = {
   store_id?: string | null
   url?: string | null
   is_available?: boolean | null
+  region_code?: string | null
+  currency_code?: string | null
+  price_source?: string | null
+  price_last_synced_at?: string | null
+  final_formatted?: string | null
+  initial_formatted?: string | null
 }
 
 type PcBrowseItem = {
@@ -82,6 +88,19 @@ function chooseBestOffer(
   incoming: PcStoreOfferRow
 ) {
   if (!current) return incoming
+
+  const currentModern =
+    current.region_code === 'us' &&
+    current.price_source === 'steam_appdetails_us' &&
+    !!String(current.price_last_synced_at || '').trim()
+
+  const incomingModern =
+    incoming.region_code === 'us' &&
+    incoming.price_source === 'steam_appdetails_us' &&
+    !!String(incoming.price_last_synced_at || '').trim()
+
+  if (incomingModern && !currentModern) return incoming
+  if (!incomingModern && currentModern) return current
 
   const currentDiscount = Number(current.discount_percent || 0)
   const incomingDiscount = Number(incoming.discount_percent || 0)
@@ -180,9 +199,10 @@ export async function GET(request: Request) {
         const { data: offers, error: offersError } = await supabase
           .from('pc_store_offers')
           .select(
-            'pc_game_id, sale_price, normal_price, discount_percent, store_id, url, is_available'
+            'pc_game_id, sale_price, normal_price, discount_percent, store_id, url, is_available, region_code, currency_code, price_source, price_last_synced_at, final_formatted, initial_formatted'
           )
           .eq('store_id', '1')
+          .eq('region_code', 'us')
           .eq('is_available', true)
           .in('pc_game_id', ids)
 
@@ -202,12 +222,13 @@ export async function GET(request: Request) {
     const results = games
       .map((game) => {
         const id = String(game.id || '').trim()
-                const slug =
+        const slug =
           String(game.slug || '').trim() ||
           makePcGameSlug(
             String(game.steam_name || game.canonical_title || '').trim(),
             String(game.steam_app_id || '').trim()
           )
+
         const title = String(game.steam_name || game.canonical_title || '').trim()
         const thumb =
           String(game.hero_image_url || '').trim() ||

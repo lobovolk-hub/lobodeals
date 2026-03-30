@@ -107,6 +107,17 @@ type PcGameRow = {
   clip_url?: string | null
 }
 
+type OfferRow = {
+  pc_game_id?: string | null
+  sale_price?: number | string | null
+  normal_price?: number | string | null
+  currency_code?: string | null
+  price_source?: string | null
+  price_last_synced_at?: string | null
+  region_code?: string | null
+  is_available?: boolean | null
+}
+
 function getServiceSupabase() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL
   const serviceRole = process.env.SUPABASE_SERVICE_ROLE_KEY
@@ -395,7 +406,7 @@ async function loadPriorityGames(
     .eq('is_active', true)
     .eq('steam_type', 'game')
     .order('updated_at', { ascending: true, nullsFirst: true })
-    .limit(Math.max(limit * 6, 120))
+    .limit(Math.max(limit * 8, 200))
 
   if (error) throw error
 
@@ -406,28 +417,37 @@ async function loadPriorityGames(
 
   const { data: offerRows, error: offerError } = await supabase
     .from('pc_store_offers')
-    .select('pc_game_id, sale_price, region_code, is_available')
+    .select('pc_game_id, sale_price, normal_price, currency_code, price_source, price_last_synced_at, region_code, is_available')
     .eq('store_id', '1')
     .eq('region_code', 'us')
-    .eq('is_available', true)
     .in('pc_game_id', candidateIds)
 
   if (offerError) throw offerError
 
-  const offerByGameId = new Map<string, { sale_price?: number | string | null }>()
+  const offerByGameId = new Map<string, OfferRow>()
 
   for (const row of Array.isArray(offerRows) ? offerRows : []) {
     const key = String((row as any)?.pc_game_id || '').trim()
     if (!key) continue
-    offerByGameId.set(key, row as any)
+    offerByGameId.set(key, row as OfferRow)
   }
 
   const ranked = [...candidateGames].sort((a, b) => {
-    const aHasPrice = offerByGameId.has(String(a.id))
-    const bHasPrice = offerByGameId.has(String(b.id))
+    const aOffer = offerByGameId.get(String(a.id))
+    const bOffer = offerByGameId.get(String(b.id))
 
-    if (aHasPrice !== bHasPrice) {
-      return Number(aHasPrice) - Number(bHasPrice)
+    const aHasModernPrice =
+      !!aOffer &&
+      aOffer.price_source === 'steam_appdetails_us' &&
+      !!String(aOffer.price_last_synced_at || '').trim()
+
+    const bHasModernPrice =
+      !!bOffer &&
+      bOffer.price_source === 'steam_appdetails_us' &&
+      !!String(bOffer.price_last_synced_at || '').trim()
+
+    if (aHasModernPrice !== bHasModernPrice) {
+      return Number(aHasModernPrice) - Number(bHasModernPrice)
     }
 
     const aMissingMeta =

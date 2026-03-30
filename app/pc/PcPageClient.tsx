@@ -497,7 +497,7 @@ function DealCard({
   )
 }
 
-export default function PcPageClient()
+export default function PcPageClient() {
   const router = useRouter()
   const searchParams = useSearchParams()
 

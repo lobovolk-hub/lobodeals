@@ -1,6 +1,0 @@
-name = "lobodeals-refresh"
-main = "src/index.ts"
-compatibility_date = "2026-03-27"
-
-[triggers]
-crons = ["0 * * * *"]

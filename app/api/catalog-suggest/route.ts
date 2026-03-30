@@ -1,149 +1,114 @@
 export const runtime = 'nodejs'
 
 import { createClient } from '@supabase/supabase-js'
+import { normalizeCanonicalTitle } from '@/lib/pcCanonical'
 
-type CheapSharkGame = {
-  gameID: string
-  steamAppID?: string
-  external?: string
-  thumb?: string
-  internalName?: string
+type PcGameRow = {
+  id: string
+  steam_app_id?: string | null
+  slug?: string | null
+  steam_name?: string | null
+  canonical_title?: string | null
+  capsule_image?: string | null
+  header_image?: string | null
+  is_free_to_play?: boolean | null
+  is_active?: boolean | null
+  is_catalog_ready?: boolean | null
 }
 
-type CheapSharkGameDeal = {
-  dealID?: string
-  storeID?: string
-  price?: string
-  retailPrice?: string
-  savings?: string
-}
-
-type CheapSharkGameDetail = {
-  deals?: CheapSharkGameDeal[]
+type PcStoreOfferRow = {
+  pc_game_id: string
+  sale_price?: number | string | null
+  normal_price?: number | string | null
+  discount_percent?: number | string | null
+  store_id?: string | null
+  url?: string | null
+  is_available?: boolean | null
 }
 
 type CatalogSuggestResult = {
-  gameID: string
-  steamAppID?: string
-  external?: string
-  thumb?: string
-  cheapestDealID?: string
-  cheapest?: string
-  normalPrice?: string
-  storeID?: string
-  savings?: string
+  id: string
+  steamAppID: string
+  slug: string
+  title: string
+  thumb: string
+  salePrice: string
+  normalPrice: string
+  savings: string
+  storeID: string
+  url: string
+  isFreeToPlay: boolean
+  hasActiveOffer: boolean
+  isCatalogReady: boolean
 }
-
-const ALLOWED_STORE_IDS = new Set(['1', '3', '7', '8', '11', '13', '15', '25'])
-const SUGGEST_TTL_MS = 1000 * 60 * 60 * 6
 
 function getServiceSupabase() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL
   const serviceRole = process.env.SUPABASE_SERVICE_ROLE_KEY
 
   if (!url || !serviceRole) {
-    throw new Error('Missing Supabase env vars for catalog suggest cache')
+    throw new Error('Missing Supabase env vars for catalog suggest')
   }
 
   return createClient(url, serviceRole)
 }
 
-function makeCacheKey(title: string) {
-  return `catalog_suggest_v2::${title.toLowerCase().trim()}`
-}
+function formatMoney(value?: number | string | null) {
+  const amount = Number(value || 0)
 
-function isFresh(updatedAt: string, maxAgeMs: number) {
-  return Date.now() - new Date(updatedAt).getTime() <= maxAgeMs
-}
-
-async function readCache(cacheKey: string) {
-  const supabase = getServiceSupabase()
-
-  const { data, error } = await supabase
-    .from('deals_cache')
-    .select('payload, updated_at')
-    .eq('cache_key', cacheKey)
-    .maybeSingle()
-
-  if (error || !data) return null
-  return data as { payload: CatalogSuggestResult[]; updated_at: string }
-}
-
-async function writeCache(cacheKey: string, payload: CatalogSuggestResult[]) {
-  const supabase = getServiceSupabase()
-
-  const { error } = await supabase.from('deals_cache').upsert(
-    {
-      cache_key: cacheKey,
-      payload,
-      updated_at: new Date().toISOString(),
-    },
-    { onConflict: 'cache_key' }
-  )
-
-  if (error) throw error
-}
-
-function stripUnapprovedDealFields(game: CheapSharkGame): CatalogSuggestResult {
-  return {
-    gameID: game.gameID,
-    steamAppID: game.steamAppID || '',
-    external: game.external || '',
-    thumb: game.thumb || '',
-    cheapestDealID: '',
-    cheapest: '',
-    normalPrice: '',
-    storeID: '',
-    savings: '',
+  if (!Number.isFinite(amount) || amount <= 0) {
+    return ''
   }
+
+  return amount.toFixed(2)
 }
 
-async function enrichGame(game: CheapSharkGame): Promise<CatalogSuggestResult> {
-  try {
-    const res = await fetch(
-      `https://www.cheapshark.com/api/1.0/games?id=${encodeURIComponent(
-        game.gameID
-      )}`,
-      {
-        cache: 'no-store',
-        headers: {
-          Accept: 'application/json',
-          'User-Agent': 'LoboDeals/1.0',
-        },
-      }
-    )
+function formatSavings(value?: number | string | null) {
+  const amount = Number(value || 0)
 
-    if (!res.ok) {
-      return stripUnapprovedDealFields(game)
-    }
-
-    const detail = (await res.json()) as CheapSharkGameDetail
-    const deals = Array.isArray(detail?.deals) ? detail.deals : []
-
-    const approvedDeals = deals
-      .filter((deal) => deal.storeID && ALLOWED_STORE_IDS.has(deal.storeID))
-      .sort((a, b) => Number(a.price || 999999) - Number(b.price || 999999))
-
-    const bestApprovedDeal = approvedDeals[0]
-
-    if (!bestApprovedDeal) {
-      return stripUnapprovedDealFields(game)
-    }
-
-    return {
-      gameID: game.gameID,
-      steamAppID: game.steamAppID || '',
-      external: game.external || '',
-      thumb: game.thumb || '',
-      cheapestDealID: bestApprovedDeal.dealID || '',
-      cheapest: bestApprovedDeal.price || '',
-      normalPrice: bestApprovedDeal.retailPrice || '',
-      storeID: bestApprovedDeal.storeID || '',
-      savings: bestApprovedDeal.savings || '',
-    }
-  } catch {
-    return stripUnapprovedDealFields(game)
+  if (!Number.isFinite(amount) || amount <= 0) {
+    return '0'
   }
+
+  return String(Math.max(0, Math.min(99, Math.round(amount))))
+}
+
+function chooseBestOffer(current: PcStoreOfferRow | undefined, incoming: PcStoreOfferRow) {
+  if (!current) return incoming
+
+  const currentDiscount = Number(current.discount_percent || 0)
+  const incomingDiscount = Number(incoming.discount_percent || 0)
+
+  if (incomingDiscount > currentDiscount) return incoming
+  if (incomingDiscount < currentDiscount) return current
+
+  const currentSale = Number(current.sale_price || 999999)
+  const incomingSale = Number(incoming.sale_price || 999999)
+
+  if (incomingSale < currentSale) return incoming
+  return current
+}
+
+function scoreGame(row: PcGameRow, normalizedQuery: string, hasOffer: boolean) {
+  const steamName = normalizeCanonicalTitle(String(row.steam_name || ''))
+  const canonicalTitle = normalizeCanonicalTitle(String(row.canonical_title || ''))
+  const title = steamName || canonicalTitle
+
+  if (!title) return -1
+
+  let score = 0
+
+  if (title === normalizedQuery) score += 500
+  if (steamName.startsWith(normalizedQuery)) score += 120
+  if (canonicalTitle.startsWith(normalizedQuery)) score += 100
+  if (steamName.includes(normalizedQuery)) score += 60
+  if (canonicalTitle.includes(normalizedQuery)) score += 50
+  if (row.is_catalog_ready) score += 20
+  if (row.capsule_image || row.header_image) score += 10
+  if (hasOffer) score += 15
+  if (row.is_free_to_play) score += 8
+
+  return score
 }
 
 export async function GET(request: Request) {
@@ -151,50 +116,116 @@ export async function GET(request: Request) {
     const { searchParams } = new URL(request.url)
     const rawTitle = searchParams.get('title')?.trim() || ''
 
-    if (rawTitle.length < 3) {
+    if (rawTitle.length < 2) {
       return Response.json([], { status: 200 })
     }
 
-    const cacheKey = makeCacheKey(rawTitle)
-    const cached = await readCache(cacheKey)
-
-    if (cached && isFresh(cached.updated_at, SUGGEST_TTL_MS)) {
-      return Response.json(cached.payload, { status: 200 })
-    }
-
-    const url = `https://www.cheapshark.com/api/1.0/games?title=${encodeURIComponent(
-      rawTitle
-    )}&limit=5&exact=0`
-
-    const res = await fetch(url, {
-      cache: 'no-store',
-      headers: {
-        Accept: 'application/json',
-        'User-Agent': 'LoboDeals/1.0',
-      },
-    })
-
-    if (!res.ok) {
-      if (cached) return Response.json(cached.payload, { status: 200 })
+    const normalizedQuery = normalizeCanonicalTitle(rawTitle)
+    if (!normalizedQuery) {
       return Response.json([], { status: 200 })
     }
 
-    const data = await res.json()
-    const list = Array.isArray(data) ? (data as CheapSharkGame[]) : []
+    const supabase = getServiceSupabase()
 
-    const cleaned = list.filter((game) => {
-      if (!game.gameID) return false
-      if (!game.external || typeof game.external !== 'string') return false
-      return true
-    })
+    const { data: matchedGames, error: gamesError } = await supabase
+      .from('pc_games')
+      .select(
+        'id, steam_app_id, slug, steam_name, canonical_title, capsule_image, header_image, is_free_to_play, is_active, is_catalog_ready'
+      )
+      .eq('is_active', true)
+      .or(
+        [
+          `steam_name.ilike.%${rawTitle}%`,
+          `canonical_title.ilike.%${rawTitle}%`,
+          `normalized_title.ilike.%${normalizedQuery}%`,
+        ].join(',')
+      )
+      .limit(20)
 
-    const enriched = await Promise.all(cleaned.slice(0, 5).map(enrichGame))
-
-    if (enriched.length > 0) {
-      await writeCache(cacheKey, enriched)
+    if (gamesError) {
+      throw gamesError
     }
 
-    return Response.json(enriched, { status: 200 })
+    const games = Array.isArray(matchedGames) ? (matchedGames as PcGameRow[]) : []
+
+    if (!games.length) {
+      return Response.json([], { status: 200 })
+    }
+
+    const gameIds = games
+      .map((game) => String(game.id || '').trim())
+      .filter(Boolean)
+
+    let offersByGameId = new Map<string, PcStoreOfferRow>()
+
+    if (gameIds.length > 0) {
+      const { data: offers, error: offersError } = await supabase
+        .from('pc_store_offers')
+        .select(
+          'pc_game_id, sale_price, normal_price, discount_percent, store_id, url, is_available'
+        )
+        .eq('store_id', '1')
+        .eq('is_available', true)
+        .in('pc_game_id', gameIds)
+
+      if (offersError) {
+        throw offersError
+      }
+
+      for (const row of (offers || []) as PcStoreOfferRow[]) {
+        const key = String(row.pc_game_id || '').trim()
+        if (!key) continue
+
+        offersByGameId.set(key, chooseBestOffer(offersByGameId.get(key), row))
+      }
+    }
+
+    const results = games
+      .map((game) => {
+        const id = String(game.id || '').trim()
+        const offer = offersByGameId.get(id)
+        const title = String(game.steam_name || game.canonical_title || '').trim()
+        const slug = String(game.slug || '').trim()
+        const thumb =
+          String(game.capsule_image || '').trim() ||
+          String(game.header_image || '').trim()
+
+        if (!title || !slug) return null
+
+        const hasActiveOffer = Boolean(offer)
+        const score = scoreGame(game, normalizedQuery, hasActiveOffer)
+
+        return {
+          score,
+          item: {
+            id,
+            steamAppID: String(game.steam_app_id || '').trim(),
+            slug,
+            title,
+            thumb,
+            salePrice: formatMoney(offer?.sale_price),
+            normalPrice: formatMoney(offer?.normal_price),
+            savings: formatSavings(offer?.discount_percent),
+            storeID: String(offer?.store_id || '1').trim(),
+            url: String(offer?.url || '').trim(),
+            isFreeToPlay: Boolean(game.is_free_to_play),
+            hasActiveOffer,
+            isCatalogReady: Boolean(game.is_catalog_ready),
+          } satisfies CatalogSuggestResult,
+        }
+      })
+      .filter(Boolean)
+      .sort((a, b) => {
+        if (b!.score !== a!.score) {
+          return b!.score - a!.score
+        }
+
+        return a!.item.title.localeCompare(b!.item.title)
+      })
+      .slice(0, 5)
+      .map((entry) => entry!.item)
+
+    return Response.json(results, { status: 200 })
   } catch (error) {
     console.error('catalog suggest error', error)
     return Response.json([], { status: 200 })

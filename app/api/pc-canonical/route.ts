@@ -11,10 +11,7 @@ export async function GET(request: Request) {
     const steamAppIDHint = (searchParams.get('steamAppID') || '').trim()
 
     if (!slug) {
-      return Response.json(
-        { error: 'Missing slug' },
-        { status: 400 }
-      )
+      return Response.json({ error: 'Missing slug' }, { status: 400 })
     }
 
     const game = await resolveCanonicalPcGame({
@@ -30,7 +27,7 @@ export async function GET(request: Request) {
       )
     }
 
-    return Response.json(game)
+    return Response.json(game, { status: 200 })
   } catch (error) {
     console.error('api/pc-canonical error', error)
 

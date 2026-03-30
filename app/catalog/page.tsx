@@ -6,33 +6,24 @@ import { getStoreLogo, getStoreName } from '@/lib/storeMap'
 import RegionNotice from '@/app/components/RegionNotice'
 
 type CatalogGame = {
-  gameID: string
-  steamAppID?: string
-  cheapest?: string
-  cheapestDealID?: string
-  external?: string
-  internalName?: string
-  thumb?: string
-  normalPrice?: string
-  storeID?: string
-  savings?: string
+  id: string
+  steamAppID: string
+  slug: string
+  title: string
+  thumb: string
+  salePrice: string
+  normalPrice: string
+  savings: string
+  storeID: string
+  url: string
+  isFreeToPlay: boolean
+  hasActiveOffer: boolean
+  isCatalogReady: boolean
 }
 
 type CatalogStats = {
   steamCatalogSize: number
   updatedAt: string | null
-}
-
-type SteamCatalogFeatured = {
-  steamAppID: string
-  title: string
-  salePrice: string
-  normalPrice: string
-  savings: string
-  thumb: string
-  storeID: string
-  platform: string
-  url: string
 }
 
 export default function CatalogPage() {
@@ -50,26 +41,40 @@ export default function CatalogPage() {
     updatedAt: null,
   })
 
-  const [steamFeatured, setSteamFeatured] = useState<SteamCatalogFeatured[]>([])
-  const [steamFeaturedLoading, setSteamFeaturedLoading] = useState(true)
+  const suggestionBoxRef = useRef<HTMLDivElement | null>(null)
 
-    const buildCanonicalHref = (title: string) => {
-    const slug = title
-      .toLowerCase()
-      .trim()
-      .replace(/[^a-z0-9\s-]/g, '')
-      .replace(/\s+/g, '-')
-      .replace(/-+/g, '-')
-
-    return `/pc/${encodeURIComponent(slug)}`
+  const buildGameHref = (item: CatalogGame) => {
+    return `/pc/${encodeURIComponent(item.slug)}`
   }
 
-  const suggestionBoxRef = useRef<HTMLDivElement | null>(null)
+  const getPriceLabel = (item: CatalogGame) => {
+    if (item.isFreeToPlay) return 'Free to play'
+    if (item.hasActiveOffer && item.salePrice) return `$${item.salePrice}`
+    return 'No current Steam price cached'
+  }
+
+  const getPriceSubLabel = (item: CatalogGame) => {
+    if (item.isFreeToPlay) {
+      return 'Included in the Steam PC catalog'
+    }
+
+    if (
+      item.hasActiveOffer &&
+      item.normalPrice &&
+      Number(item.normalPrice) > Number(item.salePrice || 0)
+    ) {
+      return `Regular price: $${item.normalPrice}`
+    }
+
+    return item.isCatalogReady
+      ? 'Catalog entry without active sale'
+      : 'Base catalog entry imported from Steam'
+  }
 
   useEffect(() => {
     const q = query.trim()
 
-    if (q.length < 3) {
+    if (q.length < 2) {
       setSuggestions([])
       setSuggestionsLoading(false)
       return
@@ -89,7 +94,7 @@ export default function CatalogPage() {
       } finally {
         setSuggestionsLoading(false)
       }
-    }, 400)
+    }, 300)
 
     return () => clearTimeout(timer)
   }, [query])
@@ -136,44 +141,8 @@ export default function CatalogPage() {
     }
   }, [])
 
-  useEffect(() => {
-    let cancelled = false
-
-    const loadSteamFeatured = async () => {
-      try {
-        setSteamFeaturedLoading(true)
-
-        const res = await fetch('/api/steam-spotlight?limit=8')
-        const data = await res.json()
-
-        if (!cancelled) {
-          setSteamFeatured(Array.isArray(data) ? data.slice(0, 8) : [])
-        }
-      } catch (error) {
-        console.error(error)
-        if (!cancelled) {
-          setSteamFeatured([])
-        }
-      } finally {
-        if (!cancelled) {
-          setSteamFeaturedLoading(false)
-        }
-      }
-    }
-
-    loadSteamFeatured()
-
-    return () => {
-      cancelled = true
-    }
-  }, [])
-
-    const buildGameHref = (item: CatalogGame) => {
-    return buildCanonicalHref(item.external || 'game')
-  }
-
   const runSearch = async () => {
-    if (!query.trim()) return
+    if (query.trim().length < 2) return
 
     setLoading(true)
     setSearched(true)
@@ -200,10 +169,10 @@ export default function CatalogPage() {
           <p className="text-sm uppercase tracking-[0.3em] text-zinc-400">
             Catalog
           </p>
-          <h1 className="mt-1 text-3xl font-bold">All Games Search</h1>
+          <h1 className="mt-1 text-3xl font-bold">Steam PC Game Search</h1>
           <p className="mt-2 text-zinc-400">
-            Search games even if they are not currently on sale, with a much
-            larger Steam catalog behind the lookup layer.
+            Search the Steam PC catalog from the local LoboDeals layer, including
+            games with deals, without deals, and free-to-play entries.
           </p>
         </header>
 
@@ -225,19 +194,19 @@ export default function CatalogPage() {
             <p className="text-xs uppercase tracking-wider text-zinc-500">
               Search layer
             </p>
-            <p className="mt-2 text-2xl font-bold text-white">Catalog</p>
+            <p className="mt-2 text-2xl font-bold text-white">pc_games</p>
             <p className="mt-1 text-xs text-zinc-500">
-              Game lookup even without active deals
+              Local Steam-first search over the new 2.5 layer
             </p>
           </div>
 
           <div className="rounded-2xl border border-zinc-800 bg-zinc-900 p-4">
             <p className="text-xs uppercase tracking-wider text-zinc-500">
-              Steam featured
+              Catalog behavior
             </p>
-            <p className="mt-2 text-2xl font-bold text-white">8</p>
+            <p className="mt-2 text-2xl font-bold text-white">Games first</p>
             <p className="mt-1 text-xs text-zinc-500">
-              Quick entry points before searching
+              Deals, non-deals and free-to-play are all valid results
             </p>
           </div>
         </div>
@@ -255,9 +224,10 @@ export default function CatalogPage() {
               onKeyDown={(e) => {
                 if (e.key === 'Enter') runSearch()
               }}
-              placeholder="Search any game..."
+              placeholder="Search Steam PC games..."
               className="w-full rounded-2xl border border-zinc-800 bg-zinc-900 px-4 py-3 text-zinc-100 outline-none placeholder:text-zinc-500"
             />
+
             <button
               onClick={runSearch}
               className="rounded-2xl bg-white px-5 py-3 text-sm font-semibold text-black transition hover:opacity-90"
@@ -268,9 +238,9 @@ export default function CatalogPage() {
 
           {showSuggestions && query.trim().length > 0 ? (
             <div className="mt-3 overflow-hidden rounded-2xl border border-zinc-800 bg-zinc-900">
-              {query.trim().length < 3 ? (
+              {query.trim().length < 2 ? (
                 <div className="px-4 py-3 text-sm text-zinc-500">
-                  Type at least 3 letters.
+                  Type at least 2 letters.
                 </div>
               ) : suggestionsLoading ? (
                 <div className="px-4 py-3 text-sm text-zinc-400">
@@ -282,10 +252,10 @@ export default function CatalogPage() {
 
                   return (
                     <Link
-                      key={item.gameID}
+                      key={item.id}
                       href={href}
                       onClick={() => {
-                        setQuery(item.external || '')
+                        setQuery(item.title || '')
                         setShowSuggestions(false)
                       }}
                       className="flex w-full items-center gap-3 border-t border-zinc-800 px-4 py-3 text-left transition first:border-t-0 hover:bg-zinc-800"
@@ -294,7 +264,7 @@ export default function CatalogPage() {
                         {item.thumb ? (
                           <img
                             src={item.thumb}
-                            alt={item.external || 'Game'}
+                            alt={item.title || 'Game'}
                             className="h-full w-full object-cover"
                           />
                         ) : null}
@@ -302,12 +272,14 @@ export default function CatalogPage() {
 
                       <div className="min-w-0 flex-1">
                         <p className="truncate text-sm font-medium text-zinc-100">
-                          {item.external}
+                          {item.title}
                         </p>
                         <p className="text-xs text-zinc-500">
-                          {item.cheapest
-                            ? `Known price: $${item.cheapest}`
-                            : 'No active deal right now'}
+                          {item.isFreeToPlay
+                            ? 'Free to play'
+                            : item.hasActiveOffer && item.salePrice
+                            ? `Current Steam price: $${item.salePrice}`
+                            : 'No active Steam offer cached'}
                         </p>
                       </div>
 
@@ -326,129 +298,73 @@ export default function CatalogPage() {
           ) : null}
         </div>
 
-        {loading && (
-          <div className="rounded-2xl border border-zinc-800 bg-zinc-900 p-4 text-sm text-zinc-400">
-            Searching catalog...
-          </div>
-        )}
-
         {!searched ? (
-          <section className="mb-10">
-            <div className="mb-4 flex items-center justify-between gap-3">
-              <div>
-                <h2 className="text-xl font-bold text-white">Steam featured</h2>
-                <p className="mt-1 text-sm text-zinc-400">
-                  Quick entry points from the Steam layer while the wider
-                  catalog keeps growing.
+          <section className="mb-10 rounded-3xl border border-zinc-800 bg-zinc-900 p-5">
+            <h2 className="text-xl font-bold text-white">
+              Search the local Steam PC catalog
+            </h2>
+            <p className="mt-2 text-sm text-zinc-400">
+              This search layer is now focused on real games from the local 2.5
+              backbone, not only discounted deals. That means results can include:
+            </p>
+
+            <div className="mt-4 grid gap-3 sm:grid-cols-3">
+              <div className="rounded-2xl border border-zinc-800 bg-zinc-950 p-4">
+                <p className="text-sm font-semibold text-white">Games with offers</p>
+                <p className="mt-1 text-xs text-zinc-500">
+                  Steam entries with cached pricing and discount data.
                 </p>
               </div>
 
-              <Link
-                href="/pc?sort=steam-spotlight"
-                className="text-sm font-medium text-emerald-300 transition hover:text-emerald-200"
-              >
-                View Steam Spotlight
-              </Link>
+              <div className="rounded-2xl border border-zinc-800 bg-zinc-950 p-4">
+                <p className="text-sm font-semibold text-white">Games without offers</p>
+                <p className="mt-1 text-xs text-zinc-500">
+                  Catalog entries that still belong to the Steam PC layer.
+                </p>
+              </div>
+
+              <div className="rounded-2xl border border-zinc-800 bg-zinc-950 p-4">
+                <p className="text-sm font-semibold text-white">Free-to-play games</p>
+                <p className="mt-1 text-xs text-zinc-500">
+                  Titles that should remain visible even without a paid deal.
+                </p>
+              </div>
             </div>
 
-            {steamFeaturedLoading ? (
-              <div className="rounded-2xl border border-zinc-800 bg-zinc-900 p-4 text-sm text-zinc-400">
-                Loading featured Steam games...
-              </div>
-            ) : steamFeatured.length === 0 ? (
-              <div className="rounded-2xl border border-zinc-800 bg-zinc-900 p-4 text-sm text-zinc-400">
-                No featured Steam games available right now.
-              </div>
-            ) : (
-              <div className="grid grid-cols-2 gap-5 lg:grid-cols-4">
-                {steamFeatured.map((item) => {
-                  const salePrice = Number(item.salePrice || 0)
-                  const normalPrice = Number(item.normalPrice || 0)
-                  const hasValidNormalPrice =
-                    !Number.isNaN(normalPrice) &&
-                    normalPrice > 0 &&
-                    normalPrice > salePrice
+            <div className="mt-5 flex flex-wrap gap-3">
+              <Link
+                href="/pc"
+                className="rounded-xl bg-white px-4 py-2 text-sm font-semibold text-black transition hover:opacity-90"
+              >
+                Browse PC
+              </Link>
 
-                                    const href = buildCanonicalHref(item.title)
-
-                  return (
-                    <article
-                      key={item.steamAppID}
-                      className="overflow-hidden rounded-3xl border border-zinc-800 bg-zinc-900 shadow-lg"
-                    >
-                      <Link href={href} className="block h-32 w-full bg-zinc-800">
-                        {item.thumb ? (
-                          <img
-                            src={item.thumb}
-                            alt={item.title}
-                            className="h-full w-full object-cover"
-                          />
-                        ) : null}
-                      </Link>
-
-                      <div className="p-4">
-                        <Link href={href}>
-                          <h2 className="line-clamp-2 text-base font-bold transition hover:text-emerald-300">
-                            {item.title}
-                          </h2>
-                        </Link>
-
-                        <div className="mt-3 rounded-2xl border border-zinc-800 bg-zinc-950 p-3">
-                          <p className="text-xs uppercase tracking-wider text-zinc-500">
-                            Featured Steam price
-                          </p>
-
-                          <div className="mt-2 flex items-end justify-between gap-2">
-                            <p className="text-2xl font-bold text-emerald-400">
-                              ${item.salePrice}
-                            </p>
-
-                            {hasValidNormalPrice ? (
-                              <p className="text-sm text-zinc-400 line-through">
-                                ${item.normalPrice}
-                              </p>
-                            ) : null}
-                          </div>
-
-                          <div className="mt-3 inline-flex items-center gap-2 rounded-full border border-zinc-700 bg-zinc-900 px-3 py-1 text-xs text-zinc-300">
-                            {getStoreLogo(item.storeID) && (
-                              <img
-                                src={getStoreLogo(item.storeID)!}
-                                alt={getStoreName(item.storeID)}
-                                className="h-4 w-4 object-contain"
-                              />
-                            )}
-                            <span>{getStoreName(item.storeID)}</span>
-                          </div>
-                        </div>
-
-                        <div className="mt-4 grid gap-2">
-                          <Link
-                            href={href}
-                            className="rounded-xl bg-white px-4 py-2 text-center text-sm font-semibold text-black transition hover:opacity-90"
-                          >
-                            Open game page
-                          </Link>
-                        </div>
-                      </div>
-                    </article>
-                  )
-                })}
-              </div>
-            )}
+              <Link
+                href="/pc?sort=latest"
+                className="rounded-xl border border-zinc-700 px-4 py-2 text-sm font-medium text-zinc-200 transition hover:bg-zinc-800"
+              >
+                View latest entries
+              </Link>
+            </div>
           </section>
         ) : null}
 
+        {loading && (
+          <div className="rounded-2xl border border-zinc-800 bg-zinc-900 p-4 text-sm text-zinc-400">
+            Searching Steam PC catalog...
+          </div>
+        )}
+
         {!loading && searched && results.length === 0 && (
           <div className="rounded-2xl border border-zinc-800 bg-zinc-900 p-4 text-sm text-zinc-400">
-            No games found.
+            No Steam PC games found for that search.
           </div>
         )}
 
         {!loading && results.length > 0 && (
           <div className="grid grid-cols-2 gap-5 lg:grid-cols-4">
             {results.map((game) => {
-              const salePrice = Number(game.cheapest || 0)
+              const salePrice = Number(game.salePrice || 0)
               const normalPrice = Number(game.normalPrice || 0)
               const hasValidNormalPrice =
                 !Number.isNaN(normalPrice) &&
@@ -459,14 +375,14 @@ export default function CatalogPage() {
 
               return (
                 <article
-                  key={game.gameID}
+                  key={game.id}
                   className="overflow-hidden rounded-3xl border border-zinc-800 bg-zinc-900 shadow-lg"
                 >
                   <Link href={href} className="block h-32 w-full bg-zinc-800">
                     {game.thumb ? (
                       <img
                         src={game.thumb}
-                        alt={game.external || 'Game'}
+                        alt={game.title || 'Game'}
                         className="h-full w-full object-cover"
                       />
                     ) : null}
@@ -475,18 +391,18 @@ export default function CatalogPage() {
                   <div className="p-4">
                     <Link href={href}>
                       <h2 className="line-clamp-2 text-base font-bold transition hover:text-emerald-300">
-                        {game.external}
+                        {game.title}
                       </h2>
                     </Link>
 
                     <div className="mt-3 rounded-2xl border border-zinc-800 bg-zinc-950 p-3">
                       <p className="text-xs uppercase tracking-wider text-zinc-500">
-                        Best current known price
+                        Steam PC status
                       </p>
 
                       <div className="mt-2 flex items-end justify-between gap-2">
                         <p className="text-2xl font-bold text-emerald-400">
-                          {game.cheapest ? `$${game.cheapest}` : 'No active deal'}
+                          {getPriceLabel(game)}
                         </p>
 
                         {hasValidNormalPrice ? (
@@ -496,7 +412,11 @@ export default function CatalogPage() {
                         ) : null}
                       </div>
 
-                      {game.storeID ? (
+                      <p className="mt-2 text-xs text-zinc-500">
+                        {getPriceSubLabel(game)}
+                      </p>
+
+                      {game.hasActiveOffer ? (
                         <div className="mt-3 inline-flex items-center gap-2 rounded-full border border-zinc-700 bg-zinc-900 px-3 py-1 text-xs text-zinc-300">
                           {getStoreLogo(game.storeID) && (
                             <img
@@ -506,10 +426,13 @@ export default function CatalogPage() {
                             />
                           )}
                           <span>{getStoreName(game.storeID)}</span>
+                          {Number(game.savings || 0) > 0 ? (
+                            <span>· {game.savings}% off</span>
+                          ) : null}
                         </div>
                       ) : (
                         <p className="mt-2 text-xs text-zinc-500">
-                          Search-level catalog result
+                          Game-first catalog result
                         </p>
                       )}
                     </div>

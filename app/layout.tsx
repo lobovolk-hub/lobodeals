@@ -1,16 +1,17 @@
 import type { Metadata } from 'next'
 import './globals.css'
 import Navbar from '@/app/components/Navbar'
+import Footer from '@/app/components/Footer'
 
 export const metadata: Metadata = {
   metadataBase: new URL('https://www.lobodeals.com'),
-  title: 'LoboDeals — The best video game deals',
+  title: 'LoboDeals — Steam-first PC game deals and catalog',
   description:
-    'Find cheap games, track prices, and explore deals across trusted stores with LoboDeals.',
+    'Browse the Steam PC catalog, discover discounts, and open one canonical local page per game with LoboDeals.',
   openGraph: {
-    title: 'LoboDeals — The best video game deals',
+    title: 'LoboDeals — Steam-first PC game deals and catalog',
     description:
-      'Find cheap games, track prices, and explore deals across trusted stores with LoboDeals.',
+      'Browse the Steam PC catalog, discover discounts, and open one canonical local page per game with LoboDeals.',
     url: 'https://www.lobodeals.com',
     siteName: 'LoboDeals',
     images: [
@@ -26,9 +27,9 @@ export const metadata: Metadata = {
   },
   twitter: {
     card: 'summary_large_image',
-    title: 'LoboDeals — The best video game deals',
+    title: 'LoboDeals — Steam-first PC game deals and catalog',
     description:
-      'Find cheap games, track prices, and explore deals across trusted stores with LoboDeals.',
+      'Browse the Steam PC catalog, discover discounts, and open one canonical local page per game with LoboDeals.',
     images: ['/og-lobodeals.png'],
   },
   icons: {
@@ -45,9 +46,12 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en">
-      <body>
-        <Navbar />
-        {children}
+      <body className="min-h-screen bg-zinc-950 text-zinc-100">
+        <div className="flex min-h-screen flex-col">
+          <Navbar />
+          <div className="flex-1">{children}</div>
+          <Footer />
+        </div>
       </body>
     </html>
   )

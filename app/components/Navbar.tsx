@@ -56,31 +56,50 @@ export default function Navbar() {
   }
 
   return (
-    <nav className="sticky top-0 z-[100] border-b border-zinc-800 bg-zinc-900/95 backdrop-blur">
+    <nav className="sticky top-0 z-[100] border-b border-zinc-800 bg-zinc-950/95 backdrop-blur">
       <div className="mx-auto max-w-7xl px-4 py-4 sm:px-6">
         <div className="flex items-center justify-between gap-3">
           <Link
             href="/"
-            className="min-w-0 leading-tight transition hover:text-emerald-300"
+            className="group flex min-w-0 items-center gap-3 rounded-2xl transition hover:bg-zinc-900/80"
             onClick={closeMobileMenu}
           >
-            <div className="truncate text-lg font-bold">LoboDeals</div>
-            <div className="text-[11px] uppercase tracking-[0.25em] text-zinc-500">
-              by LoboVolk
+            <div className="flex h-12 w-12 shrink-0 items-center justify-center overflow-hidden rounded-2xl border border-zinc-800 bg-black shadow-lg shadow-red-950/20">
+              <img
+                src="/lobodeals-logo.png"
+                alt="LoboDeals logo"
+                className="h-10 w-10 object-contain"
+              />
+            </div>
+
+            <div className="min-w-0 leading-tight">
+              <div className="truncate text-lg font-bold text-white transition group-hover:text-red-300">
+                LoboDeals
+              </div>
+              <div className="text-[11px] uppercase tracking-[0.25em] text-zinc-500">
+                by LoboVolk
+              </div>
             </div>
           </Link>
 
           <div className="hidden items-center gap-2 text-sm md:flex">
             <Link
               href="/"
-              className="rounded-lg px-3 py-2 transition hover:bg-zinc-800"
+              className="rounded-xl px-3 py-2 text-zinc-200 transition hover:bg-zinc-800"
             >
               Home
             </Link>
 
             <Link
+              href="/pc?page=1&sort=all"
+              className="rounded-xl px-3 py-2 text-zinc-200 transition hover:bg-zinc-800"
+            >
+              PC
+            </Link>
+
+            <Link
               href="/catalog"
-              className="rounded-lg px-3 py-2 transition hover:bg-zinc-800"
+              className="rounded-xl px-3 py-2 text-zinc-200 transition hover:bg-zinc-800"
             >
               Catalog
             </Link>
@@ -89,55 +108,55 @@ export default function Navbar() {
               <button
                 type="button"
                 onClick={() => setPlatformsOpen((prev) => !prev)}
-                className="rounded-lg px-3 py-2 transition hover:bg-zinc-800"
+                className="rounded-xl px-3 py-2 text-zinc-200 transition hover:bg-zinc-800"
               >
-                Platforms ▾
+                Explore ▾
               </button>
 
               {platformsOpen && (
-                <div className="absolute right-0 top-full z-[130] mt-2 w-56 overflow-hidden rounded-2xl border border-zinc-800 bg-zinc-900 shadow-2xl ring-1 ring-black/30">
+                <div className="absolute right-0 top-full z-[130] mt-2 w-64 overflow-hidden rounded-2xl border border-zinc-800 bg-zinc-950 shadow-2xl ring-1 ring-black/30">
                   <Link
                     href="/pc?page=1&sort=all"
                     onClick={() => setPlatformsOpen(false)}
-                    className="block px-4 py-3 text-sm transition hover:bg-zinc-800"
+                    className="block px-4 py-3 text-sm text-zinc-100 transition hover:bg-zinc-900"
                   >
-                    PC
+                    Browse PC
+                  </Link>
+
+                  <Link
+                    href="/pc?page=1&sort=latest"
+                    onClick={() => setPlatformsOpen(false)}
+                    className="block px-4 py-3 text-sm text-zinc-100 transition hover:bg-zinc-900"
+                  >
+                    Latest Steam entries
+                  </Link>
+
+                  <Link
+                    href="/pc?page=1&sort=biggest-discount"
+                    onClick={() => setPlatformsOpen(false)}
+                    className="block px-4 py-3 text-sm text-zinc-100 transition hover:bg-zinc-900"
+                  >
+                    Biggest discounts
                   </Link>
 
                   <Link
                     href="/pc?page=1&sort=steam-spotlight"
                     onClick={() => setPlatformsOpen(false)}
-                    className="block px-4 py-3 text-sm transition hover:bg-zinc-800"
+                    className="block px-4 py-3 text-sm text-zinc-100 transition hover:bg-zinc-900"
                   >
-                    Steam Deals
+                    Steam deals
                   </Link>
 
                   <div className="border-t border-zinc-800 px-4 py-2 text-[11px] uppercase tracking-[0.25em] text-zinc-500">
-                    Coming later
+                    Next platform
                   </div>
 
                   <Link
                     href="/playstation"
                     onClick={() => setPlatformsOpen(false)}
-                    className="block px-4 py-3 text-sm text-zinc-400 transition hover:bg-zinc-800"
+                    className="block px-4 py-3 text-sm text-zinc-400 transition hover:bg-zinc-900"
                   >
                     PlayStation
-                  </Link>
-
-                  <Link
-                    href="/xbox"
-                    onClick={() => setPlatformsOpen(false)}
-                    className="block px-4 py-3 text-sm text-zinc-400 transition hover:bg-zinc-800"
-                  >
-                    Xbox
-                  </Link>
-
-                  <Link
-                    href="/nintendo"
-                    onClick={() => setPlatformsOpen(false)}
-                    className="block px-4 py-3 text-sm text-zinc-400 transition hover:bg-zinc-800"
-                  >
-                    Nintendo
                   </Link>
                 </div>
               )}
@@ -145,33 +164,27 @@ export default function Navbar() {
 
             <Link
               href="/tracked"
-              className="rounded-lg px-3 py-2 transition hover:bg-zinc-800"
+              className="rounded-xl px-3 py-2 text-zinc-200 transition hover:bg-zinc-800"
             >
               Tracked
             </Link>
-
-            {userEmail ? (
-              <Link
-                href="/profile"
-                className="rounded-lg px-3 py-2 transition hover:bg-zinc-800"
-              >
-                Profile
-              </Link>
-            ) : null}
 
             <RegionSelector compact />
 
             {userEmail ? (
               <>
-                <span className="rounded-lg px-3 py-2 text-zinc-400">
-                  Signed in
-                </span>
+                <Link
+                  href="/profile"
+                  className="rounded-xl px-3 py-2 text-zinc-200 transition hover:bg-zinc-800"
+                >
+                  Profile
+                </Link>
 
                 <button
                   onClick={async () => {
                     await supabase.auth.signOut()
                   }}
-                  className="rounded-lg px-3 py-2 transition hover:bg-zinc-800"
+                  className="rounded-xl border border-zinc-700 px-3 py-2 text-zinc-200 transition hover:bg-zinc-800"
                 >
                   Sign out
                 </button>
@@ -179,7 +192,7 @@ export default function Navbar() {
             ) : (
               <Link
                 href="/login"
-                className="rounded-lg px-3 py-2 transition hover:bg-zinc-800"
+                className="rounded-xl border border-zinc-700 px-3 py-2 text-zinc-200 transition hover:bg-zinc-800"
               >
                 Login
               </Link>
@@ -189,59 +202,110 @@ export default function Navbar() {
           <button
             type="button"
             onClick={() => setMobileMenuOpen((prev) => !prev)}
-            className="rounded-xl border border-zinc-700 px-3 py-2 text-sm transition hover:bg-zinc-800 md:hidden"
+            className="rounded-xl border border-zinc-700 px-3 py-2 text-sm text-zinc-200 transition hover:bg-zinc-800 md:hidden"
           >
             Menu
           </button>
         </div>
 
         {mobileMenuOpen && (
-          <div className="mt-4 rounded-2xl border border-zinc-800 bg-zinc-900 p-3 md:hidden">
+          <div className="mt-4 rounded-2xl border border-zinc-800 bg-zinc-950 p-3 md:hidden">
+            <div className="mb-3 rounded-2xl border border-zinc-800 bg-zinc-900 p-3">
+              <div className="flex items-center gap-3">
+                <div className="flex h-11 w-11 items-center justify-center overflow-hidden rounded-2xl border border-zinc-800 bg-black">
+                  <img
+                    src="/lobodeals-logo.png"
+                    alt="LoboDeals logo"
+                    className="h-9 w-9 object-contain"
+                  />
+                </div>
+
+                <div>
+                  <div className="text-sm font-bold text-white">LoboDeals</div>
+                  <div className="text-[11px] uppercase tracking-[0.25em] text-zinc-500">
+                    by LoboVolk
+                  </div>
+                </div>
+              </div>
+            </div>
+
             <div className="grid gap-2 text-sm">
               <Link
                 href="/"
                 onClick={closeMobileMenu}
-                className="rounded-xl px-3 py-3 transition hover:bg-zinc-800"
+                className="rounded-xl px-3 py-3 text-zinc-100 transition hover:bg-zinc-800"
               >
                 Home
               </Link>
 
               <Link
+                href="/pc?page=1&sort=all"
+                onClick={closeMobileMenu}
+                className="rounded-xl px-3 py-3 text-zinc-100 transition hover:bg-zinc-800"
+              >
+                PC
+              </Link>
+
+              <Link
                 href="/catalog"
                 onClick={closeMobileMenu}
-                className="rounded-xl px-3 py-3 transition hover:bg-zinc-800"
+                className="rounded-xl px-3 py-3 text-zinc-100 transition hover:bg-zinc-800"
               >
                 Catalog
+              </Link>
+
+              <Link
+                href="/tracked"
+                onClick={closeMobileMenu}
+                className="rounded-xl px-3 py-3 text-zinc-100 transition hover:bg-zinc-800"
+              >
+                Tracked
               </Link>
 
               <button
                 type="button"
                 onClick={() => setMobilePlatformsOpen((prev) => !prev)}
-                className="rounded-xl px-3 py-3 text-left transition hover:bg-zinc-800"
+                className="rounded-xl px-3 py-3 text-left text-zinc-100 transition hover:bg-zinc-800"
               >
-                Platforms {mobilePlatformsOpen ? '▴' : '▾'}
+                Explore {mobilePlatformsOpen ? '▴' : '▾'}
               </button>
 
               {mobilePlatformsOpen && (
-                <div className="grid gap-2 rounded-xl border border-zinc-800 bg-zinc-950 p-2">
+                <div className="grid gap-2 rounded-xl border border-zinc-800 bg-zinc-900 p-2">
                   <Link
                     href="/pc?page=1&sort=all"
                     onClick={closeMobileMenu}
-                    className="rounded-lg px-3 py-2 transition hover:bg-zinc-800"
+                    className="rounded-lg px-3 py-2 text-zinc-100 transition hover:bg-zinc-800"
                   >
-                    PC
+                    Browse PC
+                  </Link>
+
+                  <Link
+                    href="/pc?page=1&sort=latest"
+                    onClick={closeMobileMenu}
+                    className="rounded-lg px-3 py-2 text-zinc-100 transition hover:bg-zinc-800"
+                  >
+                    Latest Steam entries
+                  </Link>
+
+                  <Link
+                    href="/pc?page=1&sort=biggest-discount"
+                    onClick={closeMobileMenu}
+                    className="rounded-lg px-3 py-2 text-zinc-100 transition hover:bg-zinc-800"
+                  >
+                    Biggest discounts
                   </Link>
 
                   <Link
                     href="/pc?page=1&sort=steam-spotlight"
                     onClick={closeMobileMenu}
-                    className="rounded-lg px-3 py-2 transition hover:bg-zinc-800"
+                    className="rounded-lg px-3 py-2 text-zinc-100 transition hover:bg-zinc-800"
                   >
-                    Steam Deals
+                    Steam deals
                   </Link>
 
                   <div className="px-3 py-2 text-[11px] uppercase tracking-[0.25em] text-zinc-500">
-                    Coming later
+                    Next platform
                   </div>
 
                   <Link
@@ -251,62 +315,38 @@ export default function Navbar() {
                   >
                     PlayStation
                   </Link>
-
-                  <Link
-                    href="/xbox"
-                    onClick={closeMobileMenu}
-                    className="rounded-lg px-3 py-2 text-zinc-400 transition hover:bg-zinc-800"
-                  >
-                    Xbox
-                  </Link>
-
-                  <Link
-                    href="/nintendo"
-                    onClick={closeMobileMenu}
-                    className="rounded-lg px-3 py-2 text-zinc-400 transition hover:bg-zinc-800"
-                  >
-                    Nintendo
-                  </Link>
                 </div>
               )}
 
-              <Link
-                href="/tracked"
-                onClick={closeMobileMenu}
-                className="rounded-xl px-3 py-3 transition hover:bg-zinc-800"
-              >
-                Tracked
-              </Link>
-
-              {userEmail ? (
-                <Link
-                  href="/profile"
-                  onClick={closeMobileMenu}
-                  className="rounded-xl px-3 py-3 transition hover:bg-zinc-800"
-                >
-                  Profile
-                </Link>
-              ) : null}
-
-              <div className="px-3 py-2">
+              <div className="pt-2">
                 <RegionSelector />
               </div>
 
               {userEmail ? (
-                <button
-                  onClick={async () => {
-                    await supabase.auth.signOut()
-                    closeMobileMenu()
-                  }}
-                  className="rounded-xl px-3 py-3 text-left transition hover:bg-zinc-800"
-                >
-                  Sign out
-                </button>
+                <>
+                  <Link
+                    href="/profile"
+                    onClick={closeMobileMenu}
+                    className="rounded-xl px-3 py-3 text-zinc-100 transition hover:bg-zinc-800"
+                  >
+                    Profile
+                  </Link>
+
+                  <button
+                    onClick={async () => {
+                      await supabase.auth.signOut()
+                      closeMobileMenu()
+                    }}
+                    className="rounded-xl border border-zinc-700 px-3 py-3 text-left text-zinc-100 transition hover:bg-zinc-800"
+                  >
+                    Sign out
+                  </button>
+                </>
               ) : (
                 <Link
                   href="/login"
                   onClick={closeMobileMenu}
-                  className="rounded-xl px-3 py-3 transition hover:bg-zinc-800"
+                  className="rounded-xl border border-zinc-700 px-3 py-3 text-zinc-100 transition hover:bg-zinc-800"
                 >
                   Login
                 </Link>

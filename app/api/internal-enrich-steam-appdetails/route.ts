@@ -1,47 +1,84 @@
 export const runtime = 'nodejs'
 
 import { createClient } from '@supabase/supabase-js'
-import {
-  makePcCanonicalKey,
-  normalizeCanonicalTitle,
-} from '@/lib/pcCanonical'
+import { makePcCanonicalKey, makePcCanonicalSlug } from '@/lib/pcCanonical'
 
-type PcGameRow = {
-  id: string
-  steam_app_id: string
-  canonical_title: string
-  slug: string
-}
-
-type SteamAppDetailsEnvelope = Record<
+type SteamAppDetailsResponse = Record<
   string,
   {
     success?: boolean
     data?: {
-      steam_appid?: number
       name?: string
       type?: string
-      is_free?: boolean
       short_description?: string
       detailed_description?: string
       header_image?: string
       capsule_image?: string
-      capsule_imagev5?: string
-      background?: string
-      website?: string
+      is_free?: boolean
       release_date?: {
-        coming_soon?: boolean
         date?: string
       }
-      genres?: Array<{ id?: string; description?: string }>
-      categories?: Array<{ id?: number; description?: string }>
-      screenshots?: Array<{ id?: number; path_full?: string; path_thumbnail?: string }>
+      screenshots?: Array<{
+        id?: number
+        path_full?: string
+      }>
     }
   }
 >
 
-type SyncLogRow = {
+type RawgSearchResult = {
+  id?: number
+  slug?: string
+  name?: string
+  background_image?: string | null
+  background_image_additional?: string | null
+  metacritic?: number | null
+  released?: string | null
+}
+
+type RawgSearchResponse = {
+  results?: RawgSearchResult[]
+}
+
+type RawgGameDetail = {
+  id?: number
+  slug?: string
+  name?: string
+  description?: string | null
+  background_image?: string | null
+  background_image_additional?: string | null
+  metacritic?: number | null
+  released?: string | null
+  genres?: Array<{ name?: string | null }>
+  platforms?: Array<{
+    platform?: {
+      name?: string | null
+    } | null
+  }>
+  clip?:
+    | string
+    | {
+        clip?: string | null
+        clips?: {
+          '320'?: string | null
+          '640'?: string | null
+          full?: string | null
+        } | null
+        preview?: string | null
+        video?: string | null
+      }
+    | null
+}
+
+type PcGameRow = {
   id: string
+  steam_app_id?: string | null
+  steam_name?: string | null
+  canonical_title?: string | null
+  steam_type?: string | null
+  hero_image_url?: string | null
+  metacritic?: number | null
+  clip_url?: string | null
 }
 
 function getServiceSupabase() {
@@ -49,295 +86,558 @@ function getServiceSupabase() {
   const serviceRole = process.env.SUPABASE_SERVICE_ROLE_KEY
 
   if (!url || !serviceRole) {
-    throw new Error('Missing Supabase env vars for steam appdetails enrich')
+    throw new Error('Missing Supabase env vars for steam enrich')
   }
 
   return createClient(url, serviceRole)
 }
 
-function isAuthorized(request: Request) {
-  const authHeader = request.headers.get('authorization') || ''
-  const token = process.env.INTERNAL_REFRESH_TOKEN || ''
+function getRawgApiKey() {
+  return (
+    process.env.RAWG_API_KEY ||
+    process.env.NEXT_PUBLIC_RAWG_API_KEY ||
+    ''
+  ).trim()
+}
 
-  if (!token) {
-    throw new Error('Missing INTERNAL_REFRESH_TOKEN')
+function dedupeStrings(values: Array<string | null | undefined>) {
+  return Array.from(
+    new Set(
+      values
+        .map((value) => String(value || '').trim())
+        .filter(Boolean)
+    )
+  )
+}
+
+function normalizeRawgGenres(value?: Array<{ name?: string | null }>) {
+  if (!Array.isArray(value)) return []
+
+  return dedupeStrings(value.map((item) => String(item?.name || '')))
+}
+
+function normalizeRawgPlatforms(
+  value?: Array<{
+    platform?: {
+      name?: string | null
+    } | null
+  }>
+) {
+  if (!Array.isArray(value)) return []
+
+  return dedupeStrings(
+    value.map((item) => String(item?.platform?.name || ''))
+  )
+}
+
+function extractRawgClipUrl(rawg: RawgGameDetail | null) {
+  if (!rawg?.clip) return ''
+
+  if (typeof rawg.clip === 'string') {
+    return rawg.clip.trim()
   }
 
-  return authHeader === `Bearer ${token}`
+  return String(
+    rawg.clip.clip ||
+      rawg.clip.video ||
+      rawg.clip.clips?.full ||
+      rawg.clip.clips?.['640'] ||
+      rawg.clip.clips?.['320'] ||
+      rawg.clip.preview ||
+      ''
+  ).trim()
 }
 
-async function createSyncLog(jobType: string) {
-  const supabase = getServiceSupabase()
-
-  const { data, error } = await supabase
-    .from('sync_logs')
-    .insert({
-      job_type: jobType,
-      status: 'running',
-      notes: 'Steam appdetails enrich started',
-      items_processed: 0,
-    })
-    .select('id')
-    .single()
-
-  if (error) throw error
-  return data as SyncLogRow
+function normalizeRawgCacheKey(title: string) {
+  return `rawg_meta::${title.toLowerCase().trim()}::1`
 }
 
-async function finishSyncLog(
-  logId: string,
-  status: 'success' | 'error',
-  notes: string,
-  itemsProcessed: number
+function normalizeTitleForMatch(value: string) {
+  return value
+    .normalize('NFKD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[®™©]/g, '')
+    .toLowerCase()
+    .trim()
+    .replace(/[:\-–—_/.,+!?'"]/g, ' ')
+    .replace(/[^a-z0-9\s]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+}
+
+function chooseBestRawgSearchResult(
+  results: RawgSearchResult[],
+  targetTitle: string
 ) {
-  const supabase = getServiceSupabase()
+  if (!results.length) return null
 
-  const { error } = await supabase
-    .from('sync_logs')
-    .update({
+  const target = normalizeTitleForMatch(targetTitle)
+
+  const ranked = [...results].sort((a, b) => {
+    const aName = normalizeTitleForMatch(String(a.name || ''))
+    const bName = normalizeTitleForMatch(String(b.name || ''))
+
+    const aExact = aName === target ? 1 : 0
+    const bExact = bName === target ? 1 : 0
+    if (bExact !== aExact) return bExact - aExact
+
+    const aContains = aName.includes(target) || target.includes(aName) ? 1 : 0
+    const bContains = bName.includes(target) || target.includes(bName) ? 1 : 0
+    if (bContains !== aContains) return bContains - aContains
+
+    const aMeta = Number(a.metacritic || 0)
+    const bMeta = Number(b.metacritic || 0)
+    return bMeta - aMeta
+  })
+
+  return ranked[0] || null
+}
+
+async function fetchRawgGameByTitle(title: string) {
+  const apiKey = getRawgApiKey()
+  if (!apiKey) return null
+
+  const searchUrl =
+    `https://api.rawg.io/api/games?key=${encodeURIComponent(apiKey)}` +
+    `&search=${encodeURIComponent(title)}` +
+    `&page_size=5`
+
+  const searchRes = await fetch(searchUrl, {
+    headers: {
+      'User-Agent': 'LoboDeals/2.5',
+    },
+    cache: 'no-store',
+  })
+
+  if (!searchRes.ok) {
+    return null
+  }
+
+  const searchJson = (await searchRes.json()) as RawgSearchResponse
+  const results = Array.isArray(searchJson.results) ? searchJson.results : []
+
+  const best = chooseBestRawgSearchResult(results, title)
+  if (!best?.slug) return null
+
+  const detailUrl =
+    `https://api.rawg.io/api/games/${encodeURIComponent(best.slug)}?key=${encodeURIComponent(apiKey)}`
+
+  const detailRes = await fetch(detailUrl, {
+    headers: {
+      'User-Agent': 'LoboDeals/2.5',
+    },
+    cache: 'no-store',
+  })
+
+  if (!detailRes.ok) {
+    return null
+  }
+
+  const detail = (await detailRes.json()) as RawgGameDetail
+  return detail
+}
+
+async function upsertRawgCache(
+  supabase: ReturnType<typeof getServiceSupabase>,
+  title: string,
+  rawg: RawgGameDetail
+) {
+  const payload = {
+    name: rawg.name || title,
+    description: String(rawg.description || '').trim() || null,
+    background_image:
+      String(rawg.background_image || '').trim() ||
+      String(rawg.background_image_additional || '').trim() ||
+      null,
+    metacritic:
+      Number(rawg.metacritic || 0) > 0 ? Number(rawg.metacritic) : null,
+    released: String(rawg.released || '').trim() || null,
+    genres: normalizeRawgGenres(rawg.genres),
+    platforms: normalizeRawgPlatforms(rawg.platforms),
+    clip: extractRawgClipUrl(rawg) || null,
+  }
+
+  await supabase.from('deals_cache').upsert(
+    [
+      {
+        cache_key: normalizeRawgCacheKey(title),
+        payload,
+        updated_at: new Date().toISOString(),
+      },
+    ],
+    {
+      onConflict: 'cache_key',
+    }
+  )
+}
+
+async function upsertSyncLog(
+  supabase: ReturnType<typeof getServiceSupabase>,
+  status: 'success' | 'error',
+  message: string,
+  meta: Record<string, unknown>
+) {
+  await supabase.from('sync_logs').insert([
+    {
+      source: 'steam_appdetails_enrich',
       status,
-      notes,
-      items_processed: itemsProcessed,
-      finished_at: new Date().toISOString(),
-    })
-    .eq('id', logId)
-
-  if (error) throw error
+      message,
+      meta,
+    },
+  ])
 }
 
-function parseReleaseDate(raw?: string | null) {
-  if (!raw) return null
+async function loadTargetedGames(
+  supabase: ReturnType<typeof getServiceSupabase>,
+  steamAppIDs: string[],
+  titles: string[]
+) {
+  const collected = new Map<string, PcGameRow>()
 
-  const normalized = raw.trim()
-  if (!normalized) return null
+  if (steamAppIDs.length > 0) {
+    const { data, error } = await supabase
+      .from('pc_games')
+      .select('id, steam_app_id, steam_name, canonical_title, steam_type, hero_image_url, metacritic, clip_url')
+      .in('steam_app_id', steamAppIDs)
+      .eq('is_active', true)
 
-  const parsed = new Date(normalized)
-  if (Number.isNaN(parsed.getTime())) return null
+    if (error) throw error
 
-  return parsed.toISOString().slice(0, 10)
+    for (const row of (Array.isArray(data) ? data : []) as PcGameRow[]) {
+      collected.set(String(row.id), row)
+    }
+  }
+
+  for (const title of titles) {
+    const { data, error } = await supabase
+      .from('pc_games')
+      .select('id, steam_app_id, steam_name, canonical_title, steam_type, hero_image_url, metacritic, clip_url')
+      .eq('is_active', true)
+      .or(
+        [
+          `steam_name.ilike.%${title}%`,
+          `canonical_title.ilike.%${title}%`,
+        ].join(',')
+      )
+      .limit(15)
+
+    if (error) throw error
+
+    for (const row of (Array.isArray(data) ? data : []) as PcGameRow[]) {
+      collected.set(String(row.id), row)
+    }
+  }
+
+  return Array.from(collected.values())
 }
 
-function isCatalogGameType(type?: string | null) {
-  return String(type || '').trim().toLowerCase() === 'game'
-}
+async function loadPriorityGames(
+  supabase: ReturnType<typeof getServiceSupabase>,
+  limit: number
+) {
+  const priorityIds = new Set<string>()
+  const fallbackIds = new Set<string>()
 
-function sleep(ms: number) {
-  return new Promise((resolve) => setTimeout(resolve, ms))
+  const { data: offerRows, error: offerError } = await supabase
+    .from('pc_store_offers')
+    .select('pc_game_id')
+    .eq('store_id', '1')
+    .eq('is_available', true)
+    .limit(Math.max(500, limit * 10))
+
+  if (offerError) throw offerError
+
+  const offerGameIds = dedupeStrings(
+    (Array.isArray(offerRows) ? offerRows : []).map((row: any) =>
+      String(row?.pc_game_id || '')
+    )
+  )
+
+  for (const id of offerGameIds) {
+    priorityIds.add(id)
+  }
+
+  const orderedGames: PcGameRow[] = []
+
+  if (priorityIds.size > 0) {
+    const ids = Array.from(priorityIds)
+
+    for (let i = 0; i < ids.length; i += 200) {
+      const chunk = ids.slice(i, i + 200)
+
+      const { data, error } = await supabase
+        .from('pc_games')
+        .select('id, steam_app_id, steam_name, canonical_title, steam_type, hero_image_url, metacritic, clip_url, updated_at')
+        .eq('is_active', true)
+        .eq('steam_type', 'game')
+        .in('id', chunk)
+        .order('updated_at', { ascending: true, nullsFirst: true })
+
+      if (error) throw error
+
+      const rows = Array.isArray(data) ? (data as PcGameRow[]) : []
+
+      const weakFirst = rows.sort((a, b) => {
+        const aMissing =
+          Number(!String(a.hero_image_url || '').trim()) +
+          Number(!(Number(a.metacritic || 0) > 0)) +
+          Number(!String(a.clip_url || '').trim())
+
+        const bMissing =
+          Number(!String(b.hero_image_url || '').trim()) +
+          Number(!(Number(b.metacritic || 0) > 0)) +
+          Number(!String(b.clip_url || '').trim())
+
+        return bMissing - aMissing
+      })
+
+      orderedGames.push(...weakFirst)
+    }
+  }
+
+  if (orderedGames.length < limit) {
+    const { data: fallbackData, error: fallbackError } = await supabase
+      .from('pc_games')
+      .select('id, steam_app_id, steam_name, canonical_title, steam_type, hero_image_url, metacritic, clip_url')
+      .eq('is_active', true)
+      .eq('steam_type', 'game')
+      .order('updated_at', { ascending: true, nullsFirst: true })
+      .limit(limit * 3)
+
+    if (fallbackError) throw fallbackError
+
+    for (const row of (Array.isArray(fallbackData) ? fallbackData : []) as PcGameRow[]) {
+      fallbackIds.add(String(row.id))
+    }
+
+    for (const row of (Array.isArray(fallbackData) ? fallbackData : []) as PcGameRow[]) {
+      if (!priorityIds.has(String(row.id))) {
+        orderedGames.push(row)
+      }
+    }
+  }
+
+  return orderedGames.slice(0, limit)
 }
 
 export async function POST(request: Request) {
-  let logId: string | null = null
+  const supabase = getServiceSupabase()
 
   try {
-    if (!isAuthorized(request)) {
-      return Response.json({ error: 'Unauthorized' }, { status: 401 })
-    }
-
     const body = await request.json().catch(() => ({}))
-    const requestedBatchSize = Number(body?.batchSize || 50)
-    const batchSize = Math.max(1, Math.min(100, requestedBatchSize))
+    const iterations = Math.max(1, Math.min(50, Number(body?.iterations || 1)))
+    const batchSize = Math.max(1, Math.min(50, Number(body?.batchSize || 10)))
+    const steamAppIDs = Array.isArray(body?.steamAppIDs)
+      ? dedupeStrings(body.steamAppIDs.map((value: unknown) => String(value)))
+      : []
+    const titles = Array.isArray(body?.titles)
+      ? dedupeStrings(body.titles.map((value: unknown) => String(value)))
+      : []
 
-    const log = await createSyncLog('steam_appdetails_enrich')
-    logId = log.id
-
-    const supabase = getServiceSupabase()
-
-    const { data: pendingGames, error: pendingError } = await supabase
-      .from('pc_games')
-            .select('id, steam_app_id, canonical_title, slug')
-      .eq('is_catalog_ready', false)
-      .order('steam_app_id', { ascending: true })
-      .limit(batchSize)
-
-    if (pendingError) {
-      throw pendingError
-    }
-
-    const rows = (pendingGames || []) as PcGameRow[]
-
-    if (!rows.length) {
-      await finishSyncLog(
-        logId,
-        'success',
-        'No pending Steam apps to enrich',
-        0
-      )
-
-      return Response.json({
-        ok: true,
-        processed: 0,
-        updated: 0,
-        screenshotsInserted: 0,
-        note: 'No pending Steam apps to enrich',
-      })
-    }
-
-        let updated = 0
+    let processed = 0
+    let enriched = 0
     let screenshotsInserted = 0
+    let rateLimited = 0
+    let rawgMatched = 0
 
-    for (const row of rows) {
-      const url = new URL('https://store.steampowered.com/api/appdetails')
-      url.searchParams.set('appids', row.steam_app_id)
-      url.searchParams.set('l', 'english')
-      url.searchParams.set('cc', 'us')
+    let targetedGames: PcGameRow[] | null = null
 
-      const res = await fetch(url.toString(), {
-        method: 'GET',
-        cache: 'no-store',
-        headers: {
-          Accept: 'application/json',
-          'User-Agent': 'LoboDeals/2.5',
-        },
-      })
+    if (steamAppIDs.length > 0 || titles.length > 0) {
+      targetedGames = await loadTargetedGames(supabase, steamAppIDs, titles)
+    }
 
-            if (!res.ok) {
-        const text = await res.text().catch(() => '')
+    for (let i = 0; i < iterations; i += 1) {
+      let games: PcGameRow[] = []
 
-        if (res.status === 429) {
-          await finishSyncLog(
-            logId!,
-            'success',
-            `Rate limited at app ${row.steam_app_id}. Partial batch completed safely.`,
-            updated
-          )
-
-          return Response.json({
-            ok: true,
-            processed: updated,
-            updated,
-            screenshotsInserted,
-            note: `Rate limited at app ${row.steam_app_id}. Stop this batch and retry later.`,
-            hitRateLimit: true,
-          })
-        }
-
-        throw new Error(
-          `Steam appdetails failed for app ${row.steam_app_id} with status ${res.status}: ${text}`
-        )
+      if (targetedGames) {
+        const start = i * batchSize
+        games = targetedGames.slice(start, start + batchSize)
+      } else {
+        games = await loadPriorityGames(supabase, batchSize)
       }
 
-      const payload = (await res.json()) as SteamAppDetailsEnvelope
-      const entry = payload?.[row.steam_app_id]
-      const data = entry?.data
+      if (games.length === 0) break
 
-      if (!entry?.success || !data) {
-        const { error } = await supabase
+      for (const game of games) {
+        const steamAppID = String(game.steam_app_id || '').trim()
+        if (!steamAppID) continue
+
+        processed += 1
+
+        const appdetailsUrl = `https://store.steampowered.com/api/appdetails?appids=${steamAppID}&l=english`
+        const response = await fetch(appdetailsUrl, {
+          headers: {
+            'User-Agent': 'LoboDeals/2.5',
+          },
+          cache: 'no-store',
+        })
+
+        if (response.status === 429) {
+          rateLimited += 1
+          await upsertSyncLog(supabase, 'error', 'Steam returned 429 during enrich', {
+            steamAppID,
+            iteration: i + 1,
+          })
+          continue
+        }
+
+        if (!response.ok) {
+          await upsertSyncLog(supabase, 'error', 'Steam appdetails request failed', {
+            steamAppID,
+            status: response.status,
+          })
+          continue
+        }
+
+        const json = (await response.json()) as SteamAppDetailsResponse
+        const entry = json?.[steamAppID]
+
+        if (!entry?.success || !entry.data) {
+          continue
+        }
+
+        const data = entry.data
+
+        const canonicalTitle = String(
+          data.name || game.steam_name || game.canonical_title || ''
+        ).trim()
+
+        const rawg = canonicalTitle
+          ? await fetchRawgGameByTitle(canonicalTitle)
+          : null
+
+        if (rawg) {
+          rawgMatched += 1
+          await upsertRawgCache(supabase, canonicalTitle, rawg)
+        }
+
+        const heroImageUrl =
+          String(rawg?.background_image || '').trim() ||
+          String(rawg?.background_image_additional || '').trim() ||
+          String(data.header_image || '').trim()
+
+        const clipUrl = extractRawgClipUrl(rawg)
+        const metacritic = Number(rawg?.metacritic || 0)
+        const rawgDescription = String(rawg?.description || '').trim()
+        const rawgGenres = normalizeRawgGenres(rawg?.genres)
+        const rawgPlatforms = normalizeRawgPlatforms(rawg?.platforms)
+
+        const { error: updateError } = await supabase
           .from('pc_games')
           .update({
+            steam_name: canonicalTitle || null,
+            canonical_title: canonicalTitle || null,
+            canonical_key: canonicalTitle ? makePcCanonicalKey(canonicalTitle) : null,
+            normalized_title: canonicalTitle ? canonicalTitle.toLowerCase().trim() : null,
+            slug: canonicalTitle ? makePcCanonicalSlug(canonicalTitle) : null,
+            steam_type: String(data.type || '').trim() || null,
+            short_description: String(data.short_description || '').trim() || null,
+            description:
+              String(data.detailed_description || '').trim() ||
+              rawgDescription ||
+              null,
+            header_image: String(data.header_image || '').trim() || null,
+            capsule_image: String(data.capsule_image || '').trim() || null,
+            is_free_to_play: Boolean(data.is_free),
             is_catalog_ready: true,
-            is_active: false,
-            steam_last_sync_at: new Date().toISOString(),
+            release_date:
+              String(data.release_date?.date || '').trim() ||
+              String(rawg?.released || '').trim() ||
+              null,
+            hero_image_url: heroImageUrl || null,
+            clip_url: clipUrl || null,
+            metacritic: metacritic > 0 ? metacritic : null,
+            rawg_description: rawgDescription || null,
+            rawg_genres: rawgGenres.length > 0 ? rawgGenres : null,
+            rawg_platforms: rawgPlatforms.length > 0 ? rawgPlatforms : null,
+            updated_at: new Date().toISOString(),
           })
-          .eq('id', row.id)
+          .eq('id', game.id)
 
-        if (error) throw error
-        updated += 1
-        continue
-      }
-
-      const steamType = String(data.type || '').trim().toLowerCase()
-      const steamName = String(data.name || row.canonical_title || '').trim()
-      const shortDescription = String(data.short_description || '').trim()
-      const detailedDescription = String(data.detailed_description || '').trim()
-      const headerImage = String(data.header_image || '').trim()
-      const capsuleImage = String(
-        data.capsule_imagev5 || data.capsule_image || ''
-      ).trim()
-
-      const isFreeToPlay = Boolean(data.is_free)
-      const isRealCatalogGame = isCatalogGameType(steamType)
-      const isActive = isRealCatalogGame
-
-      const { error: updateError } = await supabase
-        .from('pc_games')
-        .update({
-                    steam_name: steamName || row.canonical_title,
-          canonical_title: steamName || row.canonical_title,
-          normalized_title: normalizeCanonicalTitle(steamName || row.canonical_title),
-          canonical_key: makePcCanonicalKey(steamName || row.canonical_title),
-          slug: row.slug,
-          steam_type: steamType || null,
-          is_free_to_play: isFreeToPlay,
-          is_active: isActive,
-          is_catalog_ready: true,
-          release_date: parseReleaseDate(data.release_date?.date || null),
-          short_description: shortDescription || null,
-          description: detailedDescription || null,
-          header_image: headerImage || null,
-          capsule_image: capsuleImage || headerImage || null,
-          steam_last_sync_at: new Date().toISOString(),
-        })
-        .eq('id', row.id)
-
-      if (updateError) throw updateError
-
-      const screenshots = Array.isArray(data.screenshots) ? data.screenshots : []
-
-      if (screenshots.length > 0) {
-        const screenshotRows = screenshots
-          .map((shot, index) => {
-            const imageUrl = String(shot?.path_full || '').trim()
-            if (!imageUrl) return null
-
-            return {
-              pc_game_id: row.id,
-              image_url: imageUrl,
-              sort_order: index,
-            }
+        if (updateError) {
+          await upsertSyncLog(supabase, 'error', 'Could not update pc_games during enrich', {
+            steamAppID,
+            error: updateError.message,
           })
-          .filter(Boolean)
+          continue
+        }
+
+        enriched += 1
+
+        const screenshotRows = Array.isArray(data.screenshots)
+          ? data.screenshots
+              .map((shot, index) => ({
+                pc_game_id: game.id,
+                image_url: String(shot?.path_full || '').trim(),
+                sort_order: index,
+              }))
+              .filter((row) => row.image_url)
+          : []
 
         if (screenshotRows.length > 0) {
-          const { error: screenshotError } = await supabase
+          await supabase
             .from('pc_game_screenshots')
-            .upsert(screenshotRows, {
-              onConflict: 'pc_game_id,image_url',
-            })
+            .delete()
+            .eq('pc_game_id', game.id)
 
-          if (screenshotError) throw screenshotError
-          screenshotsInserted += screenshotRows.length
+          const { error: screenshotsError } = await supabase
+            .from('pc_game_screenshots')
+            .insert(screenshotRows)
+
+          if (!screenshotsError) {
+            screenshotsInserted += screenshotRows.length
+          }
         }
       }
 
-      updated += 1
-    }
-
-    await finishSyncLog(
-      logId,
-      'success',
-      'Steam appdetails enrich completed',
-      rows.length
-    )
-
-    return Response.json({
-      ok: true,
-      processed: rows.length,
-      updated,
-      screenshotsInserted,
-    })
-  } catch (error) {
-    console.error('internal-enrich-steam-appdetails error', error)
-
-    if (logId) {
-      try {
-        await finishSyncLog(
-          logId,
-          'error',
-          error instanceof Error ? error.message : 'Unknown enrich error',
-          0
-        )
-      } catch (logError) {
-        console.error('sync log update failed', logError)
+      if (targetedGames) {
+        const consumed = (i + 1) * batchSize
+        if (consumed >= targetedGames.length) {
+          break
+        }
       }
     }
+
+    await upsertSyncLog(supabase, 'success', 'Steam + RAWG enrich finished', {
+      processed,
+      enriched,
+      screenshotsInserted,
+      rateLimited,
+      rawgMatched,
+      iterations,
+      batchSize,
+      targetedSteamAppIDs: steamAppIDs,
+      targetedTitles: titles,
+    })
+
+    return Response.json({
+      success: true,
+      processed,
+      enriched,
+      screenshotsInserted,
+      rateLimited,
+      rawgMatched,
+      iterations,
+      batchSize,
+      targetedSteamAppIDs: steamAppIDs,
+      targetedTitles: titles,
+    })
+  } catch (error) {
+    console.error('internal enrich error', error)
+
+    await upsertSyncLog(
+      supabase,
+      'error',
+      'Steam + RAWG enrich crashed',
+      {
+        error: error instanceof Error ? error.message : 'Unknown error',
+      }
+    )
 
     return Response.json(
       {
-        ok: false,
-        error:
-          error instanceof Error
-            ? error.message
-            : JSON.stringify(error),
+        success: false,
+        error: error instanceof Error ? error.message : 'Unknown error',
       },
       { status: 500 }
     )

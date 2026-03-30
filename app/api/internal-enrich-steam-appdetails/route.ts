@@ -3,7 +3,6 @@ export const runtime = 'nodejs'
 import { createClient } from '@supabase/supabase-js'
 import {
   makePcCanonicalKey,
-  makePcCanonicalSlug,
   makePcGameSlug,
 } from '@/lib/pcCanonical'
 
@@ -22,9 +21,32 @@ type SteamAppDetailsResponse = Record<
       release_date?: {
         date?: string
       }
+      price_overview?: {
+        currency?: string
+        initial?: number
+        final?: number
+        discount_percent?: number
+        initial_formatted?: string
+        final_formatted?: string
+      }
+      packages?: number[]
       screenshots?: Array<{
         id?: number
         path_full?: string
+      }>
+      movies?: Array<{
+        id?: number
+        name?: string
+        thumbnail?: string
+        mp4?: {
+          max?: string
+          '480'?: string
+        }
+        webm?: {
+          max?: string
+          '480'?: string
+        }
+        highlight?: boolean
       }>
     }
   }
@@ -148,6 +170,34 @@ function extractRawgClipUrl(rawg: RawgGameDetail | null) {
       rawg.clip.clips?.['640'] ||
       rawg.clip.clips?.['320'] ||
       rawg.clip.preview ||
+      ''
+  ).trim()
+}
+
+function extractSteamMovieUrl(
+  movies?: Array<{
+    mp4?: {
+      max?: string
+      '480'?: string
+    }
+    webm?: {
+      max?: string
+      '480'?: string
+    }
+    highlight?: boolean
+  }>
+) {
+  if (!Array.isArray(movies) || movies.length === 0) return ''
+
+  const preferred =
+    movies.find((movie) => movie?.highlight) ||
+    movies[0]
+
+  return String(
+    preferred?.mp4?.max ||
+      preferred?.mp4?.['480'] ||
+      preferred?.webm?.max ||
+      preferred?.webm?.['480'] ||
       ''
   ).trim()
 }
@@ -339,89 +389,71 @@ async function loadPriorityGames(
   supabase: ReturnType<typeof getServiceSupabase>,
   limit: number
 ) {
-  const priorityIds = new Set<string>()
-  const fallbackIds = new Set<string>()
+  const { data, error } = await supabase
+    .from('pc_games')
+    .select('id, steam_app_id, steam_name, canonical_title, steam_type, hero_image_url, metacritic, clip_url, updated_at')
+    .eq('is_active', true)
+    .eq('steam_type', 'game')
+    .order('updated_at', { ascending: true, nullsFirst: true })
+    .limit(Math.max(limit * 6, 120))
+
+  if (error) throw error
+
+  const candidateGames = Array.isArray(data) ? (data as PcGameRow[]) : []
+  if (candidateGames.length === 0) return []
+
+  const candidateIds = candidateGames.map((row) => String(row.id || '')).filter(Boolean)
 
   const { data: offerRows, error: offerError } = await supabase
     .from('pc_store_offers')
-    .select('pc_game_id')
+    .select('pc_game_id, sale_price, region_code, is_available')
     .eq('store_id', '1')
+    .eq('region_code', 'us')
     .eq('is_available', true)
-    .limit(Math.max(500, limit * 10))
+    .in('pc_game_id', candidateIds)
 
   if (offerError) throw offerError
 
-  const offerGameIds = dedupeStrings(
-    (Array.isArray(offerRows) ? offerRows : []).map((row: any) =>
-      String(row?.pc_game_id || '')
-    )
-  )
+  const offerByGameId = new Map<string, { sale_price?: number | string | null }>()
 
-  for (const id of offerGameIds) {
-    priorityIds.add(id)
+  for (const row of Array.isArray(offerRows) ? offerRows : []) {
+    const key = String((row as any)?.pc_game_id || '').trim()
+    if (!key) continue
+    offerByGameId.set(key, row as any)
   }
 
-  const orderedGames: PcGameRow[] = []
+  const ranked = [...candidateGames].sort((a, b) => {
+    const aHasPrice = offerByGameId.has(String(a.id))
+    const bHasPrice = offerByGameId.has(String(b.id))
 
-  if (priorityIds.size > 0) {
-    const ids = Array.from(priorityIds)
-
-    for (let i = 0; i < ids.length; i += 200) {
-      const chunk = ids.slice(i, i + 200)
-
-      const { data, error } = await supabase
-        .from('pc_games')
-        .select('id, steam_app_id, steam_name, canonical_title, steam_type, hero_image_url, metacritic, clip_url, updated_at')
-        .eq('is_active', true)
-        .eq('steam_type', 'game')
-        .in('id', chunk)
-        .order('updated_at', { ascending: true, nullsFirst: true })
-
-      if (error) throw error
-
-      const rows = Array.isArray(data) ? (data as PcGameRow[]) : []
-
-      const weakFirst = rows.sort((a, b) => {
-        const aMissing =
-          Number(!String(a.hero_image_url || '').trim()) +
-          Number(!(Number(a.metacritic || 0) > 0)) +
-          Number(!String(a.clip_url || '').trim())
-
-        const bMissing =
-          Number(!String(b.hero_image_url || '').trim()) +
-          Number(!(Number(b.metacritic || 0) > 0)) +
-          Number(!String(b.clip_url || '').trim())
-
-        return bMissing - aMissing
-      })
-
-      orderedGames.push(...weakFirst)
-    }
-  }
-
-  if (orderedGames.length < limit) {
-    const { data: fallbackData, error: fallbackError } = await supabase
-      .from('pc_games')
-      .select('id, steam_app_id, steam_name, canonical_title, steam_type, hero_image_url, metacritic, clip_url')
-      .eq('is_active', true)
-      .eq('steam_type', 'game')
-      .order('updated_at', { ascending: true, nullsFirst: true })
-      .limit(limit * 3)
-
-    if (fallbackError) throw fallbackError
-
-    for (const row of (Array.isArray(fallbackData) ? fallbackData : []) as PcGameRow[]) {
-      fallbackIds.add(String(row.id))
+    if (aHasPrice !== bHasPrice) {
+      return Number(aHasPrice) - Number(bHasPrice)
     }
 
-    for (const row of (Array.isArray(fallbackData) ? fallbackData : []) as PcGameRow[]) {
-      if (!priorityIds.has(String(row.id))) {
-        orderedGames.push(row)
-      }
-    }
-  }
+    const aMissingMeta =
+      Number(!String(a.hero_image_url || '').trim()) +
+      Number(!(Number(a.metacritic || 0) > 0)) +
+      Number(!String(a.clip_url || '').trim())
 
-  return orderedGames.slice(0, limit)
+    const bMissingMeta =
+      Number(!String(b.hero_image_url || '').trim()) +
+      Number(!(Number(b.metacritic || 0) > 0)) +
+      Number(!String(b.clip_url || '').trim())
+
+    if (bMissingMeta !== aMissingMeta) {
+      return bMissingMeta - aMissingMeta
+    }
+
+    return 0
+  })
+
+  return ranked.slice(0, limit)
+}
+
+function centsToMoney(value?: number | null) {
+  const amount = Number(value || 0)
+  if (!Number.isFinite(amount) || amount <= 0) return null
+  return Number((amount / 100).toFixed(2))
 }
 
 export async function POST(request: Request) {
@@ -443,6 +475,7 @@ export async function POST(request: Request) {
     let screenshotsInserted = 0
     let rateLimited = 0
     let rawgMatched = 0
+    let priceRowsUpserted = 0
 
     let targetedGames: PcGameRow[] | null = null
 
@@ -468,7 +501,10 @@ export async function POST(request: Request) {
 
         processed += 1
 
-        const appdetailsUrl = `https://store.steampowered.com/api/appdetails?appids=${steamAppID}&l=english`
+        const appdetailsUrl =
+          `https://store.steampowered.com/api/appdetails?appids=${steamAppID}` +
+          `&cc=us&l=english`
+
         const response = await fetch(appdetailsUrl, {
           headers: {
             'User-Agent': 'LoboDeals/2.5',
@@ -515,12 +551,15 @@ export async function POST(request: Request) {
           await upsertRawgCache(supabase, canonicalTitle, rawg)
         }
 
+        const steamMovieUrl = extractSteamMovieUrl(data.movies)
+        const rawgClipUrl = extractRawgClipUrl(rawg)
+
         const heroImageUrl =
           String(rawg?.background_image || '').trim() ||
           String(rawg?.background_image_additional || '').trim() ||
           String(data.header_image || '').trim()
 
-        const clipUrl = extractRawgClipUrl(rawg)
+        const clipUrl = rawgClipUrl || steamMovieUrl
         const metacritic = Number(rawg?.metacritic || 0)
         const rawgDescription = String(rawg?.description || '').trim()
         const rawgGenres = normalizeRawgGenres(rawg?.genres)
@@ -533,7 +572,7 @@ export async function POST(request: Request) {
             canonical_title: canonicalTitle || null,
             canonical_key: canonicalTitle ? makePcCanonicalKey(canonicalTitle) : null,
             normalized_title: canonicalTitle ? canonicalTitle.toLowerCase().trim() : null,
-                        slug: canonicalTitle
+            slug: canonicalTitle
               ? makePcGameSlug(canonicalTitle, steamAppID)
               : null,
             steam_type: String(data.type || '').trim() || null,
@@ -566,6 +605,37 @@ export async function POST(request: Request) {
             error: updateError.message,
           })
           continue
+        }
+
+        const priceOverview = data.price_overview
+        const salePrice = centsToMoney(priceOverview?.final || null)
+        const normalPrice = centsToMoney(priceOverview?.initial || null)
+        const discountPercent = Number(priceOverview?.discount_percent || 0)
+
+        const offerPayload = {
+          pc_game_id: game.id,
+          store_id: '1',
+          region_code: 'us',
+          currency_code: String(priceOverview?.currency || '').trim() || null,
+          sale_price: salePrice,
+          normal_price: normalPrice,
+          discount_percent: discountPercent,
+          final_formatted: String(priceOverview?.final_formatted || '').trim() || null,
+          initial_formatted: String(priceOverview?.initial_formatted || '').trim() || null,
+          price_source: 'steam_appdetails_us',
+          price_last_synced_at: new Date().toISOString(),
+          url: `https://store.steampowered.com/app/${steamAppID}/`,
+          is_available: Boolean(data.is_free || salePrice || normalPrice),
+        }
+
+        const { error: offerError } = await supabase
+          .from('pc_store_offers')
+          .upsert([offerPayload], {
+            onConflict: 'pc_game_id,store_id,region_code',
+          })
+
+        if (!offerError) {
+          priceRowsUpserted += 1
         }
 
         enriched += 1
@@ -610,6 +680,7 @@ export async function POST(request: Request) {
       screenshotsInserted,
       rateLimited,
       rawgMatched,
+      priceRowsUpserted,
       iterations,
       batchSize,
       targetedSteamAppIDs: steamAppIDs,
@@ -623,6 +694,7 @@ export async function POST(request: Request) {
       screenshotsInserted,
       rateLimited,
       rawgMatched,
+      priceRowsUpserted,
       iterations,
       batchSize,
       targetedSteamAppIDs: steamAppIDs,

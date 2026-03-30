@@ -5,6 +5,7 @@ import {
   getSafeDiscountPercent,
   makePcCanonicalKey,
   makePcCanonicalSlug,
+  makePcGameSlug,
   normalizeCanonicalTitle,
 } from '@/lib/pcCanonical'
 
@@ -204,7 +205,7 @@ export async function POST(request: Request) {
 
       return {
         steam_app_id: steamAppID,
-        slug: makePcCanonicalSlug(title),
+                slug: makePcGameSlug(title, steamAppID),
         canonical_title: title,
         normalized_title: normalizeCanonicalTitle(title),
         canonical_key: makePcCanonicalKey(title),

@@ -61,6 +61,25 @@ export function makePcCanonicalSlug(value: string) {
     .trim()
 }
 
+export function makePcGameSlug(
+  value: string,
+  steamAppID?: string | number | null
+) {
+  const slug = makePcCanonicalSlug(value)
+
+  if (slug) {
+    return slug
+  }
+
+  const appId = String(steamAppID || '').trim()
+
+  if (appId) {
+    return `steam-app-${appId}`
+  }
+
+  return ''
+}
+
 export function makePcCanonicalKey(value: string) {
   return normalizeCanonicalTitle(value)
     .replace(EDITION_NOISE_REGEX, ' ')
@@ -176,93 +195,5 @@ export function buildCanonicalPcGames(offers: CanonicalPcOffer[]) {
     })
   }
 
-  return games.sort((a, b) => a.canonicalTitle.localeCompare(b.canonicalTitle))
-}
-
-export function makeSteamCanonicalOffer(input: {
-  steamAppID?: string
-  title: string
-  salePrice?: string
-  normalPrice?: string
-  savings?: string
-  thumb?: string
-  storeID?: string
-  url?: string
-  metacriticScore?: string
-}) {
-  const normalizedTitle = normalizeCanonicalTitle(input.title)
-  const canonicalKey = makePcCanonicalKey(input.title)
-  const slug = makePcCanonicalSlug(input.title)
-  const safeSavings = String(
-    getSafeDiscountPercent(
-      input.salePrice,
-      input.normalPrice,
-      input.savings
-    )
-  )
-
-  return {
-    id: `steam-${input.steamAppID || canonicalKey}`,
-    source: 'steam' as const,
-    title: input.title,
-    normalizedTitle,
-    canonicalKey,
-    slug,
-    steamAppID: input.steamAppID || '',
-    gameID: '',
-    dealID: `steam-${input.steamAppID || canonicalKey}`,
-    salePrice: input.salePrice || '',
-    normalPrice: input.normalPrice || '',
-    savings: safeSavings,
-    thumb: input.thumb || '',
-    storeID: input.storeID || '1',
-    url: input.url || '',
-    metacriticScore: input.metacriticScore || '',
-  } satisfies CanonicalPcOffer
-}
-
-export function makeDealCanonicalOffer(input: {
-  gameID?: string
-  dealID?: string
-  title: string
-  salePrice?: string
-  normalPrice?: string
-  savings?: string
-  thumb?: string
-  storeID?: string
-  steamAppID?: string
-  url?: string
-  metacriticScore?: string
-}) {
-  const normalizedTitle = normalizeCanonicalTitle(input.title)
-  const canonicalKey = makePcCanonicalKey(input.title)
-  const slug = makePcCanonicalSlug(input.title)
-  const safeSavings = String(
-    getSafeDiscountPercent(
-      input.salePrice,
-      input.normalPrice,
-      input.savings
-    )
-  )
-
-  return {
-    id:
-      input.dealID ||
-      `${input.storeID || 'store'}-${input.gameID || canonicalKey}`,
-    source: 'deal' as const,
-    title: input.title,
-    normalizedTitle,
-    canonicalKey,
-    slug,
-    steamAppID: input.steamAppID || '',
-    gameID: input.gameID || '',
-    dealID: input.dealID || '',
-    salePrice: input.salePrice || '',
-    normalPrice: input.normalPrice || '',
-    savings: safeSavings,
-    thumb: input.thumb || '',
-    storeID: input.storeID || '',
-    url: input.url || '',
-    metacriticScore: input.metacriticScore || '',
-  } satisfies CanonicalPcOffer
+  return games
 }

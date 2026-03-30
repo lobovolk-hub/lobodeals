@@ -1,6 +1,7 @@
 export const runtime = 'nodejs'
 
 import { createClient } from '@supabase/supabase-js'
+import { makePcGameSlug } from '@/lib/pcCanonical'
 
 type PcGameRow = {
   id: string
@@ -10,6 +11,7 @@ type PcGameRow = {
   canonical_title?: string | null
   capsule_image?: string | null
   header_image?: string | null
+  hero_image_url?: string | null
   is_free_to_play?: boolean | null
   is_active?: boolean | null
   is_catalog_ready?: boolean | null
@@ -41,6 +43,8 @@ type PcBrowseItem = {
   hasActiveOffer: boolean
   isCatalogReady: boolean
 }
+
+const PAGE_CHUNK_SIZE = 1000
 
 function getServiceSupabase() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL
@@ -102,35 +106,62 @@ function chunkArray<T>(items: T[], chunkSize: number) {
   return chunks
 }
 
+async function loadGames(
+  supabase: ReturnType<typeof getServiceSupabase>,
+  limit: number,
+  includeNonGames: boolean
+) {
+  const results: PcGameRow[] = []
+  let from = 0
+
+  while (results.length < limit) {
+    let query = supabase
+      .from('pc_games')
+      .select(
+        'id, steam_app_id, slug, steam_name, canonical_title, capsule_image, header_image, hero_image_url, is_free_to_play, is_active, is_catalog_ready, steam_type'
+      )
+      .eq('is_active', true)
+      .order('steam_app_id', { ascending: false })
+      .range(from, from + PAGE_CHUNK_SIZE - 1)
+
+    if (!includeNonGames) {
+      query = query.eq('steam_type', 'game')
+    }
+
+    const { data, error } = await query
+
+    if (error) {
+      throw error
+    }
+
+    const rows = Array.isArray(data) ? (data as PcGameRow[]) : []
+
+    if (rows.length === 0) {
+      break
+    }
+
+    results.push(...rows)
+
+    if (rows.length < PAGE_CHUNK_SIZE) {
+      break
+    }
+
+    from += PAGE_CHUNK_SIZE
+  }
+
+  return results.slice(0, limit)
+}
+
 export async function GET(request: Request) {
   try {
     const { searchParams } = new URL(request.url)
     const requestedLimit = Number(searchParams.get('limit') || '1200')
     const includeNonGames = searchParams.get('includeNonGames') === '1'
-    const limit = Math.max(1, Math.min(2000, requestedLimit))
+    const limit = Math.max(1, Math.min(20000, requestedLimit))
 
     const supabase = getServiceSupabase()
 
-    let gamesQuery = supabase
-      .from('pc_games')
-      .select(
-        'id, steam_app_id, slug, steam_name, canonical_title, capsule_image, header_image, is_free_to_play, is_active, is_catalog_ready, steam_type'
-      )
-      .eq('is_active', true)
-      .order('steam_app_id', { ascending: false })
-      .limit(limit)
-
-    if (!includeNonGames) {
-      gamesQuery = gamesQuery.eq('steam_type', 'game')
-    }
-
-    const { data: pcGames, error: gamesError } = await gamesQuery
-
-    if (gamesError) {
-      throw gamesError
-    }
-
-    const games = Array.isArray(pcGames) ? (pcGames as PcGameRow[]) : []
+    const games = await loadGames(supabase, limit, includeNonGames)
 
     if (!games.length) {
       return Response.json([], { status: 200 })
@@ -171,11 +202,17 @@ export async function GET(request: Request) {
     const results = games
       .map((game) => {
         const id = String(game.id || '').trim()
-        const slug = String(game.slug || '').trim()
+                const slug =
+          String(game.slug || '').trim() ||
+          makePcGameSlug(
+            String(game.steam_name || game.canonical_title || '').trim(),
+            String(game.steam_app_id || '').trim()
+          )
         const title = String(game.steam_name || game.canonical_title || '').trim()
         const thumb =
-          String(game.capsule_image || '').trim() ||
-          String(game.header_image || '').trim()
+          String(game.hero_image_url || '').trim() ||
+          String(game.header_image || '').trim() ||
+          String(game.capsule_image || '').trim()
 
         if (!id || !slug || !title) return null
 

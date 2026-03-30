@@ -1,7 +1,11 @@
 export const runtime = 'nodejs'
 
 import { createClient } from '@supabase/supabase-js'
-import { makePcCanonicalKey, makePcCanonicalSlug } from '@/lib/pcCanonical'
+import {
+  makePcCanonicalKey,
+  makePcCanonicalSlug,
+  makePcGameSlug,
+} from '@/lib/pcCanonical'
 
 type SteamAppDetailsResponse = Record<
   string,
@@ -529,7 +533,9 @@ export async function POST(request: Request) {
             canonical_title: canonicalTitle || null,
             canonical_key: canonicalTitle ? makePcCanonicalKey(canonicalTitle) : null,
             normalized_title: canonicalTitle ? canonicalTitle.toLowerCase().trim() : null,
-            slug: canonicalTitle ? makePcCanonicalSlug(canonicalTitle) : null,
+                        slug: canonicalTitle
+              ? makePcGameSlug(canonicalTitle, steamAppID)
+              : null,
             steam_type: String(data.type || '').trim() || null,
             short_description: String(data.short_description || '').trim() || null,
             description:

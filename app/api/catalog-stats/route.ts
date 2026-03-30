@@ -21,6 +21,7 @@ export async function GET() {
       .from('pc_games')
       .select('*', { count: 'exact', head: true })
       .eq('is_active', true)
+      .eq('steam_type', 'game')
 
     if (error) {
       throw error
@@ -29,7 +30,7 @@ export async function GET() {
     return Response.json({
       steamCatalogSize: Number(count || 0),
       updatedAt: new Date().toISOString(),
-      source: 'pc_games',
+      source: 'pc_games_base_games',
     })
   } catch (error) {
     console.error('catalog stats error', error)
@@ -37,7 +38,7 @@ export async function GET() {
     return Response.json({
       steamCatalogSize: 0,
       updatedAt: null,
-      source: 'pc_games',
+      source: 'pc_games_base_games',
     })
   }
 }

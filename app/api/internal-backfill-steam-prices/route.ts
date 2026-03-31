@@ -32,6 +32,8 @@ type PcGameRow = {
   canonical_title?: string | null
   slug?: string | null
   updated_at?: string | null
+  is_active?: boolean | null
+  steam_type?: string | null
 }
 
 type OfferRow = {
@@ -44,6 +46,8 @@ type OfferRow = {
 type SyncLogRow = {
   id: string
 }
+
+type BackfillScope = 'visible' | 'full_games'
 
 const REGION_CODE = 'us'
 
@@ -77,6 +81,10 @@ function centsToMoney(value?: number | null) {
   }
 
   return Number((amount / 100).toFixed(2))
+}
+
+function normalizeScope(value: unknown): BackfillScope {
+  return value === 'full_games' ? 'full_games' : 'visible'
 }
 
 async function createSyncLog(jobType: string, notes: string) {
@@ -126,61 +134,100 @@ async function finishSyncLog(
 
 async function loadCandidateGames(
   supabase: ReturnType<typeof getServiceSupabase>,
-  desiredCount: number
+  desiredCount: number,
+  scope: BackfillScope
 ) {
-  const candidatePoolSize = Math.max(desiredCount * 8, 200)
+  const results: PcGameRow[] = []
+  const seenIds = new Set<string>()
 
-  const { data, error } = await supabase
-    .from('pc_games')
-    .select('id, steam_app_id, steam_name, canonical_title, slug, updated_at')
-    .eq('is_active', true)
-    .eq('steam_type', 'game')
-    .order('updated_at', { ascending: true, nullsFirst: true })
-    .limit(candidatePoolSize)
+  const pageSize = 500
+  const maxScanPages = 40
 
-  if (error) {
-    throw new Error(`loadCandidateGames pc_games failed: ${error.message}`)
-  }
+  for (let page = 0; page < maxScanPages && results.length < desiredCount; page += 1) {
+    const from = page * pageSize
+    const to = from + pageSize - 1
 
-  const games = Array.isArray(data) ? (data as PcGameRow[]) : []
-  if (!games.length) return []
-
-  const gameIds = games.map((game) => String(game.id || '').trim()).filter(Boolean)
-  const modernSyncedIds = new Set<string>()
-  const chunkSize = 100
-
-  for (let i = 0; i < gameIds.length; i += chunkSize) {
-    const idChunk = gameIds.slice(i, i + chunkSize)
-
-    const { data: offerRows, error: offerError } = await supabase
-      .from('pc_store_offers')
-      .select('pc_game_id, price_source, price_last_synced_at, region_code')
-      .eq('store_id', '1')
-      .eq('region_code', REGION_CODE)
-      .in('pc_game_id', idChunk)
-
-    if (offerError) {
-      throw new Error(
-        `loadCandidateGames pc_store_offers failed: ${offerError.message}`
+    let query = supabase
+      .from('pc_games')
+      .select(
+        'id, steam_app_id, steam_name, canonical_title, slug, updated_at, is_active, steam_type'
       )
+      .order('updated_at', { ascending: true, nullsFirst: true })
+      .range(from, to)
+
+    if (scope === 'visible') {
+      query = query
+        .eq('is_active', true)
+        .eq('steam_type', 'game')
+    } else {
+      query = query.or('steam_type.eq.game,steam_type.is.null')
     }
 
-    for (const row of (Array.isArray(offerRows) ? offerRows : []) as OfferRow[]) {
-      const gameId = String(row.pc_game_id || '').trim()
-      const hasModernPrice =
-        row.region_code === REGION_CODE &&
-        row.price_source === 'steam_appdetails_us' &&
-        !!String(row.price_last_synced_at || '').trim()
+    const { data, error } = await query
 
-      if (gameId && hasModernPrice) {
-        modernSyncedIds.add(gameId)
+    if (error) {
+      throw new Error(`loadCandidateGames pc_games failed: ${error.message}`)
+    }
+
+    const games = Array.isArray(data) ? (data as PcGameRow[]) : []
+    if (!games.length) {
+      break
+    }
+
+    const gameIds = games.map((game) => String(game.id || '').trim()).filter(Boolean)
+    const modernSyncedIds = new Set<string>()
+    const chunkSize = 100
+
+    for (let i = 0; i < gameIds.length; i += chunkSize) {
+      const idChunk = gameIds.slice(i, i + chunkSize)
+
+      const { data: offerRows, error: offerError } = await supabase
+        .from('pc_store_offers')
+        .select('pc_game_id, price_source, price_last_synced_at, region_code')
+        .eq('store_id', '1')
+        .eq('region_code', REGION_CODE)
+        .in('pc_game_id', idChunk)
+
+      if (offerError) {
+        throw new Error(
+          `loadCandidateGames pc_store_offers failed: ${offerError.message}`
+        )
+      }
+
+      for (const row of (Array.isArray(offerRows) ? offerRows : []) as OfferRow[]) {
+        const gameId = String(row.pc_game_id || '').trim()
+        const hasModernPrice =
+          row.region_code === REGION_CODE &&
+          row.price_source === 'steam_appdetails_us' &&
+          !!String(row.price_last_synced_at || '').trim()
+
+        if (gameId && hasModernPrice) {
+          modernSyncedIds.add(gameId)
+        }
       }
     }
+
+    for (const game of games) {
+      const gameId = String(game.id || '').trim()
+      if (!gameId) continue
+      if (seenIds.has(gameId)) continue
+      seenIds.add(gameId)
+
+      if (modernSyncedIds.has(gameId)) continue
+
+      results.push(game)
+
+      if (results.length >= desiredCount) {
+        break
+      }
+    }
+
+    if (games.length < pageSize) {
+      break
+    }
   }
 
-  return games
-    .filter((game) => !modernSyncedIds.has(String(game.id || '').trim()))
-    .slice(0, desiredCount)
+  return results.slice(0, desiredCount)
 }
 
 export async function POST(request: Request) {
@@ -197,21 +244,22 @@ export async function POST(request: Request) {
     const iterations = Math.max(1, Math.min(50, Number(body?.iterations || 1)))
     const batchSize = Math.max(1, Math.min(100, Number(body?.batchSize || 25)))
     const desiredCount = iterations * batchSize
+    const scope = normalizeScope(body?.scope)
 
     const log = await createSyncLog(
       'steam_price_backfill_us',
-      `Steam price backfill US started (target ${desiredCount})`
+      `Steam price backfill US started (target ${desiredCount}, scope ${scope})`
     )
     logId = log.id
 
     const supabase = getServiceSupabase()
-    const candidates = await loadCandidateGames(supabase, desiredCount)
+    const candidates = await loadCandidateGames(supabase, desiredCount, scope)
 
     if (!candidates.length) {
       await finishSyncLog(
         logId,
         'success',
-        'No candidate games without modern US price found',
+        `No candidate games without modern US price found for scope ${scope}`,
         0
       )
 
@@ -221,7 +269,8 @@ export async function POST(request: Request) {
         updated: 0,
         rateLimited: 0,
         target: desiredCount,
-        note: 'No candidate games without modern US price found',
+        scope,
+        note: `No candidate games without modern US price found for scope ${scope}`,
       })
     }
 
@@ -262,7 +311,28 @@ export async function POST(request: Request) {
         continue
       }
 
-      const data = entry.data
+            const data = entry.data
+
+      const resolvedType = String(data.type || '').trim().toLowerCase()
+
+      if (scope === 'full_games' && resolvedType && resolvedType !== 'game') {
+        const { error: classifyError } = await supabase
+          .from('pc_games')
+          .update({
+            steam_type: resolvedType,
+            updated_at: new Date().toISOString(),
+          })
+          .eq('id', game.id)
+
+        if (classifyError) {
+          throw new Error(
+            `pc_games classify failed for ${steamAppID}: ${classifyError.message}`
+          )
+        }
+
+        continue
+      }
+
       const priceOverview = data.price_overview
       const salePrice = centsToMoney(priceOverview?.final || null)
       const normalPrice = centsToMoney(priceOverview?.initial || null)
@@ -322,7 +392,7 @@ export async function POST(request: Request) {
     await finishSyncLog(
       logId,
       'success',
-      `Steam price backfill US completed (processed ${processed}, updated ${updated}, rateLimited ${rateLimited})`,
+      `Steam price backfill US completed (processed ${processed}, updated ${updated}, rateLimited ${rateLimited}, scope ${scope})`,
       processed
     )
 
@@ -332,6 +402,7 @@ export async function POST(request: Request) {
       updated,
       rateLimited,
       target: desiredCount,
+      scope,
     })
   } catch (error) {
     console.error('steam price backfill error', error)

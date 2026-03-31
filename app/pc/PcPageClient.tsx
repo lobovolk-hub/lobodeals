@@ -36,6 +36,16 @@ type PcBrowseItem = {
   isCatalogReady: boolean
 }
 
+type PcBrowsePageResponse = {
+  items: PcBrowseItem[]
+  totalItems: number | null
+  totalPages: number | null
+  page: number
+  pageSize: number
+  hasNextPage: boolean
+  mode?: 'fast' | 'full' | 'error'
+}
+
 type DealsStats = {
   dealsIndexed: number
   steamIndexed: number
@@ -59,6 +69,8 @@ type TopRatedPcGame = {
   isFreeToPlay: boolean
 }
 
+type UnifiedCardItem = SteamSpotlightItem | PcBrowseItem | TopRatedPcGame
+
 const PAGE_SIZE = 36
 const TOP_RATED_MIN_RESULTS = 12
 
@@ -81,7 +93,7 @@ function normalizeSteamTitle(value: string) {
     .replace(/[®™©]/g, '')
     .toLowerCase()
     .trim()
-    .replace(/[:\-–—_/.,+!?'"]/g, ' ')
+    .replace(/[:\-–—_/.,+!?'""]/g, ' ')
     .replace(/[^a-z0-9\s]/g, ' ')
     .replace(/\s+/g, ' ')
     .trim()
@@ -178,7 +190,7 @@ function SteamCard({
   setTrackedIds,
   setTrackMessage,
 }: {
-  item: SteamSpotlightItem | PcBrowseItem | TopRatedPcGame
+  item: UnifiedCardItem
   userId: string | null
   trackedIds: string[]
   setTrackedIds: React.Dispatch<React.SetStateAction<string[]>>
@@ -402,6 +414,8 @@ export default function PcPageClient() {
   const priceFilter = searchParams.get('price') || 'all'
 
   const [browseGames, setBrowseGames] = useState<PcBrowseItem[]>([])
+  const [browseTotalItems, setBrowseTotalItems] = useState(0)
+  const [browseTotalPages, setBrowseTotalPages] = useState(1)
   const [steamDeals, setSteamDeals] = useState<SteamSpotlightItem[]>([])
   const [topRatedGames, setTopRatedGames] = useState<TopRatedPcGame[]>([])
   const [dealsStats, setDealsStats] = useState<DealsStats>({
@@ -469,27 +483,89 @@ export default function PcPageClient() {
     router.push('/pc?page=1&sort=all')
   }
 
-  useEffect(() => {
+    useEffect(() => {
     let cancelled = false
 
-    const load = async () => {
+    const loadPrimary = async () => {
       try {
         setLoading(true)
 
-        const [browseRes, steamRes, statsRes, topRatedRes] = await Promise.all([
-          fetch('/api/pc-browse?limit=1500'),
+        if (sort === 'steam-spotlight' || sort === 'top-rated') {
+          if (!cancelled) {
+            setBrowseGames([])
+          }
+          return
+        }
+
+        const params = new URLSearchParams()
+        params.set('page', String(currentPage))
+        params.set('pageSize', String(PAGE_SIZE))
+        if (query.trim()) params.set('q', query.trim())
+        if (sort !== 'all') params.set('sort', sort)
+        if (storeFilter !== 'all') params.set('store', storeFilter)
+        if (priceFilter !== 'all') params.set('price', priceFilter)
+
+        const browseRes = await fetch(`/api/pc-browse-page?${params.toString()}`)
+        const browseData = (await browseRes.json()) as PcBrowsePageResponse
+
+        if (!cancelled) {
+          setBrowseGames(Array.isArray(browseData.items) ? browseData.items : [])
+
+          if (typeof browseData.totalItems === 'number') {
+            setBrowseTotalItems(Number(browseData.totalItems || 0))
+          }
+
+          if (typeof browseData.totalPages === 'number') {
+            setBrowseTotalPages(Math.max(1, Number(browseData.totalPages || 1)))
+          } else if (browseData.hasNextPage && currentPage >= browseTotalPages) {
+            setBrowseTotalPages(currentPage + 1)
+          }
+        }
+      } catch (error) {
+        console.error(error)
+        if (!cancelled) {
+          setBrowseGames([])
+        }
+      } finally {
+        if (!cancelled) {
+          setLoading(false)
+        }
+      }
+    }
+
+    loadPrimary()
+
+    return () => {
+      cancelled = true
+    }
+  }, [currentPage, query, sort, storeFilter, priceFilter, browseTotalPages])
+
+    useEffect(() => {
+    let cancelled = false
+
+    const loadSecondary = async () => {
+      try {
+        const [catalogRes, steamRes, statsRes, topRatedRes] = await Promise.all([
+          fetch('/api/catalog-stats'),
           fetch('/api/steam-spotlight'),
           fetch('/api/deals-stats'),
           fetch('/api/pc-top-rated?limit=600'),
         ])
 
-        const browseData = await browseRes.json()
+        const catalogData = await catalogRes.json()
         const steamData = await steamRes.json()
         const statsData = await statsRes.json()
         const topRatedData = await topRatedRes.json()
 
         if (!cancelled) {
-          setBrowseGames(Array.isArray(browseData) ? browseData : [])
+          setBrowseTotalItems(Number(catalogData?.steamCatalogSize || 0))
+          setBrowseTotalPages(
+            Math.max(
+              1,
+              Math.ceil(Number(catalogData?.steamCatalogSize || 0) / PAGE_SIZE)
+            )
+          )
+
           setSteamDeals(Array.isArray(steamData) ? steamData : [])
           setTopRatedGames(Array.isArray(topRatedData) ? topRatedData : [])
           setDealsStats({
@@ -526,19 +602,15 @@ export default function PcPageClient() {
         }
       } catch (error) {
         console.error(error)
-      } finally {
-        if (!cancelled) {
-          setLoading(false)
-        }
       }
     }
 
-    load()
+    loadSecondary()
 
     return () => {
       cancelled = true
     }
-  }, [searchParams])
+  }, [])
 
   const filteredDeals = useMemo(() => {
     const normalizedQuery = normalizeSteamTitle(query)
@@ -637,84 +709,39 @@ export default function PcPageClient() {
       }
     }
 
-    let unified = [...allBrowseGames]
-
-    if (sort === 'best') {
-      unified.sort((a, b) => {
-        const discountA = getSafeDiscountPercent(a.salePrice, a.normalPrice, a.savings)
-        const discountB = getSafeDiscountPercent(b.salePrice, b.normalPrice, b.savings)
-
-        const saleA = Number(a.salePrice || 999999)
-        const saleB = Number(b.salePrice || 999999)
-        const normalA = Number(a.normalPrice || 0)
-        const normalB = Number(b.normalPrice || 0)
-
-        const priceAttractivenessA =
-          saleA > 0 ? Math.max(0, 40 - saleA) : a.isFreeToPlay ? 24 : 0
-        const priceAttractivenessB =
-          saleB > 0 ? Math.max(0, 40 - saleB) : b.isFreeToPlay ? 24 : 0
-
-        const scoreA =
-          discountA * 1.6 +
-          priceAttractivenessA * 1.2 +
-          (a.hasActiveOffer ? 18 : 0) +
-          (normalA >= 20 ? 8 : 0) +
-          (a.isCatalogReady ? 6 : 0)
-
-        const scoreB =
-          discountB * 1.6 +
-          priceAttractivenessB * 1.2 +
-          (b.hasActiveOffer ? 18 : 0) +
-          (normalB >= 20 ? 8 : 0) +
-          (b.isCatalogReady ? 6 : 0)
-
-        if (scoreB !== scoreA) return scoreB - scoreA
-        if (discountB !== discountA) return discountB - discountA
-        return saleA - saleB
-      })
-    } else if (sort === 'biggest-discount') {
-      unified.sort((a, b) => {
-        const discountA = getSafeDiscountPercent(a.salePrice, a.normalPrice, a.savings)
-        const discountB = getSafeDiscountPercent(b.salePrice, b.normalPrice, b.savings)
-
-        if (discountB !== discountA) return discountB - discountA
-
-        const saleA = Number(a.salePrice || 999999)
-        const saleB = Number(b.salePrice || 999999)
-
-        return saleA - saleB
-      })
-    } else if (sort === 'latest') {
-      unified.sort(
-        (a, b) => Number(b.steamAppID || 0) - Number(a.steamAppID || 0)
-      )
-    } else {
-      unified.sort((a, b) => {
-        if (b.hasActiveOffer !== a.hasActiveOffer) {
-          return Number(b.hasActiveOffer) - Number(a.hasActiveOffer)
-        }
-
-        const savingsDiff =
-          getSafeDiscountPercent(b.salePrice, b.normalPrice, b.savings) -
-          getSafeDiscountPercent(a.salePrice, a.normalPrice, a.savings)
-
-        if (savingsDiff !== 0) return savingsDiff
-
-        return a.title.localeCompare(b.title)
-      })
-    }
-
     return {
       mode: 'browse' as const,
-      items: unified,
+      items: allBrowseGames,
     }
-  }, [browseGames, steamDeals, topRatedGames, query, sort, storeFilter, priceFilter, topRatedReady])
+  }, [
+    browseGames,
+    steamDeals,
+    topRatedGames,
+    query,
+    sort,
+    storeFilter,
+    priceFilter,
+    topRatedReady,
+  ])
 
-  const totalItems = filteredDeals.items.length
-  const totalPages = Math.max(1, Math.ceil(totalItems / PAGE_SIZE))
+  const isServerBrowseMode =
+    filteredDeals.mode === 'browse' &&
+    sort !== 'steam-spotlight' &&
+    sort !== 'top-rated'
+
+  const totalItems = isServerBrowseMode
+    ? browseTotalItems
+    : filteredDeals.items.length
+
+  const totalPages = isServerBrowseMode
+    ? Math.max(1, browseTotalPages)
+    : Math.max(1, Math.ceil(totalItems / PAGE_SIZE))
+
   const safePage = Math.min(currentPage, totalPages)
-  const startIndex = (safePage - 1) * PAGE_SIZE
-  const paginatedItems = filteredDeals.items.slice(startIndex, startIndex + PAGE_SIZE)
+
+  const paginatedItems: UnifiedCardItem[] = isServerBrowseMode
+    ? filteredDeals.items
+    : filteredDeals.items.slice((safePage - 1) * PAGE_SIZE, safePage * PAGE_SIZE)
 
   const activeFilterLabels = [
     query.trim() ? `Search: "${query.trim()}"` : null,
@@ -755,7 +782,8 @@ export default function PcPageClient() {
           <h1 className="mt-1 text-3xl font-bold">PC Games</h1>
           <p className="mt-2 max-w-3xl text-zinc-400">
             Browse the Steam-only PC layer from local data, prioritizing base games
-            in the main browsing experience while keeping one canonical game page per title.
+            in the main browsing experience while keeping one canonical game page per
+            title.
           </p>
         </header>
 
@@ -766,8 +794,8 @@ export default function PcPageClient() {
         <div className="mb-6 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
           <MetricCard
             label="Steam catalog ready"
-            value={browseGames.length}
-            sublabel="Base game entries loaded into the main PC browse layer"
+            value={browseTotalItems || browseGames.length}
+            sublabel="Public-ready games available in the main PC browse layer"
           />
           <MetricCard
             label="Results in this view"
@@ -801,7 +829,8 @@ export default function PcPageClient() {
             </p>
             <p className="mt-2 text-sm text-zinc-400">
               Main PC browsing now prioritizes base games from the local 2.5 layer.
-              DLCs can still remain searchable from the catalog when looked up manually.
+              DLCs can still remain searchable from the catalog when looked up
+              manually.
             </p>
           </div>
 
@@ -1025,10 +1054,10 @@ export default function PcPageClient() {
           </div>
         ) : (
           <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
-            {paginatedItems.map((item) => (
+            {paginatedItems.map((item: UnifiedCardItem) => (
               <SteamCard
                 key={`${item.steamAppID}-${item.title}`}
-                item={item as SteamSpotlightItem | PcBrowseItem | TopRatedPcGame}
+                item={item}
                 userId={userId}
                 trackedIds={trackedIds}
                 setTrackedIds={setTrackedIds}

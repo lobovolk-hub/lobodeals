@@ -199,6 +199,7 @@ async function loadModernOffersForIds(
   gameIds: string[]
 ) {
   const offersByGameId = new Map<string, PcStoreOfferRow>()
+
   const idChunks = chunkArray(gameIds, 200)
 
   for (const ids of idChunks) {
@@ -219,6 +220,7 @@ async function loadModernOffersForIds(
     for (const row of (offers || []) as PcStoreOfferRow[]) {
       const key = String(row.pc_game_id || '').trim()
       if (!key) continue
+
       offersByGameId.set(key, chooseBestOffer(offersByGameId.get(key), row))
     }
   }
@@ -226,55 +228,13 @@ async function loadModernOffersForIds(
   return offersByGameId
 }
 
-function toBrowseItem(
-  game: PcGameRow,
-  offer?: PcStoreOfferRow
-): PcBrowseItem | null {
-  const id = String(game.id || '').trim()
-  const title = String(game.steam_name || game.canonical_title || '').trim()
-  const steamAppID = String(game.steam_app_id || '').trim()
-  const slug =
-    String(game.slug || '').trim() ||
-    makePcGameSlug(title, steamAppID)
-
-  if (!id || !title || !slug || !steamAppID) return null
-  if (!isStructurallyPublicable(game)) return null
-
-  const isFree = Boolean(game.is_free_to_play)
-  if (!offer && !isFree) return null
-
-  const thumb =
-    String(game.hero_image_url || '').trim() ||
-    String(game.header_image || '').trim() ||
-    String(game.capsule_image || '').trim()
-
-  return {
-    id,
-    steamAppID,
-    slug,
-    title,
-    thumb,
-    salePrice: formatMoney(offer?.sale_price),
-    normalPrice: formatMoney(offer?.normal_price),
-    savings: formatSavings(offer?.discount_percent),
-    storeID: String(offer?.store_id || '1').trim(),
-    url: String(offer?.url || '').trim(),
-    isFreeToPlay: isFree,
-    hasActiveOffer: Boolean(offer),
-    isCatalogReady: true,
-  }
-}
-
-async function loadFastBrowsePage(
-  supabase: ReturnType<typeof getServiceSupabase>,
-  page: number,
-  pageSize: number
+async function loadAllPublicableGames(
+  supabase: ReturnType<typeof getServiceSupabase>
 ) {
-  const needed = page * pageSize + 1
-  const matched: PcBrowseItem[] = []
+  const results: PcBrowseItem[] = []
 
-  for (let sourcePage = 0; sourcePage < 80 && matched.length < needed; sourcePage += 1) {
-    const from = sourcePage * SOURCE_PAGE_SIZE
+  for (let page = 0; page < 80; page += 1) {
+    const from = page * SOURCE_PAGE_SIZE
     const to = from + SOURCE_PAGE_SIZE - 1
 
     const { data: pcGames, error: gamesError } = await supabase
@@ -291,7 +251,10 @@ async function loadFastBrowsePage(
     }
 
     const games = Array.isArray(pcGames) ? (pcGames as PcGameRow[]) : []
-    if (!games.length) break
+
+    if (!games.length) {
+      break
+    }
 
     const gameIds = games
       .map((game) => String(game.id || '').trim())
@@ -301,14 +264,42 @@ async function loadFastBrowsePage(
 
     for (const game of games) {
       const id = String(game.id || '').trim()
-      const item = toBrowseItem(game, offersByGameId.get(id))
-      if (!item) continue
+      const title = String(game.steam_name || game.canonical_title || '').trim()
+      const slug =
+        String(game.slug || '').trim() ||
+        makePcGameSlug(
+          String(game.steam_name || game.canonical_title || '').trim(),
+          String(game.steam_app_id || '').trim()
+        )
 
-      matched.push(item)
+      if (!id || !slug || !title) continue
+      if (!isStructurallyPublicable(game)) continue
 
-      if (matched.length >= needed) {
-        break
-      }
+      const offer = offersByGameId.get(id)
+      const isFree = Boolean(game.is_free_to_play)
+
+      if (!offer && !isFree) continue
+
+      const thumb =
+        String(game.hero_image_url || '').trim() ||
+        String(game.header_image || '').trim() ||
+        String(game.capsule_image || '').trim()
+
+      results.push({
+        id,
+        steamAppID: String(game.steam_app_id || '').trim(),
+        slug,
+        title,
+        thumb,
+        salePrice: formatMoney(offer?.sale_price),
+        normalPrice: formatMoney(offer?.normal_price),
+        savings: formatSavings(offer?.discount_percent),
+        storeID: String(offer?.store_id || '1').trim(),
+        url: String(offer?.url || '').trim(),
+        isFreeToPlay: isFree,
+        hasActiveOffer: Boolean(offer),
+        isCatalogReady: true,
+      })
     }
 
     if (games.length < SOURCE_PAGE_SIZE) {
@@ -316,143 +307,7 @@ async function loadFastBrowsePage(
     }
   }
 
-  const startIndex = (page - 1) * pageSize
-  const items = matched.slice(startIndex, startIndex + pageSize)
-  const hasNextPage = matched.length > startIndex + pageSize
-
-  return {
-    items,
-    hasNextPage,
-  }
-}
-
-async function loadFullFilteredBrowse(
-  supabase: ReturnType<typeof getServiceSupabase>,
-  query: string,
-  sort: string,
-  storeFilter: string,
-  priceFilter: string,
-  page: number,
-  pageSize: number
-) {
-  const allGames: PcBrowseItem[] = []
-
-  for (let sourcePage = 0; sourcePage < 80; sourcePage += 1) {
-    const from = sourcePage * SOURCE_PAGE_SIZE
-    const to = from + SOURCE_PAGE_SIZE - 1
-
-    const { data: pcGames, error: gamesError } = await supabase
-      .from('pc_games')
-      .select(
-        'id, steam_app_id, slug, steam_name, canonical_title, capsule_image, header_image, hero_image_url, description, short_description, rawg_description, is_free_to_play, steam_type'
-      )
-      .eq('steam_type', 'game')
-      .order('steam_app_id', { ascending: false })
-      .range(from, to)
-
-    if (gamesError) {
-      throw gamesError
-    }
-
-    const games = Array.isArray(pcGames) ? (pcGames as PcGameRow[]) : []
-    if (!games.length) break
-
-    const gameIds = games
-      .map((game) => String(game.id || '').trim())
-      .filter(Boolean)
-
-    const offersByGameId = await loadModernOffersForIds(supabase, gameIds)
-
-    for (const game of games) {
-      const id = String(game.id || '').trim()
-      const item = toBrowseItem(game, offersByGameId.get(id))
-      if (!item) continue
-      allGames.push(item)
-    }
-
-    if (games.length < SOURCE_PAGE_SIZE) {
-      break
-    }
-  }
-
-  const normalizedQuery = normalizeSteamTitle(query)
-
-  let filtered = allGames.filter((item) => {
-    if (storeFilter !== 'all' && item.storeID !== storeFilter) return false
-
-    const salePrice = Number(item.salePrice || 0)
-    const savings = getSafeDiscountPercent(
-      item.salePrice,
-      item.normalPrice,
-      item.savings
-    )
-
-    if (priceFilter === 'under-5' && !(salePrice > 0 && salePrice < 5)) return false
-    if (priceFilter === 'under-10' && !(salePrice > 0 && salePrice < 10)) return false
-    if (priceFilter === 'over-80' && savings < 80) return false
-
-    if (normalizedQuery) {
-      return normalizeSteamTitle(item.title).includes(normalizedQuery)
-    }
-
-    return true
-  })
-
-  if (sort === 'best') {
-    filtered.sort((a, b) => {
-      const discountA = getSafeDiscountPercent(a.salePrice, a.normalPrice, a.savings)
-      const discountB = getSafeDiscountPercent(b.salePrice, b.normalPrice, b.savings)
-
-      const saleA = Number(a.salePrice || 999999)
-      const saleB = Number(b.salePrice || 999999)
-      const normalA = Number(a.normalPrice || 0)
-      const normalB = Number(b.normalPrice || 0)
-
-      const scoreA =
-        discountA * 1.6 +
-        Math.max(0, 40 - saleA) * 1.2 +
-        (a.hasActiveOffer ? 18 : 0) +
-        (normalA >= 20 ? 8 : 0)
-
-      const scoreB =
-        discountB * 1.6 +
-        Math.max(0, 40 - saleB) * 1.2 +
-        (b.hasActiveOffer ? 18 : 0) +
-        (normalB >= 20 ? 8 : 0)
-
-      if (scoreB !== scoreA) return scoreB - scoreA
-      if (discountB !== discountA) return discountB - discountA
-      return saleA - saleB
-    })
-  } else if (sort === 'biggest-discount') {
-    filtered.sort((a, b) => {
-      const discountA = getSafeDiscountPercent(a.salePrice, a.normalPrice, a.savings)
-      const discountB = getSafeDiscountPercent(b.salePrice, b.normalPrice, b.savings)
-
-      if (discountB !== discountA) return discountB - discountA
-
-      const saleA = Number(a.salePrice || 999999)
-      const saleB = Number(b.salePrice || 999999)
-
-      return saleA - saleB
-    })
-  } else if (sort === 'latest') {
-    filtered.sort((a, b) => Number(b.steamAppID || 0) - Number(a.steamAppID || 0))
-  }
-
-  const totalItems = filtered.length
-  const totalPages = Math.max(1, Math.ceil(totalItems / pageSize))
-  const safePage = Math.min(page, totalPages)
-  const startIndex = (safePage - 1) * pageSize
-  const items = filtered.slice(startIndex, startIndex + pageSize)
-
-  return {
-    items,
-    totalItems,
-    totalPages,
-    page: safePage,
-    pageSize,
-  }
+  return results
 }
 
 export async function GET(request: Request) {
@@ -467,41 +322,106 @@ export async function GET(request: Request) {
     const priceFilter = searchParams.get('price') || 'all'
 
     const supabase = getServiceSupabase()
+    const allGames = await loadAllPublicableGames(supabase)
 
-    const canUseFastPath =
-      !query.trim() &&
-      storeFilter === 'all' &&
-      priceFilter === 'all' &&
-      (sort === 'all' || sort === 'latest')
+    const normalizedQuery = normalizeSteamTitle(query)
 
-    if (canUseFastPath) {
-      const fast = await loadFastBrowsePage(supabase, page, pageSize)
+    let filtered = allGames.filter((item) => {
+      if (storeFilter !== 'all' && item.storeID !== storeFilter) return false
 
-      return Response.json({
-        items: fast.items,
-        totalItems: null,
-        totalPages: null,
-        page,
-        pageSize,
-        hasNextPage: fast.hasNextPage,
-        mode: 'fast',
+      const salePrice = Number(item.salePrice || 0)
+      const savings = getSafeDiscountPercent(
+        item.salePrice,
+        item.normalPrice,
+        item.savings
+      )
+
+      if (priceFilter === 'under-5' && !(salePrice > 0 && salePrice < 5)) return false
+      if (priceFilter === 'under-10' && !(salePrice > 0 && salePrice < 10)) return false
+      if (priceFilter === 'over-80' && savings < 80) return false
+
+      if (normalizedQuery) {
+        return normalizeSteamTitle(item.title).includes(normalizedQuery)
+      }
+
+      return true
+    })
+
+    if (sort === 'best') {
+      filtered.sort((a, b) => {
+        const discountA = getSafeDiscountPercent(a.salePrice, a.normalPrice, a.savings)
+        const discountB = getSafeDiscountPercent(b.salePrice, b.normalPrice, b.savings)
+
+        const saleA = Number(a.salePrice || 999999)
+        const saleB = Number(b.salePrice || 999999)
+        const normalA = Number(a.normalPrice || 0)
+        const normalB = Number(b.normalPrice || 0)
+
+        const priceAttractivenessA =
+          saleA > 0 ? Math.max(0, 40 - saleA) : a.isFreeToPlay ? 24 : 0
+        const priceAttractivenessB =
+          saleB > 0 ? Math.max(0, 40 - saleB) : b.isFreeToPlay ? 24 : 0
+
+        const scoreA =
+          discountA * 1.6 +
+          priceAttractivenessA * 1.2 +
+          (a.hasActiveOffer ? 18 : 0) +
+          (normalA >= 20 ? 8 : 0) +
+          (a.isCatalogReady ? 6 : 0)
+
+        const scoreB =
+          discountB * 1.6 +
+          priceAttractivenessB * 1.2 +
+          (b.hasActiveOffer ? 18 : 0) +
+          (normalB >= 20 ? 8 : 0) +
+          (b.isCatalogReady ? 6 : 0)
+
+        if (scoreB !== scoreA) return scoreB - scoreA
+        if (discountB !== discountA) return discountB - discountA
+        return saleA - saleB
+      })
+    } else if (sort === 'biggest-discount') {
+      filtered.sort((a, b) => {
+        const discountA = getSafeDiscountPercent(a.salePrice, a.normalPrice, a.savings)
+        const discountB = getSafeDiscountPercent(b.salePrice, b.normalPrice, b.savings)
+
+        if (discountB !== discountA) return discountB - discountA
+
+        const saleA = Number(a.salePrice || 999999)
+        const saleB = Number(b.salePrice || 999999)
+
+        return saleA - saleB
+      })
+    } else if (sort === 'latest') {
+      filtered.sort((a, b) => Number(b.steamAppID || 0) - Number(a.steamAppID || 0))
+    } else {
+      filtered.sort((a, b) => {
+        if (b.hasActiveOffer !== a.hasActiveOffer) {
+          return Number(b.hasActiveOffer) - Number(a.hasActiveOffer)
+        }
+
+        const savingsDiff =
+          getSafeDiscountPercent(b.salePrice, b.normalPrice, b.savings) -
+          getSafeDiscountPercent(a.salePrice, a.normalPrice, a.savings)
+
+        if (savingsDiff !== 0) return savingsDiff
+
+        return a.title.localeCompare(b.title)
       })
     }
 
-    const full = await loadFullFilteredBrowse(
-      supabase,
-      query,
-      sort,
-      storeFilter,
-      priceFilter,
-      page,
-      pageSize
-    )
+    const totalItems = filtered.length
+    const totalPages = Math.max(1, Math.ceil(totalItems / pageSize))
+    const safePage = Math.min(page, totalPages)
+    const startIndex = (safePage - 1) * pageSize
+    const items = filtered.slice(startIndex, startIndex + pageSize)
 
     return Response.json({
-      ...full,
-      hasNextPage: full.page < full.totalPages,
-      mode: 'full',
+      items,
+      totalItems,
+      totalPages,
+      page: safePage,
+      pageSize,
     })
   } catch (error) {
     console.error('pc browse page error', error)
@@ -512,8 +432,6 @@ export async function GET(request: Request) {
       totalPages: 1,
       page: 1,
       pageSize: 36,
-      hasNextPage: false,
-      mode: 'error',
     })
   }
 }

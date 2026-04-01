@@ -43,7 +43,8 @@ type PcBrowsePageResponse = {
   page: number
   pageSize: number
   hasNextPage: boolean
-  mode?: 'fast' | 'full' | 'error'
+  mode?: 'cache' | 'error'
+  source?: string
 }
 
 type DealsStats = {
@@ -72,7 +73,7 @@ type TopRatedPcGame = {
 type UnifiedCardItem = SteamSpotlightItem | PcBrowseItem | TopRatedPcGame
 
 const PAGE_SIZE = 36
-const TOP_RATED_MIN_RESULTS = 12
+const TOP_RATED_MIN_RESULTS = 1
 
 const STORE_FILTERS = [
   { value: 'all', label: 'All stores' },
@@ -433,13 +434,12 @@ export default function PcPageClient() {
   const [trackMessage, setTrackMessage] = useState('')
 
   const topRatedReady = topRatedGames.length >= TOP_RATED_MIN_RESULTS
-  const sort =
-    requestedSort === 'top-rated' && !topRatedReady ? 'all' : requestedSort
+const sort = requestedSort
 
   const SORT_FILTERS = [
     { value: 'all', label: 'Featured' },
     { value: 'best', label: 'Best Deals' },
-    ...(topRatedReady ? [{ value: 'top-rated', label: 'Top Rated' }] : []),
+    { value: 'top-rated', label: 'Top Rated' },
     { value: 'biggest-discount', label: 'Biggest Discounts' },
     { value: 'latest', label: 'Latest' },
     { value: 'steam-spotlight', label: 'Steam Deals' },
@@ -471,11 +471,6 @@ export default function PcPageClient() {
   }
 
   const applySort = (value: string) => {
-    if (value === 'top-rated' && !topRatedReady) {
-      router.push(buildUrl(1, { sort: 'all' }))
-      return
-    }
-
     router.push(buildUrl(1, { sort: value }))
   }
 
@@ -483,101 +478,11 @@ export default function PcPageClient() {
     router.push('/pc?page=1&sort=all')
   }
 
-    useEffect(() => {
+  useEffect(() => {
     let cancelled = false
 
-    const loadPrimary = async () => {
+    const loadUserState = async () => {
       try {
-        setLoading(true)
-
-        if (sort === 'steam-spotlight' || sort === 'top-rated') {
-          if (!cancelled) {
-            setBrowseGames([])
-          }
-          return
-        }
-
-        const params = new URLSearchParams()
-        params.set('page', String(currentPage))
-        params.set('pageSize', String(PAGE_SIZE))
-        if (query.trim()) params.set('q', query.trim())
-        if (sort !== 'all') params.set('sort', sort)
-        if (storeFilter !== 'all') params.set('store', storeFilter)
-        if (priceFilter !== 'all') params.set('price', priceFilter)
-
-        const browseRes = await fetch(`/api/pc-browse-page?${params.toString()}`)
-        const browseData = (await browseRes.json()) as PcBrowsePageResponse
-
-        if (!cancelled) {
-          setBrowseGames(Array.isArray(browseData.items) ? browseData.items : [])
-
-          if (typeof browseData.totalItems === 'number') {
-            setBrowseTotalItems(Number(browseData.totalItems || 0))
-          }
-
-          if (typeof browseData.totalPages === 'number') {
-            setBrowseTotalPages(Math.max(1, Number(browseData.totalPages || 1)))
-          } else if (browseData.hasNextPage && currentPage >= browseTotalPages) {
-            setBrowseTotalPages(currentPage + 1)
-          }
-        }
-      } catch (error) {
-        console.error(error)
-        if (!cancelled) {
-          setBrowseGames([])
-        }
-      } finally {
-        if (!cancelled) {
-          setLoading(false)
-        }
-      }
-    }
-
-    loadPrimary()
-
-    return () => {
-      cancelled = true
-    }
-  }, [currentPage, query, sort, storeFilter, priceFilter, browseTotalPages])
-
-    useEffect(() => {
-    let cancelled = false
-
-    const loadSecondary = async () => {
-      try {
-        const [catalogRes, steamRes, statsRes, topRatedRes] = await Promise.all([
-          fetch('/api/catalog-stats'),
-          fetch('/api/steam-spotlight'),
-          fetch('/api/deals-stats'),
-          fetch('/api/pc-top-rated?limit=600'),
-        ])
-
-        const catalogData = await catalogRes.json()
-        const steamData = await steamRes.json()
-        const statsData = await statsRes.json()
-        const topRatedData = await topRatedRes.json()
-
-        if (!cancelled) {
-          setBrowseTotalItems(Number(catalogData?.steamCatalogSize || 0))
-          setBrowseTotalPages(
-            Math.max(
-              1,
-              Math.ceil(Number(catalogData?.steamCatalogSize || 0) / PAGE_SIZE)
-            )
-          )
-
-          setSteamDeals(Array.isArray(steamData) ? steamData : [])
-          setTopRatedGames(Array.isArray(topRatedData) ? topRatedData : [])
-          setDealsStats({
-            dealsIndexed: Number(statsData?.dealsIndexed || 0),
-            steamIndexed: Number(statsData?.steamIndexed || 0),
-            steamSpotlightIndexed: Number(statsData?.steamSpotlightIndexed || 0),
-            dealsUpdatedAt: statsData?.dealsUpdatedAt || null,
-            steamUpdatedAt: statsData?.steamUpdatedAt || null,
-            steamSpotlightUpdatedAt: statsData?.steamSpotlightUpdatedAt || null,
-          })
-        }
-
         const {
           data: { session },
         } = await supabase.auth.getSession()
@@ -605,12 +510,131 @@ export default function PcPageClient() {
       }
     }
 
-    loadSecondary()
+    loadUserState()
 
     return () => {
       cancelled = true
     }
   }, [])
+
+  useEffect(() => {
+    let cancelled = false
+
+    const loadView = async () => {
+      try {
+        setLoading(true)
+
+        if (sort === 'steam-spotlight') {
+  const steamRes = await fetch('/api/steam-spotlight')
+  const steamData = await steamRes.json()
+
+  if (!cancelled) {
+    setSteamDeals(Array.isArray(steamData) ? steamData : [])
+    setTopRatedGames([])
+    setBrowseGames([])
+    setBrowseTotalItems(0)
+    setBrowseTotalPages(1)
+    setDealsStats({
+      dealsIndexed: 0,
+      steamIndexed: 0,
+      steamSpotlightIndexed: 0,
+      dealsUpdatedAt: null,
+      steamUpdatedAt: null,
+      steamSpotlightUpdatedAt: null,
+    })
+  }
+
+  fetch('/api/deals-stats')
+    .then((res) => res.json())
+    .then((statsData) => {
+      if (!cancelled) {
+        setDealsStats({
+          dealsIndexed: Number(statsData?.dealsIndexed || 0),
+          steamIndexed: Number(statsData?.steamIndexed || 0),
+          steamSpotlightIndexed: Number(statsData?.steamSpotlightIndexed || 0),
+          dealsUpdatedAt: statsData?.dealsUpdatedAt || null,
+          steamUpdatedAt: statsData?.steamUpdatedAt || null,
+          steamSpotlightUpdatedAt: statsData?.steamSpotlightUpdatedAt || null,
+        })
+      }
+    })
+    .catch((error) => {
+      console.error(error)
+    })
+
+  return
+}
+
+        if (sort === 'top-rated') {
+          const topRatedRes = await fetch('/api/pc-top-rated?limit=36')
+          const topRatedData = await topRatedRes.json()
+
+          if (!cancelled) {
+            setTopRatedGames(Array.isArray(topRatedData) ? topRatedData : [])
+            setSteamDeals([])
+            setDealsStats({
+              dealsIndexed: 0,
+              steamIndexed: 0,
+              steamSpotlightIndexed: 0,
+              dealsUpdatedAt: null,
+              steamUpdatedAt: null,
+              steamSpotlightUpdatedAt: null,
+            })
+          }
+
+          return
+        }
+
+        const params = new URLSearchParams()
+        params.set('page', String(currentPage))
+        params.set('pageSize', String(PAGE_SIZE))
+
+        if (query.trim()) params.set('q', query.trim())
+        if (sort !== 'all') params.set('sort', sort)
+        if (storeFilter !== 'all') params.set('store', storeFilter)
+        if (priceFilter !== 'all') params.set('price', priceFilter)
+
+        const browseRes = await fetch(`/api/pc-browse-page?${params.toString()}`)
+        const browseData: PcBrowsePageResponse = await browseRes.json()
+
+        if (!cancelled) {
+          setBrowseGames(Array.isArray(browseData?.items) ? browseData.items : [])
+          setBrowseTotalItems(Number(browseData?.totalItems || 0))
+          setBrowseTotalPages(Math.max(1, Number(browseData?.totalPages || 1)))
+          setSteamDeals([])
+          setTopRatedGames([])
+          setDealsStats({
+            dealsIndexed: 0,
+            steamIndexed: 0,
+            steamSpotlightIndexed: 0,
+            dealsUpdatedAt: null,
+            steamUpdatedAt: null,
+            steamSpotlightUpdatedAt: null,
+          })
+        }
+      } catch (error) {
+        console.error(error)
+
+        if (!cancelled) {
+          setBrowseGames([])
+          setBrowseTotalItems(0)
+          setBrowseTotalPages(1)
+          setSteamDeals([])
+          setTopRatedGames([])
+        }
+      } finally {
+        if (!cancelled) {
+          setLoading(false)
+        }
+      }
+    }
+
+    loadView()
+
+    return () => {
+      cancelled = true
+    }
+  }, [currentPage, query, sort, storeFilter, priceFilter])
 
   const filteredDeals = useMemo(() => {
     const normalizedQuery = normalizeSteamTitle(query)
@@ -896,12 +920,11 @@ export default function PcPageClient() {
             </div>
           </div>
 
-          {!topRatedReady ? (
-            <div className="mt-4 rounded-2xl border border-zinc-800 bg-zinc-950 p-3 text-xs text-zinc-400">
-              Top Rated is temporarily hidden until the local metadata layer has enough
-              reliable scored entries.
-            </div>
-          ) : null}
+          {sort === 'top-rated' && loading ? (
+  <div className="mt-4 rounded-2xl border border-zinc-800 bg-zinc-950 p-3 text-xs text-zinc-400">
+    Loading top rated results...
+  </div>
+) : null}
 
           <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
             <div className="rounded-2xl border border-zinc-800 bg-zinc-950 p-3">

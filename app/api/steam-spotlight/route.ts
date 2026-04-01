@@ -1,23 +1,17 @@
 export const runtime = 'nodejs'
 
 import { createClient } from '@supabase/supabase-js'
-import { makePcCanonicalKey } from '@/lib/pcCanonical'
 
-type SteamStoreItem = {
-  steamAppID: string
+type SteamSpotlightCacheRow = {
+  steam_app_id: string
   title: string
-  salePrice: string
-  normalPrice: string
-  savings: string
+  slug: string
   thumb: string
-  storeID: string
-  platform: string
-  url: string
-}
-
-type PcGameResolveRow = {
-  steam_app_id?: string | null
-  canonical_key?: string | null
+  sale_price?: number | string | null
+  normal_price?: number | string | null
+  discount_percent?: number | string | null
+  store_id?: string | null
+  url?: string | null
 }
 
 function getServiceSupabase() {
@@ -25,202 +19,70 @@ function getServiceSupabase() {
   const serviceRole = process.env.SUPABASE_SERVICE_ROLE_KEY
 
   if (!url || !serviceRole) {
-    throw new Error('Missing Supabase env vars for steam cache')
+    throw new Error('Missing Supabase env vars for steam spotlight')
   }
 
   return createClient(url, serviceRole)
 }
 
-function isFresh(updatedAt: string, maxAgeMs: number) {
-  return Date.now() - new Date(updatedAt).getTime() <= maxAgeMs
-}
+function formatMoney(value?: number | string | null) {
+  const amount = Number(value || 0)
 
-async function readCache(cacheKey: string) {
-  const supabase = getServiceSupabase()
-
-  const { data, error } = await supabase
-    .from('deals_cache')
-    .select('payload, updated_at')
-    .eq('cache_key', cacheKey)
-    .maybeSingle()
-
-  if (error || !data) return null
-  return data as { payload: SteamStoreItem[]; updated_at: string }
-}
-
-function chunkArray<T>(items: T[], chunkSize: number) {
-  const chunks: T[][] = []
-
-  for (let i = 0; i < items.length; i += chunkSize) {
-    chunks.push(items.slice(i, i + chunkSize))
+  if (!Number.isFinite(amount) || amount <= 0) {
+    return ''
   }
 
-  return chunks
+  return amount.toFixed(2)
 }
 
-async function resolveLocally(items: SteamStoreItem[]) {
-  const supabase = getServiceSupabase()
+function formatSavings(value?: number | string | null) {
+  const amount = Number(value || 0)
 
-  const appIds = Array.from(
-    new Set(
-      items
-        .map((item) => String(item.steamAppID || '').trim())
-        .filter(Boolean)
-    )
-  )
-
-  const canonicalKeys = Array.from(
-    new Set(
-      items
-        .map((item) => makePcCanonicalKey(String(item.title || '').trim()))
-        .filter(Boolean)
-    )
-  )
-
-  const matchedAppIds = new Set<string>()
-  const matchedCanonicalKeys = new Set<string>()
-
-  for (const chunk of chunkArray(appIds, 200)) {
-    const { data, error } = await supabase
-      .from('pc_games')
-      .select('steam_app_id')
-      .eq('is_active', true)
-      .in('steam_app_id', chunk)
-
-    if (error) {
-      throw error
-    }
-
-    for (const row of (Array.isArray(data) ? data : []) as PcGameResolveRow[]) {
-      const value = String(row.steam_app_id || '').trim()
-      if (value) matchedAppIds.add(value)
-    }
+  if (!Number.isFinite(amount) || amount <= 0) {
+    return '0'
   }
 
-  for (const chunk of chunkArray(canonicalKeys, 200)) {
-    const { data, error } = await supabase
-      .from('pc_games')
-      .select('canonical_key')
-      .eq('is_active', true)
-      .in('canonical_key', chunk)
-
-    if (error) {
-      throw error
-    }
-
-    for (const row of (Array.isArray(data) ? data : []) as PcGameResolveRow[]) {
-      const value = String(row.canonical_key || '').trim()
-      if (value) matchedCanonicalKeys.add(value)
-    }
-  }
-
-  return items.filter((item) => {
-    const appId = String(item.steamAppID || '').trim()
-    const canonicalKey = makePcCanonicalKey(String(item.title || '').trim())
-
-    if (appId && matchedAppIds.has(appId)) return true
-    if (canonicalKey && matchedCanonicalKeys.has(canonicalKey)) return true
-
-    return false
-  })
+  return String(Math.max(0, Math.min(99, Math.round(amount))))
 }
 
 export async function GET(request: Request) {
-  const CACHE_TTL_MS = 1000 * 60 * 60 * 6
-
   try {
     const { searchParams } = new URL(request.url)
-    const debug = searchParams.get('debug') === '1'
-    const includeUnresolved = searchParams.get('includeUnresolved') === '1'
-    const limitParam = Number(searchParams.get('limit') || '')
-    const limit =
-      Number.isFinite(limitParam) && limitParam > 0
-        ? Math.min(limitParam, 1200)
-        : null
+    const limit = Math.max(1, Math.min(50, Number(searchParams.get('limit') || '36')))
 
-    const [spotlightCache, salesCache] = await Promise.all([
-      readCache('steam_spotlight_us'),
-      readCache('steam_sales_us'),
-    ])
+    const supabase = getServiceSupabase()
 
-    const spotlightItems = Array.isArray(spotlightCache?.payload)
-      ? spotlightCache!.payload
-      : []
-    const salesItems = Array.isArray(salesCache?.payload)
-      ? salesCache!.payload
-      : []
+    const { data, error } = await supabase
+      .from('steam_spotlight_cache')
+      .select(
+        'steam_app_id, title, slug, thumb, sale_price, normal_price, discount_percent, store_id, url'
+      )
+      .order('discount_percent', { ascending: false })
+      .order('sale_price', { ascending: true })
+      .limit(limit)
 
-    const spotlightFresh =
-      !!spotlightCache && isFresh(spotlightCache.updated_at, CACHE_TTL_MS)
-    const salesFresh =
-      !!salesCache && isFresh(salesCache.updated_at, CACHE_TTL_MS)
-
-    let selected: SteamStoreItem[] = []
-    let source = 'none'
-
-    if (limit && limit <= 12) {
-      if (spotlightItems.length > 0) {
-        selected = spotlightItems
-        source = spotlightFresh ? 'spotlight-fresh' : 'spotlight-stale'
-      } else if (salesItems.length > 0) {
-        selected = salesItems
-        source = salesFresh ? 'sales-fresh-fallback' : 'sales-stale-fallback'
-      }
-    } else {
-      if (salesItems.length > 0) {
-        selected = salesItems
-        source = salesFresh ? 'sales-fresh' : 'sales-stale'
-      } else if (spotlightItems.length > 0) {
-        selected = spotlightItems
-        source = spotlightFresh ? 'spotlight-fallback-fresh' : 'spotlight-fallback-stale'
-      }
+    if (error) {
+      throw error
     }
 
-    const locallyResolvable = includeUnresolved
-      ? selected
-      : await resolveLocally(selected)
+    const items = Array.isArray(data)
+      ? (data as SteamSpotlightCacheRow[]).map((row) => ({
+          steamAppID: String(row.steam_app_id || '').trim(),
+          title: String(row.title || '').trim(),
+          slug: String(row.slug || '').trim(),
+          salePrice: formatMoney(row.sale_price),
+          normalPrice: formatMoney(row.normal_price),
+          savings: formatSavings(row.discount_percent),
+          thumb: String(row.thumb || '').trim(),
+          storeID: String(row.store_id || '1').trim(),
+          platform: 'pc',
+          url: String(row.url || '').trim(),
+        }))
+      : []
 
-    const output = limit ? locallyResolvable.slice(0, limit) : locallyResolvable
-
-    if (debug) {
-      return Response.json({
-        source,
-        selectedCountBeforeFilter: selected.length,
-        selectedCountAfterFilter: locallyResolvable.length,
-        outputCount: output.length,
-        spotlightCount: spotlightItems.length,
-        salesCount: salesItems.length,
-        spotlightUpdatedAt: spotlightCache?.updated_at || null,
-        salesUpdatedAt: salesCache?.updated_at || null,
-        spotlightFresh,
-        salesFresh,
-        includeUnresolved,
-      })
-    }
-
-    return Response.json(output)
+    return Response.json(items)
   } catch (error) {
-    console.error('api/steam-spotlight error', error)
-
-    const { searchParams } = new URL(request.url)
-    const debug = searchParams.get('debug') === '1'
-
-    if (debug) {
-      return Response.json({
-        source: 'error',
-        selectedCountBeforeFilter: 0,
-        selectedCountAfterFilter: 0,
-        outputCount: 0,
-        spotlightCount: 0,
-        salesCount: 0,
-        spotlightUpdatedAt: null,
-        salesUpdatedAt: null,
-        spotlightFresh: false,
-        salesFresh: false,
-        error: error instanceof Error ? error.message : 'Unknown steam cache error',
-      })
-    }
-
-    return Response.json([])
+    console.error('steam spotlight error', error)
+    return Response.json([], { status: 500 })
   }
 }

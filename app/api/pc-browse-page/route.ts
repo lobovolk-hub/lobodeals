@@ -1,38 +1,21 @@
 export const runtime = 'nodejs'
 
 import { createClient } from '@supabase/supabase-js'
-import { makePcGameSlug } from '@/lib/pcCanonical'
 
-type PcGameRow = {
-  id: string
-  steam_app_id?: string | null
-  slug?: string | null
-  steam_name?: string | null
-  canonical_title?: string | null
-  capsule_image?: string | null
-  header_image?: string | null
-  hero_image_url?: string | null
-  description?: string | null
-  short_description?: string | null
-  rawg_description?: string | null
-  is_free_to_play?: boolean | null
-  steam_type?: string | null
-}
-
-type PcStoreOfferRow = {
+type PcPublicCatalogRow = {
   pc_game_id: string
+  steam_app_id?: string | null
+  slug: string
+  title: string
+  thumb: string
   sale_price?: number | string | null
   normal_price?: number | string | null
   discount_percent?: number | string | null
   store_id?: string | null
   url?: string | null
-  is_available?: boolean | null
-  region_code?: string | null
-  currency_code?: string | null
-  price_source?: string | null
-  price_last_synced_at?: string | null
-  final_formatted?: string | null
-  initial_formatted?: string | null
+  is_free_to_play?: boolean | null
+  has_active_offer?: boolean | null
+  is_catalog_ready?: boolean | null
 }
 
 type PcBrowseItem = {
@@ -51,8 +34,6 @@ type PcBrowseItem = {
   isCatalogReady: boolean
 }
 
-const SOURCE_PAGE_SIZE = 500
-
 function getServiceSupabase() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL
   const serviceRole = process.env.SUPABASE_SERVICE_ROLE_KEY
@@ -62,40 +43,6 @@ function getServiceSupabase() {
   }
 
   return createClient(url, serviceRole)
-}
-
-function hasText(value?: string | null) {
-  return String(value || '').trim().length > 0
-}
-
-function hasTitle(row: PcGameRow) {
-  return hasText(row.steam_name) || hasText(row.canonical_title)
-}
-
-function hasImage(row: PcGameRow) {
-  return (
-    hasText(row.hero_image_url) ||
-    hasText(row.header_image) ||
-    hasText(row.capsule_image)
-  )
-}
-
-function hasDescription(row: PcGameRow) {
-  return (
-    hasText(row.description) ||
-    hasText(row.short_description) ||
-    hasText(row.rawg_description)
-  )
-}
-
-function isStructurallyPublicable(row: PcGameRow) {
-  return (
-    row.steam_type === 'game' &&
-    hasText(row.slug) &&
-    hasTitle(row) &&
-    hasImage(row) &&
-    hasDescription(row)
-  )
 }
 
 function normalizeSteamTitle(value: string) {
@@ -131,290 +78,167 @@ function formatSavings(value?: number | string | null) {
   return String(Math.max(0, Math.min(99, Math.round(amount))))
 }
 
-function getSafeDiscountPercent(
-  salePrice?: string | number | null,
-  normalPrice?: string | number | null,
-  savings?: string | number | null
-) {
-  const sale = Number(salePrice || 0)
-  const normal = Number(normalPrice || 0)
-  const rawSavings = Number(savings || 0)
-
-  if (normal > 0 && sale >= 0 && normal > sale) {
-    const computed = ((normal - sale) / normal) * 100
-    return Math.max(0, Math.min(99, Math.round(computed)))
+function mapRowToItem(row: PcPublicCatalogRow): PcBrowseItem {
+  return {
+    id: String(row.pc_game_id || '').trim(),
+    steamAppID: String(row.steam_app_id || '').trim(),
+    slug: String(row.slug || '').trim(),
+    title: String(row.title || '').trim(),
+    thumb: String(row.thumb || '').trim(),
+    salePrice: formatMoney(row.sale_price),
+    normalPrice: formatMoney(row.normal_price),
+    savings: formatSavings(row.discount_percent),
+    storeID: String(row.store_id || '1').trim(),
+    url: String(row.url || '').trim(),
+    isFreeToPlay: Boolean(row.is_free_to_play),
+    hasActiveOffer: Boolean(row.has_active_offer),
+    isCatalogReady: Boolean(row.is_catalog_ready),
   }
-
-  if (Number.isFinite(rawSavings) && rawSavings > 0) {
-    return Math.max(0, Math.min(99, Math.round(rawSavings)))
-  }
-
-  return 0
 }
 
-function chooseBestOffer(
-  current: PcStoreOfferRow | undefined,
-  incoming: PcStoreOfferRow
+function applyCommonFilters(
+  query: any,
+  normalizedQuery: string,
+  storeFilter: string,
+  priceFilter: string
 ) {
-  if (!current) return incoming
-
-  const currentModern =
-    current.region_code === 'us' &&
-    current.price_source === 'steam_appdetails_us' &&
-    !!String(current.price_last_synced_at || '').trim()
-
-  const incomingModern =
-    incoming.region_code === 'us' &&
-    incoming.price_source === 'steam_appdetails_us' &&
-    !!String(incoming.price_last_synced_at || '').trim()
-
-  if (incomingModern && !currentModern) return incoming
-  if (!incomingModern && currentModern) return current
-
-  const currentDiscount = Number(current.discount_percent || 0)
-  const incomingDiscount = Number(incoming.discount_percent || 0)
-
-  if (incomingDiscount > currentDiscount) return incoming
-  if (incomingDiscount < currentDiscount) return current
-
-  const currentSale = Number(current.sale_price || 999999)
-  const incomingSale = Number(incoming.sale_price || 999999)
-
-  if (incomingSale < currentSale) return incoming
-  return current
-}
-
-function chunkArray<T>(items: T[], chunkSize: number) {
-  const chunks: T[][] = []
-
-  for (let i = 0; i < items.length; i += chunkSize) {
-    chunks.push(items.slice(i, i + chunkSize))
+  if (storeFilter !== 'all') {
+    query = query.eq('store_id', storeFilter)
   }
 
-  return chunks
-}
-
-async function loadModernOffersForIds(
-  supabase: ReturnType<typeof getServiceSupabase>,
-  gameIds: string[]
-) {
-  const offersByGameId = new Map<string, PcStoreOfferRow>()
-
-  const idChunks = chunkArray(gameIds, 200)
-
-  for (const ids of idChunks) {
-    const { data: offers, error: offersError } = await supabase
-      .from('pc_store_offers')
-      .select(
-        'pc_game_id, sale_price, normal_price, discount_percent, store_id, url, is_available, region_code, currency_code, price_source, price_last_synced_at, final_formatted, initial_formatted'
-      )
-      .eq('store_id', '1')
-      .eq('region_code', 'us')
-      .eq('is_available', true)
-      .in('pc_game_id', ids)
-
-    if (offersError) {
-      throw offersError
-    }
-
-    for (const row of (offers || []) as PcStoreOfferRow[]) {
-      const key = String(row.pc_game_id || '').trim()
-      if (!key) continue
-
-      offersByGameId.set(key, chooseBestOffer(offersByGameId.get(key), row))
-    }
+  if (priceFilter === 'under-5') {
+    query = query.gt('sale_price', 0).lt('sale_price', 5)
+  } else if (priceFilter === 'under-10') {
+    query = query.gt('sale_price', 0).lt('sale_price', 10)
+  } else if (priceFilter === 'over-80') {
+    query = query.gte('discount_percent', 80)
   }
 
-  return offersByGameId
-}
-
-async function loadAllPublicableGames(
-  supabase: ReturnType<typeof getServiceSupabase>
-) {
-  const results: PcBrowseItem[] = []
-
-  for (let page = 0; page < 80; page += 1) {
-    const from = page * SOURCE_PAGE_SIZE
-    const to = from + SOURCE_PAGE_SIZE - 1
-
-    const { data: pcGames, error: gamesError } = await supabase
-      .from('pc_games')
-      .select(
-        'id, steam_app_id, slug, steam_name, canonical_title, capsule_image, header_image, hero_image_url, description, short_description, rawg_description, is_free_to_play, steam_type'
-      )
-      .eq('steam_type', 'game')
-      .order('steam_app_id', { ascending: false })
-      .range(from, to)
-
-    if (gamesError) {
-      throw gamesError
-    }
-
-    const games = Array.isArray(pcGames) ? (pcGames as PcGameRow[]) : []
-
-    if (!games.length) {
-      break
-    }
-
-    const gameIds = games
-      .map((game) => String(game.id || '').trim())
-      .filter(Boolean)
-
-    const offersByGameId = await loadModernOffersForIds(supabase, gameIds)
-
-    for (const game of games) {
-      const id = String(game.id || '').trim()
-      const title = String(game.steam_name || game.canonical_title || '').trim()
-      const slug =
-        String(game.slug || '').trim() ||
-        makePcGameSlug(
-          String(game.steam_name || game.canonical_title || '').trim(),
-          String(game.steam_app_id || '').trim()
-        )
-
-      if (!id || !slug || !title) continue
-      if (!isStructurallyPublicable(game)) continue
-
-      const offer = offersByGameId.get(id)
-      const isFree = Boolean(game.is_free_to_play)
-
-      if (!offer && !isFree) continue
-
-      const thumb =
-        String(game.hero_image_url || '').trim() ||
-        String(game.header_image || '').trim() ||
-        String(game.capsule_image || '').trim()
-
-      results.push({
-        id,
-        steamAppID: String(game.steam_app_id || '').trim(),
-        slug,
-        title,
-        thumb,
-        salePrice: formatMoney(offer?.sale_price),
-        normalPrice: formatMoney(offer?.normal_price),
-        savings: formatSavings(offer?.discount_percent),
-        storeID: String(offer?.store_id || '1').trim(),
-        url: String(offer?.url || '').trim(),
-        isFreeToPlay: isFree,
-        hasActiveOffer: Boolean(offer),
-        isCatalogReady: true,
-      })
-    }
-
-    if (games.length < SOURCE_PAGE_SIZE) {
-      break
-    }
+  if (normalizedQuery) {
+    query = query.ilike('search_title_normalized', `%${normalizedQuery}%`)
   }
 
-  return results
+  return query
+}
+
+function applySort(query: any, sort: string) {
+  if (sort === 'biggest-discount') {
+    return query
+      .order('discount_percent', { ascending: false })
+      .order('sale_price', { ascending: true, nullsFirst: false })
+      .order('sort_latest', { ascending: false })
+  }
+
+  if (sort === 'latest') {
+    return query
+      .order('sort_latest', { ascending: false })
+      .order('discount_percent', { ascending: false })
+  }
+
+  if (sort === 'best') {
+    return query
+      .order('has_active_offer', { ascending: false })
+      .order('discount_percent', { ascending: false })
+      .order('sale_price', { ascending: true, nullsFirst: false })
+      .order('sort_latest', { ascending: false })
+  }
+
+  return query
+    .order('has_active_offer', { ascending: false })
+    .order('discount_percent', { ascending: false })
+    .order('title', { ascending: true })
+}
+
+function isBaseBrowseView(normalizedQuery: string, storeFilter: string, priceFilter: string) {
+  return !normalizedQuery && storeFilter === 'all' && priceFilter === 'all'
+}
+
+async function getCachedBaseTotal(supabase: any) {
+  const { data, error } = await supabase
+    .from('pc_public_catalog_meta')
+    .select('total_items')
+    .eq('key', 'default')
+    .maybeSingle()
+
+  if (error) {
+    throw error
+  }
+
+  return Number(data?.total_items || 0)
 }
 
 export async function GET(request: Request) {
   try {
     const { searchParams } = new URL(request.url)
 
-    const page = Math.max(1, Number(searchParams.get('page') || '1'))
-    const pageSize = Math.max(1, Math.min(60, Number(searchParams.get('pageSize') || '36')))
+    const requestedPage = Math.max(1, Number(searchParams.get('page') || '1'))
+    const pageSize = Math.max(
+      1,
+      Math.min(60, Number(searchParams.get('pageSize') || '36'))
+    )
     const query = searchParams.get('q') || ''
     const sort = searchParams.get('sort') || 'all'
     const storeFilter = searchParams.get('store') || 'all'
     const priceFilter = searchParams.get('price') || 'all'
 
-    const supabase = getServiceSupabase()
-    const allGames = await loadAllPublicableGames(supabase)
-
     const normalizedQuery = normalizeSteamTitle(query)
+    const baseView = isBaseBrowseView(normalizedQuery, storeFilter, priceFilter)
 
-    let filtered = allGames.filter((item) => {
-      if (storeFilter !== 'all' && item.storeID !== storeFilter) return false
+    const supabase = getServiceSupabase()
 
-      const salePrice = Number(item.salePrice || 0)
-      const savings = getSafeDiscountPercent(
-        item.salePrice,
-        item.normalPrice,
-        item.savings
+    let totalItems = 0
+
+    if (baseView) {
+      totalItems = await getCachedBaseTotal(supabase)
+    } else {
+      let countQuery = supabase
+        .from('pc_public_catalog_cache')
+        .select('pc_game_id', { count: 'exact', head: true })
+
+      countQuery = applyCommonFilters(
+        countQuery,
+        normalizedQuery,
+        storeFilter,
+        priceFilter
       )
 
-      if (priceFilter === 'under-5' && !(salePrice > 0 && salePrice < 5)) return false
-      if (priceFilter === 'under-10' && !(salePrice > 0 && salePrice < 10)) return false
-      if (priceFilter === 'over-80' && savings < 80) return false
+      const { count, error: countError } = await countQuery
 
-      if (normalizedQuery) {
-        return normalizeSteamTitle(item.title).includes(normalizedQuery)
+      if (countError) {
+        throw countError
       }
 
-      return true
-    })
-
-    if (sort === 'best') {
-      filtered.sort((a, b) => {
-        const discountA = getSafeDiscountPercent(a.salePrice, a.normalPrice, a.savings)
-        const discountB = getSafeDiscountPercent(b.salePrice, b.normalPrice, b.savings)
-
-        const saleA = Number(a.salePrice || 999999)
-        const saleB = Number(b.salePrice || 999999)
-        const normalA = Number(a.normalPrice || 0)
-        const normalB = Number(b.normalPrice || 0)
-
-        const priceAttractivenessA =
-          saleA > 0 ? Math.max(0, 40 - saleA) : a.isFreeToPlay ? 24 : 0
-        const priceAttractivenessB =
-          saleB > 0 ? Math.max(0, 40 - saleB) : b.isFreeToPlay ? 24 : 0
-
-        const scoreA =
-          discountA * 1.6 +
-          priceAttractivenessA * 1.2 +
-          (a.hasActiveOffer ? 18 : 0) +
-          (normalA >= 20 ? 8 : 0) +
-          (a.isCatalogReady ? 6 : 0)
-
-        const scoreB =
-          discountB * 1.6 +
-          priceAttractivenessB * 1.2 +
-          (b.hasActiveOffer ? 18 : 0) +
-          (normalB >= 20 ? 8 : 0) +
-          (b.isCatalogReady ? 6 : 0)
-
-        if (scoreB !== scoreA) return scoreB - scoreA
-        if (discountB !== discountA) return discountB - discountA
-        return saleA - saleB
-      })
-    } else if (sort === 'biggest-discount') {
-      filtered.sort((a, b) => {
-        const discountA = getSafeDiscountPercent(a.salePrice, a.normalPrice, a.savings)
-        const discountB = getSafeDiscountPercent(b.salePrice, b.normalPrice, b.savings)
-
-        if (discountB !== discountA) return discountB - discountA
-
-        const saleA = Number(a.salePrice || 999999)
-        const saleB = Number(b.salePrice || 999999)
-
-        return saleA - saleB
-      })
-    } else if (sort === 'latest') {
-      filtered.sort((a, b) => Number(b.steamAppID || 0) - Number(a.steamAppID || 0))
-    } else {
-      filtered.sort((a, b) => {
-        if (b.hasActiveOffer !== a.hasActiveOffer) {
-          return Number(b.hasActiveOffer) - Number(a.hasActiveOffer)
-        }
-
-        const savingsDiff =
-          getSafeDiscountPercent(b.salePrice, b.normalPrice, b.savings) -
-          getSafeDiscountPercent(a.salePrice, a.normalPrice, a.savings)
-
-        if (savingsDiff !== 0) return savingsDiff
-
-        return a.title.localeCompare(b.title)
-      })
+      totalItems = Number(count || 0)
     }
 
-    const totalItems = filtered.length
-    const totalPages = Math.max(1, Math.ceil(totalItems / pageSize))
-    const safePage = Math.min(page, totalPages)
-    const startIndex = (safePage - 1) * pageSize
-    const items = filtered.slice(startIndex, startIndex + pageSize)
+    const totalPages = totalItems > 0 ? Math.ceil(totalItems / pageSize) : 1
+    const safePage = totalItems > 0 ? Math.min(requestedPage, totalPages) : 1
+    const safeFrom = (safePage - 1) * pageSize
+
+    let dataQuery = supabase
+      .from('pc_public_catalog_cache')
+      .select(
+        'pc_game_id, steam_app_id, slug, title, thumb, sale_price, normal_price, discount_percent, store_id, url, is_free_to_play, has_active_offer, is_catalog_ready'
+      )
+
+    dataQuery = applyCommonFilters(
+      dataQuery,
+      normalizedQuery,
+      storeFilter,
+      priceFilter
+    )
+
+    dataQuery = applySort(dataQuery, sort).range(safeFrom, safeFrom + pageSize - 1)
+
+    const { data, error: dataError } = await dataQuery
+
+    if (dataError) {
+      throw dataError
+    }
+
+    const rawItems = Array.isArray(data) ? (data as PcPublicCatalogRow[]) : []
+    const hasExtraItem = rawItems.length > pageSize
+    const items = rawItems.slice(0, pageSize).map(mapRowToItem)
 
     return Response.json({
       items,
@@ -422,6 +246,11 @@ export async function GET(request: Request) {
       totalPages,
       page: safePage,
       pageSize,
+      hasNextPage: baseView ? hasExtraItem || safePage < totalPages : safePage < totalPages,
+      mode: 'cache',
+      source: baseView
+        ? 'pc_public_catalog_cache+pc_public_catalog_meta'
+        : 'pc_public_catalog_cache',
     })
   } catch (error) {
     console.error('pc browse page error', error)
@@ -432,6 +261,9 @@ export async function GET(request: Request) {
       totalPages: 1,
       page: 1,
       pageSize: 36,
+      hasNextPage: false,
+      mode: 'error',
+      source: 'pc_public_catalog_cache',
     })
   }
 }

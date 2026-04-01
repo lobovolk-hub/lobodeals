@@ -1,6 +1,7 @@
 export const revalidate = 300
 
 import Link from 'next/link'
+import { createClient } from '@supabase/supabase-js'
 
 type HomeItem = {
   id: string
@@ -16,12 +17,152 @@ type HomeItem = {
   platform: string
 }
 
+type StorefrontSectionRow = {
+  section_key: string
+  position: number
+  pc_game_id: string
+  steam_app_id: string | null
+  slug: string
+  title: string
+  thumb: string
+  sale_price: number | string | null
+  normal_price: number | string | null
+  discount_percent: number | string | null
+  store_id: string | null
+  url: string | null
+  platform: string
+  updated_at: string
+}
+
 type StorefrontSectionsResponse = {
   steam_spotlight: HomeItem[]
   best_deals: HomeItem[]
   latest_discounts: HomeItem[]
   new_releases: HomeItem[]
   updatedAt: string | null
+}
+
+function getServiceSupabase() {
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL
+  const serviceRole = process.env.SUPABASE_SERVICE_ROLE_KEY
+
+  if (!url || !serviceRole) {
+    throw new Error('Missing Supabase env vars for home page')
+  }
+
+  return createClient(url, serviceRole)
+}
+
+function formatMoney(value?: number | string | null) {
+  const amount = Number(value || 0)
+
+  if (!Number.isFinite(amount) || amount <= 0) {
+    return ''
+  }
+
+  return amount.toFixed(2)
+}
+
+function formatSavings(value?: number | string | null) {
+  const amount = Number(value || 0)
+
+  if (!Number.isFinite(amount) || amount <= 0) {
+    return '0'
+  }
+
+  return String(Math.max(0, Math.min(99, Math.round(amount))))
+}
+
+function mapRow(row: StorefrontSectionRow): HomeItem {
+  return {
+    id: String(row.pc_game_id || '').trim(),
+    steamAppID: String(row.steam_app_id || '').trim(),
+    slug: String(row.slug || '').trim(),
+    title: String(row.title || '').trim(),
+    thumb: String(row.thumb || '').trim(),
+    salePrice: formatMoney(row.sale_price),
+    normalPrice: formatMoney(row.normal_price),
+    savings: formatSavings(row.discount_percent),
+    storeID: String(row.store_id || '1').trim(),
+    url: String(row.url || '').trim(),
+    platform: String(row.platform || 'pc').trim(),
+  }
+}
+
+async function getHomeData() {
+  const supabase = getServiceSupabase()
+
+  const [metaRes, sectionsRes] = await Promise.all([
+    supabase
+      .from('pc_public_catalog_meta')
+      .select('total_items, updated_at')
+      .eq('key', 'default')
+      .maybeSingle(),
+    supabase
+      .from('public_storefront_sections_cache')
+      .select(
+        'section_key, position, pc_game_id, steam_app_id, slug, title, thumb, sale_price, normal_price, discount_percent, store_id, url, platform, updated_at'
+      )
+      .in('section_key', [
+        'steam_spotlight',
+        'best_deals',
+        'latest_discounts',
+        'new_releases',
+      ])
+      .order('section_key', { ascending: true })
+      .order('position', { ascending: true }),
+  ])
+
+  if (metaRes.error) {
+    throw metaRes.error
+  }
+
+  if (sectionsRes.error) {
+    throw sectionsRes.error
+  }
+
+  const rows = Array.isArray(sectionsRes.data)
+    ? (sectionsRes.data as StorefrontSectionRow[])
+    : []
+
+  const grouped: StorefrontSectionsResponse = {
+    steam_spotlight: [],
+    best_deals: [],
+    latest_discounts: [],
+    new_releases: [],
+    updatedAt: rows.length > 0 ? rows[0].updated_at : null,
+  }
+
+  for (const row of rows) {
+    const mapped = mapRow(row)
+
+    if (row.section_key === 'steam_spotlight' && grouped.steam_spotlight.length < 4) {
+      grouped.steam_spotlight.push(mapped)
+      continue
+    }
+
+    if (row.section_key === 'best_deals' && grouped.best_deals.length < 4) {
+      grouped.best_deals.push(mapped)
+      continue
+    }
+
+    if (
+      row.section_key === 'latest_discounts' &&
+      grouped.latest_discounts.length < 4
+    ) {
+      grouped.latest_discounts.push(mapped)
+      continue
+    }
+
+    if (row.section_key === 'new_releases' && grouped.new_releases.length < 4) {
+      grouped.new_releases.push(mapped)
+    }
+  }
+
+  return {
+    steamCatalogSize: Number(metaRes.data?.total_items || 0),
+    storefront: grouped,
+  }
 }
 
 function buildGameHref(item: { slug: string; title: string }) {
@@ -135,22 +276,7 @@ function HomeSection({
 }
 
 export default async function HomePage() {
-  const baseUrl =
-    process.env.NEXT_PUBLIC_SITE_URL?.trim() || 'http://localhost:3000'
-
-  const [catalogStatsRes, storefrontRes] = await Promise.all([
-    fetch(`${baseUrl}/api/catalog-stats`, {
-      next: { revalidate: 300 },
-    }),
-    fetch(`${baseUrl}/api/storefront-sections?limit=4`, {
-      next: { revalidate: 300 },
-    }),
-  ])
-
-  const catalogStats = await catalogStatsRes.json()
-  const storefrontData: StorefrontSectionsResponse = await storefrontRes.json()
-
-  const steamCatalogSize = Number(catalogStats?.steamCatalogSize || 0)
+  const { steamCatalogSize, storefront } = await getHomeData()
 
   return (
     <main className="min-h-screen bg-zinc-950 text-zinc-100">
@@ -208,7 +334,7 @@ export default async function HomePage() {
                 Updated layer
               </p>
               <p className="mt-2 text-2xl font-bold text-white">
-                {storefrontData?.updatedAt ? 'Live' : 'Pending'}
+                {storefront?.updatedAt ? 'Live' : 'Pending'}
               </p>
               <p className="mt-1 text-xs text-zinc-500">
                 Driven by recurring public cache refresh jobs
@@ -236,28 +362,28 @@ export default async function HomePage() {
         <HomeSection
           title="Steam Spotlight"
           description="Current Steam spotlight entries surfaced from the public storefront layer."
-          items={storefrontData?.steam_spotlight || []}
+          items={storefront?.steam_spotlight || []}
           href="/pc?sort=steam-spotlight"
         />
 
         <HomeSection
           title="Best Deals"
           description="Discount-led picks from the public Steam PC layer."
-          items={storefrontData?.best_deals || []}
+          items={storefront?.best_deals || []}
           href="/pc?sort=best"
         />
 
         <HomeSection
           title="Latest Discounts"
           description="Recently refreshed discounted entries from the public Steam PC layer."
-          items={storefrontData?.latest_discounts || []}
+          items={storefront?.latest_discounts || []}
           href="/pc?sort=best"
         />
 
         <HomeSection
           title="New Releases"
           description="Recently released PC games already available in the public layer."
-          items={storefrontData?.new_releases || []}
+          items={storefront?.new_releases || []}
           href="/pc?sort=latest"
         />
       </section>

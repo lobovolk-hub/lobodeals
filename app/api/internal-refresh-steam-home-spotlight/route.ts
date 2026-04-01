@@ -261,7 +261,7 @@ export async function POST(request: Request) {
 
     const rowsToInsert = []
 
-    for (const appId of appIds) {
+    for (const [index, appId] of appIds.entries()) {
       const game = gamesByAppId.get(appId)
       if (!game) continue
 
@@ -276,6 +276,7 @@ export async function POST(request: Request) {
       const bestOffer = pickBestOffer(offersByGameId.get(game.id) || [])
 
       rowsToInsert.push({
+        position: index + 1,
         steam_app_id: appId,
         title,
         slug,

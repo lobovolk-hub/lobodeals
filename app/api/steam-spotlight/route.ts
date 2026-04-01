@@ -3,6 +3,7 @@ export const runtime = 'nodejs'
 import { createClient } from '@supabase/supabase-js'
 
 type SteamSpotlightCacheRow = {
+  position?: number | null
   steam_app_id: string
   title: string
   slug: string
@@ -55,10 +56,9 @@ export async function GET(request: Request) {
     const { data, error } = await supabase
       .from('steam_spotlight_cache')
       .select(
-        'steam_app_id, title, slug, thumb, sale_price, normal_price, discount_percent, store_id, url'
+        'position, steam_app_id, title, slug, thumb, sale_price, normal_price, discount_percent, store_id, url'
       )
-      .order('discount_percent', { ascending: false })
-      .order('sale_price', { ascending: true })
+      .order('position', { ascending: true })
       .limit(limit)
 
     if (error) {

@@ -175,11 +175,11 @@ async function findGameRow(
     'id, steam_app_id, slug, steam_name, canonical_title, canonical_key, normalized_title, steam_type, is_free_to_play, is_active, is_catalog_ready, release_date, short_description, description, header_image, capsule_image, hero_image_url, clip_url, metacritic, rawg_description, rawg_genres, rawg_platforms'
 
   const { data: bySlug, error: slugError } = await supabase
-    .from('pc_games')
-    .select(selectFields)
-    .eq('slug', slug)
-    .eq('is_active', true)
-    .maybeSingle()
+  .from('pc_games')
+  .select(selectFields)
+  .eq('slug', slug)
+  .eq('is_catalog_ready', true)
+  .maybeSingle()
 
   if (slugError) throw slugError
   if (bySlug) return bySlug as PcGameRow
@@ -188,11 +188,11 @@ async function findGameRow(
 
   if (steamAppIDHint) {
     const { data: byApp, error: appError } = await supabase
-      .from('pc_games')
-      .select(selectFields)
-      .eq('steam_app_id', steamAppIDHint)
-      .eq('is_active', true)
-      .maybeSingle()
+  .from('pc_games')
+  .select(selectFields)
+  .eq('steam_app_id', steamAppIDHint)
+  .eq('is_catalog_ready', true)
+  .maybeSingle()
 
     if (appError) throw appError
     if (byApp) return byApp as PcGameRow
@@ -203,11 +203,11 @@ async function findGameRow(
     const canonicalKey = makePcCanonicalKey(titleHint)
 
     const { data: byKey, error: keyError } = await supabase
-      .from('pc_games')
-      .select(selectFields)
-      .eq('canonical_key', canonicalKey)
-      .eq('is_active', true)
-      .limit(1)
+  .from('pc_games')
+  .select(selectFields)
+  .eq('canonical_key', canonicalKey)
+  .eq('is_catalog_ready', true)
+  .limit(1)
 
     if (keyError) throw keyError
     if (Array.isArray(byKey) && byKey.length > 0) {

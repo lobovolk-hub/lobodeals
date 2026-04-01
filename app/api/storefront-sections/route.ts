@@ -91,10 +91,7 @@ function mapRow(row: StorefrontSectionRow): StorefrontSectionItem {
 export async function GET(request: Request) {
   try {
     const { searchParams } = new URL(request.url)
-    const perSection = Math.max(
-      1,
-      Math.min(24, Number(searchParams.get('limit') || '8'))
-    )
+    const perSection = Math.max(1, Math.min(24, Number(searchParams.get('limit') || '8')))
 
     const supabase = getServiceSupabase()
 
@@ -103,12 +100,6 @@ export async function GET(request: Request) {
       .select(
         'section_key, position, pc_game_id, steam_app_id, slug, title, thumb, sale_price, normal_price, discount_percent, store_id, url, platform, updated_at'
       )
-      .in('section_key', [
-        'steam_spotlight',
-        'best_deals',
-        'latest_discounts',
-        'new_releases',
-      ])
       .order('section_key', { ascending: true })
       .order('position', { ascending: true })
 
@@ -167,14 +158,10 @@ export async function GET(request: Request) {
 
     return Response.json(
       {
-        steam_spotlight: [],
-        best_deals: [],
-        latest_discounts: [],
-        new_releases: [],
-        updatedAt: null,
+        success: false,
+        error: error instanceof Error ? error.message : 'Unknown storefront sections error',
       },
       { status: 500 }
     )
   }
 }
-

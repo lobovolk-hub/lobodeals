@@ -15,12 +15,25 @@ type SteamAppDetailsResponse = Record<
       type?: string
       short_description?: string
       detailed_description?: string
+      about_the_game?: string
       header_image?: string
       capsule_image?: string
+      background?: string
+      background_raw?: string
       is_free?: boolean
       release_date?: {
         date?: string
       }
+      metacritic?: {
+        score?: number
+        url?: string
+      }
+      genres?: Array<{
+        id?: string | number
+        description?: string
+      }>
+      developers?: string[]
+      publishers?: string[]
       price_overview?: {
         currency?: string
         initial?: number
@@ -29,7 +42,6 @@ type SteamAppDetailsResponse = Record<
         initial_formatted?: string
         final_formatted?: string
       }
-      packages?: number[]
       screenshots?: Array<{
         id?: number
         path_full?: string
@@ -167,6 +179,17 @@ function normalizeRawgPlatforms(
   )
 }
 
+function normalizeSteamGenres(
+  value?: Array<{
+    id?: string | number
+    description?: string
+  }>
+) {
+  if (!Array.isArray(value)) return []
+
+  return dedupeStrings(value.map((item) => String(item?.description || '')))
+}
+
 function extractRawgClipUrl(rawg: RawgGameDetail | null) {
   if (!rawg?.clip) return ''
 
@@ -269,7 +292,7 @@ async function fetchRawgGameByTitle(title: string) {
 
   const searchRes = await fetch(searchUrl, {
     headers: {
-      'User-Agent': 'LoboDeals/2.5',
+      'User-Agent': 'LoboDeals/2.52g',
     },
     cache: 'no-store',
   })
@@ -289,7 +312,7 @@ async function fetchRawgGameByTitle(title: string) {
 
   const detailRes = await fetch(detailUrl, {
     headers: {
-      'User-Agent': 'LoboDeals/2.5',
+      'User-Agent': 'LoboDeals/2.52g',
     },
     cache: 'no-store',
   })
@@ -364,7 +387,6 @@ async function loadTargetedGames(
       .from('pc_games')
       .select('id, steam_app_id, steam_name, canonical_title, steam_type, hero_image_url, metacritic, clip_url')
       .in('steam_app_id', steamAppIDs)
-      .eq('is_active', true)
 
     if (error) throw error
 
@@ -377,7 +399,6 @@ async function loadTargetedGames(
     const { data, error } = await supabase
       .from('pc_games')
       .select('id, steam_app_id, steam_name, canonical_title, steam_type, hero_image_url, metacritic, clip_url')
-      .eq('is_active', true)
       .or(
         [
           `steam_name.ilike.%${title}%`,
@@ -403,7 +424,7 @@ async function loadPriorityGames(
   const { data, error } = await supabase
     .from('pc_games')
     .select('id, steam_app_id, steam_name, canonical_title, steam_type, hero_image_url, metacritic, clip_url, updated_at')
-    .eq('is_active', true)
+    .eq('is_catalog_ready', true)
     .eq('steam_type', 'game')
     .order('updated_at', { ascending: true, nullsFirst: true })
     .limit(Math.max(limit * 8, 200))
@@ -527,7 +548,7 @@ export async function POST(request: Request) {
 
         const response = await fetch(appdetailsUrl, {
           headers: {
-            'User-Agent': 'LoboDeals/2.5',
+            'User-Agent': 'LoboDeals/2.52g',
           },
           cache: 'no-store',
         })
@@ -562,6 +583,13 @@ export async function POST(request: Request) {
           data.name || game.steam_name || game.canonical_title || ''
         ).trim()
 
+        const steamGenres = normalizeSteamGenres(data.genres)
+        const steamDevelopers = dedupeStrings(Array.isArray(data.developers) ? data.developers : [])
+        const steamPublishers = dedupeStrings(Array.isArray(data.publishers) ? data.publishers : [])
+
+        const steamMovieUrl = extractSteamMovieUrl(data.movies)
+        const steamMetacritic = Number(data.metacritic?.score || 0)
+
         const rawg = canonicalTitle
           ? await fetchRawgGameByTitle(canonicalTitle)
           : null
@@ -571,19 +599,25 @@ export async function POST(request: Request) {
           await upsertRawgCache(supabase, canonicalTitle, rawg)
         }
 
-        const steamMovieUrl = extractSteamMovieUrl(data.movies)
         const rawgClipUrl = extractRawgClipUrl(rawg)
-
-        const heroImageUrl =
-          String(rawg?.background_image || '').trim() ||
-          String(rawg?.background_image_additional || '').trim() ||
-          String(data.header_image || '').trim()
-
-        const clipUrl = rawgClipUrl || steamMovieUrl
-        const metacritic = Number(rawg?.metacritic || 0)
         const rawgDescription = String(rawg?.description || '').trim()
         const rawgGenres = normalizeRawgGenres(rawg?.genres)
         const rawgPlatforms = normalizeRawgPlatforms(rawg?.platforms)
+
+        const heroImageUrl =
+          String(data.background_raw || '').trim() ||
+          String(data.background || '').trim() ||
+          String(data.header_image || '').trim() ||
+          String(rawg?.background_image || '').trim() ||
+          String(rawg?.background_image_additional || '').trim()
+
+        const clipUrl = steamMovieUrl || rawgClipUrl
+        const metacritic =
+          steamMetacritic > 0
+            ? steamMetacritic
+            : Number(rawg?.metacritic || 0) > 0
+            ? Number(rawg?.metacritic || 0)
+            : null
 
         const { error: updateError } = await supabase
           .from('pc_games')
@@ -598,6 +632,7 @@ export async function POST(request: Request) {
             steam_type: String(data.type || '').trim() || null,
             short_description: String(data.short_description || '').trim() || null,
             description:
+              String(data.about_the_game || '').trim() ||
               String(data.detailed_description || '').trim() ||
               rawgDescription ||
               null,
@@ -611,7 +646,11 @@ export async function POST(request: Request) {
               null,
             hero_image_url: heroImageUrl || null,
             clip_url: clipUrl || null,
-            metacritic: metacritic > 0 ? metacritic : null,
+            steam_movie_url: clipUrl || null,
+            metacritic: metacritic,
+            steam_genres: steamGenres.length > 0 ? steamGenres : null,
+            steam_developers: steamDevelopers.length > 0 ? steamDevelopers : null,
+            steam_publishers: steamPublishers.length > 0 ? steamPublishers : null,
             rawg_description: rawgDescription || null,
             rawg_genres: rawgGenres.length > 0 ? rawgGenres : null,
             rawg_platforms: rawgPlatforms.length > 0 ? rawgPlatforms : null,
@@ -658,8 +697,6 @@ export async function POST(request: Request) {
           priceRowsUpserted += 1
         }
 
-        enriched += 1
-
         const screenshotRows = Array.isArray(data.screenshots)
           ? data.screenshots
               .map((shot, index) => ({
@@ -670,12 +707,12 @@ export async function POST(request: Request) {
               .filter((row) => row.image_url)
           : []
 
-        if (screenshotRows.length > 0) {
-          await supabase
-            .from('pc_game_screenshots')
-            .delete()
-            .eq('pc_game_id', game.id)
+        await supabase
+          .from('pc_game_screenshots')
+          .delete()
+          .eq('pc_game_id', game.id)
 
+        if (screenshotRows.length > 0) {
           const { error: screenshotsError } = await supabase
             .from('pc_game_screenshots')
             .insert(screenshotRows)
@@ -684,6 +721,8 @@ export async function POST(request: Request) {
             screenshotsInserted += screenshotRows.length
           }
         }
+
+        enriched += 1
       }
 
       if (targetedGames) {
@@ -694,7 +733,7 @@ export async function POST(request: Request) {
       }
     }
 
-    await upsertSyncLog(supabase, 'success', 'Steam + RAWG enrich finished', {
+    await upsertSyncLog(supabase, 'success', 'Steam-first enrich finished', {
       processed,
       enriched,
       screenshotsInserted,
@@ -726,7 +765,7 @@ export async function POST(request: Request) {
     await upsertSyncLog(
       supabase,
       'error',
-      'Steam + RAWG enrich crashed',
+      'Steam-first enrich crashed',
       {
         error: error instanceof Error ? error.message : 'Unknown error',
       }

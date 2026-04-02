@@ -114,12 +114,17 @@ async function getHomeData() {
         .order('position', { ascending: true }),
     ])
 
-    if (metaRes.error) {
-      throw metaRes.error
-    }
-
-    if (sectionsRes.error) {
-      throw sectionsRes.error
+    if (metaRes.error || sectionsRes.error) {
+      return {
+        steamCatalogSize: 0,
+        storefront: {
+          steam_spotlight: [],
+          best_deals: [],
+          latest_discounts: [],
+          new_releases: [],
+          updatedAt: null,
+        } satisfies StorefrontSectionsResponse,
+      }
     }
 
     const rows = Array.isArray(sectionsRes.data)
@@ -147,10 +152,7 @@ async function getHomeData() {
         continue
       }
 
-      if (
-        row.section_key === 'latest_discounts' &&
-        grouped.latest_discounts.length < 4
-      ) {
+      if (row.section_key === 'latest_discounts' && grouped.latest_discounts.length < 4) {
         grouped.latest_discounts.push(mapped)
         continue
       }
@@ -164,9 +166,7 @@ async function getHomeData() {
       steamCatalogSize: Number(metaRes.data?.total_items || 0),
       storefront: grouped,
     }
-  } catch (error) {
-    console.error('home data error', error)
-
+  } catch {
     return {
       steamCatalogSize: 0,
       storefront: {
@@ -302,13 +302,12 @@ export default async function HomePage() {
           </p>
 
           <h1 className="mt-2 text-3xl font-bold sm:text-4xl">
-            Game deals and catalog tracking, built for scale
+            Steam-first game deals and catalog tracking
           </h1>
 
           <p className="mt-4 max-w-3xl text-zinc-400">
-            Steam-first, PC-first, and growing fast. The public PC layer is now
-            backed by persistent catalog data, recurring refresh jobs, and curated
-            storefront sections.
+            One canonical PC page per title, real Steam screenshots, curated highlights,
+            persistent public caches, and a cleaner storefront built to scale.
           </p>
 
           <div className="mt-6 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
@@ -330,7 +329,7 @@ export default async function HomePage() {
               </p>
               <p className="mt-2 text-2xl font-bold text-white">4</p>
               <p className="mt-1 text-xs text-zinc-500">
-                Spotlight, best deals, latest discounts, new releases
+                Highlights, best deals, latest discounts, latest releases
               </p>
             </div>
 
@@ -338,9 +337,9 @@ export default async function HomePage() {
               <p className="text-xs uppercase tracking-wider text-zinc-500">
                 Current focus
               </p>
-              <p className="mt-2 text-2xl font-bold text-white">2.52e</p>
+              <p className="mt-2 text-2xl font-bold text-white">2.52g</p>
               <p className="mt-1 text-xs text-zinc-500">
-                Lean Steam-first storefront and public catalog
+                Steam-first PC standardization before PlayStation
               </p>
             </div>
 
@@ -359,47 +358,47 @@ export default async function HomePage() {
 
           <div className="mt-6 flex flex-wrap gap-3">
             <Link
-              href="/pc"
+              href="/pc?page=1&sort=all"
               className="rounded-xl bg-white px-4 py-2 text-sm font-semibold text-black transition hover:opacity-90"
             >
-              Open PC catalog
+              Open PC
             </Link>
 
             <Link
-              href="/wishlist"
+              href="/tracked"
               className="rounded-xl border border-zinc-700 px-4 py-2 text-sm font-medium text-zinc-200 transition hover:bg-zinc-800"
             >
-              Open wishlist
+              Open tracked
             </Link>
           </div>
         </header>
 
         <HomeSection
-          title="Steam Spotlight"
-          description="Current Steam spotlight entries surfaced from the public storefront layer."
+          title="Highlights"
+          description="Four hand-picked PC highlights for the current month."
           items={storefront?.steam_spotlight || []}
-          href="/pc?sort=steam-spotlight"
+          href="/pc?page=1&sort=all"
         />
 
         <HomeSection
           title="Best Deals"
           description="Discount-led picks from the public Steam PC layer."
           items={storefront?.best_deals || []}
-          href="/pc?sort=best"
+          href="/pc?page=1&sort=best"
         />
 
         <HomeSection
           title="Latest Discounts"
           description="Recently refreshed discounted entries from the public Steam PC layer."
           items={storefront?.latest_discounts || []}
-          href="/pc?sort=latest-discounts"
+          href="/pc?page=1&sort=latest-discounts"
         />
 
         <HomeSection
-          title="New Releases"
+          title="Latest Releases"
           description="Recently released PC games already available in the public layer."
           items={storefront?.new_releases || []}
-          href="/pc?sort=latest"
+          href="/pc?page=1&sort=latest"
         />
       </section>
     </main>

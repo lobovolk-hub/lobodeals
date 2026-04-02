@@ -119,15 +119,15 @@ export default function Navbar() {
                     onClick={() => setPlatformsOpen(false)}
                     className="block px-4 py-3 text-sm text-zinc-100 transition hover:bg-zinc-900"
                   >
-                    Browse PC
+                    PC
                   </Link>
 
                   <Link
-                    href="/pc?page=1&sort=latest"
+                    href="/pc?page=1&sort=best"
                     onClick={() => setPlatformsOpen(false)}
                     className="block px-4 py-3 text-sm text-zinc-100 transition hover:bg-zinc-900"
                   >
-                    Latest Steam entries
+                    Best Deals
                   </Link>
 
                   <Link
@@ -135,7 +135,15 @@ export default function Navbar() {
                     onClick={() => setPlatformsOpen(false)}
                     className="block px-4 py-3 text-sm text-zinc-100 transition hover:bg-zinc-900"
                   >
-                    Latest discounts
+                    Latest Discounts
+                  </Link>
+
+                  <Link
+                    href="/pc?page=1&sort=latest"
+                    onClick={() => setPlatformsOpen(false)}
+                    className="block px-4 py-3 text-sm text-zinc-100 transition hover:bg-zinc-900"
+                  >
+                    Latest Releases
                   </Link>
 
                   <Link
@@ -143,15 +151,15 @@ export default function Navbar() {
                     onClick={() => setPlatformsOpen(false)}
                     className="block px-4 py-3 text-sm text-zinc-100 transition hover:bg-zinc-900"
                   >
-                    Biggest discounts
+                    Biggest Discounts
                   </Link>
 
                   <Link
-                    href="/pc?page=1&sort=steam-spotlight"
+                    href="/pc?page=1&sort=top-rated"
                     onClick={() => setPlatformsOpen(false)}
                     className="block px-4 py-3 text-sm text-zinc-100 transition hover:bg-zinc-900"
                   >
-                    Steam Spotlight
+                    Top Rated
                   </Link>
 
                   <div className="border-t border-zinc-800 px-4 py-2 text-[11px] uppercase tracking-[0.25em] text-zinc-500">
@@ -282,15 +290,15 @@ export default function Navbar() {
                     onClick={closeMobileMenu}
                     className="rounded-lg px-3 py-2 text-zinc-100 transition hover:bg-zinc-800"
                   >
-                    Browse PC
+                    PC
                   </Link>
 
                   <Link
-                    href="/pc?page=1&sort=latest"
+                    href="/pc?page=1&sort=best"
                     onClick={closeMobileMenu}
                     className="rounded-lg px-3 py-2 text-zinc-100 transition hover:bg-zinc-800"
                   >
-                    Latest Steam entries
+                    Best Deals
                   </Link>
 
                   <Link
@@ -298,7 +306,15 @@ export default function Navbar() {
                     onClick={closeMobileMenu}
                     className="rounded-lg px-3 py-2 text-zinc-100 transition hover:bg-zinc-800"
                   >
-                    Latest discounts
+                    Latest Discounts
+                  </Link>
+
+                  <Link
+                    href="/pc?page=1&sort=latest"
+                    onClick={closeMobileMenu}
+                    className="rounded-lg px-3 py-2 text-zinc-100 transition hover:bg-zinc-800"
+                  >
+                    Latest Releases
                   </Link>
 
                   <Link
@@ -306,15 +322,15 @@ export default function Navbar() {
                     onClick={closeMobileMenu}
                     className="rounded-lg px-3 py-2 text-zinc-100 transition hover:bg-zinc-800"
                   >
-                    Biggest discounts
+                    Biggest Discounts
                   </Link>
 
                   <Link
-                    href="/pc?page=1&sort=steam-spotlight"
+                    href="/pc?page=1&sort=top-rated"
                     onClick={closeMobileMenu}
                     className="rounded-lg px-3 py-2 text-zinc-100 transition hover:bg-zinc-800"
                   >
-                    Steam Spotlight
+                    Top Rated
                   </Link>
 
                   <div className="px-3 py-2 text-[11px] uppercase tracking-[0.25em] text-zinc-500">

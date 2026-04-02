@@ -3,22 +3,9 @@
 import Link from 'next/link'
 import { useEffect, useMemo, useState } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
-import RegionNotice from '@/app/components/RegionNotice'
 import { getStoreLogo, getStoreName } from '@/lib/storeMap'
 import { supabase } from '@/lib/supabaseClient'
 import { trackClick } from '@/lib/analytics'
-
-type SteamSpotlightItem = {
-  steamAppID: string
-  title: string
-  salePrice: string
-  normalPrice: string
-  savings: string
-  thumb: string
-  storeID: string
-  platform: string
-  url: string
-}
 
 type PcBrowseItem = {
   id: string
@@ -47,17 +34,9 @@ type PcBrowsePageResponse = {
   source?: string
 }
 
-type DealsStats = {
-  dealsIndexed: number
-  steamIndexed: number
-  steamSpotlightIndexed: number
-  dealsUpdatedAt: string | null
-  steamUpdatedAt: string | null
-  steamSpotlightUpdatedAt: string | null
-}
-
 type TopRatedPcGame = {
   steamAppID: string
+  slug?: string
   title: string
   salePrice: string
   normalPrice: string
@@ -70,15 +49,10 @@ type TopRatedPcGame = {
   isFreeToPlay: boolean
 }
 
-type UnifiedCardItem = SteamSpotlightItem | PcBrowseItem | TopRatedPcGame
+type UnifiedCardItem = PcBrowseItem | TopRatedPcGame
 
 const PAGE_SIZE = 36
 const TOP_RATED_MIN_RESULTS = 1
-
-const STORE_FILTERS = [
-  { value: 'all', label: 'All stores' },
-  { value: '1', label: 'Steam' },
-]
 
 const PRICE_FILTERS = [
   { value: 'all', label: 'Any price' },
@@ -211,18 +185,24 @@ function SteamCard({
   const isTracked = Array.isArray(trackedIds) && trackedIds.includes(steamDealID)
   const canonicalHref = buildSteamCanonicalHref(item)
 
-  const isBrowseItem = 'hasActiveOffer' in item
   const isTopRatedItem = 'metacritic' in item
+  const isBrowseItem = 'hasActiveOffer' in item
 
   const statusLabel = isBrowseItem
-    ? item.isFreeToPlay
-      ? 'Free to play'
-      : item.hasActiveOffer && item.salePrice
-      ? `$${item.salePrice}`
-      : 'No current Steam price cached'
-    : item.salePrice
+  ? item.isFreeToPlay
+    ? 'Free'
+    : item.hasActiveOffer && item.salePrice
     ? `$${item.salePrice}`
-    : 'Steam entry'
+    : item.normalPrice
+    ? `$${item.normalPrice}`
+    : 'No current Steam price cached'
+  : item.isFreeToPlay
+  ? 'Free'
+  : item.salePrice
+  ? `$${item.salePrice}`
+  : item.normalPrice
+  ? `$${item.normalPrice}`
+  : 'View store'
 
   return (
     <article className="overflow-hidden rounded-3xl border border-zinc-800 bg-zinc-900 shadow-lg transition hover:-translate-y-1">
@@ -258,11 +238,7 @@ function SteamCard({
         <div className="mb-4 rounded-2xl border border-zinc-800 bg-zinc-950 p-3">
           <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
             <p className="text-xs uppercase tracking-wider text-zinc-500">
-              {isTopRatedItem
-                ? 'Top rated Steam entry'
-                : isBrowseItem
-                ? 'Steam PC status'
-                : 'Steam deal'}
+              {isTopRatedItem ? 'Top Rated Steam entry' : 'Steam PC status'}
             </p>
 
             <span className="inline-flex items-center gap-1 rounded-full border border-zinc-700 bg-zinc-900 px-2 py-1 text-[10px] font-medium uppercase tracking-wider text-zinc-300">
@@ -293,7 +269,7 @@ function SteamCard({
             <p className="mt-2 text-xs text-zinc-500">
               Metacritic: {item.metacritic}
             </p>
-          ) : isBrowseItem ? (
+          ) : (
             <p className="mt-2 text-xs text-zinc-500">
               {item.isFreeToPlay
                 ? 'Included in the Steam PC catalog'
@@ -306,7 +282,7 @@ function SteamCard({
                 ? 'Catalog entry without active sale'
                 : 'Base catalog entry imported from Steam'}
             </p>
-          ) : null}
+          )}
         </div>
 
         <div className="grid gap-2">
@@ -359,10 +335,7 @@ function SteamCard({
                     normalPrice: item.normalPrice,
                     clickType: 'track_remove',
                   })
-                  pushTrackMessage(
-                    setTrackMessage,
-                    `Removed from tracked: ${item.title}`
-                  )
+                  pushTrackMessage(setTrackMessage, `Removed from tracked: ${item.title}`)
                   return
                 }
 
@@ -411,22 +384,12 @@ export default function PcPageClient() {
   const currentPage = Math.max(1, Number(searchParams.get('page') || '1'))
   const query = searchParams.get('q') || ''
   const requestedSort = searchParams.get('sort') || 'all'
-  const storeFilter = searchParams.get('store') || 'all'
   const priceFilter = searchParams.get('price') || 'all'
 
   const [browseGames, setBrowseGames] = useState<PcBrowseItem[]>([])
   const [browseTotalItems, setBrowseTotalItems] = useState(0)
   const [browseTotalPages, setBrowseTotalPages] = useState(1)
-  const [steamDeals, setSteamDeals] = useState<SteamSpotlightItem[]>([])
   const [topRatedGames, setTopRatedGames] = useState<TopRatedPcGame[]>([])
-  const [dealsStats, setDealsStats] = useState<DealsStats>({
-    dealsIndexed: 0,
-    steamIndexed: 0,
-    steamSpotlightIndexed: 0,
-    dealsUpdatedAt: null,
-    steamUpdatedAt: null,
-    steamSpotlightUpdatedAt: null,
-  })
 
   const [loading, setLoading] = useState(true)
   const [userId, setUserId] = useState<string | null>(null)
@@ -434,15 +397,15 @@ export default function PcPageClient() {
   const [trackMessage, setTrackMessage] = useState('')
 
   const topRatedReady = topRatedGames.length >= TOP_RATED_MIN_RESULTS
-const sort = requestedSort
+  const sort = requestedSort
 
   const SORT_FILTERS = [
-    { value: 'all', label: 'Featured' },
+    { value: 'all', label: 'PC' },
     { value: 'best', label: 'Best Deals' },
-    { value: 'top-rated', label: 'Top Rated' },
+    { value: 'latest-discounts', label: 'Latest Discounts' },
+    { value: 'latest', label: 'Latest Releases' },
     { value: 'biggest-discount', label: 'Biggest Discounts' },
-    { value: 'latest', label: 'Latest' },
-    { value: 'steam-spotlight', label: 'Steam Deals' },
+    { value: 'top-rated', label: 'Top Rated' },
   ]
 
   const buildUrl = (page: number, updates?: Record<string, string>) => {
@@ -460,10 +423,6 @@ const sort = requestedSort
 
     const queryString = params.toString()
     return `/pc${queryString ? `?${queryString}` : ''}`
-  }
-
-  const applyStore = (value: string) => {
-    router.push(buildUrl(1, { store: value }))
   }
 
   const applyPrice = (value: string) => {
@@ -524,62 +483,15 @@ const sort = requestedSort
       try {
         setLoading(true)
 
-        if (sort === 'steam-spotlight') {
-  const steamRes = await fetch('/api/steam-spotlight')
-  const steamData = await steamRes.json()
-
-  if (!cancelled) {
-    setSteamDeals(Array.isArray(steamData) ? steamData : [])
-    setTopRatedGames([])
-    setBrowseGames([])
-    setBrowseTotalItems(0)
-    setBrowseTotalPages(1)
-    setDealsStats({
-      dealsIndexed: 0,
-      steamIndexed: 0,
-      steamSpotlightIndexed: 0,
-      dealsUpdatedAt: null,
-      steamUpdatedAt: null,
-      steamSpotlightUpdatedAt: null,
-    })
-  }
-
-  fetch('/api/deals-stats')
-    .then((res) => res.json())
-    .then((statsData) => {
-      if (!cancelled) {
-        setDealsStats({
-          dealsIndexed: Number(statsData?.dealsIndexed || 0),
-          steamIndexed: Number(statsData?.steamIndexed || 0),
-          steamSpotlightIndexed: Number(statsData?.steamSpotlightIndexed || 0),
-          dealsUpdatedAt: statsData?.dealsUpdatedAt || null,
-          steamUpdatedAt: statsData?.steamUpdatedAt || null,
-          steamSpotlightUpdatedAt: statsData?.steamSpotlightUpdatedAt || null,
-        })
-      }
-    })
-    .catch((error) => {
-      console.error(error)
-    })
-
-  return
-}
-
         if (sort === 'top-rated') {
-          const topRatedRes = await fetch('/api/pc-top-rated?limit=36')
+          const topRatedRes = await fetch('/api/pc-top-rated?limit=300')
           const topRatedData = await topRatedRes.json()
 
           if (!cancelled) {
             setTopRatedGames(Array.isArray(topRatedData) ? topRatedData : [])
-            setSteamDeals([])
-            setDealsStats({
-              dealsIndexed: 0,
-              steamIndexed: 0,
-              steamSpotlightIndexed: 0,
-              dealsUpdatedAt: null,
-              steamUpdatedAt: null,
-              steamSpotlightUpdatedAt: null,
-            })
+            setBrowseGames([])
+            setBrowseTotalItems(0)
+            setBrowseTotalPages(1)
           }
 
           return
@@ -591,7 +503,6 @@ const sort = requestedSort
 
         if (query.trim()) params.set('q', query.trim())
         if (sort !== 'all') params.set('sort', sort)
-        if (storeFilter !== 'all') params.set('store', storeFilter)
         if (priceFilter !== 'all') params.set('price', priceFilter)
 
         const browseRes = await fetch(`/api/pc-browse-page?${params.toString()}`)
@@ -601,16 +512,7 @@ const sort = requestedSort
           setBrowseGames(Array.isArray(browseData?.items) ? browseData.items : [])
           setBrowseTotalItems(Number(browseData?.totalItems || 0))
           setBrowseTotalPages(Math.max(1, Number(browseData?.totalPages || 1)))
-          setSteamDeals([])
           setTopRatedGames([])
-          setDealsStats({
-            dealsIndexed: 0,
-            steamIndexed: 0,
-            steamSpotlightIndexed: 0,
-            dealsUpdatedAt: null,
-            steamUpdatedAt: null,
-            steamSpotlightUpdatedAt: null,
-          })
         }
       } catch (error) {
         console.error(error)
@@ -619,7 +521,6 @@ const sort = requestedSort
           setBrowseGames([])
           setBrowseTotalItems(0)
           setBrowseTotalPages(1)
-          setSteamDeals([])
           setTopRatedGames([])
         }
       } finally {
@@ -634,20 +535,14 @@ const sort = requestedSort
     return () => {
       cancelled = true
     }
-  }, [currentPage, query, sort, storeFilter, priceFilter])
+  }, [currentPage, query, sort, priceFilter])
 
   const filteredDeals = useMemo(() => {
     const normalizedQuery = normalizeSteamTitle(query)
 
     const allBrowseGames = browseGames.filter((item) => {
-      if (storeFilter !== 'all' && item.storeID !== storeFilter) return false
-
       const salePrice = Number(item.salePrice || 0)
-      const savings = getSafeDiscountPercent(
-        item.salePrice,
-        item.normalPrice,
-        item.savings
-      )
+      const savings = getSafeDiscountPercent(item.salePrice, item.normalPrice, item.savings)
 
       if (priceFilter === 'under-5' && !(salePrice > 0 && salePrice < 5)) return false
       if (priceFilter === 'under-10' && !(salePrice > 0 && salePrice < 10)) return false
@@ -659,49 +554,11 @@ const sort = requestedSort
 
       return true
     })
-
-    const allSteamDeals = steamDeals.filter((item) => {
-      if (storeFilter !== 'all' && item.storeID !== storeFilter) return false
-
-      const salePrice = Number(item.salePrice || 0)
-      const savings = getSafeDiscountPercent(
-        item.salePrice,
-        item.normalPrice,
-        item.savings
-      )
-
-      if (priceFilter === 'under-5' && !(salePrice > 0 && salePrice < 5)) return false
-      if (priceFilter === 'under-10' && !(salePrice > 0 && salePrice < 10)) return false
-      if (priceFilter === 'over-80' && savings < 80) return false
-
-      if (normalizedQuery) {
-        return normalizeSteamTitle(item.title).includes(normalizedQuery)
-      }
-
-      return true
-    })
-
-    if (sort === 'steam-spotlight') {
-      return {
-        mode: 'steam' as const,
-        items: [...allSteamDeals].sort(
-          (a, b) =>
-            getSafeDiscountPercent(b.salePrice, b.normalPrice, b.savings) -
-            getSafeDiscountPercent(a.salePrice, a.normalPrice, a.savings)
-        ),
-      }
-    }
 
     if (sort === 'top-rated' && topRatedReady) {
       const topRatedItems = topRatedGames.filter((item) => {
-        if (storeFilter !== 'all' && item.storeID !== storeFilter) return false
-
         const salePrice = Number(item.salePrice || 0)
-        const savings = getSafeDiscountPercent(
-          item.salePrice,
-          item.normalPrice,
-          item.savings
-        )
+        const savings = getSafeDiscountPercent(item.salePrice, item.normalPrice, item.savings)
 
         if (priceFilter === 'under-5' && !(salePrice > 0 && salePrice < 5)) return false
         if (priceFilter === 'under-10' && !(salePrice > 0 && salePrice < 10)) return false
@@ -728,7 +585,7 @@ const sort = requestedSort
             return savingsB - savingsA
           }
 
-          return Number(b.normalPrice || 0) - Number(a.normalPrice || 0)
+          return a.title.localeCompare(b.title)
         }),
       }
     }
@@ -737,20 +594,10 @@ const sort = requestedSort
       mode: 'browse' as const,
       items: allBrowseGames,
     }
-  }, [
-    browseGames,
-    steamDeals,
-    topRatedGames,
-    query,
-    sort,
-    storeFilter,
-    priceFilter,
-    topRatedReady,
-  ])
+  }, [browseGames, topRatedGames, query, sort, priceFilter, topRatedReady])
 
   const isServerBrowseMode =
     filteredDeals.mode === 'browse' &&
-    sort !== 'steam-spotlight' &&
     sort !== 'top-rated'
 
   const totalItems = isServerBrowseMode
@@ -769,7 +616,6 @@ const sort = requestedSort
 
   const activeFilterLabels = [
     query.trim() ? `Search: "${query.trim()}"` : null,
-    storeFilter !== 'all' ? `Store: ${getStoreName(storeFilter)}` : null,
     priceFilter === 'under-5'
       ? 'Price: Under $5'
       : priceFilter === 'under-10'
@@ -784,15 +630,14 @@ const sort = requestedSort
       : sort === 'biggest-discount'
       ? 'Sort: Biggest Discounts'
       : sort === 'latest'
-      ? 'Sort: Latest'
-      : sort === 'steam-spotlight'
-      ? 'Sort: Steam Deals'
+      ? 'Sort: Latest Releases'
+      : sort === 'latest-discounts'
+      ? 'Sort: Latest Discounts'
       : null,
   ].filter(Boolean) as string[]
 
   const hasActiveFilters =
     !!query.trim() ||
-    storeFilter !== 'all' ||
     priceFilter !== 'all' ||
     sort !== 'all'
 
@@ -803,17 +648,12 @@ const sort = requestedSort
           <p className="text-sm uppercase tracking-[0.3em] text-zinc-400">
             Platform
           </p>
-          <h1 className="mt-1 text-3xl font-bold">PC Games</h1>
+          <h1 className="mt-1 text-3xl font-bold">PC</h1>
           <p className="mt-2 max-w-3xl text-zinc-400">
-            Browse the Steam-only PC layer from local data, prioritizing base games
-            in the main browsing experience while keeping one canonical game page per
-            title.
+            Steam-first PC browsing with one canonical game page per title, curated
+            storefront sections, cleaner sorting, and real screenshots where available.
           </p>
         </header>
-
-        <div className="mb-6">
-          <RegionNotice />
-        </div>
 
         <div className="mb-6 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
           <MetricCard
@@ -825,12 +665,16 @@ const sort = requestedSort
             label="Results in this view"
             value={totalItems}
             sublabel={
-              sort === 'steam-spotlight'
-                ? 'Steam Deals mode'
-                : sort === 'top-rated'
+              sort === 'top-rated'
                 ? 'Top Rated mode'
                 : sort === 'best'
                 ? 'Best Deals mode'
+                : sort === 'latest'
+                ? 'Latest Releases mode'
+                : sort === 'latest-discounts'
+                ? 'Latest Discounts mode'
+                : sort === 'biggest-discount'
+                ? 'Biggest Discounts mode'
                 : 'PC browsing mode'
             }
           />
@@ -852,13 +696,12 @@ const sort = requestedSort
               Explore PC
             </p>
             <p className="mt-2 text-sm text-zinc-400">
-              Main PC browsing now prioritizes base games from the local 2.5 layer.
-              DLCs can still remain searchable from the catalog when looked up
-              manually.
+              Best Deals, Latest Discounts, Latest Releases, Top Rated, and the main PC catalog
+              now follow one cleaner Steam-first browsing model.
             </p>
           </div>
 
-          <div className="grid gap-4 xl:grid-cols-[2fr_1fr_1fr]">
+          <div className="grid gap-4 xl:grid-cols-[2fr_1fr]">
             <div>
               <label className="mb-2 block text-xs uppercase tracking-wider text-zinc-500">
                 Search
@@ -869,22 +712,6 @@ const sort = requestedSort
                 placeholder="Search PC games"
                 className="w-full rounded-2xl border border-zinc-700 bg-zinc-950 px-4 py-3 text-sm outline-none transition focus:border-emerald-500/40"
               />
-            </div>
-
-            <div>
-              <label className="mb-2 block text-xs uppercase tracking-wider text-zinc-500">
-                Stores
-              </label>
-              <div className="flex flex-wrap gap-2">
-                {STORE_FILTERS.map((store) => (
-                  <FilterChip
-                    key={store.value}
-                    label={store.label}
-                    active={storeFilter === store.value}
-                    onClick={() => applyStore(store.value)}
-                  />
-                ))}
-              </div>
             </div>
 
             <div>
@@ -921,10 +748,10 @@ const sort = requestedSort
           </div>
 
           {sort === 'top-rated' && loading ? (
-  <div className="mt-4 rounded-2xl border border-zinc-800 bg-zinc-950 p-3 text-xs text-zinc-400">
-    Loading top rated results...
-  </div>
-) : null}
+            <div className="mt-4 rounded-2xl border border-zinc-800 bg-zinc-950 p-3 text-xs text-zinc-400">
+              Loading top rated results...
+            </div>
+          ) : null}
 
           <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
             <div className="rounded-2xl border border-zinc-800 bg-zinc-950 p-3">
@@ -938,28 +765,28 @@ const sort = requestedSort
 
             <div className="rounded-2xl border border-zinc-800 bg-zinc-950 p-3">
               <p className="text-xs uppercase tracking-wider text-zinc-500">
-                Biggest Discounts
+                Latest Discounts
               </p>
               <p className="mt-2 text-xs text-zinc-400">
-                Pure discount-first ordering.
+                Recently refreshed discounted entries from the public Steam PC layer.
               </p>
             </div>
 
             <div className="rounded-2xl border border-zinc-800 bg-zinc-950 p-3">
               <p className="text-xs uppercase tracking-wider text-zinc-500">
-                Latest
+                Latest Releases
               </p>
               <p className="mt-2 text-xs text-zinc-400">
-                Ordered by latest Steam app IDs in the local layer.
+                Ordered by real release date data from the public cache.
               </p>
             </div>
 
             <div className="rounded-2xl border border-zinc-800 bg-zinc-950 p-3">
               <p className="text-xs uppercase tracking-wider text-zinc-500">
-                Steam Deals
+                Top Rated
               </p>
               <p className="mt-2 text-xs text-zinc-400">
-                Legacy cached deal feed, filtered to only locally resolvable games.
+                Steam-first local metascore data, sorted from best scored down.
               </p>
             </div>
           </div>
@@ -978,50 +805,50 @@ const sort = requestedSort
 
             <button
               onClick={resetFilters}
-              className="rounded-full border border-emerald-500/30 bg-emerald-500/10 px-3 py-1 text-xs font-medium text-emerald-300 transition hover:bg-emerald-500/15"
+              className="rounded-full border border-emerald-500/30 bg-emerald-500/10 px-3 py-1 text-xs font-medium text-emerald-300 transition hover:bg-emerald-500/20"
             >
               Reset all
             </button>
           </div>
         ) : null}
 
-        {trackMessage ? (
-          <div className="mb-6 rounded-2xl border border-emerald-500/20 bg-emerald-500/10 p-4 text-sm text-emerald-300">
-            {trackMessage}
+        <div className="mb-5 flex items-center justify-between gap-4">
+          <div>
+            <p className="text-sm text-zinc-400">
+              Page {safePage} of {totalPages} · {totalItems}{' '}
+              {sort === 'top-rated'
+                ? 'top rated PC entries in this view'
+                : sort === 'best'
+                ? 'best-value PC entries in this view'
+                : sort === 'latest'
+                ? 'latest released PC entries in this view'
+                : sort === 'latest-discounts'
+                ? 'recently refreshed discounted PC entries in this view'
+                : sort === 'biggest-discount'
+                ? 'discount-first PC entries in this view'
+                : 'PC results in this view'}
+            </p>
+
+            {trackMessage ? (
+              <p className="mt-2 text-sm text-emerald-300">{trackMessage}</p>
+            ) : null}
           </div>
-        ) : null}
 
-        <div className="mb-8 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-          <p className="text-sm text-zinc-400">
-            Page {safePage} of {totalPages} · {totalItems}{' '}
-            {sort === 'steam-spotlight'
-              ? 'locally resolvable Steam deals in this view'
-              : sort === 'top-rated'
-              ? 'top rated PC entries in this view'
-              : sort === 'best'
-              ? 'best-value PC entries in this view'
-              : sort === 'biggest-discount'
-              ? 'discount-first PC entries in this view'
-              : 'PC results in this view'}
-            {storeFilter !== 'all' ? ` · ${getStoreName(storeFilter)}` : ''}
-            {sort === 'steam-spotlight' && dealsStats.steamIndexed > 0
-              ? ` · ${dealsStats.steamIndexed} cached raw Steam deals before local filtering`
-              : ''}
-          </p>
-
-          <div className="flex items-center gap-2">
+          <div className="flex gap-2">
             <button
-              onClick={() => router.push(buildUrl(Math.max(1, safePage - 1)))}
+              type="button"
               disabled={safePage <= 1}
-              className="rounded-xl border border-zinc-700 px-4 py-2 text-sm transition hover:bg-zinc-800 disabled:cursor-not-allowed disabled:opacity-50"
+              onClick={() => router.push(buildUrl(safePage - 1))}
+              className="rounded-xl border border-zinc-700 px-4 py-2 text-sm text-zinc-200 transition hover:bg-zinc-800 disabled:cursor-not-allowed disabled:opacity-40"
             >
               Previous
             </button>
 
             <button
-              onClick={() => router.push(buildUrl(Math.min(totalPages, safePage + 1)))}
+              type="button"
               disabled={safePage >= totalPages}
-              className="rounded-xl border border-zinc-700 px-4 py-2 text-sm transition hover:bg-zinc-800 disabled:cursor-not-allowed disabled:opacity-50"
+              onClick={() => router.push(buildUrl(safePage + 1))}
+              className="rounded-xl border border-zinc-700 px-4 py-2 text-sm text-zinc-200 transition hover:bg-zinc-800 disabled:cursor-not-allowed disabled:opacity-40"
             >
               Next
             </button>
@@ -1029,55 +856,19 @@ const sort = requestedSort
         </div>
 
         {loading ? (
-          <div className="rounded-3xl border border-dashed border-zinc-700 bg-zinc-900 p-10 text-center text-zinc-400">
-            Loading the Steam-only PC layer...
+          <div className="rounded-3xl border border-zinc-800 bg-zinc-900 p-8 text-sm text-zinc-400">
+            Loading the Steam-first PC layer...
           </div>
         ) : paginatedItems.length === 0 ? (
-          <div className="rounded-3xl border border-dashed border-zinc-700 bg-zinc-900 p-10 text-center">
-            <div className="mx-auto max-w-2xl">
-              <h2 className="text-xl font-bold text-white">
-                {sort === 'steam-spotlight'
-                  ? 'No Steam deals match this view'
-                  : sort === 'top-rated'
-                  ? 'No top rated PC entries match this view'
-                  : 'No PC results match this view'}
-              </h2>
-
-              <p className="mt-3 text-sm text-zinc-400">
-                {hasActiveFilters
-                  ? 'Your current search and filter combination did not return visible results.'
-                  : 'There are no visible Steam PC entries in this section right now.'}
-              </p>
-
-              <div className="mt-6 flex flex-wrap justify-center gap-3">
-                <button
-                  onClick={resetFilters}
-                  className="rounded-xl bg-white px-4 py-2 text-sm font-semibold text-black transition hover:opacity-90"
-                >
-                  Reset filters
-                </button>
-
-                {sort !== 'steam-spotlight' ? (
-                  <Link
-                    href={buildUrl(1, { sort: 'steam-spotlight' })}
-                    className="rounded-xl border border-zinc-700 px-4 py-2 text-sm font-medium text-zinc-200 transition hover:bg-zinc-800"
-                  >
-                    Open Steam Deals
-                  </Link>
-                ) : (
-                  <Link
-                    href={buildUrl(1, { sort: 'all' })}
-                    className="rounded-xl border border-zinc-700 px-4 py-2 text-sm font-medium text-zinc-200 transition hover:bg-zinc-800"
-                  >
-                    Back to PC browsing
-                  </Link>
-                )}
-              </div>
-            </div>
+          <div className="rounded-3xl border border-zinc-800 bg-zinc-900 p-8">
+            <h2 className="text-xl font-bold">No PC results match this view</h2>
+            <p className="mt-2 max-w-2xl text-zinc-400">
+              Your current search and filter combination did not return visible results.
+            </p>
           </div>
         ) : (
-          <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
-            {paginatedItems.map((item: UnifiedCardItem) => (
+          <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 xl:grid-cols-4">
+            {paginatedItems.map((item) => (
               <SteamCard
                 key={`${item.steamAppID}-${item.title}`}
                 item={item}
@@ -1090,20 +881,22 @@ const sort = requestedSort
           </div>
         )}
 
-        {paginatedItems.length > 0 ? (
-          <div className="mt-8 flex items-center justify-center gap-2">
+        {!loading && totalPages > 1 ? (
+          <div className="mt-8 flex justify-end gap-2">
             <button
-              onClick={() => router.push(buildUrl(Math.max(1, safePage - 1)))}
+              type="button"
               disabled={safePage <= 1}
-              className="rounded-xl border border-zinc-700 px-4 py-2 text-sm transition hover:bg-zinc-800 disabled:cursor-not-allowed disabled:opacity-50"
+              onClick={() => router.push(buildUrl(safePage - 1))}
+              className="rounded-xl border border-zinc-700 px-4 py-2 text-sm text-zinc-200 transition hover:bg-zinc-800 disabled:cursor-not-allowed disabled:opacity-40"
             >
               Previous
             </button>
 
             <button
-              onClick={() => router.push(buildUrl(Math.min(totalPages, safePage + 1)))}
+              type="button"
               disabled={safePage >= totalPages}
-              className="rounded-xl border border-zinc-700 px-4 py-2 text-sm transition hover:bg-zinc-800 disabled:cursor-not-allowed disabled:opacity-50"
+              onClick={() => router.push(buildUrl(safePage + 1))}
+              className="rounded-xl border border-zinc-700 px-4 py-2 text-sm text-zinc-200 transition hover:bg-zinc-800 disabled:cursor-not-allowed disabled:opacity-40"
             >
               Next
             </button>

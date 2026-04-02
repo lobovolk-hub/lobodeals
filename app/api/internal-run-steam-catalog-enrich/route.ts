@@ -32,15 +32,17 @@ export async function POST(request: Request) {
       iteration: number
       ok: boolean
       processed?: number
-      updated?: number
+      enriched?: number
       screenshotsInserted?: number
+      rateLimited?: number
       note?: string
       error?: string
     }> = []
 
     let totalProcessed = 0
-    let totalUpdated = 0
+    let totalEnriched = 0
     let totalScreenshotsInserted = 0
+    let totalRateLimited = 0
 
     for (let i = 0; i < iterations; i += 1) {
       const res = await fetch(`${origin}/api/internal-enrich-steam-appdetails`, {
@@ -55,7 +57,7 @@ export async function POST(request: Request) {
 
       const data = await res.json().catch(() => ({}))
 
-      if (!res.ok || !data?.ok) {
+      if (!res.ok || !data?.success) {
         runs.push({
           iteration: i + 1,
           ok: false,
@@ -69,14 +71,16 @@ export async function POST(request: Request) {
         iteration: i + 1,
         ok: true,
         processed: Number(data?.processed || 0),
-        updated: Number(data?.updated || 0),
+        enriched: Number(data?.enriched || 0),
         screenshotsInserted: Number(data?.screenshotsInserted || 0),
+        rateLimited: Number(data?.rateLimited || 0),
         note: data?.note || '',
       })
 
       totalProcessed += Number(data?.processed || 0)
-      totalUpdated += Number(data?.updated || 0)
+      totalEnriched += Number(data?.enriched || 0)
       totalScreenshotsInserted += Number(data?.screenshotsInserted || 0)
+      totalRateLimited += Number(data?.rateLimited || 0)
 
       if (Number(data?.processed || 0) === 0) {
         break
@@ -84,12 +88,13 @@ export async function POST(request: Request) {
     }
 
     return Response.json({
-      ok: true,
+      success: true,
       iterationsRequested: iterations,
       batchSize,
       totalProcessed,
-      totalUpdated,
+      totalEnriched,
       totalScreenshotsInserted,
+      totalRateLimited,
       runs,
     })
   } catch (error) {
@@ -97,7 +102,7 @@ export async function POST(request: Request) {
 
     return Response.json(
       {
-        ok: false,
+        success: false,
         error:
           error instanceof Error
             ? error.message

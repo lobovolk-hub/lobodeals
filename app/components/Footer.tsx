@@ -52,9 +52,8 @@ export default function Footer() {
             </div>
 
             <p className="mt-4 max-w-md text-sm leading-6 text-zinc-400">
-              A cleaner way to browse the Steam PC catalog, follow discounts,
-              discover free-to-play entries, and move through one canonical game
-              page per title.
+              Steam-first PC tracking focused on clean browsing, real screenshots,
+              canonical game pages, curated highlights, and scalable price data.
             </p>
           </div>
 
@@ -70,14 +69,17 @@ export default function Footer() {
               <Link href="/pc?page=1&sort=all" className="transition hover:text-white">
                 PC
               </Link>
-              <Link href="/catalog" className="transition hover:text-white">
-                Catalog
+              <Link href="/pc?page=1&sort=best" className="transition hover:text-white">
+                Best Deals
               </Link>
-              <Link
-                href="/pc?page=1&sort=steam-spotlight"
-                className="transition hover:text-white"
-              >
-                Steam Spotlight
+              <Link href="/pc?page=1&sort=latest-discounts" className="transition hover:text-white">
+                Latest Discounts
+              </Link>
+              <Link href="/pc?page=1&sort=latest" className="transition hover:text-white">
+                Latest Releases
+              </Link>
+              <Link href="/pc?page=1&sort=top-rated" className="transition hover:text-white">
+                Top Rated
               </Link>
               <Link href="/tracked" className="transition hover:text-white">
                 Tracked

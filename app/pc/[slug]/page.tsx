@@ -56,6 +56,10 @@ type CanonicalPcGameLocal = {
   rawgMeta: RawgMeta | null
   offers: CanonicalPcOfferLocal[]
   heroOffer: CanonicalPcOfferLocal
+  steamGenres: string[]
+  steamDevelopers: string[]
+  steamPublishers: string[]
+  steamMovieUrl: string | null
 }
 
 function formatMoney(value?: string | number | null) {
@@ -256,9 +260,7 @@ export default function PcCanonicalGamePage() {
       return
     }
 
-    const firstScreenshot =
-      game.screenshots?.[0] || game.headerImage || game.capsuleImage || game.rawgMeta?.background_image || null
-
+    const firstScreenshot = game.screenshots?.[0] || null
     setSelectedScreenshot(firstScreenshot)
     setThumbOffset(0)
 
@@ -292,26 +294,24 @@ export default function PcCanonicalGamePage() {
   const screenshots = useMemo(() => {
     if (!game) return []
 
-    const merged = [
-      ...(Array.isArray(game.screenshots) ? game.screenshots : []),
-      game.headerImage || '',
-      game.capsuleImage || '',
-      game.rawgMeta?.background_image || '',
-    ]
-      .map((value) => String(value || '').trim())
-      .filter(Boolean)
-
-    return Array.from(new Set(merged))
+    return Array.from(
+      new Set(
+        (Array.isArray(game.screenshots) ? game.screenshots : [])
+          .map((value) => String(value || '').trim())
+          .filter(Boolean)
+      )
+    )
   }, [game])
 
   const maxThumbOffset = Math.max(0, screenshots.length - 4)
   const visibleThumbs = screenshots.slice(thumbOffset, thumbOffset + 4)
 
   const coverImage =
-    selectedScreenshot ||
     game?.headerImage ||
-    game?.capsuleImage ||
+    screenshots?.[0] ||
     game?.rawgMeta?.background_image ||
+    game?.heroOffer?.thumb ||
+    game?.capsuleImage ||
     '/placeholder-game.jpg'
 
   const description = cleanDescription(game?.description || game?.shortDescription || '')
@@ -325,7 +325,9 @@ export default function PcCanonicalGamePage() {
   const releaseLabel = getReleaseLabel(game?.releaseDate || null)
 
   const genres =
-    Array.isArray(game?.rawgMeta?.genres) && game?.rawgMeta?.genres?.length
+    Array.isArray(game?.steamGenres) && game.steamGenres.length > 0
+      ? game.steamGenres
+      : Array.isArray(game?.rawgMeta?.genres) && game?.rawgMeta?.genres?.length
       ? game.rawgMeta.genres
       : []
 
@@ -376,26 +378,21 @@ export default function PcCanonicalGamePage() {
 
         <div className="overflow-hidden rounded-3xl border border-zinc-800 bg-zinc-900 shadow-2xl">
           <div className="border-b border-zinc-800 bg-gradient-to-br from-zinc-900 via-zinc-900 to-black p-5 sm:p-6">
-            
             {trackMessage ? (
-              <div className="mt-4 rounded-2xl border border-emerald-500/20 bg-emerald-500/10 p-4 text-sm text-emerald-300">
+              <div className="mb-4 rounded-2xl border border-emerald-500/20 bg-emerald-500/10 p-4 text-sm text-emerald-300">
                 {trackMessage}
               </div>
             ) : null}
 
-            <div className="mt-4 grid gap-5 lg:grid-cols-[280px_minmax(0,1fr)]">
-              <div className="overflow-hidden rounded-3xl border border-zinc-800 bg-zinc-950">
-                <img
-                  src={
-                    game.headerImage ||
-                    game.rawgMeta?.background_image ||
-                    selectedScreenshot ||
-                    game.capsuleImage ||
-                    coverImage
-                  }
-                  alt={game.canonicalTitle}
-                  className="h-full w-full object-cover"
-                />
+            <div className="grid items-start gap-6 lg:grid-cols-[420px_minmax(0,1fr)]">
+              <div className="rounded-3xl border border-zinc-800 bg-zinc-950 p-3">
+                <div className="flex items-center justify-center overflow-hidden rounded-2xl bg-black">
+                  <img
+                    src={coverImage}
+                    alt={game.canonicalTitle}
+                    className="h-auto w-full object-contain"
+                  />
+                </div>
               </div>
 
               <div className="min-w-0">
@@ -429,11 +426,14 @@ export default function PcCanonicalGamePage() {
                       ? 'Free'
                       : heroOffer?.salePrice
                       ? formatMoney(heroOffer.salePrice)
-                      : 'Store page available'}
+                      : heroOffer?.normalPrice
+                      ? formatMoney(heroOffer.normalPrice)
+                      : 'View store'}
                   </span>
 
                   {heroOffer?.normalPrice &&
-                  Number(heroOffer.normalPrice) > Number(heroOffer.salePrice || 0) ? (
+                  Number(heroOffer.normalPrice) > Number(heroOffer.salePrice || 0) &&
+                  Number(heroOffer.salePrice || 0) > 0 ? (
                     <span className="pb-1 text-lg text-zinc-400 line-through">
                       {formatMoney(heroOffer.normalPrice)}
                     </span>
@@ -460,6 +460,8 @@ export default function PcCanonicalGamePage() {
                         ? 'Free'
                         : heroOffer?.salePrice
                         ? formatMoney(heroOffer.salePrice)
+                        : heroOffer?.normalPrice
+                        ? formatMoney(heroOffer.normalPrice)
                         : 'N/A'
                     }
                     sublabel="Steam US cached price"
@@ -474,7 +476,7 @@ export default function PcCanonicalGamePage() {
                   <MetricCard
                     label="Metacritic"
                     value={typeof metacritic === 'number' ? metacritic : '—'}
-                    sublabel={typeof metacritic === 'number' ? 'Optional cached metadata' : 'Not available yet'}
+                    sublabel={typeof metacritic === 'number' ? 'Steam-first metadata' : 'Not available yet'}
                   />
 
                   <MetricCard
@@ -502,7 +504,7 @@ export default function PcCanonicalGamePage() {
                             dealID: `steam-${game.steamAppID || game.canonicalKey}`,
                             gameID: '',
                             title: game.canonicalTitle,
-                            thumb: game.heroOffer?.thumb || game.capsuleImage || '',
+                            thumb: game.heroOffer?.thumb || game.headerImage || '',
                             salePrice: game.heroOffer?.salePrice || '',
                             normalPrice: game.heroOffer?.normalPrice || '',
                             storeID: '1',
@@ -572,70 +574,76 @@ export default function PcCanonicalGamePage() {
                         ? 'Free'
                         : heroOffer?.salePrice
                         ? formatMoney(heroOffer.salePrice)
+                        : heroOffer?.normalPrice
+                        ? formatMoney(heroOffer.normalPrice)
                         : 'View store'}
                     </Link>
                   ) : null}
                 </div>
-
-                <div className="mt-5">
-                  <div className="flex items-center justify-between gap-3">
-                    <div>
-                      <h2 className="text-lg font-bold text-white">Screenshots</h2>
-                      <p className="text-sm text-zinc-400">One row, four at a time. Click to expand.</p>
-                    </div>
-
-                    <div className="flex items-center gap-2">
-                      <button
-                        type="button"
-                        disabled={thumbOffset <= 0}
-                        onClick={() => setThumbOffset((prev) => Math.max(0, prev - 1))}
-                        className="rounded-xl border border-zinc-700 px-3 py-2 text-xs font-medium text-zinc-100 transition hover:bg-zinc-800 disabled:cursor-not-allowed disabled:opacity-40"
-                      >
-                        ←
-                      </button>
-
-                      <button
-                        type="button"
-                        disabled={thumbOffset >= maxThumbOffset}
-                        onClick={() => setThumbOffset((prev) => Math.min(maxThumbOffset, prev + 1))}
-                        className="rounded-xl border border-zinc-700 px-3 py-2 text-xs font-medium text-zinc-100 transition hover:bg-zinc-800 disabled:cursor-not-allowed disabled:opacity-40"
-                      >
-                        →
-                      </button>
-                    </div>
-                  </div>
-
-                  {visibleThumbs.length > 0 ? (
-                    <div className="mt-3 grid grid-cols-4 gap-3">
-                      {visibleThumbs.map((shot) => (
-                        <button
-                          key={shot}
-                          type="button"
-                          onClick={() => {
-                            setSelectedScreenshot(shot)
-                            setLightboxOpen(true)
-                          }}
-                          className={`overflow-hidden rounded-2xl border transition ${
-                            selectedScreenshot === shot
-                              ? 'border-emerald-500/40 bg-emerald-500/10'
-                              : 'border-zinc-800 bg-zinc-950 hover:bg-zinc-800'
-                          }`}
-                        >
-                          <img
-                            src={shot}
-                            alt={game.canonicalTitle}
-                            className="h-24 w-full object-cover sm:h-28"
-                          />
-                        </button>
-                      ))}
-                    </div>
-                  ) : (
-                    <div className="mt-3 rounded-2xl border border-zinc-800 bg-zinc-950 p-4 text-sm text-zinc-400">
-                      No screenshots cached yet for this game.
-                    </div>
-                  )}
-                </div>
               </div>
+            </div>
+
+            <div className="mt-6">
+              <div className="flex items-center justify-between gap-3">
+                <div>
+                  <h2 className="text-lg font-bold text-white">Screenshots</h2>
+                  <p className="text-sm text-zinc-400">
+                    Real Steam screenshots only. Click to expand.
+                  </p>
+                </div>
+
+                {screenshots.length > 4 ? (
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      disabled={thumbOffset <= 0}
+                      onClick={() => setThumbOffset((prev) => Math.max(0, prev - 1))}
+                      className="rounded-xl border border-zinc-700 px-3 py-2 text-xs font-medium text-zinc-100 transition hover:bg-zinc-800 disabled:cursor-not-allowed disabled:opacity-40"
+                    >
+                      ←
+                    </button>
+
+                    <button
+                      type="button"
+                      disabled={thumbOffset >= maxThumbOffset}
+                      onClick={() => setThumbOffset((prev) => Math.min(maxThumbOffset, prev + 1))}
+                      className="rounded-xl border border-zinc-700 px-3 py-2 text-xs font-medium text-zinc-100 transition hover:bg-zinc-800 disabled:cursor-not-allowed disabled:opacity-40"
+                    >
+                      →
+                    </button>
+                  </div>
+                ) : null}
+              </div>
+
+              {visibleThumbs.length > 0 ? (
+                <div className="mt-3 grid grid-cols-4 gap-3">
+                  {visibleThumbs.map((shot) => (
+                    <button
+                      key={shot}
+                      type="button"
+                      onClick={() => {
+                        setSelectedScreenshot(shot)
+                        setLightboxOpen(true)
+                      }}
+                      className={`overflow-hidden rounded-2xl border transition ${
+                        selectedScreenshot === shot
+                          ? 'border-emerald-500/40 bg-emerald-500/10'
+                          : 'border-zinc-800 bg-zinc-950 hover:bg-zinc-800'
+                      }`}
+                    >
+                      <img
+                        src={shot}
+                        alt={game.canonicalTitle}
+                        className="h-24 w-full object-cover sm:h-28"
+                      />
+                    </button>
+                  ))}
+                </div>
+              ) : (
+                <div className="mt-3 rounded-2xl border border-zinc-800 bg-zinc-950 p-4 text-sm text-zinc-400">
+                  Screenshots not cached yet for this game.
+                </div>
+              )}
             </div>
           </div>
 
@@ -707,11 +715,14 @@ export default function PcCanonicalGamePage() {
                             ? 'Free'
                             : offer.salePrice
                             ? formatMoney(offer.salePrice)
+                            : offer.normalPrice
+                            ? formatMoney(offer.normalPrice)
                             : 'View store'}
                         </span>
 
                         {offer.normalPrice &&
-                        Number(offer.normalPrice) > Number(offer.salePrice || 0) ? (
+                        Number(offer.normalPrice) > Number(offer.salePrice || 0) &&
+                        Number(offer.salePrice || 0) > 0 ? (
                           <span className="text-sm text-zinc-400 line-through">
                             {formatMoney(offer.normalPrice)}
                           </span>

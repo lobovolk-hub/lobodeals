@@ -1,35 +1,24 @@
 export const runtime = 'nodejs'
 
 import { createClient } from '@supabase/supabase-js'
-import { makePcCanonicalKey } from '@/lib/pcCanonical'
 
-type PcGameRow = {
-  id: string
-  steam_app_id: string
-  steam_name?: string | null
-  canonical_title?: string | null
-  capsule_image?: string | null
-  header_image?: string | null
-  is_free_to_play?: boolean | null
-  is_active?: boolean | null
-  is_catalog_ready?: boolean | null
-}
-
-type PcStoreOfferRow = {
+type CatalogCacheRow = {
   pc_game_id: string
+  steam_app_id?: string | null
+  slug?: string | null
+  title?: string | null
+  thumb?: string | null
   sale_price?: number | string | null
   normal_price?: number | string | null
   discount_percent?: number | string | null
+  store_id?: string | number | null
   url?: string | null
-  is_available?: boolean | null
+  is_free_to_play?: boolean | null
 }
 
-type DealsCacheRow = {
-  cache_key: string
-  payload: {
-    name?: string | null
-    metacritic?: number | null
-  } | null
+type PcGameMetaRow = {
+  id: string
+  metacritic?: number | null
 }
 
 function getServiceSupabase() {
@@ -43,11 +32,11 @@ function getServiceSupabase() {
   return createClient(url, serviceRole)
 }
 
-function formatMoney(value?: number | string | null) {
+function formatMoneyOrEmpty(value?: number | string | null) {
   const amount = Number(value || 0)
 
   if (!Number.isFinite(amount) || amount <= 0) {
-    return '0.00'
+    return ''
   }
 
   return amount.toFixed(2)
@@ -63,19 +52,6 @@ function formatSavings(value?: number | string | null) {
   return String(Math.max(0, Math.min(99, Math.round(amount))))
 }
 
-function parseRawTitleFromCacheKey(cacheKey: string) {
-  if (!cacheKey.startsWith('rawg_meta::')) return ''
-
-  const withoutPrefix = cacheKey.slice('rawg_meta::'.length)
-  const separatorIndex = withoutPrefix.lastIndexOf('::')
-
-  if (separatorIndex === -1) {
-    return withoutPrefix.trim()
-  }
-
-  return withoutPrefix.slice(0, separatorIndex).trim()
-}
-
 export async function GET(request: Request) {
   try {
     const { searchParams } = new URL(request.url)
@@ -84,120 +60,67 @@ export async function GET(request: Request) {
 
     const supabase = getServiceSupabase()
 
-    const [
-      { data: pcGames, error: gamesError },
-      { data: offers, error: offersError },
-      { data: rawgCache, error: rawgError },
-    ] = await Promise.all([
-      supabase
-        .from('pc_games')
-        .select(
-          'id, steam_app_id, steam_name, canonical_title, capsule_image, header_image, is_free_to_play, is_active, is_catalog_ready'
-        )
-        .eq('is_active', true)
-        .eq('is_catalog_ready', true)
-        .order('steam_app_id', { ascending: true })
-        .limit(5000),
+    const [{ data: cacheRows, error: cacheError }, { data: metaRows, error: metaError }] =
+      await Promise.all([
+        supabase
+          .from('pc_public_catalog_cache')
+          .select(
+            'pc_game_id, steam_app_id, slug, title, thumb, sale_price, normal_price, discount_percent, store_id, url, is_free_to_play'
+          )
+          .limit(25000),
 
-      supabase
-        .from('pc_store_offers')
-        .select(
-          'pc_game_id, sale_price, normal_price, discount_percent, url, is_available'
-        )
-        .eq('store_id', '1')
-        .eq('is_available', true),
+        supabase
+          .from('pc_games')
+          .select('id, metacritic')
+          .eq('is_catalog_ready', true)
+          .eq('steam_type', 'game')
+          .not('metacritic', 'is', null)
+          .limit(25000),
+      ])
 
-      supabase
-        .from('deals_cache')
-        .select('cache_key, payload')
-        .like('cache_key', 'rawg_meta::%'),
-    ])
+    if (cacheError) throw cacheError
+    if (metaError) throw metaError
 
-    if (gamesError) throw gamesError
-    if (offersError) throw offersError
-    if (rawgError) throw rawgError
+    const metacriticByGameId = new Map<string, number>()
 
-    const offerByGameId = new Map<string, PcStoreOfferRow>()
+    for (const row of (Array.isArray(metaRows) ? metaRows : []) as PcGameMetaRow[]) {
+      const gameId = String(row.id || '').trim()
+      const metacritic = Number(row.metacritic || 0)
 
-    for (const row of (offers || []) as PcStoreOfferRow[]) {
-      const gameId = String(row.pc_game_id || '').trim()
       if (!gameId) continue
+      if (!Number.isFinite(metacritic) || metacritic < 70) continue
 
-      const current = offerByGameId.get(gameId)
-
-      if (!current) {
-        offerByGameId.set(gameId, row)
-        continue
-      }
-
-      const currentSale = Number(current.sale_price || 0)
-      const incomingSale = Number(row.sale_price || 0)
-      const currentDiscount = Number(current.discount_percent || 0)
-      const incomingDiscount = Number(row.discount_percent || 0)
-
-      if (incomingDiscount > currentDiscount) {
-        offerByGameId.set(gameId, row)
-        continue
-      }
-
-      if (
-        incomingDiscount === currentDiscount &&
-        incomingSale > 0 &&
-        (currentSale <= 0 || incomingSale < currentSale)
-      ) {
-        offerByGameId.set(gameId, row)
-      }
+      metacriticByGameId.set(gameId, metacritic)
     }
 
-    const metacriticByCanonicalKey = new Map<string, number>()
+    const topRated = ((Array.isArray(cacheRows) ? cacheRows : []) as CatalogCacheRow[])
+      .map((row) => {
+        const gameId = String(row.pc_game_id || '').trim()
+        const metacritic = metacriticByGameId.get(gameId)
 
-    for (const row of (rawgCache || []) as DealsCacheRow[]) {
-      const payload = row.payload
-      const metacritic = Number(payload?.metacritic || 0)
+        if (!gameId || !metacritic) return null
 
-      if (!Number.isFinite(metacritic) || metacritic <= 0) continue
+        const title = String(row.title || '').trim()
+        const thumb = String(row.thumb || '').trim()
 
-      const rawTitle = parseRawTitleFromCacheKey(String(row.cache_key || ''))
-      const payloadTitle = String(payload?.name || '').trim()
-      const title = payloadTitle || rawTitle
+        if (!title || !thumb) return null
 
-      if (!title) continue
-
-      const key = makePcCanonicalKey(title)
-      const current = metacriticByCanonicalKey.get(key) || 0
-
-      if (metacritic > current) {
-        metacriticByCanonicalKey.set(key, metacritic)
-      }
-    }
-
-    const topRated = ((pcGames || []) as PcGameRow[])
-      .map((game) => {
-        const title = String(game.steam_name || game.canonical_title || '').trim()
-        if (!title) return null
-
-        const canonicalKey = makePcCanonicalKey(title)
-        const metacritic = metacriticByCanonicalKey.get(canonicalKey) || 0
-
-        if (metacritic < 70) return null
-
-        const offer = offerByGameId.get(String(game.id || '').trim())
-        const thumb =
-          String(game.capsule_image || '').trim() ||
-          String(game.header_image || '').trim()
+        const salePrice = formatMoneyOrEmpty(row.sale_price)
+        const normalPrice = formatMoneyOrEmpty(row.normal_price)
 
         return {
-          steamAppID: String(game.steam_app_id || '').trim(),
+          steamAppID: String(row.steam_app_id || '').trim(),
+          slug: String(row.slug || '').trim(),
           title,
-          salePrice: formatMoney(offer?.sale_price),
-          normalPrice: formatMoney(offer?.normal_price),
-          savings: formatSavings(offer?.discount_percent),
+          salePrice,
+          normalPrice,
+          savings: formatSavings(row.discount_percent),
           thumb,
-          storeID: '1',
+          storeID: String(row.store_id || '1').trim(),
           platform: 'pc',
-          url: String(offer?.url || '').trim(),
+          url: String(row.url || '').trim(),
           metacritic,
-          isFreeToPlay: Boolean(game.is_free_to_play),
+          isFreeToPlay: Boolean(row.is_free_to_play),
         }
       })
       .filter(Boolean)
@@ -211,13 +134,6 @@ export async function GET(request: Request) {
 
         if (savingsB !== savingsA) {
           return savingsB - savingsA
-        }
-
-        const normalA = Number(a!.normalPrice || 0)
-        const normalB = Number(b!.normalPrice || 0)
-
-        if (normalB !== normalA) {
-          return normalB - normalA
         }
 
         return a!.title.localeCompare(b!.title)

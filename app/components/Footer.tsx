@@ -1,6 +1,34 @@
+'use client'
+
 import Link from 'next/link'
+import { useEffect, useState } from 'react'
+import { supabase } from '@/lib/supabaseClient'
 
 export default function Footer() {
+  const [userEmail, setUserEmail] = useState<string | null>(null)
+
+  useEffect(() => {
+    const loadSession = async () => {
+      const {
+        data: { session },
+      } = await supabase.auth.getSession()
+
+      setUserEmail(session?.user?.email ?? null)
+    }
+
+    loadSession()
+
+    const { data: authListener } = supabase.auth.onAuthStateChange(
+      async (_event, session) => {
+        setUserEmail(session?.user?.email ?? null)
+      }
+    )
+
+    return () => {
+      authListener.subscription.unsubscribe()
+    }
+  }, [])
+
   return (
     <footer className="mt-auto border-t border-zinc-800 bg-black">
       <div className="mx-auto max-w-6xl px-4 py-10 sm:px-6">
@@ -49,7 +77,7 @@ export default function Footer() {
                 href="/pc?page=1&sort=steam-spotlight"
                 className="transition hover:text-white"
               >
-                Steam deals
+                Steam Spotlight
               </Link>
               <Link href="/tracked" className="transition hover:text-white">
                 Tracked
@@ -59,7 +87,7 @@ export default function Footer() {
 
           <div>
             <p className="text-xs uppercase tracking-[0.25em] text-zinc-500">
-              LoboVolk
+              Account
             </p>
 
             <div className="mt-4 grid gap-3 text-sm text-zinc-300">
@@ -81,9 +109,26 @@ export default function Footer() {
                 TikTok
               </a>
 
-              <Link href="/login" className="transition hover:text-white">
-                Login
-              </Link>
+              {userEmail ? (
+                <>
+                  <Link href="/profile" className="transition hover:text-white">
+                    Profile
+                  </Link>
+
+                  <button
+                    onClick={async () => {
+                      await supabase.auth.signOut()
+                    }}
+                    className="text-left transition hover:text-white"
+                  >
+                    Sign out
+                  </button>
+                </>
+              ) : (
+                <Link href="/login" className="transition hover:text-white">
+                  Login
+                </Link>
+              )}
             </div>
           </div>
         </div>

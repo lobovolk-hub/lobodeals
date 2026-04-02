@@ -4,7 +4,6 @@ import Link from 'next/link'
 import { useEffect, useMemo, useState } from 'react'
 import { useParams } from 'next/navigation'
 import { supabase } from '@/lib/supabaseClient'
-import RegionNotice from '@/app/components/RegionNotice'
 import { getStoreLogo, getStoreName } from '@/lib/storeMap'
 import { trackClick } from '@/lib/analytics'
 
@@ -63,7 +62,7 @@ function formatMoney(value?: string | number | null) {
   const amount = Number(value || 0)
 
   if (!Number.isFinite(amount) || amount <= 0) {
-    return 'Not cached'
+    return 'Not available'
   }
 
   return `$${amount.toFixed(2)}`
@@ -92,7 +91,7 @@ function getSafeDiscountPercent(
 
 function cleanDescription(value?: string | null) {
   const raw = String(value || '').trim()
-  if (!raw) return 'This Steam PC entry is already available locally. Richer editorial metadata is still being synced.'
+  if (!raw) return 'Description not available yet for this Steam PC entry.'
 
   return raw
     .replace(/<[^>]*>/g, ' ')
@@ -104,7 +103,7 @@ function cleanDescription(value?: string | null) {
 }
 
 function getReleaseLabel(value?: string | null) {
-  if (!value) return 'No release date available'
+  if (!value) return 'Not available'
 
   const date = new Date(value)
   if (Number.isNaN(date.getTime())) return value
@@ -163,9 +162,7 @@ export default function PcCanonicalGamePage() {
       try {
         setLoading(true)
 
-        const res = await fetch(
-          `/api/pc-canonical?slug=${encodeURIComponent(slug)}`
-        )
+        const res = await fetch(`/api/pc-canonical?slug=${encodeURIComponent(slug)}`)
 
         if (!res.ok) {
           if (!cancelled) {
@@ -260,11 +257,7 @@ export default function PcCanonicalGamePage() {
     }
 
     const firstScreenshot =
-      game.screenshots?.[0] ||
-      game.headerImage ||
-      game.capsuleImage ||
-      game.rawgMeta?.background_image ||
-      null
+      game.screenshots?.[0] || game.headerImage || game.capsuleImage || game.rawgMeta?.background_image || null
 
     setSelectedScreenshot(firstScreenshot)
     setThumbOffset(0)
@@ -285,9 +278,6 @@ export default function PcCanonicalGamePage() {
       if (event.key === 'Escape') {
         setLightboxOpen(false)
       }
-      if (event.key === 'ArrowRight') {
-        setThumbOffset((prev) => prev)
-      }
     }
 
     document.addEventListener('keydown', onKeyDown)
@@ -296,11 +286,7 @@ export default function PcCanonicalGamePage() {
 
   const heroOffer = game?.heroOffer || null
   const safeSavings = heroOffer
-    ? getSafeDiscountPercent(
-        heroOffer.salePrice,
-        heroOffer.normalPrice,
-        heroOffer.savings
-      )
+    ? getSafeDiscountPercent(heroOffer.salePrice, heroOffer.normalPrice, heroOffer.savings)
     : 0
 
   const screenshots = useMemo(() => {
@@ -343,19 +329,12 @@ export default function PcCanonicalGamePage() {
       ? game.rawgMeta.genres
       : []
 
-  const platforms =
-    Array.isArray(game?.rawgMeta?.platforms) && game?.rawgMeta?.platforms?.length
-      ? game.rawgMeta.platforms
-      : ['PC']
-
-  const clipUrl = String(game?.rawgMeta?.clip || '').trim()
-
   if (loading) {
     return (
       <main className="min-h-screen bg-zinc-950 text-zinc-100">
         <section className="mx-auto max-w-6xl px-4 py-10 sm:px-6">
           <div className="rounded-2xl border border-zinc-800 bg-zinc-900 p-5 text-sm text-zinc-400">
-            Loading canonical PC game...
+            Loading PC game page...
           </div>
         </section>
       </main>
@@ -376,7 +355,7 @@ export default function PcCanonicalGamePage() {
           </div>
 
           <div className="rounded-2xl border border-zinc-800 bg-zinc-900 p-5 text-sm text-zinc-400">
-            This canonical PC game could not be resolved from the local 2.5 layer.
+            This PC game could not be resolved right now. Please try another entry.
           </div>
         </section>
       </main>
@@ -397,8 +376,7 @@ export default function PcCanonicalGamePage() {
 
         <div className="overflow-hidden rounded-3xl border border-zinc-800 bg-zinc-900 shadow-2xl">
           <div className="border-b border-zinc-800 bg-gradient-to-br from-zinc-900 via-zinc-900 to-black p-5 sm:p-6">
-            <RegionNotice />
-
+            
             {trackMessage ? (
               <div className="mt-4 rounded-2xl border border-emerald-500/20 bg-emerald-500/10 p-4 text-sm text-emerald-300">
                 {trackMessage}
@@ -406,7 +384,7 @@ export default function PcCanonicalGamePage() {
             ) : null}
 
             <div className="mt-4 grid gap-5 lg:grid-cols-[280px_minmax(0,1fr)]">
-                            <div className="overflow-hidden rounded-3xl border border-zinc-800 bg-zinc-950">
+              <div className="overflow-hidden rounded-3xl border border-zinc-800 bg-zinc-950">
                 <img
                   src={
                     game.headerImage ||
@@ -446,13 +424,13 @@ export default function PcCanonicalGamePage() {
                 </h1>
 
                 <div className="mt-4 flex flex-wrap items-end gap-3">
-                                    <span className="text-4xl font-bold text-emerald-400">
-  {game.isFreeToPlay
-    ? 'Free'
-    : heroOffer?.salePrice
-    ? formatMoney(heroOffer.salePrice)
-    : 'Store page available'}
-</span>
+                  <span className="text-4xl font-bold text-emerald-400">
+                    {game.isFreeToPlay
+                      ? 'Free'
+                      : heroOffer?.salePrice
+                      ? formatMoney(heroOffer.salePrice)
+                      : 'Store page available'}
+                  </span>
 
                   {heroOffer?.normalPrice &&
                   Number(heroOffer.normalPrice) > Number(heroOffer.salePrice || 0) ? (
@@ -464,28 +442,19 @@ export default function PcCanonicalGamePage() {
 
                 <div className="mt-3 flex flex-wrap gap-2">
                   <span className="rounded-full border border-zinc-700 bg-zinc-950 px-3 py-1 text-xs text-zinc-300">
-                    {getStoreName(heroOffer?.storeID || '1')}
+                    Steam PC
                   </span>
 
-                  <span className="rounded-full border border-zinc-700 bg-zinc-950 px-3 py-1 text-xs text-zinc-300">
-  Canonical Steam entry
-</span>
-
-                                    {clipUrl ? (
-                    <a
-                      href={clipUrl}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="rounded-full border border-cyan-500/30 bg-cyan-500/10 px-3 py-1 text-xs text-cyan-300 transition hover:bg-cyan-500/15"
-                    >
-                      Watch clip
-                    </a>
+                  {game.steamAppID ? (
+                    <span className="rounded-full border border-zinc-700 bg-zinc-950 px-3 py-1 text-xs text-zinc-300">
+                      App ID: {game.steamAppID}
+                    </span>
                   ) : null}
                 </div>
 
                 <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
                   <MetricCard
-                    label="Current steam price"
+                    label="Current Price"
                     value={
                       game.isFreeToPlay
                         ? 'Free'
@@ -493,29 +462,25 @@ export default function PcCanonicalGamePage() {
                         ? formatMoney(heroOffer.salePrice)
                         : 'N/A'
                     }
-                    sublabel="Current local 2.5 layer"
+                    sublabel="Steam US cached price"
                   />
 
                   <MetricCard
-  label="Metacritic"
-  value={typeof metacritic === 'number' ? metacritic : '—'}
-  sublabel={
-    typeof metacritic === 'number'
-      ? 'Cached metadata'
-      : 'Still enriching premium metadata'
-  }
-/>
+                    label="Discount"
+                    value={game.isFreeToPlay ? 'Free' : safeSavings > 0 ? `${safeSavings}%` : '—'}
+                    sublabel="Current Steam discount"
+                  />
 
                   <MetricCard
-  label="Store entries"
-  value={game.offers.length}
-  sublabel="Locally resolved Steam pricing rows"
-/>
+                    label="Metacritic"
+                    value={typeof metacritic === 'number' ? metacritic : '—'}
+                    sublabel={typeof metacritic === 'number' ? 'Optional cached metadata' : 'Not available yet'}
+                  />
 
                   <MetricCard
-                    label="Release date"
+                    label="Release Date"
                     value={releaseLabel}
-                    sublabel="Local Steam or cached metadata"
+                    sublabel="Steam-first game data"
                   />
                 </div>
 
@@ -555,10 +520,7 @@ export default function PcCanonicalGamePage() {
                             normalPrice: game.heroOffer?.normalPrice || '',
                             clickType: 'track_add',
                           })
-                          pushTrackMessage(
-                            setTrackMessage,
-                            `Added to tracked: ${game.canonicalTitle}`
-                          )
+                          pushTrackMessage(setTrackMessage, `Added to tracked: ${game.canonicalTitle}`)
                           return
                         }
 
@@ -571,22 +533,13 @@ export default function PcCanonicalGamePage() {
                             normalPrice: game.heroOffer?.normalPrice || '',
                             clickType: 'track_remove',
                           })
-                          pushTrackMessage(
-                            setTrackMessage,
-                            `Removed from tracked: ${game.canonicalTitle}`
-                          )
+                          pushTrackMessage(setTrackMessage, `Removed from tracked: ${game.canonicalTitle}`)
                           return
                         }
 
-                        pushTrackMessage(
-                          setTrackMessage,
-                          `Track error: ${data.error || 'Unknown error'}`
-                        )
+                        pushTrackMessage(setTrackMessage, `Track error: ${data.error || 'Unknown error'}`)
                       } catch {
-                        pushTrackMessage(
-                          setTrackMessage,
-                          'Could not update tracked right now'
-                        )
+                        pushTrackMessage(setTrackMessage, 'Could not update tracked right now')
                       }
                     }}
                     className={`rounded-xl px-4 py-3 text-sm font-medium transition ${
@@ -612,15 +565,15 @@ export default function PcCanonicalGamePage() {
                           clickType: 'open_deal_game_page',
                         })
                       }
-                                          className="rounded-xl bg-white px-4 py-3 text-sm font-semibold text-black transition hover:opacity-90"
-                  >
-                    Open Steam deal —{' '}
-                    {game.isFreeToPlay
-                      ? 'Free'
-                      : heroOffer?.salePrice
-                      ? formatMoney(heroOffer.salePrice)
-                      : 'View store'}
-                  </Link>
+                      className="rounded-xl bg-white px-4 py-3 text-sm font-semibold text-black transition hover:opacity-90"
+                    >
+                      Open on Steam —{' '}
+                      {game.isFreeToPlay
+                        ? 'Free'
+                        : heroOffer?.salePrice
+                        ? formatMoney(heroOffer.salePrice)
+                        : 'View store'}
+                    </Link>
                   ) : null}
                 </div>
 
@@ -628,18 +581,14 @@ export default function PcCanonicalGamePage() {
                   <div className="flex items-center justify-between gap-3">
                     <div>
                       <h2 className="text-lg font-bold text-white">Screenshots</h2>
-                      <p className="text-sm text-zinc-400">
-                        One row, four at a time. Click to expand.
-                      </p>
+                      <p className="text-sm text-zinc-400">One row, four at a time. Click to expand.</p>
                     </div>
 
                     <div className="flex items-center gap-2">
                       <button
                         type="button"
                         disabled={thumbOffset <= 0}
-                        onClick={() =>
-                          setThumbOffset((prev) => Math.max(0, prev - 1))
-                        }
+                        onClick={() => setThumbOffset((prev) => Math.max(0, prev - 1))}
                         className="rounded-xl border border-zinc-700 px-3 py-2 text-xs font-medium text-zinc-100 transition hover:bg-zinc-800 disabled:cursor-not-allowed disabled:opacity-40"
                       >
                         ←
@@ -648,9 +597,7 @@ export default function PcCanonicalGamePage() {
                       <button
                         type="button"
                         disabled={thumbOffset >= maxThumbOffset}
-                        onClick={() =>
-                          setThumbOffset((prev) => Math.min(maxThumbOffset, prev + 1))
-                        }
+                        onClick={() => setThumbOffset((prev) => Math.min(maxThumbOffset, prev + 1))}
                         className="rounded-xl border border-zinc-700 px-3 py-2 text-xs font-medium text-zinc-100 transition hover:bg-zinc-800 disabled:cursor-not-allowed disabled:opacity-40"
                       >
                         →
@@ -709,34 +656,12 @@ export default function PcCanonicalGamePage() {
                 </div>
               ) : null}
 
-              <p className="mt-4 text-sm leading-7 text-zinc-300">
-  {description}
-</p>
-
-              {platforms.length > 0 ? (
-                <div className="mt-6">
-                  <p className="mb-2 text-xs uppercase tracking-wider text-zinc-500">
-                    Platforms
-                  </p>
-                  <div className="flex flex-wrap gap-2">
-                    {platforms.map((platform) => (
-                      <span
-                        key={platform}
-                        className="rounded-full border border-zinc-700 bg-zinc-900 px-3 py-1 text-xs text-zinc-300"
-                      >
-                        {platform}
-                      </span>
-                    ))}
-                  </div>
-                </div>
-              ) : null}
+              <p className="mt-4 text-sm leading-7 text-zinc-300">{description}</p>
             </div>
 
             <aside className="rounded-3xl border border-zinc-800 bg-zinc-950 p-5">
-              <h2 className="text-xl font-bold text-white">Available stores</h2>
-              <p className="mt-2 text-sm text-zinc-400">
-                Canonical PC store status for this game.
-              </p>
+              <h2 className="text-xl font-bold text-white">Store Offers</h2>
+              <p className="mt-2 text-sm text-zinc-400">Current Steam pricing entries resolved for this game.</p>
 
               <div className="mt-4 space-y-3">
                 {game.offers.map((offer) => {
@@ -778,12 +703,12 @@ export default function PcCanonicalGamePage() {
 
                       <div className="mt-3 flex items-end justify-between gap-2">
                         <span className="text-2xl font-bold text-emerald-400">
-  {game.isFreeToPlay
-    ? 'Free'
-    : offer.salePrice
-    ? formatMoney(offer.salePrice)
-    : 'View store'}
-</span>
+                          {game.isFreeToPlay
+                            ? 'Free'
+                            : offer.salePrice
+                            ? formatMoney(offer.salePrice)
+                            : 'View store'}
+                        </span>
 
                         {offer.normalPrice &&
                         Number(offer.normalPrice) > Number(offer.salePrice || 0) ? (
@@ -802,8 +727,7 @@ export default function PcCanonicalGamePage() {
                             onClick={() =>
                               trackClick({
                                 dealID:
-                                  offer.dealID ||
-                                  `steam-${game.steamAppID || game.canonicalKey}`,
+                                  offer.dealID || `steam-${game.steamAppID || game.canonicalKey}`,
                                 title: game.canonicalTitle,
                                 salePrice: offer.salePrice || '',
                                 normalPrice: offer.normalPrice || '',

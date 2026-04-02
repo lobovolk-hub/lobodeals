@@ -133,6 +133,15 @@ function applySort(query: any, sort: string) {
     return query
       .order('sort_latest', { ascending: false })
       .order('discount_percent', { ascending: false })
+      .order('title', { ascending: true })
+  }
+
+  if (sort === 'latest-discounts') {
+    return query
+      .gt('discount_percent', 0)
+      .order('price_last_synced_at', { ascending: false, nullsFirst: false })
+      .order('discount_percent', { ascending: false })
+      .order('sort_latest', { ascending: false })
   }
 
   if (sort === 'best') {
@@ -202,6 +211,10 @@ export async function GET(request: Request) {
         priceFilter
       )
 
+      if (sort === 'latest-discounts') {
+        countQuery = countQuery.gt('discount_percent', 0)
+      }
+
       const { count, error: countError } = await countQuery
 
       if (countError) {
@@ -237,7 +250,6 @@ export async function GET(request: Request) {
     }
 
     const rawItems = Array.isArray(data) ? (data as PcPublicCatalogRow[]) : []
-    const hasExtraItem = rawItems.length > pageSize
     const items = rawItems.slice(0, pageSize).map(mapRowToItem)
 
     return Response.json({
@@ -246,11 +258,9 @@ export async function GET(request: Request) {
       totalPages,
       page: safePage,
       pageSize,
-      hasNextPage: baseView ? hasExtraItem || safePage < totalPages : safePage < totalPages,
+      hasNextPage: safePage < totalPages,
       mode: 'cache',
-      source: baseView
-        ? 'pc_public_catalog_cache+pc_public_catalog_meta'
-        : 'pc_public_catalog_cache',
+      source: 'pc_public_catalog_cache',
     })
   } catch (error) {
     console.error('pc browse page error', error)

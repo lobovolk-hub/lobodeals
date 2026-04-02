@@ -90,78 +90,93 @@ function mapRow(row: StorefrontSectionRow): HomeItem {
 }
 
 async function getHomeData() {
-  const supabase = getServiceSupabase()
+  try {
+    const supabase = getServiceSupabase()
 
-  const [metaRes, sectionsRes] = await Promise.all([
-    supabase
-      .from('pc_public_catalog_meta')
-      .select('total_items, updated_at')
-      .eq('key', 'default')
-      .maybeSingle(),
-    supabase
-      .from('public_storefront_sections_cache')
-      .select(
-        'section_key, position, pc_game_id, steam_app_id, slug, title, thumb, sale_price, normal_price, discount_percent, store_id, url, platform, updated_at'
-      )
-      .in('section_key', [
-        'steam_spotlight',
-        'best_deals',
-        'latest_discounts',
-        'new_releases',
-      ])
-      .order('section_key', { ascending: true })
-      .order('position', { ascending: true }),
-  ])
+    const [metaRes, sectionsRes] = await Promise.all([
+      supabase
+        .from('pc_public_catalog_meta')
+        .select('total_items, updated_at')
+        .eq('key', 'default')
+        .maybeSingle(),
+      supabase
+        .from('public_storefront_sections_cache')
+        .select(
+          'section_key, position, pc_game_id, steam_app_id, slug, title, thumb, sale_price, normal_price, discount_percent, store_id, url, platform, updated_at'
+        )
+        .in('section_key', [
+          'steam_spotlight',
+          'best_deals',
+          'latest_discounts',
+          'new_releases',
+        ])
+        .order('section_key', { ascending: true })
+        .order('position', { ascending: true }),
+    ])
 
-  if (metaRes.error) {
-    throw metaRes.error
-  }
-
-  if (sectionsRes.error) {
-    throw sectionsRes.error
-  }
-
-  const rows = Array.isArray(sectionsRes.data)
-    ? (sectionsRes.data as StorefrontSectionRow[])
-    : []
-
-  const grouped: StorefrontSectionsResponse = {
-    steam_spotlight: [],
-    best_deals: [],
-    latest_discounts: [],
-    new_releases: [],
-    updatedAt: rows.length > 0 ? rows[0].updated_at : null,
-  }
-
-  for (const row of rows) {
-    const mapped = mapRow(row)
-
-    if (row.section_key === 'steam_spotlight' && grouped.steam_spotlight.length < 4) {
-      grouped.steam_spotlight.push(mapped)
-      continue
+    if (metaRes.error) {
+      throw metaRes.error
     }
 
-    if (row.section_key === 'best_deals' && grouped.best_deals.length < 4) {
-      grouped.best_deals.push(mapped)
-      continue
+    if (sectionsRes.error) {
+      throw sectionsRes.error
     }
 
-    if (
-      row.section_key === 'latest_discounts' &&
-      grouped.latest_discounts.length < 4
-    ) {
-      grouped.latest_discounts.push(mapped)
-      continue
+    const rows = Array.isArray(sectionsRes.data)
+      ? (sectionsRes.data as StorefrontSectionRow[])
+      : []
+
+    const grouped: StorefrontSectionsResponse = {
+      steam_spotlight: [],
+      best_deals: [],
+      latest_discounts: [],
+      new_releases: [],
+      updatedAt: rows.length > 0 ? rows[0].updated_at : null,
     }
 
-    if (row.section_key === 'new_releases' && grouped.new_releases.length < 4) {
-      grouped.new_releases.push(mapped)
-    }
-  }
+    for (const row of rows) {
+      const mapped = mapRow(row)
 
-  return {
-    steamCatalogSize: Number(metaRes.data?.total_items || 0),
-    storefront: grouped,
+      if (row.section_key === 'steam_spotlight' && grouped.steam_spotlight.length < 4) {
+        grouped.steam_spotlight.push(mapped)
+        continue
+      }
+
+      if (row.section_key === 'best_deals' && grouped.best_deals.length < 4) {
+        grouped.best_deals.push(mapped)
+        continue
+      }
+
+      if (
+        row.section_key === 'latest_discounts' &&
+        grouped.latest_discounts.length < 4
+      ) {
+        grouped.latest_discounts.push(mapped)
+        continue
+      }
+
+      if (row.section_key === 'new_releases' && grouped.new_releases.length < 4) {
+        grouped.new_releases.push(mapped)
+      }
+    }
+
+    return {
+      steamCatalogSize: Number(metaRes.data?.total_items || 0),
+      storefront: grouped,
+    }
+  } catch (error) {
+    console.error('home data error', error)
+
+    return {
+      steamCatalogSize: 0,
+      storefront: {
+        steam_spotlight: [],
+        best_deals: [],
+        latest_discounts: [],
+        new_releases: [],
+        updatedAt: null,
+      } satisfies StorefrontSectionsResponse,
+    }
   }
 }
 
@@ -377,7 +392,7 @@ export default async function HomePage() {
           title="Latest Discounts"
           description="Recently refreshed discounted entries from the public Steam PC layer."
           items={storefront?.latest_discounts || []}
-          href="/pc?sort=best"
+          href="/pc?sort=latest-discounts"
         />
 
         <HomeSection

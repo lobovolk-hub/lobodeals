@@ -3,7 +3,6 @@
 import Link from 'next/link'
 import { useEffect, useRef, useState } from 'react'
 import { supabase } from '@/lib/supabaseClient'
-import RegionSelector from '@/app/components/RegionSelector'
 
 export default function Navbar() {
   const [userEmail, setUserEmail] = useState<string | null>(null)
@@ -132,6 +131,14 @@ export default function Navbar() {
                   </Link>
 
                   <Link
+                    href="/pc?page=1&sort=latest-discounts"
+                    onClick={() => setPlatformsOpen(false)}
+                    className="block px-4 py-3 text-sm text-zinc-100 transition hover:bg-zinc-900"
+                  >
+                    Latest discounts
+                  </Link>
+
+                  <Link
                     href="/pc?page=1&sort=biggest-discount"
                     onClick={() => setPlatformsOpen(false)}
                     className="block px-4 py-3 text-sm text-zinc-100 transition hover:bg-zinc-900"
@@ -144,7 +151,7 @@ export default function Navbar() {
                     onClick={() => setPlatformsOpen(false)}
                     className="block px-4 py-3 text-sm text-zinc-100 transition hover:bg-zinc-900"
                   >
-                    Steam deals
+                    Steam Spotlight
                   </Link>
 
                   <div className="border-t border-zinc-800 px-4 py-2 text-[11px] uppercase tracking-[0.25em] text-zinc-500">
@@ -168,8 +175,6 @@ export default function Navbar() {
             >
               Tracked
             </Link>
-
-            <RegionSelector compact />
 
             {userEmail ? (
               <>
@@ -289,6 +294,14 @@ export default function Navbar() {
                   </Link>
 
                   <Link
+                    href="/pc?page=1&sort=latest-discounts"
+                    onClick={closeMobileMenu}
+                    className="rounded-lg px-3 py-2 text-zinc-100 transition hover:bg-zinc-800"
+                  >
+                    Latest discounts
+                  </Link>
+
+                  <Link
                     href="/pc?page=1&sort=biggest-discount"
                     onClick={closeMobileMenu}
                     className="rounded-lg px-3 py-2 text-zinc-100 transition hover:bg-zinc-800"
@@ -301,7 +314,7 @@ export default function Navbar() {
                     onClick={closeMobileMenu}
                     className="rounded-lg px-3 py-2 text-zinc-100 transition hover:bg-zinc-800"
                   >
-                    Steam deals
+                    Steam Spotlight
                   </Link>
 
                   <div className="px-3 py-2 text-[11px] uppercase tracking-[0.25em] text-zinc-500">
@@ -317,10 +330,6 @@ export default function Navbar() {
                   </Link>
                 </div>
               )}
-
-              <div className="pt-2">
-                <RegionSelector />
-              </div>
 
               {userEmail ? (
                 <>

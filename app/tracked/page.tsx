@@ -3,7 +3,6 @@
 import Link from 'next/link'
 import { useEffect, useMemo, useState } from 'react'
 import { supabase } from '@/lib/supabaseClient'
-import RegionNotice from '@/app/components/RegionNotice'
 
 type TrackedItem = {
   id: number
@@ -155,10 +154,6 @@ export default function TrackedPage() {
           </p>
         </header>
 
-        <div className="mb-6">
-          <RegionNotice />
-        </div>
-
         {message ? (
           <div className="mb-5 rounded-2xl border border-emerald-500/20 bg-emerald-500/10 px-4 py-3 text-sm font-medium text-emerald-300">
             {message}
@@ -268,7 +263,10 @@ export default function TrackedPage() {
                     >
                       <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
                         <div className="flex min-w-0 gap-4">
-                          <div className="h-24 w-20 shrink-0 overflow-hidden rounded-2xl bg-zinc-800">
+                          <Link
+                            href={href}
+                            className="h-24 w-20 shrink-0 overflow-hidden rounded-2xl bg-zinc-800 transition hover:opacity-90"
+                          >
                             {item.thumb ? (
                               <img
                                 src={item.thumb}
@@ -276,12 +274,14 @@ export default function TrackedPage() {
                                 className="h-full w-full object-cover"
                               />
                             ) : null}
-                          </div>
+                          </Link>
 
                           <div className="min-w-0">
-                            <h2 className="line-clamp-2 text-lg font-bold">
-                              {item.title}
-                            </h2>
+                            <Link href={href} className="transition hover:text-emerald-300">
+                              <h2 className="line-clamp-2 text-lg font-bold">
+                                {item.title}
+                              </h2>
+                            </Link>
 
                             <div className="mt-3 flex flex-wrap gap-2">
                               <span className="rounded-full border border-emerald-500/30 bg-emerald-500/10 px-3 py-1 text-xs text-emerald-300">

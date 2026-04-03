@@ -17,7 +17,7 @@ type HomeItem = {
   platform: string
 }
 
-type StorefrontSectionRow = {
+type SpotlightRow = {
   section_key: string
   position: number
   pc_game_id: string
@@ -34,12 +34,33 @@ type StorefrontSectionRow = {
   updated_at: string
 }
 
-type StorefrontSectionsResponse = {
-  steam_spotlight: HomeItem[]
-  best_deals: HomeItem[]
-  latest_discounts: HomeItem[]
-  new_releases: HomeItem[]
-  updatedAt: string | null
+type PcPublicCatalogRow = {
+  pc_game_id: string
+  steam_app_id?: string | null
+  slug: string
+  title: string
+  thumb: string
+  sale_price?: number | string | null
+  normal_price?: number | string | null
+  discount_percent?: number | string | null
+  store_id?: string | null
+  url?: string | null
+  is_free_to_play?: boolean | null
+  has_active_offer?: boolean | null
+  is_catalog_ready?: boolean | null
+  sort_latest?: number | null
+  price_last_synced_at?: string | null
+}
+
+type HomeData = {
+  steamCatalogSize: number
+  storefront: {
+    steam_spotlight: HomeItem[]
+    best_deals: HomeItem[]
+    latest_discounts: HomeItem[]
+    new_releases: HomeItem[]
+    updatedAt: string | null
+  }
 }
 
 function getServiceSupabase() {
@@ -73,7 +94,7 @@ function formatSavings(value?: number | string | null) {
   return String(Math.max(0, Math.min(99, Math.round(amount))))
 }
 
-function mapRow(row: StorefrontSectionRow): HomeItem {
+function mapSpotlightRow(row: SpotlightRow): HomeItem {
   return {
     id: String(row.pc_game_id || '').trim(),
     steamAppID: String(row.steam_app_id || '').trim(),
@@ -89,82 +110,134 @@ function mapRow(row: StorefrontSectionRow): HomeItem {
   }
 }
 
-async function getHomeData() {
+function mapCatalogRow(row: PcPublicCatalogRow): HomeItem {
+  return {
+    id: String(row.pc_game_id || '').trim(),
+    steamAppID: String(row.steam_app_id || '').trim(),
+    slug: String(row.slug || '').trim(),
+    title: String(row.title || '').trim(),
+    thumb: String(row.thumb || '').trim(),
+    salePrice: formatMoney(row.sale_price),
+    normalPrice: formatMoney(row.normal_price),
+    savings: formatSavings(row.discount_percent),
+    storeID: String(row.store_id || '1').trim(),
+    url: String(row.url || '').trim(),
+    platform: 'pc',
+  }
+}
+
+async function getSpotlightItems(supabase: ReturnType<typeof getServiceSupabase>) {
+  const { data, error } = await supabase
+    .from('public_storefront_sections_cache')
+    .select(
+      'section_key, position, pc_game_id, steam_app_id, slug, title, thumb, sale_price, normal_price, discount_percent, store_id, url, platform, updated_at'
+    )
+    .eq('section_key', 'steam_spotlight')
+    .order('position', { ascending: true })
+    .limit(4)
+
+  if (error) {
+    throw error
+  }
+
+  const rows = Array.isArray(data) ? (data as SpotlightRow[]) : []
+
+  return {
+    items: rows.map(mapSpotlightRow),
+    updatedAt: rows.length > 0 ? rows[0].updated_at : null,
+  }
+}
+
+async function getBestDealsItems(supabase: ReturnType<typeof getServiceSupabase>) {
+  const { data, error } = await supabase
+    .from('pc_public_catalog_cache')
+    .select(
+      'pc_game_id, steam_app_id, slug, title, thumb, sale_price, normal_price, discount_percent, store_id, url, is_free_to_play, has_active_offer, is_catalog_ready, sort_latest'
+    )
+    .order('has_active_offer', { ascending: false })
+    .order('discount_percent', { ascending: false })
+    .order('sale_price', { ascending: true, nullsFirst: false })
+    .order('sort_latest', { ascending: false })
+    .limit(4)
+
+  if (error) {
+    throw error
+  }
+
+  const rows = Array.isArray(data) ? (data as PcPublicCatalogRow[]) : []
+  return rows.map(mapCatalogRow)
+}
+
+async function getLatestDiscountsItems(supabase: ReturnType<typeof getServiceSupabase>) {
+  const { data, error } = await supabase
+    .from('pc_public_catalog_cache')
+    .select(
+      'pc_game_id, steam_app_id, slug, title, thumb, sale_price, normal_price, discount_percent, store_id, url, is_free_to_play, has_active_offer, is_catalog_ready, sort_latest, price_last_synced_at'
+    )
+    .gt('discount_percent', 0)
+    .order('price_last_synced_at', { ascending: false, nullsFirst: false })
+    .order('discount_percent', { ascending: false })
+    .order('sort_latest', { ascending: false })
+    .limit(4)
+
+  if (error) {
+    throw error
+  }
+
+  const rows = Array.isArray(data) ? (data as PcPublicCatalogRow[]) : []
+  return rows.map(mapCatalogRow)
+}
+
+async function getLatestReleaseItems(supabase: ReturnType<typeof getServiceSupabase>) {
+  const { data, error } = await supabase
+    .from('pc_public_catalog_cache')
+    .select(
+      'pc_game_id, steam_app_id, slug, title, thumb, sale_price, normal_price, discount_percent, store_id, url, is_free_to_play, has_active_offer, is_catalog_ready, sort_latest'
+    )
+    .gt('sort_latest', 0)
+    .order('sort_latest', { ascending: false })
+    .order('discount_percent', { ascending: false })
+    .order('title', { ascending: true })
+    .limit(4)
+
+  if (error) {
+    throw error
+  }
+
+  const rows = Array.isArray(data) ? (data as PcPublicCatalogRow[]) : []
+  return rows.map(mapCatalogRow)
+}
+
+async function getHomeData(): Promise<HomeData> {
   try {
     const supabase = getServiceSupabase()
 
-    const [metaRes, sectionsRes] = await Promise.all([
-      supabase
-        .from('pc_public_catalog_meta')
-        .select('total_items, updated_at')
-        .eq('key', 'default')
-        .maybeSingle(),
-      supabase
-        .from('public_storefront_sections_cache')
-        .select(
-          'section_key, position, pc_game_id, steam_app_id, slug, title, thumb, sale_price, normal_price, discount_percent, store_id, url, platform, updated_at'
-        )
-        .in('section_key', [
-          'steam_spotlight',
-          'best_deals',
-          'latest_discounts',
-          'new_releases',
-        ])
-        .order('section_key', { ascending: true })
-        .order('position', { ascending: true }),
-    ])
+    const [metaRes, spotlightRes, bestDeals, latestDiscounts, latestReleases] =
+      await Promise.all([
+        supabase
+          .from('pc_public_catalog_meta')
+          .select('total_items')
+          .eq('key', 'default')
+          .maybeSingle(),
+        getSpotlightItems(supabase),
+        getBestDealsItems(supabase),
+        getLatestDiscountsItems(supabase),
+        getLatestReleaseItems(supabase),
+      ])
 
-    if (metaRes.error || sectionsRes.error) {
-      return {
-        steamCatalogSize: 0,
-        storefront: {
-          steam_spotlight: [],
-          best_deals: [],
-          latest_discounts: [],
-          new_releases: [],
-          updatedAt: null,
-        } satisfies StorefrontSectionsResponse,
-      }
-    }
-
-    const rows = Array.isArray(sectionsRes.data)
-      ? (sectionsRes.data as StorefrontSectionRow[])
-      : []
-
-    const grouped: StorefrontSectionsResponse = {
-      steam_spotlight: [],
-      best_deals: [],
-      latest_discounts: [],
-      new_releases: [],
-      updatedAt: rows.length > 0 ? rows[0].updated_at : null,
-    }
-
-    for (const row of rows) {
-      const mapped = mapRow(row)
-
-      if (row.section_key === 'steam_spotlight' && grouped.steam_spotlight.length < 4) {
-        grouped.steam_spotlight.push(mapped)
-        continue
-      }
-
-      if (row.section_key === 'best_deals' && grouped.best_deals.length < 4) {
-        grouped.best_deals.push(mapped)
-        continue
-      }
-
-      if (row.section_key === 'latest_discounts' && grouped.latest_discounts.length < 4) {
-        grouped.latest_discounts.push(mapped)
-        continue
-      }
-
-      if (row.section_key === 'new_releases' && grouped.new_releases.length < 4) {
-        grouped.new_releases.push(mapped)
-      }
+    if (metaRes.error) {
+      throw metaRes.error
     }
 
     return {
       steamCatalogSize: Number(metaRes.data?.total_items || 0),
-      storefront: grouped,
+      storefront: {
+        steam_spotlight: spotlightRes.items,
+        best_deals: bestDeals,
+        latest_discounts: latestDiscounts,
+        new_releases: latestReleases,
+        updatedAt: spotlightRes.updatedAt,
+      },
     }
   } catch {
     return {
@@ -175,7 +248,7 @@ async function getHomeData() {
         latest_discounts: [],
         new_releases: [],
         updatedAt: null,
-      } satisfies StorefrontSectionsResponse,
+      },
     }
   }
 }
@@ -337,7 +410,7 @@ export default async function HomePage() {
               <p className="text-xs uppercase tracking-wider text-zinc-500">
                 Current focus
               </p>
-              <p className="mt-2 text-2xl font-bold text-white">2.52g</p>
+              <p className="mt-2 text-2xl font-bold text-white">2.52i</p>
               <p className="mt-1 text-xs text-zinc-500">
                 Steam-first PC standardization before PlayStation
               </p>

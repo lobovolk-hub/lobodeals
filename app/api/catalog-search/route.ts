@@ -40,6 +40,7 @@ type CatalogSearchResult = {
   isFreeToPlay: boolean
   hasActiveOffer: boolean
   isCatalogReady: boolean
+  canOpenPage: boolean
 }
 
 function getServiceSupabase() {
@@ -213,9 +214,10 @@ export async function GET(request: Request) {
             savings: formatSavings(offer?.discount_percent),
             storeID: String(offer?.store_id || '1').trim(),
             url: String(offer?.url || '').trim(),
-            isFreeToPlay: Boolean(game.is_free_to_play),
+                        isFreeToPlay: Boolean(game.is_free_to_play),
             hasActiveOffer,
             isCatalogReady: Boolean(game.is_catalog_ready),
+            canOpenPage: Boolean(game.is_catalog_ready && slug),
           } satisfies CatalogSearchResult,
         }
       })

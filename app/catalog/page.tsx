@@ -19,6 +19,7 @@ type CatalogGame = {
   isFreeToPlay: boolean
   hasActiveOffer: boolean
   isCatalogReady: boolean
+  canOpenPage: boolean
 }
 
 type CatalogStats = {
@@ -43,8 +44,12 @@ export default function CatalogPage() {
 
   const suggestionBoxRef = useRef<HTMLDivElement | null>(null)
 
-  const buildGameHref = (item: CatalogGame) => {
+    const buildGameHref = (item: CatalogGame) => {
     return `/pc/${encodeURIComponent(item.slug)}`
+  }
+
+  const getOpenLabel = (item: CatalogGame) => {
+    return item.canOpenPage ? 'Open game page' : 'Page not ready yet'
   }
 
   const getPriceLabel = (item: CatalogGame) => {
@@ -250,7 +255,7 @@ export default function CatalogPage() {
                 suggestions.map((item) => {
                   const href = buildGameHref(item)
 
-                  return (
+                                    return item.canOpenPage ? (
                     <Link
                       key={item.id}
                       href={href}
@@ -287,6 +292,34 @@ export default function CatalogPage() {
                         Open
                       </span>
                     </Link>
+                  ) : (
+                    <div
+                      key={item.id}
+                      className="flex w-full items-center gap-3 border-t border-zinc-800 px-4 py-3 text-left first:border-t-0 opacity-80"
+                    >
+                      <div className="h-12 w-12 shrink-0 overflow-hidden rounded-xl bg-zinc-800">
+                        {item.thumb ? (
+                          <img
+                            src={item.thumb}
+                            alt={item.title || 'Game'}
+                            className="h-full w-full object-cover"
+                          />
+                        ) : null}
+                      </div>
+
+                      <div className="min-w-0 flex-1">
+                        <p className="truncate text-sm font-medium text-zinc-100">
+                          {item.title}
+                        </p>
+                        <p className="text-xs text-zinc-500">
+                          Page not ready yet for this catalog entry
+                        </p>
+                      </div>
+
+                      <span className="rounded-lg border border-zinc-700 px-3 py-2 text-xs text-zinc-500">
+                        Soon
+                      </span>
+                    </div>
                   )
                 })
               ) : (
@@ -378,22 +411,40 @@ export default function CatalogPage() {
                   key={game.id}
                   className="overflow-hidden rounded-3xl border border-zinc-800 bg-zinc-900 shadow-lg"
                 >
-                  <Link href={href} className="block h-32 w-full bg-zinc-800">
-                    {game.thumb ? (
-                      <img
-                        src={game.thumb}
-                        alt={game.title || 'Game'}
-                        className="h-full w-full object-cover"
-                      />
-                    ) : null}
-                  </Link>
+                                    {game.canOpenPage ? (
+                    <Link href={href} className="block h-32 w-full bg-zinc-800">
+                      {game.thumb ? (
+                        <img
+                          src={game.thumb}
+                          alt={game.title || 'Game'}
+                          className="h-full w-full object-cover"
+                        />
+                      ) : null}
+                    </Link>
+                  ) : (
+                    <div className="block h-32 w-full bg-zinc-800">
+                      {game.thumb ? (
+                        <img
+                          src={game.thumb}
+                          alt={game.title || 'Game'}
+                          className="h-full w-full object-cover opacity-90"
+                        />
+                      ) : null}
+                    </div>
+                  )}
 
                   <div className="p-4">
-                    <Link href={href}>
-                      <h2 className="line-clamp-2 text-base font-bold transition hover:text-emerald-300">
+                                        {game.canOpenPage ? (
+                      <Link href={href}>
+                        <h2 className="line-clamp-2 text-base font-bold transition hover:text-emerald-300">
+                          {game.title}
+                        </h2>
+                      </Link>
+                    ) : (
+                      <h2 className="line-clamp-2 text-base font-bold text-zinc-100">
                         {game.title}
                       </h2>
-                    </Link>
+                    )}
 
                     <div className="mt-3 rounded-2xl border border-zinc-800 bg-zinc-950 p-3">
                       <p className="text-xs uppercase tracking-wider text-zinc-500">
@@ -438,12 +489,18 @@ export default function CatalogPage() {
                     </div>
 
                     <div className="mt-4 grid gap-2">
-                      <Link
-                        href={href}
-                        className="rounded-xl bg-white px-4 py-2 text-center text-sm font-semibold text-black transition hover:opacity-90"
-                      >
-                        Open game page
-                      </Link>
+                                            {game.canOpenPage ? (
+                        <Link
+                          href={href}
+                          className="rounded-xl bg-white px-4 py-2 text-center text-sm font-semibold text-black transition hover:opacity-90"
+                        >
+                          {getOpenLabel(game)}
+                        </Link>
+                      ) : (
+                        <div className="rounded-xl border border-zinc-700 px-4 py-2 text-center text-sm font-medium text-zinc-500">
+                          {getOpenLabel(game)}
+                        </div>
+                      )}
                     </div>
                   </div>
                 </article>

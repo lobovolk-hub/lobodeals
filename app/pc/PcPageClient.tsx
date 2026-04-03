@@ -36,7 +36,7 @@ type PcBrowsePageResponse = {
 
 type TopRatedPcGame = {
   steamAppID: string
-  slug?: string
+  slug: string
   title: string
   salePrice: string
   normalPrice: string
@@ -47,6 +47,17 @@ type TopRatedPcGame = {
   url: string
   metacritic: number
   isFreeToPlay: boolean
+}
+
+type TopRatedResponse = {
+  items: TopRatedPcGame[]
+  totalItems: number
+  totalPages: number
+  page: number
+  pageSize: number
+  hasNextPage: boolean
+  mode?: 'top-rated'
+  source?: string
 }
 
 type UnifiedCardItem = PcBrowseItem | TopRatedPcGame
@@ -483,15 +494,24 @@ export default function PcPageClient() {
       try {
         setLoading(true)
 
-        if (sort === 'top-rated') {
-          const topRatedRes = await fetch('/api/pc-top-rated?limit=300')
-          const topRatedData = await topRatedRes.json()
+                if (sort === 'top-rated') {
+          const params = new URLSearchParams()
+          params.set('page', String(currentPage))
+          params.set('pageSize', String(PAGE_SIZE))
+
+          if (query.trim()) params.set('q', query.trim())
+          if (priceFilter !== 'all') params.set('price', priceFilter)
+
+          const topRatedRes = await fetch(`/api/pc-top-rated?${params.toString()}`)
+          const topRatedData: TopRatedResponse = await topRatedRes.json()
 
           if (!cancelled) {
-            setTopRatedGames(Array.isArray(topRatedData) ? topRatedData : [])
+            setTopRatedGames(
+              Array.isArray(topRatedData?.items) ? topRatedData.items : []
+            )
             setBrowseGames([])
-            setBrowseTotalItems(0)
-            setBrowseTotalPages(1)
+            setBrowseTotalItems(Number(topRatedData?.totalItems || 0))
+            setBrowseTotalPages(Math.max(1, Number(topRatedData?.totalPages || 1)))
           }
 
           return
@@ -555,38 +575,10 @@ export default function PcPageClient() {
       return true
     })
 
-    if (sort === 'top-rated' && topRatedReady) {
-      const topRatedItems = topRatedGames.filter((item) => {
-        const salePrice = Number(item.salePrice || 0)
-        const savings = getSafeDiscountPercent(item.salePrice, item.normalPrice, item.savings)
-
-        if (priceFilter === 'under-5' && !(salePrice > 0 && salePrice < 5)) return false
-        if (priceFilter === 'under-10' && !(salePrice > 0 && salePrice < 10)) return false
-        if (priceFilter === 'over-80' && savings < 80) return false
-
-        if (normalizedQuery) {
-          return normalizeSteamTitle(item.title).includes(normalizedQuery)
-        }
-
-        return true
-      })
-
+        if (sort === 'top-rated' && topRatedReady) {
       return {
         mode: 'top-rated' as const,
-        items: [...topRatedItems].sort((a, b) => {
-          if (b.metacritic !== a.metacritic) {
-            return b.metacritic - a.metacritic
-          }
-
-          const savingsA = getSafeDiscountPercent(a.salePrice, a.normalPrice, a.savings)
-          const savingsB = getSafeDiscountPercent(b.salePrice, b.normalPrice, b.savings)
-
-          if (savingsB !== savingsA) {
-            return savingsB - savingsA
-          }
-
-          return a.title.localeCompare(b.title)
-        }),
+        items: topRatedGames,
       }
     }
 

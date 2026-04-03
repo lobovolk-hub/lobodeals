@@ -7,19 +7,6 @@ import { supabase } from '@/lib/supabaseClient'
 import { getStoreLogo, getStoreName } from '@/lib/storeMap'
 import { trackClick } from '@/lib/analytics'
 
-type RawgMeta = {
-  name?: string
-  description?: string
-  background_image?: string
-  rating?: number
-  metacritic?: number | null
-  released?: string
-  genres?: string[]
-  platforms?: string[]
-  screenshots?: string[]
-  clip?: string | null
-}
-
 type CanonicalPcOfferLocal = {
   id: string
   source: 'steam'
@@ -53,7 +40,8 @@ type CanonicalPcGameLocal = {
   headerImage: string | null
   capsuleImage: string | null
   screenshots: string[]
-  rawgMeta: RawgMeta | null
+  heroImage: string | null
+  metacritic: number | null
   offers: CanonicalPcOfferLocal[]
   heroOffer: CanonicalPcOfferLocal
   steamGenres: string[]
@@ -306,18 +294,18 @@ export default function PcCanonicalGamePage() {
   const maxThumbOffset = Math.max(0, screenshots.length - 4)
   const visibleThumbs = screenshots.slice(thumbOffset, thumbOffset + 4)
 
-  const coverImage =
+    const coverImage =
     game?.headerImage ||
     screenshots?.[0] ||
-    game?.rawgMeta?.background_image ||
+    game?.heroImage ||
     game?.heroOffer?.thumb ||
     game?.capsuleImage ||
     '/placeholder-game.jpg'
 
   const description = cleanDescription(game?.description || game?.shortDescription || '')
   const metacritic =
-    typeof game?.rawgMeta?.metacritic === 'number'
-      ? game.rawgMeta.metacritic
+    typeof game?.metacritic === 'number'
+      ? game.metacritic
       : heroOffer?.metacriticScore
       ? Number(heroOffer.metacriticScore)
       : null
@@ -327,8 +315,6 @@ export default function PcCanonicalGamePage() {
   const genres =
     Array.isArray(game?.steamGenres) && game.steamGenres.length > 0
       ? game.steamGenres
-      : Array.isArray(game?.rawgMeta?.genres) && game?.rawgMeta?.genres?.length
-      ? game.rawgMeta.genres
       : []
 
   if (loading) {

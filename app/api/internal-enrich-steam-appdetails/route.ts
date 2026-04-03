@@ -23,11 +23,13 @@ type SteamAppDetailsResponse = Record<
       is_free?: boolean
       release_date?: {
         date?: string
+        coming_soon?: boolean
       }
       metacritic?: {
         score?: number
         url?: string
       }
+      reviews?: string
       genres?: Array<{
         id?: string | number
         description?: string
@@ -64,50 +66,6 @@ type SteamAppDetailsResponse = Record<
   }
 >
 
-type RawgSearchResult = {
-  id?: number
-  slug?: string
-  name?: string
-  background_image?: string | null
-  background_image_additional?: string | null
-  metacritic?: number | null
-  released?: string | null
-}
-
-type RawgSearchResponse = {
-  results?: RawgSearchResult[]
-}
-
-type RawgGameDetail = {
-  id?: number
-  slug?: string
-  name?: string
-  description?: string | null
-  background_image?: string | null
-  background_image_additional?: string | null
-  metacritic?: number | null
-  released?: string | null
-  genres?: Array<{ name?: string | null }>
-  platforms?: Array<{
-    platform?: {
-      name?: string | null
-    } | null
-  }>
-  clip?:
-    | string
-    | {
-        clip?: string | null
-        clips?: {
-          '320'?: string | null
-          '640'?: string | null
-          full?: string | null
-        } | null
-        preview?: string | null
-        video?: string | null
-      }
-    | null
-}
-
 type PcGameRow = {
   id: string
   steam_app_id?: string | null
@@ -117,6 +75,7 @@ type PcGameRow = {
   hero_image_url?: string | null
   metacritic?: number | null
   clip_url?: string | null
+  slug?: string | null
 }
 
 type OfferRow = {
@@ -141,14 +100,6 @@ function getServiceSupabase() {
   return createClient(url, serviceRole)
 }
 
-function getRawgApiKey() {
-  return (
-    process.env.RAWG_API_KEY ||
-    process.env.NEXT_PUBLIC_RAWG_API_KEY ||
-    ''
-  ).trim()
-}
-
 function dedupeStrings(values: Array<string | null | undefined>) {
   return Array.from(
     new Set(
@@ -156,26 +107,6 @@ function dedupeStrings(values: Array<string | null | undefined>) {
         .map((value) => String(value || '').trim())
         .filter(Boolean)
     )
-  )
-}
-
-function normalizeRawgGenres(value?: Array<{ name?: string | null }>) {
-  if (!Array.isArray(value)) return []
-
-  return dedupeStrings(value.map((item) => String(item?.name || '')))
-}
-
-function normalizeRawgPlatforms(
-  value?: Array<{
-    platform?: {
-      name?: string | null
-    } | null
-  }>
-) {
-  if (!Array.isArray(value)) return []
-
-  return dedupeStrings(
-    value.map((item) => String(item?.platform?.name || ''))
   )
 }
 
@@ -188,24 +119,6 @@ function normalizeSteamGenres(
   if (!Array.isArray(value)) return []
 
   return dedupeStrings(value.map((item) => String(item?.description || '')))
-}
-
-function extractRawgClipUrl(rawg: RawgGameDetail | null) {
-  if (!rawg?.clip) return ''
-
-  if (typeof rawg.clip === 'string') {
-    return rawg.clip.trim()
-  }
-
-  return String(
-    rawg.clip.clip ||
-      rawg.clip.video ||
-      rawg.clip.clips?.full ||
-      rawg.clip.clips?.['640'] ||
-      rawg.clip.clips?.['320'] ||
-      rawg.clip.preview ||
-      ''
-  ).trim()
 }
 
 function extractSteamMovieUrl(
@@ -236,143 +149,80 @@ function extractSteamMovieUrl(
   ).trim()
 }
 
-function normalizeRawgCacheKey(title: string) {
-  return `rawg_meta::${title.toLowerCase().trim()}::1`
-}
+function extractMetacriticFromReviews(reviews?: string | null) {
+  const raw = String(reviews || '').trim()
+  if (!raw) return null
 
-function normalizeTitleForMatch(value: string) {
-  return value
-    .normalize('NFKD')
-    .replace(/[\u0300-\u036f]/g, '')
-    .replace(/[®™©]/g, '')
-    .toLowerCase()
-    .trim()
-    .replace(/[:\-–—_/.,+!?'"]/g, ' ')
-    .replace(/[^a-z0-9\s]/g, ' ')
-    .replace(/\s+/g, ' ')
-    .trim()
-}
+  const normalized = raw.replace(/\u2013|\u2014/g, '-')
+  const match = normalized.match(/(\d{2,3})\s*-\s*metacritic/i)
 
-function chooseBestRawgSearchResult(
-  results: RawgSearchResult[],
-  targetTitle: string
-) {
-  if (!results.length) return null
-
-  const target = normalizeTitleForMatch(targetTitle)
-
-  const ranked = [...results].sort((a, b) => {
-    const aName = normalizeTitleForMatch(String(a.name || ''))
-    const bName = normalizeTitleForMatch(String(b.name || ''))
-
-    const aExact = aName === target ? 1 : 0
-    const bExact = bName === target ? 1 : 0
-    if (bExact !== aExact) return bExact - aExact
-
-    const aContains = aName.includes(target) || target.includes(aName) ? 1 : 0
-    const bContains = bName.includes(target) || target.includes(bName) ? 1 : 0
-    if (bContains !== aContains) return bContains - aContains
-
-    const aMeta = Number(a.metacritic || 0)
-    const bMeta = Number(b.metacritic || 0)
-    return bMeta - aMeta
-  })
-
-  return ranked[0] || null
-}
-
-async function fetchRawgGameByTitle(title: string) {
-  const apiKey = getRawgApiKey()
-  if (!apiKey) return null
-
-  const searchUrl =
-    `https://api.rawg.io/api/games?key=${encodeURIComponent(apiKey)}` +
-    `&search=${encodeURIComponent(title)}` +
-    `&page_size=5`
-
-  const searchRes = await fetch(searchUrl, {
-    headers: {
-      'User-Agent': 'LoboDeals/2.52g',
-    },
-    cache: 'no-store',
-  })
-
-  if (!searchRes.ok) {
+  if (!match) {
     return null
   }
 
-  const searchJson = (await searchRes.json()) as RawgSearchResponse
-  const results = Array.isArray(searchJson.results) ? searchJson.results : []
-
-  const best = chooseBestRawgSearchResult(results, title)
-  if (!best?.slug) return null
-
-  const detailUrl =
-    `https://api.rawg.io/api/games/${encodeURIComponent(best.slug)}?key=${encodeURIComponent(apiKey)}`
-
-  const detailRes = await fetch(detailUrl, {
-    headers: {
-      'User-Agent': 'LoboDeals/2.52g',
-    },
-    cache: 'no-store',
-  })
-
-  if (!detailRes.ok) {
+  const score = Number(match[1])
+  if (!Number.isFinite(score)) {
     return null
   }
 
-  const detail = (await detailRes.json()) as RawgGameDetail
-  return detail
-}
-
-async function upsertRawgCache(
-  supabase: ReturnType<typeof getServiceSupabase>,
-  title: string,
-  rawg: RawgGameDetail
-) {
-  const payload = {
-    name: rawg.name || title,
-    description: String(rawg.description || '').trim() || null,
-    background_image:
-      String(rawg.background_image || '').trim() ||
-      String(rawg.background_image_additional || '').trim() ||
-      null,
-    metacritic:
-      Number(rawg.metacritic || 0) > 0 ? Number(rawg.metacritic) : null,
-    released: String(rawg.released || '').trim() || null,
-    genres: normalizeRawgGenres(rawg.genres),
-    platforms: normalizeRawgPlatforms(rawg.platforms),
-    clip: extractRawgClipUrl(rawg) || null,
+  if (score < 0 || score > 100) {
+    return null
   }
 
-  await supabase.from('deals_cache').upsert(
-    [
-      {
-        cache_key: normalizeRawgCacheKey(title),
-        payload,
-        updated_at: new Date().toISOString(),
-      },
-    ],
-    {
-      onConflict: 'cache_key',
-    }
-  )
+  return score
 }
 
-async function upsertSyncLog(
+function parseSteamReleaseDate(value?: string | null) {
+  const raw = String(value || '').trim()
+  if (!raw) return null
+
+  const normalized = raw.toLowerCase()
+
+  if (
+    normalized === 'coming soon' ||
+    normalized === 'to be announced' ||
+    normalized === 'tba'
+  ) {
+    return null
+  }
+
+  const parsed = new Date(raw)
+  if (Number.isNaN(parsed.getTime())) {
+    return null
+  }
+
+  return parsed.toISOString().slice(0, 10)
+}
+
+async function insertSyncLog(
   supabase: ReturnType<typeof getServiceSupabase>,
-  status: 'success' | 'error',
-  message: string,
-  meta: Record<string, unknown>
+  params: {
+    jobType: string
+    status: 'success' | 'error'
+    notes: string
+    itemsProcessed?: number | null
+    startedAt?: string
+    finishedAt?: string
+  }
 ) {
-  await supabase.from('sync_logs').insert([
+  const startedAt = params.startedAt || new Date().toISOString()
+  const finishedAt = params.finishedAt || new Date().toISOString()
+
+  const { error } = await supabase.from('sync_logs').insert([
     {
-      source: 'steam_appdetails_enrich',
-      status,
-      message,
-      meta,
+      job_type: params.jobType,
+      status: params.status,
+      notes: params.notes,
+      items_processed:
+        typeof params.itemsProcessed === 'number' ? params.itemsProcessed : null,
+      started_at: startedAt,
+      finished_at: finishedAt,
     },
   ])
+
+  if (error) {
+    console.error('sync_logs insert failed', error)
+  }
 }
 
 async function loadTargetedGames(
@@ -385,7 +235,7 @@ async function loadTargetedGames(
   if (steamAppIDs.length > 0) {
     const { data, error } = await supabase
       .from('pc_games')
-      .select('id, steam_app_id, steam_name, canonical_title, steam_type, hero_image_url, metacritic, clip_url')
+      .select('id, steam_app_id, steam_name, canonical_title, steam_type, hero_image_url, metacritic, clip_url, slug')
       .in('steam_app_id', steamAppIDs)
 
     if (error) throw error
@@ -398,7 +248,7 @@ async function loadTargetedGames(
   for (const title of titles) {
     const { data, error } = await supabase
       .from('pc_games')
-      .select('id, steam_app_id, steam_name, canonical_title, steam_type, hero_image_url, metacritic, clip_url')
+      .select('id, steam_app_id, steam_name, canonical_title, steam_type, hero_image_url, metacritic, clip_url, slug')
       .or(
         [
           `steam_name.ilike.%${title}%`,
@@ -423,7 +273,7 @@ async function loadPriorityGames(
 ) {
   const { data, error } = await supabase
     .from('pc_games')
-    .select('id, steam_app_id, steam_name, canonical_title, steam_type, hero_image_url, metacritic, clip_url, updated_at')
+    .select('id, steam_app_id, steam_name, canonical_title, steam_type, hero_image_url, metacritic, clip_url, updated_at, slug')
     .eq('is_catalog_ready', true)
     .eq('steam_type', 'game')
     .order('updated_at', { ascending: true, nullsFirst: true })
@@ -499,6 +349,7 @@ function centsToMoney(value?: number | null) {
 
 export async function POST(request: Request) {
   const supabase = getServiceSupabase()
+  const jobStartedAt = new Date().toISOString()
 
   try {
     const body = await request.json().catch(() => ({}))
@@ -515,7 +366,6 @@ export async function POST(request: Request) {
     let enriched = 0
     let screenshotsInserted = 0
     let rateLimited = 0
-    let rawgMatched = 0
     let priceRowsUpserted = 0
 
     let targetedGames: PcGameRow[] | null = null
@@ -548,24 +398,28 @@ export async function POST(request: Request) {
 
         const response = await fetch(appdetailsUrl, {
           headers: {
-            'User-Agent': 'LoboDeals/2.52g',
+            'User-Agent': 'LoboDeals/2.52h',
           },
           cache: 'no-store',
         })
 
         if (response.status === 429) {
           rateLimited += 1
-          await upsertSyncLog(supabase, 'error', 'Steam returned 429 during enrich', {
-            steamAppID,
-            iteration: i + 1,
+          await insertSyncLog(supabase, {
+            jobType: 'steam_appdetails_enrich',
+            status: 'error',
+            notes: `Steam returned 429 during enrich for app ${steamAppID}`,
+            itemsProcessed: 1,
           })
           continue
         }
 
         if (!response.ok) {
-          await upsertSyncLog(supabase, 'error', 'Steam appdetails request failed', {
-            steamAppID,
-            status: response.status,
+          await insertSyncLog(supabase, {
+            jobType: 'steam_appdetails_enrich',
+            status: 'error',
+            notes: `Steam appdetails request failed for app ${steamAppID} with status ${response.status}`,
+            itemsProcessed: 1,
           })
           continue
         }
@@ -574,6 +428,12 @@ export async function POST(request: Request) {
         const entry = json?.[steamAppID]
 
         if (!entry?.success || !entry.data) {
+          await insertSyncLog(supabase, {
+            jobType: 'steam_appdetails_enrich',
+            status: 'error',
+            notes: `Steam appdetails returned no usable data for app ${steamAppID}`,
+            itemsProcessed: 1,
+          })
           continue
         }
 
@@ -589,35 +449,26 @@ export async function POST(request: Request) {
 
         const steamMovieUrl = extractSteamMovieUrl(data.movies)
         const steamMetacritic = Number(data.metacritic?.score || 0)
-
-        const rawg = canonicalTitle
-          ? await fetchRawgGameByTitle(canonicalTitle)
-          : null
-
-        if (rawg) {
-          rawgMatched += 1
-          await upsertRawgCache(supabase, canonicalTitle, rawg)
-        }
-
-        const rawgClipUrl = extractRawgClipUrl(rawg)
-        const rawgDescription = String(rawg?.description || '').trim()
-        const rawgGenres = normalizeRawgGenres(rawg?.genres)
-        const rawgPlatforms = normalizeRawgPlatforms(rawg?.platforms)
+        const reviewsMetacritic = extractMetacriticFromReviews(data.reviews || null)
 
         const heroImageUrl =
           String(data.background_raw || '').trim() ||
           String(data.background || '').trim() ||
-          String(data.header_image || '').trim() ||
-          String(rawg?.background_image || '').trim() ||
-          String(rawg?.background_image_additional || '').trim()
+          String(data.header_image || '').trim()
 
-        const clipUrl = steamMovieUrl || rawgClipUrl
+        const clipUrl = steamMovieUrl || ''
         const metacritic =
           steamMetacritic > 0
             ? steamMetacritic
-            : Number(rawg?.metacritic || 0) > 0
-            ? Number(rawg?.metacritic || 0)
+            : reviewsMetacritic && reviewsMetacritic > 0
+            ? reviewsMetacritic
             : null
+
+        const safeReleaseDate = parseSteamReleaseDate(data.release_date?.date || null)
+        const existingSlug = String(game.slug || '').trim()
+        const nextSlug =
+          existingSlug ||
+          (canonicalTitle ? makePcGameSlug(canonicalTitle, steamAppID) : '')
 
         const { error: updateError } = await supabase
           .from('pc_games')
@@ -626,24 +477,18 @@ export async function POST(request: Request) {
             canonical_title: canonicalTitle || null,
             canonical_key: canonicalTitle ? makePcCanonicalKey(canonicalTitle) : null,
             normalized_title: canonicalTitle ? canonicalTitle.toLowerCase().trim() : null,
-            slug: canonicalTitle
-              ? makePcGameSlug(canonicalTitle, steamAppID)
-              : null,
+            slug: nextSlug || null,
             steam_type: String(data.type || '').trim() || null,
             short_description: String(data.short_description || '').trim() || null,
             description:
               String(data.about_the_game || '').trim() ||
               String(data.detailed_description || '').trim() ||
-              rawgDescription ||
               null,
             header_image: String(data.header_image || '').trim() || null,
             capsule_image: String(data.capsule_image || '').trim() || null,
             is_free_to_play: Boolean(data.is_free),
             is_catalog_ready: true,
-            release_date:
-              String(data.release_date?.date || '').trim() ||
-              String(rawg?.released || '').trim() ||
-              null,
+            release_date: safeReleaseDate,
             hero_image_url: heroImageUrl || null,
             clip_url: clipUrl || null,
             steam_movie_url: clipUrl || null,
@@ -651,17 +496,16 @@ export async function POST(request: Request) {
             steam_genres: steamGenres.length > 0 ? steamGenres : null,
             steam_developers: steamDevelopers.length > 0 ? steamDevelopers : null,
             steam_publishers: steamPublishers.length > 0 ? steamPublishers : null,
-            rawg_description: rawgDescription || null,
-            rawg_genres: rawgGenres.length > 0 ? rawgGenres : null,
-            rawg_platforms: rawgPlatforms.length > 0 ? rawgPlatforms : null,
             updated_at: new Date().toISOString(),
           })
           .eq('id', game.id)
 
         if (updateError) {
-          await upsertSyncLog(supabase, 'error', 'Could not update pc_games during enrich', {
-            steamAppID,
-            error: updateError.message,
+          await insertSyncLog(supabase, {
+            jobType: 'steam_appdetails_enrich',
+            status: 'error',
+            notes: `Could not update pc_games during enrich for app ${steamAppID}: ${updateError.message}`,
+            itemsProcessed: 1,
           })
           continue
         }
@@ -733,17 +577,17 @@ export async function POST(request: Request) {
       }
     }
 
-    await upsertSyncLog(supabase, 'success', 'Steam-first enrich finished', {
-      processed,
-      enriched,
-      screenshotsInserted,
-      rateLimited,
-      rawgMatched,
-      priceRowsUpserted,
-      iterations,
-      batchSize,
-      targetedSteamAppIDs: steamAppIDs,
-      targetedTitles: titles,
+    await insertSyncLog(supabase, {
+      jobType: 'steam_appdetails_enrich',
+      status: 'success',
+      notes:
+        `Steam-only enrich finished ` +
+        `(processed ${processed}, enriched ${enriched}, screenshotsInserted ${screenshotsInserted}, ` +
+        `rateLimited ${rateLimited}, priceRowsUpserted ${priceRowsUpserted}, ` +
+        `iterations ${iterations}, batchSize ${batchSize})`,
+      itemsProcessed: processed,
+      startedAt: jobStartedAt,
+      finishedAt: new Date().toISOString(),
     })
 
     return Response.json({
@@ -752,7 +596,6 @@ export async function POST(request: Request) {
       enriched,
       screenshotsInserted,
       rateLimited,
-      rawgMatched,
       priceRowsUpserted,
       iterations,
       batchSize,
@@ -762,14 +605,17 @@ export async function POST(request: Request) {
   } catch (error) {
     console.error('internal enrich error', error)
 
-    await upsertSyncLog(
-      supabase,
-      'error',
-      'Steam-first enrich crashed',
-      {
-        error: error instanceof Error ? error.message : 'Unknown error',
-      }
-    )
+    await insertSyncLog(supabase, {
+      jobType: 'steam_appdetails_enrich',
+      status: 'error',
+      notes:
+        `Steam-only enrich crashed: ${
+          error instanceof Error ? error.message : 'Unknown error'
+        }`,
+      itemsProcessed: 0,
+      startedAt: jobStartedAt,
+      finishedAt: new Date().toISOString(),
+    })
 
     return Response.json(
       {

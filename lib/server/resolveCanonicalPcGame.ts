@@ -32,9 +32,6 @@ type PcGameRow = {
   hero_image_url?: string | null
   clip_url?: string | null
   metacritic?: number | null
-  rawg_description?: string | null
-  rawg_genres?: string[] | null
-  rawg_platforms?: string[] | null
   steam_genres?: string[] | null
   steam_developers?: string[] | null
   steam_publishers?: string[] | null
@@ -60,26 +57,6 @@ type PcStoreOfferRow = {
 type PcScreenshotRow = {
   image_url?: string | null
   sort_order?: number | null
-}
-
-type RawgMetaPayload = {
-  name?: string
-  description?: string
-  background_image?: string
-  background_image_additional?: string
-  rating?: number
-  metacritic?: number | null
-  released?: string
-  genres?: string[]
-  platforms?: string[]
-  screenshots?: string[]
-  clip?: string | null
-}
-
-type DealsCacheRow = {
-  cache_key?: string | null
-  payload?: RawgMetaPayload | null
-  updated_at?: string | null
 }
 
 export type CanonicalPcOfferLocal = {
@@ -114,8 +91,9 @@ export type CanonicalPcGameLocal = {
   description: string | null
   headerImage: string | null
   capsuleImage: string | null
+  heroImage: string | null
   screenshots: string[]
-  rawgMeta: RawgMetaPayload | null
+  metacritic: number | null
   offers: CanonicalPcOfferLocal[]
   heroOffer: CanonicalPcOfferLocal
   steamGenres: string[]
@@ -180,7 +158,7 @@ async function findGameRow(
   if (!slug) return null
 
   const selectFields =
-    'id, steam_app_id, slug, steam_name, canonical_title, canonical_key, normalized_title, steam_type, is_free_to_play, is_active, is_catalog_ready, release_date, short_description, description, header_image, capsule_image, hero_image_url, clip_url, metacritic, rawg_description, rawg_genres, rawg_platforms, steam_genres, steam_developers, steam_publishers, steam_movie_url'
+    'id, steam_app_id, slug, steam_name, canonical_title, canonical_key, normalized_title, steam_type, is_free_to_play, is_active, is_catalog_ready, release_date, short_description, description, header_image, capsule_image, hero_image_url, clip_url, metacritic, steam_genres, steam_developers, steam_publishers, steam_movie_url'
 
   const { data: bySlug, error: slugError } = await supabase
     .from('pc_games')
@@ -288,45 +266,6 @@ async function loadScreenshots(
   return Array.isArray(data) ? (data as PcScreenshotRow[]) : []
 }
 
-async function loadFallbackRawgMeta(
-  supabase: ReturnType<typeof getServiceSupabase>,
-  game: PcGameRow
-) {
-  const lookupTitles = dedupeStrings([
-    game.canonical_title,
-    game.steam_name,
-  ])
-
-  if (lookupTitles.length === 0) return null
-
-  const keys = lookupTitles.map(
-    (title) => `rawg_meta::${title.toLowerCase().trim()}::1`
-  )
-
-  const { data, error } = await supabase
-    .from('deals_cache')
-    .select('cache_key, payload, updated_at')
-    .in('cache_key', keys)
-
-  if (error) throw error
-
-  const rows = Array.isArray(data) ? (data as DealsCacheRow[]) : []
-
-  if (rows.length === 0) return null
-
-  const ranked = [...rows].sort((a, b) => {
-    const metaA = Number(a.payload?.metacritic || 0)
-    const metaB = Number(b.payload?.metacritic || 0)
-    if (metaB !== metaA) return metaB - metaA
-
-    const updatedA = Date.parse(String(a.updated_at || ''))
-    const updatedB = Date.parse(String(b.updated_at || ''))
-    return updatedB - updatedA
-  })
-
-  return ranked[0]?.payload || null
-}
-
 export async function resolveCanonicalPcGame(
   input: ResolveCanonicalPcGameInput
 ): Promise<CanonicalPcGameLocal | null> {
@@ -339,7 +278,6 @@ export async function resolveCanonicalPcGame(
   if (offers.length === 0) return null
 
   const screenshotsRows = await loadScreenshots(supabase, game.id)
-  const fallbackRawgMeta = await loadFallbackRawgMeta(supabase, game)
 
   const canonicalTitle =
     String(game.canonical_title || '').trim() ||
@@ -357,41 +295,8 @@ export async function resolveCanonicalPcGame(
     String(game.slug || '').trim() ||
     makePcCanonicalSlug(canonicalTitle)
 
-  const rawgMeta: RawgMetaPayload | null = {
-    name: canonicalTitle,
-    description:
-      String(game.rawg_description || '').trim() ||
-      String(fallbackRawgMeta?.description || '').trim() ||
-      '',
-    background_image:
-      String(game.hero_image_url || '').trim() ||
-      String(fallbackRawgMeta?.background_image || '').trim() ||
-      '',
-    metacritic:
-      Number(game.metacritic || 0) > 0
-        ? Number(game.metacritic)
-        : Number(fallbackRawgMeta?.metacritic || 0) > 0
-        ? Number(fallbackRawgMeta?.metacritic)
-        : null,
-    released:
-      String(game.release_date || '').trim() ||
-      String(fallbackRawgMeta?.released || '').trim() ||
-      '',
-    genres: dedupeStrings([
-      ...(Array.isArray(game.steam_genres) ? game.steam_genres : []),
-      ...(Array.isArray(game.rawg_genres) ? game.rawg_genres : []),
-      ...(Array.isArray(fallbackRawgMeta?.genres) ? fallbackRawgMeta.genres : []),
-    ]),
-    platforms: Array.isArray(fallbackRawgMeta?.platforms)
-      ? dedupeStrings(fallbackRawgMeta.platforms)
-      : [],
-    screenshots: [],
-    clip:
-      String(game.steam_movie_url || '').trim() ||
-      String(game.clip_url || '').trim() ||
-      String(fallbackRawgMeta?.clip || '').trim() ||
-      null,
-  }
+  const metacritic =
+    Number(game.metacritic || 0) > 0 ? Number(game.metacritic) : null
 
   const mappedOffers: CanonicalPcOfferLocal[] = offers.map((offer) => ({
     id: `${game.id}-${offer.store_id || '1'}-us`,
@@ -415,9 +320,7 @@ export async function resolveCanonicalPcGame(
     storeID: String(offer.store_id || '1').trim(),
     url: String(offer.url || '').trim() || buildSteamStoreUrl(game.steam_app_id),
     metacriticScore:
-      rawgMeta && typeof rawgMeta.metacritic === 'number'
-        ? String(rawgMeta.metacritic)
-        : undefined,
+      typeof metacritic === 'number' ? String(metacritic) : undefined,
   }))
 
   const heroOffer =
@@ -440,16 +343,12 @@ export async function resolveCanonicalPcGame(
       storeID: '1',
       url: buildSteamStoreUrl(game.steam_app_id),
       metacriticScore:
-        rawgMeta && typeof rawgMeta.metacritic === 'number'
-          ? String(rawgMeta.metacritic)
-          : undefined,
+        typeof metacritic === 'number' ? String(metacritic) : undefined,
     } satisfies CanonicalPcOfferLocal)
 
   const screenshots = dedupeStrings(
     screenshotsRows.map((row) => String(row.image_url || '').trim())
   )
-
-  rawgMeta.screenshots = screenshots
 
   return {
     id: game.id,
@@ -459,17 +358,14 @@ export async function resolveCanonicalPcGame(
     canonicalKey,
     steamAppID: String(game.steam_app_id || '').trim() || undefined,
     isFreeToPlay: Boolean(game.is_free_to_play),
-    releaseDate: String(game.release_date || '').trim() || rawgMeta?.released || null,
+    releaseDate: String(game.release_date || '').trim() || null,
     shortDescription: String(game.short_description || '').trim() || null,
-    description:
-      String(game.description || '').trim() ||
-      String(game.rawg_description || '').trim() ||
-      String(fallbackRawgMeta?.description || '').trim() ||
-      null,
+    description: String(game.description || '').trim() || null,
     headerImage: String(game.header_image || '').trim() || null,
     capsuleImage: String(game.capsule_image || '').trim() || null,
+    heroImage: String(game.hero_image_url || '').trim() || null,
     screenshots,
-    rawgMeta: rawgMeta || null,
+    metacritic,
     offers: mappedOffers,
     heroOffer,
     steamGenres: Array.isArray(game.steam_genres) ? dedupeStrings(game.steam_genres) : [],

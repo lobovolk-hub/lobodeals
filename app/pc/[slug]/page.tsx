@@ -291,8 +291,8 @@ export default function PcCanonicalGamePage() {
     )
   }, [game])
 
-  const maxThumbOffset = Math.max(0, screenshots.length - 4)
-  const visibleThumbs = screenshots.slice(thumbOffset, thumbOffset + 4)
+  const maxThumbOffset = Math.max(0, screenshots.length - 2)
+  const visibleThumbs = screenshots.slice(thumbOffset, thumbOffset + 2)
 
     const coverImage =
     game?.headerImage ||
@@ -371,13 +371,78 @@ export default function PcCanonicalGamePage() {
             ) : null}
 
             <div className="grid items-start gap-6 lg:grid-cols-[420px_minmax(0,1fr)]">
-              <div className="rounded-3xl border border-zinc-800 bg-zinc-950 p-3">
-                <div className="flex items-center justify-center overflow-hidden rounded-2xl bg-black">
-                  <img
-                    src={coverImage}
-                    alt={game.canonicalTitle}
-                    className="h-auto w-full object-contain"
-                  />
+                            <div className="space-y-4">
+                <div className="rounded-3xl border border-zinc-800 bg-zinc-950 p-3">
+                  <div className="flex items-center justify-center overflow-hidden rounded-2xl bg-black">
+                    <img
+                      src={coverImage}
+                      alt={game.canonicalTitle}
+                      className="h-auto w-full object-contain"
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <div className="flex items-center justify-between gap-3">
+                    <div>
+                      <h2 className="text-lg font-bold text-white">Screenshots</h2>
+                      <p className="text-sm text-zinc-400">
+                        Real Steam screenshots only. Click to expand.
+                      </p>
+                    </div>
+
+                    {screenshots.length > 4 ? (
+                      <div className="flex items-center gap-2">
+                        <button
+                          type="button"
+                          disabled={thumbOffset <= 0}
+                          onClick={() => setThumbOffset((prev) => Math.max(0, prev - 1))}
+                          className="rounded-xl border border-zinc-700 px-3 py-2 text-xs font-medium text-zinc-100 transition hover:bg-zinc-800 disabled:cursor-not-allowed disabled:opacity-40"
+                        >
+                          ←
+                        </button>
+
+                        <button
+                          type="button"
+                          disabled={thumbOffset >= maxThumbOffset}
+                          onClick={() => setThumbOffset((prev) => Math.min(maxThumbOffset, prev + 1))}
+                          className="rounded-xl border border-zinc-700 px-3 py-2 text-xs font-medium text-zinc-100 transition hover:bg-zinc-800 disabled:cursor-not-allowed disabled:opacity-40"
+                        >
+                          →
+                        </button>
+                      </div>
+                    ) : null}
+                  </div>
+
+                  {visibleThumbs.length > 0 ? (
+                                        <div className="mt-3 grid grid-cols-2 gap-3">
+                      {visibleThumbs.map((shot) => (
+                        <button
+                          key={shot}
+                          type="button"
+                          onClick={() => {
+                            setSelectedScreenshot(shot)
+                            setLightboxOpen(true)
+                          }}
+                          className={`overflow-hidden rounded-2xl border transition ${
+                            selectedScreenshot === shot
+                              ? 'border-emerald-500/40 bg-emerald-500/10'
+                              : 'border-zinc-800 bg-zinc-950 hover:bg-zinc-800'
+                          }`}
+                        >
+                          <img
+                            src={shot}
+                            alt={game.canonicalTitle}
+                            className="h-24 w-full object-cover sm:h-28"
+                          />
+                        </button>
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="mt-3 rounded-2xl border border-zinc-800 bg-zinc-950 p-4 text-sm text-zinc-400">
+                      Screenshots not cached yet for this game.
+                    </div>
+                  )}
                 </div>
               </div>
 
@@ -438,41 +503,7 @@ export default function PcCanonicalGamePage() {
                   ) : null}
                 </div>
 
-                <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-                  <MetricCard
-                    label="Current Price"
-                    value={
-                      game.isFreeToPlay
-                        ? 'Free'
-                        : heroOffer?.salePrice
-                        ? formatMoney(heroOffer.salePrice)
-                        : heroOffer?.normalPrice
-                        ? formatMoney(heroOffer.normalPrice)
-                        : 'N/A'
-                    }
-                    sublabel="Steam US cached price"
-                  />
-
-                  <MetricCard
-                    label="Discount"
-                    value={game.isFreeToPlay ? 'Free' : safeSavings > 0 ? `${safeSavings}%` : '—'}
-                    sublabel="Current Steam discount"
-                  />
-
-                  <MetricCard
-                    label="Metacritic"
-                    value={typeof metacritic === 'number' ? metacritic : '—'}
-                    sublabel={typeof metacritic === 'number' ? 'Steam-first metadata' : 'Not available yet'}
-                  />
-
-                  <MetricCard
-                    label="Release Date"
-                    value={releaseLabel}
-                    sublabel="Steam-first game data"
-                  />
-                </div>
-
-                <div className="mt-5 flex flex-wrap gap-3">
+                                <div className="mt-5 flex flex-wrap items-center gap-3">
                   <button
                     disabled={authLoading}
                     onClick={async () => {
@@ -566,71 +597,44 @@ export default function PcCanonicalGamePage() {
                     </Link>
                   ) : null}
                 </div>
+
+                <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+                  <MetricCard
+                    label="Current Price"
+                    value={
+                      game.isFreeToPlay
+                        ? 'Free'
+                        : heroOffer?.salePrice
+                        ? formatMoney(heroOffer.salePrice)
+                        : heroOffer?.normalPrice
+                        ? formatMoney(heroOffer.normalPrice)
+                        : 'N/A'
+                    }
+                    sublabel="Steam US cached price"
+                  />
+
+                  <MetricCard
+                    label="Discount"
+                    value={game.isFreeToPlay ? 'Free' : safeSavings > 0 ? `${safeSavings}%` : '—'}
+                    sublabel="Current Steam discount"
+                  />
+
+                  <MetricCard
+                    label="Metacritic"
+                    value={typeof metacritic === 'number' ? metacritic : '—'}
+                    sublabel={typeof metacritic === 'number' ? 'Steam-first metadata' : 'Not available yet'}
+                  />
+
+                  <MetricCard
+                    label="Release Date"
+                    value={releaseLabel}
+                    sublabel="Steam-first game data"
+                  />
+                </div>
               </div>
             </div>
 
-            <div className="mt-6">
-              <div className="flex items-center justify-between gap-3">
-                <div>
-                  <h2 className="text-lg font-bold text-white">Screenshots</h2>
-                  <p className="text-sm text-zinc-400">
-                    Real Steam screenshots only. Click to expand.
-                  </p>
-                </div>
-
-                {screenshots.length > 4 ? (
-                  <div className="flex items-center gap-2">
-                    <button
-                      type="button"
-                      disabled={thumbOffset <= 0}
-                      onClick={() => setThumbOffset((prev) => Math.max(0, prev - 1))}
-                      className="rounded-xl border border-zinc-700 px-3 py-2 text-xs font-medium text-zinc-100 transition hover:bg-zinc-800 disabled:cursor-not-allowed disabled:opacity-40"
-                    >
-                      ←
-                    </button>
-
-                    <button
-                      type="button"
-                      disabled={thumbOffset >= maxThumbOffset}
-                      onClick={() => setThumbOffset((prev) => Math.min(maxThumbOffset, prev + 1))}
-                      className="rounded-xl border border-zinc-700 px-3 py-2 text-xs font-medium text-zinc-100 transition hover:bg-zinc-800 disabled:cursor-not-allowed disabled:opacity-40"
-                    >
-                      →
-                    </button>
-                  </div>
-                ) : null}
-              </div>
-
-              {visibleThumbs.length > 0 ? (
-                <div className="mt-3 grid grid-cols-4 gap-3">
-                  {visibleThumbs.map((shot) => (
-                    <button
-                      key={shot}
-                      type="button"
-                      onClick={() => {
-                        setSelectedScreenshot(shot)
-                        setLightboxOpen(true)
-                      }}
-                      className={`overflow-hidden rounded-2xl border transition ${
-                        selectedScreenshot === shot
-                          ? 'border-emerald-500/40 bg-emerald-500/10'
-                          : 'border-zinc-800 bg-zinc-950 hover:bg-zinc-800'
-                      }`}
-                    >
-                      <img
-                        src={shot}
-                        alt={game.canonicalTitle}
-                        className="h-24 w-full object-cover sm:h-28"
-                      />
-                    </button>
-                  ))}
-                </div>
-              ) : (
-                <div className="mt-3 rounded-2xl border border-zinc-800 bg-zinc-950 p-4 text-sm text-zinc-400">
-                  Screenshots not cached yet for this game.
-                </div>
-              )}
-            </div>
+            
           </div>
 
           <div className="grid gap-6 p-5 lg:grid-cols-[minmax(0,1fr)_320px]">

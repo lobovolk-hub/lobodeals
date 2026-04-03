@@ -2,18 +2,22 @@
 
 import { useEffect, useState } from 'react'
 import {
+  DEFAULT_REGION,
   REGION_OPTIONS,
   REGION_STORAGE_KEY,
   RegionCode,
+  getRegionLabel,
   isRegionCode,
 } from '@/lib/region'
 
+type RegionSelectorProps = {
+  compact?: boolean
+}
+
 export default function RegionSelector({
   compact = false,
-}: {
-  compact?: boolean
-}) {
-  const [region, setRegion] = useState<RegionCode>('GLOBAL')
+}: RegionSelectorProps) {
+  const [region, setRegion] = useState<RegionCode>(DEFAULT_REGION)
 
   useEffect(() => {
     const stored =
@@ -23,47 +27,45 @@ export default function RegionSelector({
 
     if (stored && isRegionCode(stored)) {
       setRegion(stored)
+      return
     }
+
+    setRegion(DEFAULT_REGION)
   }, [])
 
-  const handleChange = (nextRegion: string) => {
-    if (!isRegionCode(nextRegion)) return
+  const handleChange = (nextValue: string) => {
+    if (!isRegionCode(nextValue)) return
 
-    setRegion(nextRegion)
-    window.localStorage.setItem(REGION_STORAGE_KEY, nextRegion)
-    window.dispatchEvent(
-      new CustomEvent('lobodeals-region-change', {
-        detail: nextRegion,
-      })
-    )
+    setRegion(nextValue)
+
+    if (typeof window !== 'undefined') {
+      window.localStorage.setItem(REGION_STORAGE_KEY, nextValue)
+      window.dispatchEvent(
+        new CustomEvent('lobodeals-region-change', {
+          detail: nextValue,
+        })
+      )
+    }
   }
 
   return (
-    <div
-      className={
-        compact
-          ? 'flex items-center gap-2'
-          : 'flex flex-col gap-1 rounded-xl border border-zinc-800 bg-zinc-950/70 p-3'
-      }
-    >
-      {!compact && (
-        <label className="text-xs uppercase tracking-wider text-zinc-500">
+    <div className={compact ? 'inline-flex items-center gap-2' : 'flex flex-col gap-2'}>
+      {!compact ? (
+        <label className="text-sm font-medium text-zinc-300">
           Region
         </label>
-      )}
+      ) : null}
 
       <select
         value={region}
         onChange={(e) => handleChange(e.target.value)}
-        className={
-          compact
-            ? 'rounded-lg border border-zinc-700 bg-zinc-900 px-3 py-2 text-sm text-zinc-100 outline-none'
-            : 'rounded-xl border border-zinc-700 bg-zinc-900 px-3 py-2 text-sm text-zinc-100 outline-none'
-        }
+        className={`rounded-xl border border-zinc-700 bg-zinc-900 text-zinc-100 outline-none ${
+          compact ? 'px-3 py-2 text-sm' : 'px-4 py-3 text-sm'
+        }`}
       >
         {REGION_OPTIONS.map((option) => (
-          <option key={option.value} value={option.value}>
-            {option.label}
+          <option key={option} value={option}>
+            {getRegionLabel(option)}
           </option>
         ))}
       </select>

@@ -17,6 +17,14 @@ type TrackedItem = {
   metacriticScore?: string | null
 }
 
+type ProfileData = {
+  user_id: string
+  email: string | null
+  username: string
+  created_at: string | null
+  updated_at: string | null
+}
+
 function getTrackedStoreLabel(storeID: string | null) {
   switch (storeID) {
     case '1':
@@ -60,6 +68,7 @@ export default function TrackedPage() {
   const [loading, setLoading] = useState(true)
   const [userId, setUserId] = useState<string | null>(null)
   const [userEmail, setUserEmail] = useState<string | null>(null)
+  const [username, setUsername] = useState('')
   const [items, setItems] = useState<TrackedItem[]>([])
   const [message, setMessage] = useState('')
 
@@ -74,24 +83,40 @@ export default function TrackedPage() {
 
         const currentUserId = session?.user?.id ?? null
         const currentUserEmail = session?.user?.email ?? null
+        const accessToken = session?.access_token ?? null
 
         setUserId(currentUserId)
         setUserEmail(currentUserEmail)
 
-        if (!currentUserId) {
+        if (!currentUserId || !accessToken) {
           setItems([])
+          setUsername('')
           return
         }
 
-        const { data } = await supabase
-          .from('tracked_games')
-          .select(
-            'id, deal_id, game_id, title, thumb, sale_price, normal_price, store_id, created_at'
-          )
-          .eq('user_id', currentUserId)
-          .order('created_at', { ascending: false })
+        const [trackedRes, profileRes] = await Promise.all([
+          supabase
+            .from('tracked_games')
+            .select(
+              'id, deal_id, game_id, title, thumb, sale_price, normal_price, store_id, created_at'
+            )
+            .eq('user_id', currentUserId)
+            .order('created_at', { ascending: false }),
+          fetch('/api/auth/profile', {
+            method: 'GET',
+            headers: {
+              Authorization: `Bearer ${accessToken}`,
+            },
+          }),
+        ])
 
-        setItems(Array.isArray(data) ? (data as TrackedItem[]) : [])
+        setItems(Array.isArray(trackedRes.data) ? (trackedRes.data as TrackedItem[]) : [])
+
+        const profileJson = await profileRes.json()
+        if (profileRes.ok && profileJson?.success && profileJson?.profile) {
+          const profile = profileJson.profile as ProfileData
+          setUsername(String(profile.username || '').trim())
+        }
       } catch (error) {
         console.error(error)
         setItems([])
@@ -112,7 +137,7 @@ export default function TrackedPage() {
   const removeTracked = async (item: TrackedItem) => {
     if (!userId) return
 
-        try {
+    try {
       const {
         data: { session },
       } = await supabase.auth.getSession()
@@ -149,6 +174,8 @@ export default function TrackedPage() {
       console.error(error)
     }
   }
+
+  const greetingName = username || 'player'
 
   return (
     <main className="min-h-screen bg-zinc-950 text-zinc-100">
@@ -198,23 +225,36 @@ export default function TrackedPage() {
 
         {userId ? (
           <>
-            <div className="mb-8 grid gap-3 sm:grid-cols-2">
-              <div className="rounded-2xl border border-zinc-800 bg-zinc-900 p-4">
+            <div className="mb-8 grid gap-4 lg:grid-cols-[1.1fr_1fr]">
+              <div className="rounded-3xl border border-zinc-800 bg-zinc-900 p-6">
                 <p className="text-xs uppercase tracking-wider text-zinc-500">
-                  Total tracked
+                  Greeting
                 </p>
-                <p className="mt-2 text-2xl font-bold text-zinc-100">
-                  {summary.total}
+                <h2 className="mt-2 text-3xl font-bold">Hey there, {greetingName}!</h2>
+                <p className="mt-3 text-sm leading-6 text-zinc-400">
+                  Your tracked list is ready here so you can reopen games quickly
+                  and build toward future alert features.
                 </p>
               </div>
 
-              <div className="rounded-2xl border border-zinc-800 bg-zinc-900 p-4">
-                <p className="text-xs uppercase tracking-wider text-zinc-500">
-                  Signed in as
-                </p>
-                <p className="mt-2 text-sm font-medium text-zinc-200">
-                  {userEmail || 'User'}
-                </p>
+              <div className="grid gap-3 sm:grid-cols-2">
+                <div className="rounded-2xl border border-zinc-800 bg-zinc-900 p-4">
+                  <p className="text-xs uppercase tracking-wider text-zinc-500">
+                    Total tracked
+                  </p>
+                  <p className="mt-2 text-2xl font-bold text-zinc-100">
+                    {summary.total}
+                  </p>
+                </div>
+
+                <div className="rounded-2xl border border-zinc-800 bg-zinc-900 p-4">
+                  <p className="text-xs uppercase tracking-wider text-zinc-500">
+                    Signed in as
+                  </p>
+                  <p className="mt-2 text-sm font-medium text-zinc-200 break-all">
+                    {userEmail || 'User'}
+                  </p>
+                </div>
               </div>
             </div>
 

@@ -1,56 +1,40 @@
-export type RegionCode = 'GLOBAL' | 'US' | 'PE' | 'EU'
-
 export const REGION_STORAGE_KEY = 'lobodeals-region'
 
-export const REGION_OPTIONS: { value: RegionCode; label: string }[] = [
-  { value: 'GLOBAL', label: 'Global' },
-  { value: 'US', label: 'United States' },
-  { value: 'PE', label: 'Peru' },
-  { value: 'EU', label: 'Europe' },
-]
+export const REGION_OPTIONS = ['US', 'PE'] as const
+export type RegionCode = (typeof REGION_OPTIONS)[number]
+
+export const DEFAULT_REGION: RegionCode = 'US'
 
 export function isRegionCode(value: string): value is RegionCode {
-  return ['GLOBAL', 'US', 'PE', 'EU'].includes(value)
+  return REGION_OPTIONS.includes(value as RegionCode)
 }
 
 export function getRegionLabel(region: RegionCode) {
   switch (region) {
-    case 'US':
-      return 'United States'
     case 'PE':
       return 'Peru'
-    case 'EU':
-      return 'Europe'
-    case 'GLOBAL':
+    case 'US':
     default:
-      return 'Global'
+      return 'United States'
   }
 }
 
 export function getRegionDescription(region: RegionCode) {
   switch (region) {
-    case 'US':
-      return 'Displayed prices are compared against U.S.-style storefront pricing when possible. Taxes may still vary at checkout.'
     case 'PE':
-      return 'Displayed prices may differ from final Peru checkout totals because storefront taxes, currency conversion, and regional pricing can vary.'
-    case 'EU':
-      return 'Displayed prices may differ from final Europe checkout totals depending on VAT, currency, and storefront regional policies.'
-    case 'GLOBAL':
+      return 'Use Peru as your preferred account region while pricing remains Steam US for now.'
+    case 'US':
     default:
-      return 'Displayed prices are shown as source/storefront values and may differ by taxes, currency, or region.'
+      return 'Best for current Steam US pricing while LoboDeals is still Steam-first.'
   }
 }
 
 export function getRegionShortNote(region: RegionCode) {
   switch (region) {
-    case 'US':
-      return 'US storefront view'
     case 'PE':
-      return 'Peru storefront view'
-    case 'EU':
-      return 'Europe storefront view'
-    case 'GLOBAL':
+      return 'Account region set to Peru. Pricing still uses Steam US for now.'
+    case 'US':
     default:
-      return 'Global storefront view'
+      return 'Showing Steam US pricing.'
   }
 }

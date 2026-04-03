@@ -15,7 +15,7 @@ export default function RegionNotice({
 }: {
   compact?: boolean
 }) {
-  const [region, setRegion] = useState<RegionCode>('GLOBAL')
+  const [region, setRegion] = useState<RegionCode>('US')
 
   useEffect(() => {
     const loadRegion = () => {
@@ -27,7 +27,7 @@ export default function RegionNotice({
       if (stored && isRegionCode(stored)) {
         setRegion(stored)
       } else {
-        setRegion('GLOBAL')
+        setRegion('US')
       }
     }
 

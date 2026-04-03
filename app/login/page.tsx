@@ -1,57 +1,89 @@
 'use client'
 
 import Link from 'next/link'
-import { useRouter } from 'next/navigation'
-import { useState } from 'react'
+import { Suspense, useEffect, useState } from 'react'
+import { useRouter, useSearchParams } from 'next/navigation'
 import { supabase } from '@/lib/supabaseClient'
 
-type Mode = 'login' | 'signup'
+type Mode = 'login' | 'signup' | 'recover'
 
-export default function LoginPage() {
+function isValidEmail(value: string) {
+  return /\S+@\S+\.\S+/.test(value)
+}
+
+function isValidUsername(value: string) {
+  return /^[a-zA-Z0-9_-]{3,20}$/.test(value)
+}
+
+function isValidPassword(value: string) {
+  return value.length >= 8 && value.length <= 12
+}
+
+function LoginPageInner() {
   const router = useRouter()
+  const searchParams = useSearchParams()
 
   const [mode, setMode] = useState<Mode>('login')
+  const [identifier, setIdentifier] = useState('')
   const [email, setEmail] = useState('')
+  const [username, setUsername] = useState('')
   const [password, setPassword] = useState('')
   const [confirmPassword, setConfirmPassword] = useState('')
   const [loading, setLoading] = useState(false)
   const [message, setMessage] = useState('')
   const [errorMessage, setErrorMessage] = useState('')
 
+  useEffect(() => {
+    if (searchParams.get('verified') === '1') {
+      setMessage('Email verified. You can now sign in with your username or email and password.')
+    }
+  }, [searchParams])
+
   const resetMessages = () => {
     setMessage('')
     setErrorMessage('')
   }
 
-  const validateEmail = (value: string) => {
-    return /\S+@\S+\.\S+/.test(value)
-  }
-
   const handleLogin = async () => {
     resetMessages()
 
-    const cleanEmail = email.trim().toLowerCase()
+    const cleanIdentifier = identifier.trim()
 
-    if (!validateEmail(cleanEmail)) {
-      setErrorMessage('Enter a valid email address.')
+    if (!cleanIdentifier) {
+      setErrorMessage('Enter your username or email.')
       return
     }
 
-    if (password.length < 8) {
-      setErrorMessage('Password must be at least 8 characters.')
+    if (!password) {
+      setErrorMessage('Enter your password.')
       return
     }
 
     setLoading(true)
 
     try {
-      const { error } = await supabase.auth.signInWithPassword({
-        email: cleanEmail,
-        password,
+      const res = await fetch('/api/auth/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ identifier: cleanIdentifier, password }),
+      })
+
+      const data = await res.json()
+
+      if (!res.ok || !data?.success || !data?.session) {
+        setErrorMessage(data?.error || 'Unable to sign in.')
+        return
+      }
+
+      const session = data.session
+
+      const { error } = await supabase.auth.setSession({
+        access_token: session.access_token,
+        refresh_token: session.refresh_token,
       })
 
       if (error) {
-        setErrorMessage(error.message || 'Unable to sign in.')
+        setErrorMessage(error.message || 'Could not initialize your session.')
         return
       }
 
@@ -70,14 +102,22 @@ export default function LoginPage() {
     resetMessages()
 
     const cleanEmail = email.trim().toLowerCase()
+    const cleanUsername = username.trim()
 
-    if (!validateEmail(cleanEmail)) {
+    if (!isValidEmail(cleanEmail)) {
       setErrorMessage('Enter a valid email address.')
       return
     }
 
-    if (password.length < 8) {
-      setErrorMessage('Password must be at least 8 characters.')
+    if (!isValidUsername(cleanUsername)) {
+      setErrorMessage(
+        'Username must be 3 to 20 characters and only use letters, numbers, underscores, or hyphens.'
+      )
+      return
+    }
+
+    if (!isValidPassword(password)) {
+      setErrorMessage('Password must be between 8 and 12 characters.')
       return
     }
 
@@ -89,17 +129,34 @@ export default function LoginPage() {
     setLoading(true)
 
     try {
-      const { data, error } = await supabase.auth.signUp({
-        email: cleanEmail,
-        password,
+      const res = await fetch('/api/auth/register', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          email: cleanEmail,
+          username: cleanUsername,
+          password,
+        }),
       })
 
-      if (error) {
-        setErrorMessage(error.message || 'Unable to create account.')
+      const data = await res.json()
+
+      if (!res.ok || !data?.success) {
+        setErrorMessage(data?.error || 'Unable to create account.')
         return
       }
 
-      if (data.session) {
+      if (data.session?.access_token && data.session?.refresh_token) {
+        const { error } = await supabase.auth.setSession({
+          access_token: data.session.access_token,
+          refresh_token: data.session.refresh_token,
+        })
+
+        if (error) {
+          setErrorMessage(error.message || 'Account created but session could not be initialized.')
+          return
+        }
+
         setMessage('Account created successfully.')
         router.push('/tracked')
         router.refresh()
@@ -107,11 +164,55 @@ export default function LoginPage() {
       }
 
       setMessage(
-        'Account created. If your project still requires email confirmation, review your Supabase Email settings.'
+        'Account created. Check your email to verify your account before signing in.'
       )
+      setMode('login')
+      setIdentifier(cleanUsername)
+      setEmail('')
+      setUsername('')
+      setPassword('')
+      setConfirmPassword('')
     } catch (error) {
       console.error(error)
       setErrorMessage('Unexpected signup error.')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const handleRecover = async () => {
+    resetMessages()
+
+    const cleanIdentifier = identifier.trim()
+
+    if (!cleanIdentifier) {
+      setErrorMessage('Enter your email or username.')
+      return
+    }
+
+    setLoading(true)
+
+    try {
+      const res = await fetch('/api/auth/request-reset', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ identifier: cleanIdentifier }),
+      })
+
+      const data = await res.json()
+
+      if (!res.ok || !data?.success) {
+        setErrorMessage(data?.error || 'Could not send recovery email.')
+        return
+      }
+
+      setMessage(
+        data?.message ||
+          'If that account exists, a recovery email has been sent. You can also sign in directly using your email.'
+      )
+    } catch (error) {
+      console.error(error)
+      setErrorMessage('Unexpected recovery error.')
     } finally {
       setLoading(false)
     }
@@ -123,7 +224,12 @@ export default function LoginPage() {
       return
     }
 
-    await handleSignup()
+    if (mode === 'signup') {
+      await handleSignup()
+      return
+    }
+
+    await handleRecover()
   }
 
   return (
@@ -135,16 +241,22 @@ export default function LoginPage() {
               Account
             </p>
             <h1 className="mt-1 text-3xl font-bold">
-              {mode === 'login' ? 'Sign in' : 'Create account'}
+              {mode === 'login'
+                ? 'Sign in'
+                : mode === 'signup'
+                ? 'Create account'
+                : 'Recover account'}
             </h1>
             <p className="mt-2 text-sm text-zinc-400">
               {mode === 'login'
-                ? 'Use email and password to access your tracked games and profile.'
-                : 'Create your account with a simple password-based login.'}
+                ? 'Sign in with your username or your email and password.'
+                : mode === 'signup'
+                ? 'Create your account with email, username, and a password between 8 and 12 characters.'
+                : 'Enter your email or username and we will send a password recovery email.'}
             </p>
           </div>
 
-          <div className="mb-6 grid grid-cols-2 gap-2 rounded-2xl border border-zinc-800 bg-zinc-950 p-1">
+          <div className="mb-6 grid grid-cols-3 gap-2 rounded-2xl border border-zinc-800 bg-zinc-950 p-1">
             <button
               type="button"
               onClick={() => {
@@ -172,7 +284,22 @@ export default function LoginPage() {
                   : 'text-zinc-300 hover:bg-zinc-800'
               }`}
             >
-              Create account
+              Create
+            </button>
+
+            <button
+              type="button"
+              onClick={() => {
+                setMode('recover')
+                resetMessages()
+              }}
+              className={`rounded-xl px-4 py-3 text-sm font-medium transition ${
+                mode === 'recover'
+                  ? 'bg-white text-black'
+                  : 'text-zinc-300 hover:bg-zinc-800'
+              }`}
+            >
+              Recover
             </button>
           </div>
 
@@ -189,50 +316,117 @@ export default function LoginPage() {
           ) : null}
 
           <div className="grid gap-4">
-            <div>
-              <label className="mb-2 block text-sm font-medium text-zinc-300">
-                Email
-              </label>
-              <input
-                type="email"
-                autoComplete="email"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                placeholder="you@example.com"
-                className="w-full rounded-2xl border border-zinc-800 bg-zinc-950 px-4 py-3 text-zinc-100 outline-none placeholder:text-zinc-500"
-              />
-            </div>
+            {mode === 'login' ? (
+              <>
+                <div>
+                  <label className="mb-2 block text-sm font-medium text-zinc-300">
+                    Username or email
+                  </label>
+                  <input
+                    type="text"
+                    autoComplete="username"
+                    value={identifier}
+                    onChange={(e) => setIdentifier(e.target.value)}
+                    placeholder="yourname or you@example.com"
+                    className="w-full rounded-2xl border border-zinc-800 bg-zinc-950 px-4 py-3 text-zinc-100 outline-none placeholder:text-zinc-500"
+                  />
+                </div>
 
-            <div>
-              <label className="mb-2 block text-sm font-medium text-zinc-300">
-                Password
-              </label>
-              <input
-                type="password"
-                autoComplete={mode === 'login' ? 'current-password' : 'new-password'}
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                placeholder="Minimum 8 characters"
-                className="w-full rounded-2xl border border-zinc-800 bg-zinc-950 px-4 py-3 text-zinc-100 outline-none placeholder:text-zinc-500"
-              />
-              <p className="mt-2 text-xs text-zinc-500">
-                Password must be at least 8 characters.
-              </p>
-            </div>
+                <div>
+                  <label className="mb-2 block text-sm font-medium text-zinc-300">
+                    Password
+                  </label>
+                  <input
+                    type="password"
+                    autoComplete="current-password"
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    placeholder="Your password"
+                    className="w-full rounded-2xl border border-zinc-800 bg-zinc-950 px-4 py-3 text-zinc-100 outline-none placeholder:text-zinc-500"
+                  />
+                </div>
+              </>
+            ) : null}
 
             {mode === 'signup' ? (
+              <>
+                <div>
+                  <label className="mb-2 block text-sm font-medium text-zinc-300">
+                    Email
+                  </label>
+                  <input
+                    type="email"
+                    autoComplete="email"
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                    placeholder="you@example.com"
+                    className="w-full rounded-2xl border border-zinc-800 bg-zinc-950 px-4 py-3 text-zinc-100 outline-none placeholder:text-zinc-500"
+                  />
+                </div>
+
+                <div>
+                  <label className="mb-2 block text-sm font-medium text-zinc-300">
+                    Username
+                  </label>
+                  <input
+                    type="text"
+                    autoComplete="username"
+                    value={username}
+                    onChange={(e) => setUsername(e.target.value)}
+                    placeholder="3 to 20 characters"
+                    className="w-full rounded-2xl border border-zinc-800 bg-zinc-950 px-4 py-3 text-zinc-100 outline-none placeholder:text-zinc-500"
+                  />
+                  <p className="mt-2 text-xs text-zinc-500">
+                    Letters, numbers, underscores, and hyphens only.
+                  </p>
+                </div>
+
+                <div>
+                  <label className="mb-2 block text-sm font-medium text-zinc-300">
+                    Password
+                  </label>
+                  <input
+                    type="password"
+                    autoComplete="new-password"
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    placeholder="8 to 12 characters"
+                    className="w-full rounded-2xl border border-zinc-800 bg-zinc-950 px-4 py-3 text-zinc-100 outline-none placeholder:text-zinc-500"
+                  />
+                </div>
+
+                <div>
+                  <label className="mb-2 block text-sm font-medium text-zinc-300">
+                    Confirm password
+                  </label>
+                  <input
+                    type="password"
+                    autoComplete="new-password"
+                    value={confirmPassword}
+                    onChange={(e) => setConfirmPassword(e.target.value)}
+                    placeholder="Repeat your password"
+                    className="w-full rounded-2xl border border-zinc-800 bg-zinc-950 px-4 py-3 text-zinc-100 outline-none placeholder:text-zinc-500"
+                  />
+                </div>
+              </>
+            ) : null}
+
+            {mode === 'recover' ? (
               <div>
                 <label className="mb-2 block text-sm font-medium text-zinc-300">
-                  Confirm password
+                  Email or username
                 </label>
                 <input
-                  type="password"
-                  autoComplete="new-password"
-                  value={confirmPassword}
-                  onChange={(e) => setConfirmPassword(e.target.value)}
-                  placeholder="Repeat your password"
+                  type="text"
+                  autoComplete="username"
+                  value={identifier}
+                  onChange={(e) => setIdentifier(e.target.value)}
+                  placeholder="you@example.com or yourname"
                   className="w-full rounded-2xl border border-zinc-800 bg-zinc-950 px-4 py-3 text-zinc-100 outline-none placeholder:text-zinc-500"
                 />
+                <p className="mt-2 text-xs text-zinc-500">
+                  If you forgot your username, you can also use your email directly to sign in.
+                </p>
               </div>
             ) : null}
 
@@ -245,16 +439,20 @@ export default function LoginPage() {
               {loading
                 ? mode === 'login'
                   ? 'Signing in...'
-                  : 'Creating account...'
+                  : mode === 'signup'
+                  ? 'Creating account...'
+                  : 'Sending recovery email...'
                 : mode === 'login'
                 ? 'Sign in'
-                : 'Create account'}
+                : mode === 'signup'
+                ? 'Create account'
+                : 'Send recovery email'}
             </button>
           </div>
 
           <div className="mt-6 rounded-2xl border border-zinc-800 bg-zinc-950 p-4">
             <p className="text-sm text-zinc-400">
-              This login flow now uses email and password instead of OTP.
+              LoboDeals now supports account creation with email + username + password, login with username or email, and password recovery by email.
             </p>
           </div>
 
@@ -266,5 +464,25 @@ export default function LoginPage() {
         </div>
       </section>
     </main>
+  )
+}
+
+function LoginPageFallback() {
+  return (
+    <main className="min-h-screen bg-zinc-950 text-zinc-100">
+      <section className="mx-auto max-w-md px-4 py-12 sm:px-6">
+        <div className="rounded-3xl border border-zinc-800 bg-zinc-900 p-6 shadow-xl">
+          <p className="text-sm text-zinc-400">Loading account page...</p>
+        </div>
+      </section>
+    </main>
+  )
+}
+
+export default function LoginPage() {
+  return (
+    <Suspense fallback={<LoginPageFallback />}>
+      <LoginPageInner />
+    </Suspense>
   )
 }

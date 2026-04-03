@@ -13,12 +13,68 @@ function getServiceSupabase() {
   return createClient(url, serviceRole)
 }
 
+function getAuthSupabase() {
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL
+  const publishableKey = process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY
+
+  if (!url || !publishableKey) {
+    throw new Error('Missing Supabase env vars for auth validation')
+  }
+
+  return createClient(url, publishableKey)
+}
+
+function getBearerToken(request: Request) {
+  const authHeader = request.headers.get('authorization') || request.headers.get('Authorization')
+  if (!authHeader) return null
+
+  const match = authHeader.match(/^Bearer\s+(.+)$/i)
+  return match?.[1]?.trim() || null
+}
+
+async function getAuthenticatedUserId(request: Request) {
+  const token = getBearerToken(request)
+
+  if (!token) {
+    return {
+      userId: null,
+      error: 'Missing bearer token',
+      status: 401,
+    }
+  }
+
+  const authSupabase = getAuthSupabase()
+  const { data, error } = await authSupabase.auth.getUser(token)
+
+  if (error || !data.user) {
+    return {
+      userId: null,
+      error: error?.message || 'Invalid session',
+      status: 401,
+    }
+  }
+
+  return {
+    userId: data.user.id,
+    error: null,
+    status: 200,
+  }
+}
+
 export async function POST(request: Request) {
   try {
+    const auth = await getAuthenticatedUserId(request)
+
+    if (!auth.userId) {
+      return Response.json(
+        { success: false, error: auth.error || 'Unauthorized' },
+        { status: auth.status || 401 }
+      )
+    }
+
     const body = await request.json()
 
     const {
-      userId,
       dealID,
       gameID,
       title,
@@ -28,13 +84,14 @@ export async function POST(request: Request) {
       storeID,
     } = body ?? {}
 
-    if (!userId || !dealID || !title) {
+    if (!dealID || !title) {
       return Response.json(
         { success: false, error: 'Missing required fields' },
         { status: 400 }
       )
     }
 
+    const userId = auth.userId
     const supabase = getServiceSupabase()
 
     const { data: existing, error: existingError } = await supabase

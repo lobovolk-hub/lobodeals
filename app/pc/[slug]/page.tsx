@@ -512,12 +512,25 @@ export default function PcCanonicalGamePage() {
                         return
                       }
 
-                      try {
+                                            try {
+                        const {
+                          data: { session },
+                        } = await supabase.auth.getSession()
+
+                        const accessToken = session?.access_token
+
+                        if (!accessToken) {
+                          pushTrackMessage(setTrackMessage, 'Sign in to track games')
+                          return
+                        }
+
                         const res = await fetch('/api/track', {
                           method: 'POST',
-                          headers: { 'Content-Type': 'application/json' },
+                          headers: {
+                            'Content-Type': 'application/json',
+                            Authorization: `Bearer ${accessToken}`,
+                          },
                           body: JSON.stringify({
-                            userId,
                             dealID: `steam-${game.steamAppID || game.canonicalKey}`,
                             gameID: '',
                             title: game.canonicalTitle,

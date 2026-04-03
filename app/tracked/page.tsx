@@ -112,12 +112,22 @@ export default function TrackedPage() {
   const removeTracked = async (item: TrackedItem) => {
     if (!userId) return
 
-    try {
+        try {
+      const {
+        data: { session },
+      } = await supabase.auth.getSession()
+
+      const accessToken = session?.access_token
+
+      if (!accessToken) return
+
       const res = await fetch('/api/track', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${accessToken}`,
+        },
         body: JSON.stringify({
-          userId,
           dealID: item.deal_id,
           gameID: item.game_id,
           title: item.title,

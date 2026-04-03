@@ -13,12 +13,22 @@ import {
   getRegionLabel,
   isRegionCode,
 } from '@/lib/region'
+import {
+  DEFAULT_LANGUAGE,
+  LANGUAGE_STORAGE_KEY,
+  LANGUAGE_OPTIONS,
+  LanguageCode,
+  getLanguageDescription,
+  getLanguageLabel,
+  isLanguageCode,
+} from '@/lib/language'
 
 type ProfileData = {
   user_id: string
   email: string | null
   username: string
   preferred_region: RegionCode
+  preferred_language: LanguageCode
   created_at: string | null
   updated_at: string | null
 }
@@ -31,24 +41,37 @@ export default function ProfilePage() {
   const [loading, setLoading] = useState(true)
   const [savingUsername, setSavingUsername] = useState(false)
   const [savingRegion, setSavingRegion] = useState(false)
+  const [savingLanguage, setSavingLanguage] = useState(false)
   const [userEmail, setUserEmail] = useState<string | null>(null)
   const [username, setUsername] = useState('')
   const [usernameInput, setUsernameInput] = useState('')
   const [trackedCount, setTrackedCount] = useState(0)
   const [region, setRegion] = useState<RegionCode>(DEFAULT_REGION)
   const [regionInput, setRegionInput] = useState<RegionCode>(DEFAULT_REGION)
+  const [language, setLanguage] = useState<LanguageCode>(DEFAULT_LANGUAGE)
+  const [languageInput, setLanguageInput] = useState<LanguageCode>(DEFAULT_LANGUAGE)
   const [message, setMessage] = useState('')
   const [errorMessage, setErrorMessage] = useState('')
 
   useEffect(() => {
-    const stored =
+    const storedRegion =
       typeof window !== 'undefined'
         ? window.localStorage.getItem(REGION_STORAGE_KEY)
         : null
 
-    if (stored && isRegionCode(stored)) {
-      setRegion(stored)
-      setRegionInput(stored)
+    if (storedRegion && isRegionCode(storedRegion)) {
+      setRegion(storedRegion)
+      setRegionInput(storedRegion)
+    }
+
+    const storedLanguage =
+      typeof window !== 'undefined'
+        ? window.localStorage.getItem(LANGUAGE_STORAGE_KEY)
+        : null
+
+    if (storedLanguage && isLanguageCode(storedLanguage)) {
+      setLanguage(storedLanguage)
+      setLanguageInput(storedLanguage)
     }
 
     const handleRegionChange = (event: Event) => {
@@ -93,8 +116,10 @@ export default function ProfilePage() {
           setTrackedCount(0)
           setUsername('')
           setUsernameInput('')
-          setRegion('US')
-          setRegionInput('US')
+          setRegion(DEFAULT_REGION)
+          setRegionInput(DEFAULT_REGION)
+          setLanguage(DEFAULT_LANGUAGE)
+          setLanguageInput(DEFAULT_LANGUAGE)
           return
         }
 
@@ -121,17 +146,24 @@ export default function ProfilePage() {
           const nextRegion = isRegionCode(profile.preferred_region)
             ? profile.preferred_region
             : DEFAULT_REGION
+          const nextLanguage = isLanguageCode(profile.preferred_language)
+            ? profile.preferred_language
+            : DEFAULT_LANGUAGE
 
           setUsername(nextUsername)
           setUsernameInput(nextUsername)
           setRegion(nextRegion)
           setRegionInput(nextRegion)
+          setLanguage(nextLanguage)
+          setLanguageInput(nextLanguage)
 
           if (typeof window !== 'undefined') {
             window.localStorage.setItem(REGION_STORAGE_KEY, nextRegion)
             window.dispatchEvent(
               new CustomEvent('lobodeals-region-change', { detail: nextRegion })
             )
+
+            window.localStorage.setItem(LANGUAGE_STORAGE_KEY, nextLanguage)
           }
         }
       } catch (error) {
@@ -180,6 +212,7 @@ export default function ProfilePage() {
         body: JSON.stringify({
           username: cleanUsername,
           preferredRegion: region,
+          preferredLanguage: language,
         }),
       })
 
@@ -232,6 +265,7 @@ export default function ProfilePage() {
         },
         body: JSON.stringify({
           preferredRegion: regionInput,
+          preferredLanguage: language,
           ...(username ? { username } : {}),
         }),
       })
@@ -261,6 +295,64 @@ export default function ProfilePage() {
     }
   }
 
+  const saveLanguage = async () => {
+    setMessage('')
+    setErrorMessage('')
+
+    if (!isLanguageCode(languageInput)) {
+      setErrorMessage('Choose a valid language.')
+      return
+    }
+
+    setSavingLanguage(true)
+
+    try {
+      const {
+        data: { session },
+      } = await supabase.auth.getSession()
+
+      const accessToken = session?.access_token
+
+      if (!accessToken) {
+        setErrorMessage('Sign in again to update your language.')
+        return
+      }
+
+      const res = await fetch('/api/auth/profile', {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${accessToken}`,
+        },
+        body: JSON.stringify({
+          preferredRegion: region,
+          preferredLanguage: languageInput,
+          ...(username ? { username } : {}),
+        }),
+      })
+
+      const data = await res.json()
+
+      if (!res.ok || !data?.success) {
+        setErrorMessage(data?.error || 'Could not update language.')
+        return
+      }
+
+      setLanguage(languageInput)
+
+      if (typeof window !== 'undefined') {
+        window.localStorage.setItem(LANGUAGE_STORAGE_KEY, languageInput)
+      }
+
+      setMessage('Preferred language updated successfully.')
+    } catch (error) {
+      console.error(error)
+      setErrorMessage('Unexpected language update error.')
+    } finally {
+      setSavingLanguage(false)
+    }
+  }
+
   const greetingName = username || 'player'
 
   return (
@@ -272,7 +364,7 @@ export default function ProfilePage() {
           </p>
           <h1 className="mt-1 text-3xl font-bold">Your account</h1>
           <p className="mt-2 text-zinc-400">
-            Basic profile settings, region context, account identity, and tracking summary.
+            Basic profile settings, region context, language preference, account identity, and tracking summary.
           </p>
         </header>
 
@@ -284,7 +376,7 @@ export default function ProfilePage() {
           <div className="rounded-3xl border border-zinc-800 bg-zinc-900 p-8">
             <h2 className="text-xl font-bold">Sign in to view your profile</h2>
             <p className="mt-2 text-zinc-400">
-              Your profile will show tracked games, username settings, region preferences, and future account controls.
+              Your profile will show tracked games, username settings, region preferences, language preferences, and future account controls.
             </p>
 
             <div className="mt-5">
@@ -319,17 +411,17 @@ export default function ProfilePage() {
                 </p>
                 <h2 className="mt-2 text-3xl font-bold">Welcome, {greetingName}!</h2>
                 <p className="mt-3 text-sm leading-6 text-zinc-400">
-                  This is your account hub for username, region preference, tracked games,
+                  This is your account hub for username, region preference, language preference, tracked games,
                   and future preferences.
                 </p>
 
                 <div className="mt-5 flex flex-wrap gap-2">
-                                  <span className="rounded-full border border-zinc-700 bg-zinc-800 px-3 py-1 text-xs text-zinc-300">
-                  Account region: {getRegionLabel(region)}
-                </span>
+                  <span className="rounded-full border border-zinc-700 bg-zinc-800 px-3 py-1 text-xs text-zinc-300">
+                    Account region: {getRegionLabel(region)}
+                  </span>
 
                   <span className="rounded-full border border-zinc-700 bg-zinc-800 px-3 py-1 text-xs text-zinc-300">
-                    Web account active
+                    Language: {getLanguageLabel(language)}
                   </span>
 
                   <span className="rounded-full border border-zinc-700 bg-zinc-800 px-3 py-1 text-xs text-zinc-300">
@@ -356,10 +448,10 @@ export default function ProfilePage() {
 
                   <div className="rounded-2xl border border-zinc-800 bg-zinc-950 p-4">
                     <p className="text-xs uppercase tracking-wider text-zinc-500">
-                      Preferred region
+                      Interface language
                     </p>
                     <p className="mt-2 text-2xl font-bold text-zinc-100">
-                      {getRegionLabel(region)}
+                      {getLanguageLabel(language)}
                     </p>
                   </div>
                 </div>
@@ -410,7 +502,7 @@ export default function ProfilePage() {
             <div className="mb-8 rounded-3xl border border-zinc-800 bg-zinc-900 p-6">
               <h2 className="text-lg font-bold">Preferred region</h2>
               <p className="mt-2 text-sm text-zinc-400">
-                                United States is now the default base region for LoboDeals. You can still switch
+                United States is now the default base region for LoboDeals. You can still switch
                 your account region manually, while pricing remains Steam US for now.
               </p>
 
@@ -453,6 +545,51 @@ export default function ProfilePage() {
               </div>
             </div>
 
+            <div className="mb-8 rounded-3xl border border-zinc-800 bg-zinc-900 p-6">
+              <h2 className="text-lg font-bold">Preferred language</h2>
+              <p className="mt-2 text-sm text-zinc-400">
+                This stores your interface language preference now, even though LoboDeals still uses English as the base UI and Steam data source.
+              </p>
+
+              <div className="mt-5 grid gap-4 sm:grid-cols-[1fr_auto]">
+                <div>
+                  <label className="mb-2 block text-sm font-medium text-zinc-300">
+                    Language
+                  </label>
+                  <select
+                    value={languageInput}
+                    onChange={(e) => {
+                      const value = e.target.value
+                      if (isLanguageCode(value)) {
+                        setLanguageInput(value)
+                      }
+                    }}
+                    className="w-full rounded-2xl border border-zinc-800 bg-zinc-950 px-4 py-3 text-zinc-100 outline-none"
+                  >
+                    {LANGUAGE_OPTIONS.map((option) => (
+                      <option key={option} value={option}>
+                        {getLanguageLabel(option)}
+                      </option>
+                    ))}
+                  </select>
+                  <p className="mt-2 text-xs text-zinc-500">
+                    {getLanguageDescription(languageInput)}
+                  </p>
+                </div>
+
+                <div className="self-end">
+                  <button
+                    type="button"
+                    onClick={saveLanguage}
+                    disabled={savingLanguage}
+                    className="rounded-2xl bg-white px-5 py-3 text-sm font-semibold text-black transition hover:opacity-90 disabled:opacity-60"
+                  >
+                    {savingLanguage ? 'Saving...' : 'Save language'}
+                  </button>
+                </div>
+              </div>
+            </div>
+
             <div className="grid gap-4 sm:grid-cols-2">
               <div className="rounded-3xl border border-zinc-800 bg-zinc-900 p-6">
                 <h2 className="text-lg font-bold">Quick actions</h2>
@@ -482,23 +619,23 @@ export default function ProfilePage() {
               </div>
 
               <div className="rounded-3xl border border-zinc-800 bg-zinc-900 p-6">
-                <h2 className="text-lg font-bold">Region model status</h2>
+                <h2 className="text-lg font-bold">Language strategy status</h2>
                 <p className="mt-3 text-sm leading-6 text-zinc-400">
-                  Your account now stores a preferred region separately from current Steam US pricing.
-                  This keeps the project ready for future country-aware pricing and multi-platform expansion.
+                  Your account now stores a preferred interface language separately from current English UI content and English Steam source data.
+                  This keeps the project ready for future translation layers.
                 </p>
 
                 <div className="mt-4 flex flex-wrap gap-2">
                   <span className="rounded-full border border-zinc-700 bg-zinc-800 px-3 py-1 text-xs text-zinc-300">
-                    User region modeled
+                    User language modeled
                   </span>
 
                   <span className="rounded-full border border-zinc-700 bg-zinc-800 px-3 py-1 text-xs text-zinc-300">
-                    Pricing still US
+                    UI still English-first
                   </span>
 
                   <span className="rounded-full border border-zinc-700 bg-zinc-800 px-3 py-1 text-xs text-zinc-300">
-                    Ready for expansion
+                    Ready for translation later
                   </span>
                 </div>
               </div>

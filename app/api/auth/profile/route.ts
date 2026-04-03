@@ -5,6 +5,9 @@ import { createClient } from '@supabase/supabase-js'
 const ALLOWED_REGIONS = ['US', 'PE'] as const
 type RegionCode = (typeof ALLOWED_REGIONS)[number]
 
+const ALLOWED_LANGUAGES = ['EN', 'ES'] as const
+type LanguageCode = (typeof ALLOWED_LANGUAGES)[number]
+
 function getServiceSupabase() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL
   const serviceRole = process.env.SUPABASE_SERVICE_ROLE_KEY
@@ -72,6 +75,10 @@ function isValidRegion(value: string): value is RegionCode {
   return ALLOWED_REGIONS.includes(value as RegionCode)
 }
 
+function isValidLanguage(value: string): value is LanguageCode {
+  return ALLOWED_LANGUAGES.includes(value as LanguageCode)
+}
+
 export async function GET(request: Request) {
   try {
     const auth = await getAuthenticatedUser(request)
@@ -87,7 +94,7 @@ export async function GET(request: Request) {
 
     const { data, error } = await supabase
       .from('user_profiles')
-      .select('user_id, email, username, preferred_region, created_at, updated_at')
+      .select('user_id, email, username, preferred_region, preferred_language, created_at, updated_at')
       .eq('user_id', auth.user.id)
       .maybeSingle()
 
@@ -105,6 +112,7 @@ export async function GET(request: Request) {
         email: auth.user.email || null,
         username: '',
         preferred_region: 'US',
+        preferred_language: 'EN',
         created_at: null,
         updated_at: null,
       },
@@ -136,11 +144,19 @@ export async function PATCH(request: Request) {
     const body = await request.json()
     const rawUsername = body?.username
     const rawPreferredRegion = String(body?.preferredRegion || 'US').trim().toUpperCase()
+    const rawPreferredLanguage = String(body?.preferredLanguage || 'EN').trim().toUpperCase()
     const email = String(auth.user.email || '').trim().toLowerCase()
 
     if (!isValidRegion(rawPreferredRegion)) {
       return Response.json(
         { success: false, error: 'Invalid preferred region.' },
+        { status: 400 }
+      )
+    }
+
+    if (!isValidLanguage(rawPreferredLanguage)) {
+      return Response.json(
+        { success: false, error: 'Invalid preferred language.' },
         { status: 400 }
       )
     }
@@ -187,12 +203,14 @@ export async function PATCH(request: Request) {
       user_id: string
       email: string
       preferred_region: RegionCode
+      preferred_language: LanguageCode
       updated_at: string
       username?: string
     } = {
       user_id: auth.user.id,
       email,
       preferred_region: rawPreferredRegion,
+      preferred_language: rawPreferredLanguage,
       updated_at: new Date().toISOString(),
     }
 
@@ -215,6 +233,7 @@ export async function PATCH(request: Request) {
       success: true,
       username: username ?? null,
       preferredRegion: rawPreferredRegion,
+      preferredLanguage: rawPreferredLanguage,
     })
   } catch (error) {
     console.error('api/auth/profile PATCH error', error)

@@ -1,7 +1,9 @@
 import type { Metadata } from 'next'
+import { Suspense } from 'react'
 import './globals.css'
 import Navbar from '@/app/components/Navbar'
 import Footer from '@/app/components/Footer'
+import GoogleAnalytics from '@/app/components/GoogleAnalytics'
 
 export const metadata: Metadata = {
   metadataBase: new URL('https://www.lobodeals.com'),
@@ -47,6 +49,10 @@ export default function RootLayout({
   return (
     <html lang="en">
       <body className="min-h-screen bg-zinc-950 text-zinc-100">
+        <Suspense fallback={null}>
+          <GoogleAnalytics />
+        </Suspense>
+
         <div className="flex min-h-screen flex-col">
           <Navbar />
           <div className="flex-1">{children}</div>

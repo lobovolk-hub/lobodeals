@@ -2,11 +2,10 @@
 
 import { useEffect, useState } from 'react'
 import {
-  getRegionDescription,
-  getRegionLabel,
-  getRegionShortNote,
+  DEFAULT_REGION,
   REGION_STORAGE_KEY,
   RegionCode,
+  getRegionShortNote,
   isRegionCode,
 } from '@/lib/region'
 
@@ -15,7 +14,7 @@ export default function RegionNotice({
 }: {
   compact?: boolean
 }) {
-  const [region, setRegion] = useState<RegionCode>('US')
+  const [region, setRegion] = useState<RegionCode>(DEFAULT_REGION)
 
   useEffect(() => {
     const loadRegion = () => {
@@ -26,19 +25,20 @@ export default function RegionNotice({
 
       if (stored && isRegionCode(stored)) {
         setRegion(stored)
-      } else {
-        setRegion('US')
+        return
       }
+
+      setRegion(DEFAULT_REGION)
     }
 
     loadRegion()
 
     const handleRegionChange = (event: Event) => {
       const customEvent = event as CustomEvent<string>
-      const nextRegion = customEvent.detail
+      const value = customEvent.detail
 
-      if (nextRegion && isRegionCode(nextRegion)) {
-        setRegion(nextRegion)
+      if (value && isRegionCode(value)) {
+        setRegion(value)
       } else {
         loadRegion()
       }
@@ -59,23 +59,15 @@ export default function RegionNotice({
 
   if (compact) {
     return (
-      <div className="rounded-xl border border-zinc-800 bg-zinc-900 px-3 py-2 text-xs text-zinc-400">
-        <span className="font-medium text-zinc-200">
-          Region: {getRegionLabel(region)}
-        </span>{' '}
-        · {getRegionShortNote(region)}
+      <div className="rounded-xl border border-zinc-800 bg-zinc-900/80 px-3 py-2 text-xs text-zinc-400">
+        {getRegionShortNote(region)}
       </div>
     )
   }
 
   return (
-    <div className="rounded-2xl border border-amber-500/20 bg-amber-500/10 p-4">
-      <p className="text-sm font-medium text-amber-200">
-        Region: {getRegionLabel(region)}
-      </p>
-      <p className="mt-1 text-sm text-amber-100/80">
-        {getRegionDescription(region)}
-      </p>
+    <div className="rounded-2xl border border-zinc-800 bg-zinc-900/80 px-4 py-3 text-sm text-zinc-400">
+      {getRegionShortNote(region)}
     </div>
   )
 }

@@ -50,6 +50,8 @@ type PcPublicCatalogRow = {
   is_catalog_ready?: boolean | null
   sort_latest?: number | null
   price_last_synced_at?: string | null
+  metacritic?: number | null
+  sort_discount?: number | null
 }
 
 type HomeData = {
@@ -58,6 +60,8 @@ type HomeData = {
     best_deals: HomeItem[]
     latest_discounts: HomeItem[]
     new_releases: HomeItem[]
+    biggest_discounts: HomeItem[]
+    top_rated: HomeItem[]
     updatedAt: string | null
   }
 }
@@ -207,17 +211,64 @@ async function getLatestReleaseItems(supabase: ReturnType<typeof getServiceSupab
   return rows.map(mapCatalogRow)
 }
 
+async function getBiggestDiscountsItems(supabase: ReturnType<typeof getServiceSupabase>) {
+  const { data, error } = await supabase
+    .from('pc_public_catalog_cache')
+    .select(
+      'pc_game_id, steam_app_id, slug, title, thumb, sale_price, normal_price, discount_percent, store_id, url, sort_discount, sort_latest'
+    )
+    .gt('discount_percent', 0)
+    .order('sort_discount', { ascending: false })
+    .order('sale_price', { ascending: true, nullsFirst: false })
+    .order('sort_latest', { ascending: false })
+    .limit(4)
+
+  if (error) {
+    throw error
+  }
+
+  const rows = Array.isArray(data) ? (data as PcPublicCatalogRow[]) : []
+  return rows.map(mapCatalogRow)
+}
+
+async function getTopRatedItems(supabase: ReturnType<typeof getServiceSupabase>) {
+  const { data, error } = await supabase
+    .from('pc_public_catalog_cache')
+    .select(
+      'pc_game_id, steam_app_id, slug, title, thumb, sale_price, normal_price, discount_percent, store_id, url, metacritic, sort_latest'
+    )
+    .gt('metacritic', 0)
+    .order('metacritic', { ascending: false })
+    .order('sort_latest', { ascending: false })
+    .limit(4)
+
+  if (error) {
+    throw error
+  }
+
+  const rows = Array.isArray(data) ? (data as PcPublicCatalogRow[]) : []
+  return rows.map(mapCatalogRow)
+}
+
 async function getHomeData(): Promise<HomeData> {
   try {
     const supabase = getServiceSupabase()
 
-    const [spotlightRes, bestDeals, latestDiscounts, latestReleases] =
-      await Promise.all([
-        getSpotlightItems(supabase),
-        getBestDealsItems(supabase),
-        getLatestDiscountsItems(supabase),
-        getLatestReleaseItems(supabase),
-      ])
+    const [
+      spotlightRes,
+      bestDeals,
+      latestDiscounts,
+      latestReleases,
+      biggestDiscounts,
+      topRated,
+    ] = await Promise.all([
+      getSpotlightItems(supabase),
+      getBestDealsItems(supabase),
+      getLatestDiscountsItems(supabase),
+      getLatestReleaseItems(supabase),
+      getBiggestDiscountsItems(supabase),
+      getTopRatedItems(supabase),
+    ])
 
     return {
       storefront: {
@@ -225,6 +276,8 @@ async function getHomeData(): Promise<HomeData> {
         best_deals: bestDeals,
         latest_discounts: latestDiscounts,
         new_releases: latestReleases,
+        biggest_discounts: biggestDiscounts,
+        top_rated: topRated,
         updatedAt: spotlightRes.updatedAt,
       },
     }
@@ -235,6 +288,8 @@ async function getHomeData(): Promise<HomeData> {
         best_deals: [],
         latest_discounts: [],
         new_releases: [],
+        biggest_discounts: [],
+        top_rated: [],
         updatedAt: null,
       },
     }
@@ -367,6 +422,18 @@ export default async function HomePage() {
           title="Latest Releases"
           items={storefront?.new_releases || []}
           href="/pc?page=1&sort=latest"
+        />
+
+        <HomeSection
+          title="Biggest Discounts"
+          items={storefront?.biggest_discounts || []}
+          href="/pc?page=1&sort=biggest-discount"
+        />
+
+        <HomeSection
+          title="Top Rated"
+          items={storefront?.top_rated || []}
+          href="/pc?page=1&sort=top-rated"
         />
       </section>
     </main>

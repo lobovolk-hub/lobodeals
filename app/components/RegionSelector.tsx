@@ -6,7 +6,7 @@ import {
   REGION_OPTIONS,
   REGION_STORAGE_KEY,
   RegionCode,
-  getRegionLabel,
+  getRegionShortLabel,
   isRegionCode,
 } from '@/lib/region'
 
@@ -49,7 +49,7 @@ export default function RegionSelector({
   }
 
   return (
-    <div className={compact ? 'inline-flex items-center gap-2' : 'flex flex-col gap-2'}>
+    <div className={compact ? 'inline-flex items-center' : 'flex flex-col gap-2'}>
       {!compact ? (
         <label className="text-sm font-medium text-zinc-300">
           Region
@@ -60,12 +60,12 @@ export default function RegionSelector({
         value={region}
         onChange={(e) => handleChange(e.target.value)}
         className={`rounded-xl border border-zinc-700 bg-zinc-900 text-zinc-100 outline-none ${
-          compact ? 'px-3 py-2 text-sm' : 'px-4 py-3 text-sm'
+          compact ? 'min-w-[72px] px-3 py-2 text-sm' : 'px-4 py-3 text-sm'
         }`}
       >
         {REGION_OPTIONS.map((option) => (
           <option key={option} value={option}>
-            {getRegionLabel(option)}
+            {getRegionShortLabel(option)}
           </option>
         ))}
       </select>

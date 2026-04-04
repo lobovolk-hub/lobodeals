@@ -19,6 +19,16 @@ export function getRegionLabel(region: RegionCode) {
   }
 }
 
+export function getRegionShortLabel(region: RegionCode) {
+  switch (region) {
+    case 'PE':
+      return 'PE'
+    case 'US':
+    default:
+      return 'US'
+  }
+}
+
 export function getRegionDescription(region: RegionCode) {
   switch (region) {
     case 'PE':

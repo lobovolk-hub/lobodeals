@@ -3,12 +3,20 @@
 import Link from 'next/link'
 import { useEffect, useRef, useState } from 'react'
 import { supabase } from '@/lib/supabaseClient'
+import RegionSelector from '@/app/components/RegionSelector'
+import {
+  DEFAULT_REGION,
+  REGION_STORAGE_KEY,
+  RegionCode,
+  isRegionCode,
+} from '@/lib/region'
 
 export default function Navbar() {
   const [userEmail, setUserEmail] = useState<string | null>(null)
   const [platformsOpen, setPlatformsOpen] = useState(false)
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
   const [mobilePlatformsOpen, setMobilePlatformsOpen] = useState(false)
+  const [region, setRegion] = useState<RegionCode>(DEFAULT_REGION)
   const dropdownRef = useRef<HTMLDivElement | null>(null)
 
   useEffect(() => {
@@ -46,6 +54,47 @@ export default function Navbar() {
     document.addEventListener('mousedown', handleClickOutside)
     return () => {
       document.removeEventListener('mousedown', handleClickOutside)
+    }
+  }, [])
+
+  useEffect(() => {
+    const loadRegion = () => {
+      const stored =
+        typeof window !== 'undefined'
+          ? window.localStorage.getItem(REGION_STORAGE_KEY)
+          : null
+
+      if (stored && isRegionCode(stored)) {
+        setRegion(stored)
+        return
+      }
+
+      setRegion(DEFAULT_REGION)
+    }
+
+    loadRegion()
+
+    const handleRegionChange = (event: Event) => {
+      const customEvent = event as CustomEvent<string>
+      const value = customEvent.detail
+
+      if (value && isRegionCode(value)) {
+        setRegion(value)
+      } else {
+        loadRegion()
+      }
+    }
+
+    window.addEventListener(
+      'lobodeals-region-change',
+      handleRegionChange as EventListener
+    )
+
+    return () => {
+      window.removeEventListener(
+        'lobodeals-region-change',
+        handleRegionChange as EventListener
+      )
     }
   }, [])
 
@@ -87,13 +136,6 @@ export default function Navbar() {
               className="rounded-xl px-3 py-2 text-zinc-200 transition hover:bg-zinc-800"
             >
               Home
-            </Link>
-
-            <Link
-              href="/pc?page=1&sort=all"
-              className="rounded-xl px-3 py-2 text-zinc-200 transition hover:bg-zinc-800"
-            >
-              PC
             </Link>
 
             <Link
@@ -184,6 +226,8 @@ export default function Navbar() {
               Tracked
             </Link>
 
+            <RegionSelector compact />
+
             {userEmail ? (
               <>
                 <Link
@@ -242,6 +286,13 @@ export default function Navbar() {
               </div>
             </div>
 
+            <div className="mb-3 rounded-2xl border border-zinc-800 bg-zinc-900 p-3">
+              <div className="mb-2 text-xs uppercase tracking-[0.25em] text-zinc-500">
+                Region
+              </div>
+              <RegionSelector compact />
+            </div>
+
             <div className="grid gap-2 text-sm">
               <Link
                 href="/"
@@ -249,14 +300,6 @@ export default function Navbar() {
                 className="rounded-xl px-3 py-3 text-zinc-100 transition hover:bg-zinc-800"
               >
                 Home
-              </Link>
-
-              <Link
-                href="/pc?page=1&sort=all"
-                onClick={closeMobileMenu}
-                className="rounded-xl px-3 py-3 text-zinc-100 transition hover:bg-zinc-800"
-              >
-                PC
               </Link>
 
               <Link

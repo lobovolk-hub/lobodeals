@@ -364,86 +364,22 @@ function HomeSection({
 }
 
 export default async function HomePage() {
-  const { steamCatalogSize, storefront } = await getHomeData()
+  const { storefront } = await getHomeData()
 
   return (
     <main className="min-h-screen bg-zinc-950 text-zinc-100">
       <section className="mx-auto max-w-7xl px-4 py-10 sm:px-6">
-        <header className="rounded-3xl border border-zinc-800 bg-zinc-900 p-6 sm:p-8">
+        <header className="mb-10">
           <p className="text-sm uppercase tracking-[0.3em] text-zinc-400">
             LoboDeals
           </p>
-
           <h1 className="mt-2 text-3xl font-bold sm:text-4xl">
-            Steam-first game deals and catalog tracking
+            Steam-first PC game deals and discovery
           </h1>
-
           <p className="mt-4 max-w-3xl text-zinc-400">
-            One canonical PC page per title, real Steam screenshots, curated highlights,
-            persistent public caches, and a cleaner storefront built to scale.
+            Discover highlights, best deals, latest discounts, and recent releases
+            from the local LoboDeals Steam PC layer.
           </p>
-
-          <div className="mt-6 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-            <div className="rounded-2xl border border-zinc-800 bg-zinc-950 p-4">
-              <p className="text-xs uppercase tracking-wider text-zinc-500">
-                Steam catalog ready
-              </p>
-              <p className="mt-2 text-2xl font-bold text-white">
-                {steamCatalogSize}
-              </p>
-              <p className="mt-1 text-xs text-zinc-500">
-                Visible PC games in the public layer
-              </p>
-            </div>
-
-            <div className="rounded-2xl border border-zinc-800 bg-zinc-950 p-4">
-              <p className="text-xs uppercase tracking-wider text-zinc-500">
-                Storefront sections
-              </p>
-              <p className="mt-2 text-2xl font-bold text-white">4</p>
-              <p className="mt-1 text-xs text-zinc-500">
-                Highlights, best deals, latest discounts, latest releases
-              </p>
-            </div>
-
-            <div className="rounded-2xl border border-zinc-800 bg-zinc-950 p-4">
-              <p className="text-xs uppercase tracking-wider text-zinc-500">
-                Current focus
-              </p>
-              <p className="mt-2 text-2xl font-bold text-white">2.52i</p>
-              <p className="mt-1 text-xs text-zinc-500">
-                Steam-first PC standardization before PlayStation
-              </p>
-            </div>
-
-            <div className="rounded-2xl border border-zinc-800 bg-zinc-950 p-4">
-              <p className="text-xs uppercase tracking-wider text-zinc-500">
-                Updated layer
-              </p>
-              <p className="mt-2 text-2xl font-bold text-white">
-                {storefront?.updatedAt ? 'Live' : 'Pending'}
-              </p>
-              <p className="mt-1 text-xs text-zinc-500">
-                Driven by recurring public cache refresh jobs
-              </p>
-            </div>
-          </div>
-
-          <div className="mt-6 flex flex-wrap gap-3">
-            <Link
-              href="/pc?page=1&sort=all"
-              className="rounded-xl bg-white px-4 py-2 text-sm font-semibold text-black transition hover:opacity-90"
-            >
-              Open PC
-            </Link>
-
-            <Link
-              href="/tracked"
-              className="rounded-xl border border-zinc-700 px-4 py-2 text-sm font-medium text-zinc-200 transition hover:bg-zinc-800"
-            >
-              Open tracked
-            </Link>
-          </div>
         </header>
 
         <HomeSection

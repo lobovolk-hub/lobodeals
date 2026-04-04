@@ -127,24 +127,6 @@ function pushTrackMessage(
   window.setTimeout(() => setTrackMessage(''), 2500)
 }
 
-function MetricCard({
-  label,
-  value,
-  sublabel,
-}: {
-  label: string
-  value: string | number
-  sublabel?: string
-}) {
-  return (
-    <div className="rounded-2xl border border-zinc-800 bg-zinc-900 p-4">
-      <p className="text-xs uppercase tracking-wider text-zinc-500">{label}</p>
-      <p className="mt-2 text-2xl font-bold text-white">{value}</p>
-      {sublabel ? <p className="mt-1 text-xs text-zinc-500">{sublabel}</p> : null}
-    </div>
-  )
-}
-
 function FilterChip({
   label,
   active,
@@ -200,20 +182,20 @@ function SteamCard({
   const isBrowseItem = 'hasActiveOffer' in item
 
   const statusLabel = isBrowseItem
-  ? item.isFreeToPlay
+    ? item.isFreeToPlay
+      ? 'Free'
+      : item.hasActiveOffer && item.salePrice
+      ? `$${item.salePrice}`
+      : item.normalPrice
+      ? `$${item.normalPrice}`
+      : 'No current Steam price cached'
+    : item.isFreeToPlay
     ? 'Free'
-    : item.hasActiveOffer && item.salePrice
+    : item.salePrice
     ? `$${item.salePrice}`
     : item.normalPrice
     ? `$${item.normalPrice}`
-    : 'No current Steam price cached'
-  : item.isFreeToPlay
-  ? 'Free'
-  : item.salePrice
-  ? `$${item.salePrice}`
-  : item.normalPrice
-  ? `$${item.normalPrice}`
-  : 'View store'
+    : 'View store'
 
   return (
     <article className="overflow-hidden rounded-3xl border border-zinc-800 bg-zinc-900 shadow-lg transition hover:-translate-y-1">
@@ -304,7 +286,7 @@ function SteamCard({
                 return
               }
 
-                            try {
+              try {
                 const {
                   data: { session },
                 } = await supabase.auth.getSession()
@@ -507,7 +489,7 @@ export default function PcPageClient() {
       try {
         setLoading(true)
 
-                if (sort === 'top-rated') {
+        if (sort === 'top-rated') {
           const params = new URLSearchParams()
           params.set('page', String(currentPage))
           params.set('pageSize', String(PAGE_SIZE))
@@ -588,7 +570,7 @@ export default function PcPageClient() {
       return true
     })
 
-        if (sort === 'top-rated' && topRatedReady) {
+    if (sort === 'top-rated' && topRatedReady) {
       return {
         mode: 'top-rated' as const,
         items: topRatedGames,
@@ -648,64 +630,15 @@ export default function PcPageClient() {
 
   return (
     <main className="min-h-screen bg-zinc-950 text-zinc-100">
-      <section className="mx-auto max-w-7xl px-4 py-10 sm:px-6">
-        <header className="mb-8">
+      <section className="mx-auto max-w-7xl px-4 py-8 sm:px-6 sm:py-10">
+        <header className="mb-6">
           <p className="text-sm uppercase tracking-[0.3em] text-zinc-400">
             Platform
           </p>
           <h1 className="mt-1 text-3xl font-bold">PC</h1>
-          <p className="mt-2 max-w-3xl text-zinc-400">
-            Steam-first PC browsing with one canonical game page per title, curated
-            storefront sections, cleaner sorting, and real screenshots where available.
-          </p>
         </header>
 
-        <div className="mb-6 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-          <MetricCard
-            label="Steam catalog ready"
-            value={browseTotalItems || browseGames.length}
-            sublabel="Public-ready games available in the main PC browse layer"
-          />
-          <MetricCard
-            label="Results in this view"
-            value={totalItems}
-            sublabel={
-              sort === 'top-rated'
-                ? 'Top Rated mode'
-                : sort === 'best'
-                ? 'Best Deals mode'
-                : sort === 'latest'
-                ? 'Latest Releases mode'
-                : sort === 'latest-discounts'
-                ? 'Latest Discounts mode'
-                : sort === 'biggest-discount'
-                ? 'Biggest Discounts mode'
-                : 'PC browsing mode'
-            }
-          />
-          <MetricCard
-            label="Pages available"
-            value={totalPages}
-            sublabel="Based on current filter set"
-          />
-          <MetricCard
-            label="Canonical route"
-            value="One page"
-            sublabel="Every PC game converges to /pc/[slug]"
-          />
-        </div>
-
         <div className="mb-6 rounded-3xl border border-zinc-800 bg-zinc-900 p-4">
-          <div className="mb-4">
-            <p className="text-xs uppercase tracking-[0.25em] text-zinc-500">
-              Explore PC
-            </p>
-            <p className="mt-2 text-sm text-zinc-400">
-              Best Deals, Latest Discounts, Latest Releases, Top Rated, and the main PC catalog
-              now follow one cleaner Steam-first browsing model.
-            </p>
-          </div>
-
           <div className="grid gap-4 xl:grid-cols-[2fr_1fr]">
             <div>
               <label className="mb-2 block text-xs uppercase tracking-wider text-zinc-500">
@@ -757,44 +690,6 @@ export default function PcPageClient() {
               Loading top rated results...
             </div>
           ) : null}
-
-          <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-            <div className="rounded-2xl border border-zinc-800 bg-zinc-950 p-3">
-              <p className="text-xs uppercase tracking-wider text-zinc-500">
-                Best Deals
-              </p>
-              <p className="mt-2 text-xs text-zinc-400">
-                Discount + attractive final price + active offer weighting.
-              </p>
-            </div>
-
-            <div className="rounded-2xl border border-zinc-800 bg-zinc-950 p-3">
-              <p className="text-xs uppercase tracking-wider text-zinc-500">
-                Latest Discounts
-              </p>
-              <p className="mt-2 text-xs text-zinc-400">
-                Recently refreshed discounted entries from the public Steam PC layer.
-              </p>
-            </div>
-
-            <div className="rounded-2xl border border-zinc-800 bg-zinc-950 p-3">
-              <p className="text-xs uppercase tracking-wider text-zinc-500">
-                Latest Releases
-              </p>
-              <p className="mt-2 text-xs text-zinc-400">
-                Ordered by real release date data from the public cache.
-              </p>
-            </div>
-
-            <div className="rounded-2xl border border-zinc-800 bg-zinc-950 p-3">
-              <p className="text-xs uppercase tracking-wider text-zinc-500">
-                Top Rated
-              </p>
-              <p className="mt-2 text-xs text-zinc-400">
-                Steam-first local metascore data, sorted from best scored down.
-              </p>
-            </div>
-          </div>
         </div>
 
         {hasActiveFilters ? (

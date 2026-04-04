@@ -3,7 +3,6 @@
 import Link from 'next/link'
 import { useEffect, useRef, useState } from 'react'
 import { getStoreLogo, getStoreName } from '@/lib/storeMap'
-import RegionNotice from '@/app/components/RegionNotice'
 
 type CatalogGame = {
   id: string
@@ -22,11 +21,6 @@ type CatalogGame = {
   canOpenPage: boolean
 }
 
-type CatalogStats = {
-  steamCatalogSize: number
-  updatedAt: string | null
-}
-
 export default function CatalogPage() {
   const [query, setQuery] = useState('')
   const [results, setResults] = useState<CatalogGame[]>([])
@@ -37,19 +31,10 @@ export default function CatalogPage() {
   const [suggestionsLoading, setSuggestionsLoading] = useState(false)
   const [showSuggestions, setShowSuggestions] = useState(false)
 
-  const [catalogStats, setCatalogStats] = useState<CatalogStats>({
-    steamCatalogSize: 0,
-    updatedAt: null,
-  })
-
   const suggestionBoxRef = useRef<HTMLDivElement | null>(null)
 
-    const buildGameHref = (item: CatalogGame) => {
+  const buildGameHref = (item: CatalogGame) => {
     return `/pc/${encodeURIComponent(item.slug)}`
-  }
-
-  const getOpenLabel = (item: CatalogGame) => {
-    return item.canOpenPage ? 'Open game page' : 'Page not ready yet'
   }
 
   const getPriceLabel = (item: CatalogGame) => {
@@ -105,32 +90,6 @@ export default function CatalogPage() {
   }, [query])
 
   useEffect(() => {
-    let cancelled = false
-
-    const loadCatalogStats = async () => {
-      try {
-        const res = await fetch('/api/catalog-stats')
-        const data = await res.json()
-
-        if (!cancelled) {
-          setCatalogStats({
-            steamCatalogSize: Number(data?.steamCatalogSize || 0),
-            updatedAt: data?.updatedAt || null,
-          })
-        }
-      } catch (error) {
-        console.error(error)
-      }
-    }
-
-    loadCatalogStats()
-
-    return () => {
-      cancelled = true
-    }
-  }, [])
-
-  useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
       if (
         suggestionBoxRef.current &&
@@ -169,52 +128,16 @@ export default function CatalogPage() {
 
   return (
     <main className="min-h-screen bg-zinc-950 text-zinc-100">
-      <section className="mx-auto max-w-6xl px-4 py-10 sm:px-6">
-        <header className="mb-8">
+      <section className="mx-auto max-w-6xl px-4 py-8 sm:px-6 sm:py-10">
+        <header className="mb-6">
           <p className="text-sm uppercase tracking-[0.3em] text-zinc-400">
             Catalog
           </p>
           <h1 className="mt-1 text-3xl font-bold">Steam PC Game Search</h1>
           <p className="mt-2 text-zinc-400">
-            Search the Steam PC catalog from the local LoboDeals layer, including
-            games with deals, without deals, and free-to-play entries.
+            Search the Steam PC catalog from the local LoboDeals layer.
           </p>
         </header>
-
-        <div className="mb-6">
-          <RegionNotice />
-        </div>
-
-        <div className="mb-8 grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
-          <div className="rounded-2xl border border-zinc-800 bg-zinc-900 p-4">
-            <p className="text-xs uppercase tracking-wider text-zinc-500">
-              Steam catalog size
-            </p>
-            <p className="mt-2 text-2xl font-bold text-white">
-              {catalogStats.steamCatalogSize || 0}
-            </p>
-          </div>
-
-          <div className="rounded-2xl border border-zinc-800 bg-zinc-900 p-4">
-            <p className="text-xs uppercase tracking-wider text-zinc-500">
-              Search layer
-            </p>
-            <p className="mt-2 text-2xl font-bold text-white">pc_games</p>
-            <p className="mt-1 text-xs text-zinc-500">
-              Local Steam-first search over the new 2.5 layer
-            </p>
-          </div>
-
-          <div className="rounded-2xl border border-zinc-800 bg-zinc-900 p-4">
-            <p className="text-xs uppercase tracking-wider text-zinc-500">
-              Catalog behavior
-            </p>
-            <p className="mt-2 text-2xl font-bold text-white">Games first</p>
-            <p className="mt-1 text-xs text-zinc-500">
-              Deals, non-deals and free-to-play are all valid results
-            </p>
-          </div>
-        </div>
 
         <div className="mb-8" ref={suggestionBoxRef}>
           <div className="flex gap-3">
@@ -255,7 +178,7 @@ export default function CatalogPage() {
                 suggestions.map((item) => {
                   const href = buildGameHref(item)
 
-                                    return item.canOpenPage ? (
+                  return item.canOpenPage ? (
                     <Link
                       key={item.id}
                       href={href}
@@ -331,57 +254,6 @@ export default function CatalogPage() {
           ) : null}
         </div>
 
-        {!searched ? (
-          <section className="mb-10 rounded-3xl border border-zinc-800 bg-zinc-900 p-5">
-            <h2 className="text-xl font-bold text-white">
-              Search the local Steam PC catalog
-            </h2>
-            <p className="mt-2 text-sm text-zinc-400">
-              This search layer is now focused on real games from the local 2.5
-              backbone, not only discounted deals. That means results can include:
-            </p>
-
-            <div className="mt-4 grid gap-3 sm:grid-cols-3">
-              <div className="rounded-2xl border border-zinc-800 bg-zinc-950 p-4">
-                <p className="text-sm font-semibold text-white">Games with offers</p>
-                <p className="mt-1 text-xs text-zinc-500">
-                  Steam entries with cached pricing and discount data.
-                </p>
-              </div>
-
-              <div className="rounded-2xl border border-zinc-800 bg-zinc-950 p-4">
-                <p className="text-sm font-semibold text-white">Games without offers</p>
-                <p className="mt-1 text-xs text-zinc-500">
-                  Catalog entries that still belong to the Steam PC layer.
-                </p>
-              </div>
-
-              <div className="rounded-2xl border border-zinc-800 bg-zinc-950 p-4">
-                <p className="text-sm font-semibold text-white">Free-to-play games</p>
-                <p className="mt-1 text-xs text-zinc-500">
-                  Titles that should remain visible even without a paid deal.
-                </p>
-              </div>
-            </div>
-
-            <div className="mt-5 flex flex-wrap gap-3">
-              <Link
-                href="/pc"
-                className="rounded-xl bg-white px-4 py-2 text-sm font-semibold text-black transition hover:opacity-90"
-              >
-                Browse PC
-              </Link>
-
-              <Link
-                href="/pc?sort=latest"
-                className="rounded-xl border border-zinc-700 px-4 py-2 text-sm font-medium text-zinc-200 transition hover:bg-zinc-800"
-              >
-                View latest entries
-              </Link>
-            </div>
-          </section>
-        ) : null}
-
         {loading && (
           <div className="rounded-2xl border border-zinc-800 bg-zinc-900 p-4 text-sm text-zinc-400">
             Searching Steam PC catalog...
@@ -411,7 +283,7 @@ export default function CatalogPage() {
                   key={game.id}
                   className="overflow-hidden rounded-3xl border border-zinc-800 bg-zinc-900 shadow-lg"
                 >
-                                    {game.canOpenPage ? (
+                  {game.canOpenPage ? (
                     <Link href={href} className="block h-32 w-full bg-zinc-800">
                       {game.thumb ? (
                         <img
@@ -434,7 +306,7 @@ export default function CatalogPage() {
                   )}
 
                   <div className="p-4">
-                                        {game.canOpenPage ? (
+                    {game.canOpenPage ? (
                       <Link href={href}>
                         <h2 className="line-clamp-2 text-base font-bold transition hover:text-emerald-300">
                           {game.title}
@@ -483,22 +355,22 @@ export default function CatalogPage() {
                         </div>
                       ) : (
                         <p className="mt-2 text-xs text-zinc-500">
-                          Game-first catalog result
+                          No active offer cached
                         </p>
                       )}
                     </div>
 
-                    <div className="mt-4 grid gap-2">
-                                            {game.canOpenPage ? (
+                    <div className="mt-4">
+                      {game.canOpenPage ? (
                         <Link
                           href={href}
-                          className="rounded-xl bg-white px-4 py-2 text-center text-sm font-semibold text-black transition hover:opacity-90"
+                          className="block rounded-xl bg-white px-4 py-2 text-center text-sm font-semibold text-black transition hover:opacity-90"
                         >
-                          {getOpenLabel(game)}
+                          Open game page
                         </Link>
                       ) : (
-                        <div className="rounded-xl border border-zinc-700 px-4 py-2 text-center text-sm font-medium text-zinc-500">
-                          {getOpenLabel(game)}
+                        <div className="block rounded-xl border border-zinc-700 px-4 py-2 text-center text-sm font-medium text-zinc-500">
+                          Page not ready yet
                         </div>
                       )}
                     </div>

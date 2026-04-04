@@ -344,7 +344,7 @@ export default async function HomePage() {
 
   return (
     <main className="min-h-screen bg-zinc-950 text-zinc-100">
-      <section className="mx-auto max-w-7xl px-4 pt-2 pb-8 sm:px-6 sm:pt-4 sm:pb-10">
+      <section className="mx-auto max-w-7xl px-4 pt-0 pb-8 sm:px-6 sm:pt-0 sm:pb-10">
         <HomeSection
           title="Highlights"
           items={storefront?.steam_spotlight || []}

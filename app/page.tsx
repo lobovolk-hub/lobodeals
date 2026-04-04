@@ -318,7 +318,7 @@ function HomeSection({
   }
 
   return (
-    <section className="mt-12">
+    <section className="mt-4 sm:mt-6">
       <div className="mb-5 flex items-center justify-between gap-4">
         <h2 className="text-2xl font-bold text-white">{title}</h2>
 

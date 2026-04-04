@@ -53,7 +53,6 @@ type PcPublicCatalogRow = {
 }
 
 type HomeData = {
-  steamCatalogSize: number
   storefront: {
     steam_spotlight: HomeItem[]
     best_deals: HomeItem[]
@@ -212,25 +211,15 @@ async function getHomeData(): Promise<HomeData> {
   try {
     const supabase = getServiceSupabase()
 
-    const [metaRes, spotlightRes, bestDeals, latestDiscounts, latestReleases] =
+    const [spotlightRes, bestDeals, latestDiscounts, latestReleases] =
       await Promise.all([
-        supabase
-          .from('pc_public_catalog_meta')
-          .select('total_items')
-          .eq('key', 'default')
-          .maybeSingle(),
         getSpotlightItems(supabase),
         getBestDealsItems(supabase),
         getLatestDiscountsItems(supabase),
         getLatestReleaseItems(supabase),
       ])
 
-    if (metaRes.error) {
-      throw metaRes.error
-    }
-
     return {
-      steamCatalogSize: Number(metaRes.data?.total_items || 0),
       storefront: {
         steam_spotlight: spotlightRes.items,
         best_deals: bestDeals,
@@ -241,7 +230,6 @@ async function getHomeData(): Promise<HomeData> {
     }
   } catch {
     return {
-      steamCatalogSize: 0,
       storefront: {
         steam_spotlight: [],
         best_deals: [],
@@ -279,37 +267,33 @@ function GameCard({ item }: { item: HomeItem }) {
         <img
           src={item.thumb}
           alt={item.title}
-          className="h-40 w-full object-cover transition hover:opacity-90"
+          className="h-32 w-full object-cover transition hover:opacity-90 sm:h-40"
         />
       </Link>
 
-      <div className="p-4">
-        <div className="mb-3 flex items-start justify-between gap-3">
+      <div className="p-3 sm:p-4">
+        <div className="mb-3 flex items-start justify-between gap-2 sm:gap-3">
           <Link href={buildGameHref(item)} className="min-w-0">
-            <h3 className="line-clamp-2 text-base font-bold leading-5 transition hover:text-emerald-300">
+            <h3 className="line-clamp-2 text-sm font-bold leading-5 transition hover:text-emerald-300 sm:text-base">
               {item.title}
             </h3>
           </Link>
 
           {hasDiscount ? (
-            <span className="shrink-0 rounded-full border border-emerald-500/30 bg-emerald-500/10 px-2 py-1 text-xs font-medium text-emerald-300">
+            <span className="shrink-0 rounded-full border border-emerald-500/30 bg-emerald-500/10 px-2 py-1 text-[10px] font-medium text-emerald-300 sm:text-xs">
               -{item.savings}%
             </span>
           ) : null}
         </div>
 
         <div className="rounded-2xl border border-zinc-800 bg-zinc-950 p-3">
-          <p className="text-xs uppercase tracking-wider text-zinc-500">
-            Steam PC
-          </p>
-
-          <div className="mt-2 flex items-end justify-between gap-2">
-            <span className="text-2xl font-bold text-emerald-400">
+          <div className="flex items-end justify-between gap-2">
+            <span className="text-lg font-bold text-emerald-400 sm:text-2xl">
               {hasSalePrice ? `$${item.salePrice}` : 'Steam entry'}
             </span>
 
             {hasNormalPrice ? (
-              <span className="text-sm text-zinc-400 line-through">
+              <span className="text-xs text-zinc-400 line-through sm:text-sm">
                 ${item.normalPrice}
               </span>
             ) : null}
@@ -322,12 +306,10 @@ function GameCard({ item }: { item: HomeItem }) {
 
 function HomeSection({
   title,
-  description,
   items,
   href,
 }: {
   title: string
-  description: string
   items: HomeItem[]
   href: string
 }) {
@@ -337,14 +319,8 @@ function HomeSection({
 
   return (
     <section className="mt-12">
-      <div className="mb-5 flex items-end justify-between gap-4">
-        <div>
-          <p className="text-xs uppercase tracking-[0.25em] text-zinc-500">
-            PC Storefront
-          </p>
-          <h2 className="mt-1 text-2xl font-bold text-white">{title}</h2>
-          <p className="mt-2 text-sm text-zinc-400">{description}</p>
-        </div>
+      <div className="mb-5 flex items-center justify-between gap-4">
+        <h2 className="text-2xl font-bold text-white">{title}</h2>
 
         <Link
           href={href}
@@ -354,7 +330,7 @@ function HomeSection({
         </Link>
       </div>
 
-      <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 xl:grid-cols-4">
+      <div className="grid grid-cols-2 gap-4 xl:grid-cols-4">
         {items.map((item) => (
           <GameCard key={`${title}-${item.id}-${item.steamAppID}`} item={item} />
         ))}
@@ -368,44 +344,27 @@ export default async function HomePage() {
 
   return (
     <main className="min-h-screen bg-zinc-950 text-zinc-100">
-      <section className="mx-auto max-w-7xl px-4 py-10 sm:px-6">
-        <header className="mb-10">
-          <p className="text-sm uppercase tracking-[0.3em] text-zinc-400">
-            LoboDeals
-          </p>
-          <h1 className="mt-2 text-3xl font-bold sm:text-4xl">
-            Steam-first PC game deals and discovery
-          </h1>
-          <p className="mt-4 max-w-3xl text-zinc-400">
-            Discover highlights, best deals, latest discounts, and recent releases
-            from the local LoboDeals Steam PC layer.
-          </p>
-        </header>
-
+      <section className="mx-auto max-w-7xl px-4 py-8 sm:px-6 sm:py-10">
         <HomeSection
           title="Highlights"
-          description="Four hand-picked PC highlights for the current month."
           items={storefront?.steam_spotlight || []}
           href="/pc?page=1&sort=all"
         />
 
         <HomeSection
           title="Best Deals"
-          description="Discount-led picks from the public Steam PC layer."
           items={storefront?.best_deals || []}
           href="/pc?page=1&sort=best"
         />
 
         <HomeSection
           title="Latest Discounts"
-          description="Recently refreshed discounted entries from the public Steam PC layer."
           items={storefront?.latest_discounts || []}
           href="/pc?page=1&sort=latest-discounts"
         />
 
         <HomeSection
           title="Latest Releases"
-          description="Recently released PC games already available in the public layer."
           items={storefront?.new_releases || []}
           href="/pc?page=1&sort=latest"
         />

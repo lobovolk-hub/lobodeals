@@ -100,8 +100,6 @@ function getServiceSupabase() {
   return createClient(url, serviceRole)
 }
 
-
-
 function isAuthorized(request: Request) {
   const authHeader = request.headers.get('authorization') || ''
   const token = String(process.env.INTERNAL_REFRESH_TOKEN || '').trim()
@@ -419,6 +417,28 @@ export async function POST(request: Request) {
   const jobStartedAt = new Date().toISOString()
 
   try {
+    const requestTraceNotes = buildRequestTraceNotes(request)
+    const authorized = isAuthorized(request)
+
+    await insertSyncLog(supabase, {
+      jobType: 'enrich_request_trace',
+      status: authorized ? 'success' : 'error',
+      notes: `${authorized ? 'authorized' : 'unauthorized'} ${requestTraceNotes}`,
+      itemsProcessed: 1,
+      startedAt: jobStartedAt,
+      finishedAt: new Date().toISOString(),
+    })
+
+    if (!authorized) {
+      return Response.json(
+        {
+          success: false,
+          error: 'Unauthorized',
+        },
+        { status: 401 }
+      )
+    }
+
     const body = await request.json().catch(() => ({}))
     const iterations = Math.max(1, Math.min(50, Number(body?.iterations || 1)))
     const batchSize = Math.max(1, Math.min(50, Number(body?.batchSize || 10)))
@@ -465,7 +485,7 @@ export async function POST(request: Request) {
 
         const response = await fetch(appdetailsUrl, {
           headers: {
-            'User-Agent': 'LoboDeals/2.52h',
+            'User-Agent': 'LoboDeals/2.52k',
           },
           cache: 'no-store',
         })
@@ -482,6 +502,8 @@ export async function POST(request: Request) {
         }
 
         if (!response.ok) {
+          await postponeFailedGameRetry(supabase, game.id)
+
           await insertSyncLog(supabase, {
             jobType: 'steam_appdetails_enrich',
             status: 'error',
@@ -495,6 +517,8 @@ export async function POST(request: Request) {
         const entry = json?.[steamAppID]
 
         if (!entry?.success || !entry.data) {
+          await postponeFailedGameRetry(supabase, game.id)
+
           await insertSyncLog(supabase, {
             jobType: 'steam_appdetails_enrich',
             status: 'error',

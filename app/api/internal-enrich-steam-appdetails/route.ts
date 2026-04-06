@@ -100,6 +100,73 @@ function getServiceSupabase() {
   return createClient(url, serviceRole)
 }
 
+
+
+function isAuthorized(request: Request) {
+  const authHeader = request.headers.get('authorization') || ''
+  const token = String(process.env.INTERNAL_REFRESH_TOKEN || '').trim()
+
+  if (!token) {
+    throw new Error('Missing INTERNAL_REFRESH_TOKEN')
+  }
+
+  return authHeader === `Bearer ${token}`
+}
+
+function maskAuthorization(request: Request) {
+  const authHeader = String(request.headers.get('authorization') || '').trim()
+  if (!authHeader) return '(missing)'
+
+  const compact = authHeader.replace(/\s+/g, ' ').trim()
+  if (compact.length <= 20) return compact
+
+  return `${compact.slice(0, 12)}...${compact.slice(-6)}`
+}
+
+function getHeaderValue(request: Request, name: string) {
+  return String(request.headers.get(name) || '').trim() || null
+}
+
+function buildRequestTraceNotes(request: Request) {
+  const details = {
+    method: request.method,
+    host: getHeaderValue(request, 'host'),
+    origin: getHeaderValue(request, 'origin'),
+    referer: getHeaderValue(request, 'referer'),
+    user_agent: getHeaderValue(request, 'user-agent'),
+    x_forwarded_for: getHeaderValue(request, 'x-forwarded-for'),
+    x_real_ip: getHeaderValue(request, 'x-real-ip'),
+    x_forwarded_host: getHeaderValue(request, 'x-forwarded-host'),
+    x_forwarded_proto: getHeaderValue(request, 'x-forwarded-proto'),
+    x_vercel_id: getHeaderValue(request, 'x-vercel-id'),
+    x_vercel_ip_country: getHeaderValue(request, 'x-vercel-ip-country'),
+    x_vercel_forwarded_for: getHeaderValue(request, 'x-vercel-forwarded-for'),
+    cf_ray: getHeaderValue(request, 'cf-ray'),
+    auth: maskAuthorization(request),
+  }
+
+  return `request_trace ${JSON.stringify(details)}`
+}
+
+async function postponeFailedGameRetry(
+  supabase: ReturnType<typeof getServiceSupabase>,
+  gameId: string
+) {
+  const safeId = String(gameId || '').trim()
+  if (!safeId) return
+
+  const { error } = await supabase
+    .from('pc_games')
+    .update({
+      updated_at: new Date().toISOString(),
+    })
+    .eq('id', safeId)
+
+  if (error) {
+    console.error('postponeFailedGameRetry failed', error)
+  }
+}
+
 function dedupeStrings(values: Array<string | null | undefined>) {
   return Array.from(
     new Set(
@@ -222,25 +289,6 @@ async function insertSyncLog(
 
   if (error) {
     console.error('sync_logs insert failed', error)
-  }
-}
-
-async function postponeFailedGameRetry(
-  supabase: ReturnType<typeof getServiceSupabase>,
-  gameId: string
-) {
-  const safeId = String(gameId || '').trim()
-  if (!safeId) return
-
-  const { error } = await supabase
-    .from('pc_games')
-    .update({
-      updated_at: new Date().toISOString(),
-    })
-    .eq('id', safeId)
-
-  if (error) {
-    console.error('postponeFailedGameRetry failed', error)
   }
 }
 
@@ -434,31 +482,27 @@ export async function POST(request: Request) {
         }
 
         if (!response.ok) {
-  await postponeFailedGameRetry(supabase, game.id)
-
-  await insertSyncLog(supabase, {
-    jobType: 'steam_appdetails_enrich',
-    status: 'error',
-    notes: `Steam appdetails request failed for app ${steamAppID} with status ${response.status}`,
-    itemsProcessed: 1,
-  })
-  continue
-}
+          await insertSyncLog(supabase, {
+            jobType: 'steam_appdetails_enrich',
+            status: 'error',
+            notes: `Steam appdetails request failed for app ${steamAppID} with status ${response.status}`,
+            itemsProcessed: 1,
+          })
+          continue
+        }
 
         const json = (await response.json()) as SteamAppDetailsResponse
         const entry = json?.[steamAppID]
 
         if (!entry?.success || !entry.data) {
-  await postponeFailedGameRetry(supabase, game.id)
-
-  await insertSyncLog(supabase, {
-    jobType: 'steam_appdetails_enrich',
-    status: 'error',
-    notes: `Steam appdetails returned no usable data for app ${steamAppID}`,
-    itemsProcessed: 1,
-  })
-  continue
-}
+          await insertSyncLog(supabase, {
+            jobType: 'steam_appdetails_enrich',
+            status: 'error',
+            notes: `Steam appdetails returned no usable data for app ${steamAppID}`,
+            itemsProcessed: 1,
+          })
+          continue
+        }
 
         const data = entry.data
 

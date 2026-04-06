@@ -36,6 +36,14 @@ type PcGameRow = {
   steam_type?: string | null
 }
 
+type VisibleCatalogRow = {
+  pc_game_id?: string | null
+  steam_app_id?: string | null
+  title?: string | null
+  slug?: string | null
+  price_last_synced_at?: string | null
+}
+
 type OfferRow = {
   pc_game_id?: string | null
   price_source?: string | null
@@ -132,41 +140,81 @@ async function finishSyncLog(
   }
 }
 
-async function loadCandidateGames(
+async function loadVisibleCandidates(
   supabase: ReturnType<typeof getServiceSupabase>,
-  desiredCount: number,
-  scope: BackfillScope
+  desiredCount: number
+) {
+  const fetchCount = Math.min(Math.max(desiredCount * 3, 200), 1000)
+
+  const { data, error } = await supabase
+    .from('pc_public_catalog_cache')
+    .select('pc_game_id, steam_app_id, title, slug, price_last_synced_at')
+    .eq('steam_type', 'game')
+    .not('steam_app_id', 'is', null)
+    .order('price_last_synced_at', { ascending: true, nullsFirst: true })
+    .limit(fetchCount)
+
+  if (error) {
+    throw new Error(`loadVisibleCandidates pc_public_catalog_cache failed: ${error.message}`)
+  }
+
+  const rows = Array.isArray(data) ? (data as VisibleCatalogRow[]) : []
+  const results: PcGameRow[] = []
+  const seenIds = new Set<string>()
+
+  for (const row of rows) {
+    const gameId = String(row.pc_game_id || '').trim()
+    const steamAppID = String(row.steam_app_id || '').trim()
+
+    if (!gameId || !steamAppID) continue
+    if (seenIds.has(gameId)) continue
+
+    seenIds.add(gameId)
+
+    results.push({
+      id: gameId,
+      steam_app_id: steamAppID,
+      steam_name: String(row.title || '').trim() || null,
+      canonical_title: String(row.title || '').trim() || null,
+      slug: String(row.slug || '').trim() || null,
+      steam_type: 'game',
+    })
+
+    if (results.length >= desiredCount) {
+      break
+    }
+  }
+
+  return results
+}
+
+async function loadFullGameCandidates(
+  supabase: ReturnType<typeof getServiceSupabase>,
+  desiredCount: number
 ) {
   const results: PcGameRow[] = []
   const seenIds = new Set<string>()
 
-  const pageSize = 500
-  const maxScanPages = 40
+  const pageSize = 250
+  const maxScanPages = 20
 
   for (let page = 0; page < maxScanPages && results.length < desiredCount; page += 1) {
     const from = page * pageSize
     const to = from + pageSize - 1
 
-    let query = supabase
+    const { data, error } = await supabase
       .from('pc_games')
       .select(
         'id, steam_app_id, steam_name, canonical_title, slug, updated_at, is_active, steam_type'
       )
+      .eq('steam_type', 'game')
+      .eq('steam_inventory_source', 'steam_istoreservice')
+      .not('steam_app_id', 'is', null)
       .order('updated_at', { ascending: true, nullsFirst: true })
       .range(from, to)
 
-    if (scope === 'visible') {
-      query = query
-        .eq('is_active', true)
-        .eq('steam_type', 'game')
-    } else {
-      query = query.or('steam_type.eq.game,steam_type.is.null')
-    }
-
-    const { data, error } = await query
-
     if (error) {
-      throw new Error(`loadCandidateGames pc_games failed: ${error.message}`)
+      throw new Error(`loadFullGameCandidates pc_games failed: ${error.message}`)
     }
 
     const games = Array.isArray(data) ? (data as PcGameRow[]) : []
@@ -190,7 +238,7 @@ async function loadCandidateGames(
 
       if (offerError) {
         throw new Error(
-          `loadCandidateGames pc_store_offers failed: ${offerError.message}`
+          `loadFullGameCandidates pc_store_offers failed: ${offerError.message}`
         )
       }
 
@@ -228,6 +276,18 @@ async function loadCandidateGames(
   }
 
   return results.slice(0, desiredCount)
+}
+
+async function loadCandidateGames(
+  supabase: ReturnType<typeof getServiceSupabase>,
+  desiredCount: number,
+  scope: BackfillScope
+) {
+  if (scope === 'visible') {
+    return loadVisibleCandidates(supabase, desiredCount)
+  }
+
+  return loadFullGameCandidates(supabase, desiredCount)
 }
 
 export async function POST(request: Request) {
@@ -290,7 +350,7 @@ export async function POST(request: Request) {
 
       const response = await fetch(appdetailsUrl, {
         headers: {
-          'User-Agent': 'LoboDeals/2.5',
+          'User-Agent': 'LoboDeals/2.5k',
         },
         cache: 'no-store',
       })
@@ -311,8 +371,7 @@ export async function POST(request: Request) {
         continue
       }
 
-            const data = entry.data
-
+      const data = entry.data
       const resolvedType = String(data.type || '').trim().toLowerCase()
 
       if (scope === 'full_games' && resolvedType && resolvedType !== 'game') {

@@ -157,7 +157,7 @@ async function getBestDealsItems(supabase: ReturnType<typeof getServiceSupabase>
     .select(
       'pc_game_id, steam_app_id, slug, title, thumb, sale_price, normal_price, discount_percent, store_id, url, is_free_to_play, has_active_offer, is_catalog_ready, sort_latest'
     )
-    .order('has_active_offer', { ascending: false })
+        .order('has_active_offer', { ascending: false })
     .order('discount_percent', { ascending: false })
     .order('sale_price', { ascending: true, nullsFirst: false })
     .order('sort_latest', { ascending: false })
@@ -177,6 +177,7 @@ async function getLatestDiscountsItems(supabase: ReturnType<typeof getServiceSup
     .select(
       'pc_game_id, steam_app_id, slug, title, thumb, sale_price, normal_price, discount_percent, store_id, url, is_free_to_play, has_active_offer, is_catalog_ready, sort_latest, price_last_synced_at'
     )
+    
     .gt('discount_percent', 0)
     .order('price_last_synced_at', { ascending: false, nullsFirst: false })
     .order('discount_percent', { ascending: false })
@@ -197,6 +198,7 @@ async function getLatestReleaseItems(supabase: ReturnType<typeof getServiceSupab
     .select(
       'pc_game_id, steam_app_id, slug, title, thumb, sale_price, normal_price, discount_percent, store_id, url, is_free_to_play, has_active_offer, is_catalog_ready, sort_latest'
     )
+    
     .gt('sort_latest', 0)
     .order('sort_latest', { ascending: false })
     .order('discount_percent', { ascending: false })
@@ -217,6 +219,7 @@ async function getBiggestDiscountsItems(supabase: ReturnType<typeof getServiceSu
     .select(
       'pc_game_id, steam_app_id, slug, title, thumb, sale_price, normal_price, discount_percent, store_id, url, sort_discount, sort_latest'
     )
+    
     .gt('discount_percent', 0)
     .order('sort_discount', { ascending: false })
     .order('sale_price', { ascending: true, nullsFirst: false })
@@ -237,7 +240,7 @@ async function getTopRatedItems(supabase: ReturnType<typeof getServiceSupabase>)
     .select(
       'pc_game_id, steam_app_id, slug, title, thumb, sale_price, normal_price, discount_percent, store_id, url, metacritic, sort_latest'
     )
-    .gt('metacritic', 0)
+        .gt('metacritic', 0)
     .order('metacritic', { ascending: false })
     .order('sort_latest', { ascending: false })
     .limit(4)

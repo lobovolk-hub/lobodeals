@@ -201,8 +201,9 @@ export async function GET(request: Request) {
       totalItems = await getCachedBaseTotal(supabase)
     } else {
       let countQuery = supabase
-        .from('pc_public_catalog_cache')
-        .select('pc_game_id', { count: 'exact', head: true })
+  .from('pc_public_catalog_cache')
+  .select('pc_game_id', { count: 'exact', head: true })
+  
 
       countQuery = applyCommonFilters(
         countQuery,
@@ -229,10 +230,11 @@ export async function GET(request: Request) {
     const safeFrom = (safePage - 1) * pageSize
 
     let dataQuery = supabase
-      .from('pc_public_catalog_cache')
-      .select(
-        'pc_game_id, steam_app_id, slug, title, thumb, sale_price, normal_price, discount_percent, store_id, url, is_free_to_play, has_active_offer, is_catalog_ready'
-      )
+  .from('pc_public_catalog_cache')
+  .select(
+    'pc_game_id, steam_app_id, slug, title, thumb, sale_price, normal_price, discount_percent, store_id, url, is_free_to_play, has_active_offer, is_catalog_ready'
+  )
+  
 
     dataQuery = applyCommonFilters(
       dataQuery,

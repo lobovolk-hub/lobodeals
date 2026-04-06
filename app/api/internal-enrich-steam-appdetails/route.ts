@@ -225,6 +225,25 @@ async function insertSyncLog(
   }
 }
 
+async function postponeFailedGameRetry(
+  supabase: ReturnType<typeof getServiceSupabase>,
+  gameId: string
+) {
+  const safeId = String(gameId || '').trim()
+  if (!safeId) return
+
+  const { error } = await supabase
+    .from('pc_games')
+    .update({
+      updated_at: new Date().toISOString(),
+    })
+    .eq('id', safeId)
+
+  if (error) {
+    console.error('postponeFailedGameRetry failed', error)
+  }
+}
+
 async function loadTargetedGames(
   supabase: ReturnType<typeof getServiceSupabase>,
   steamAppIDs: string[],
@@ -415,27 +434,31 @@ export async function POST(request: Request) {
         }
 
         if (!response.ok) {
-          await insertSyncLog(supabase, {
-            jobType: 'steam_appdetails_enrich',
-            status: 'error',
-            notes: `Steam appdetails request failed for app ${steamAppID} with status ${response.status}`,
-            itemsProcessed: 1,
-          })
-          continue
-        }
+  await postponeFailedGameRetry(supabase, game.id)
+
+  await insertSyncLog(supabase, {
+    jobType: 'steam_appdetails_enrich',
+    status: 'error',
+    notes: `Steam appdetails request failed for app ${steamAppID} with status ${response.status}`,
+    itemsProcessed: 1,
+  })
+  continue
+}
 
         const json = (await response.json()) as SteamAppDetailsResponse
         const entry = json?.[steamAppID]
 
         if (!entry?.success || !entry.data) {
-          await insertSyncLog(supabase, {
-            jobType: 'steam_appdetails_enrich',
-            status: 'error',
-            notes: `Steam appdetails returned no usable data for app ${steamAppID}`,
-            itemsProcessed: 1,
-          })
-          continue
-        }
+  await postponeFailedGameRetry(supabase, game.id)
+
+  await insertSyncLog(supabase, {
+    jobType: 'steam_appdetails_enrich',
+    status: 'error',
+    notes: `Steam appdetails returned no usable data for app ${steamAppID}`,
+    itemsProcessed: 1,
+  })
+  continue
+}
 
         const data = entry.data
 

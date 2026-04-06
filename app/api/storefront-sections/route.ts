@@ -156,6 +156,7 @@ async function getBestDealsItems(
     .select(
       'pc_game_id, steam_app_id, slug, title, thumb, sale_price, normal_price, discount_percent, store_id, url, is_free_to_play, has_active_offer, is_catalog_ready, sort_latest'
     )
+    
     .order('has_active_offer', { ascending: false })
     .order('discount_percent', { ascending: false })
     .order('sale_price', { ascending: true, nullsFirst: false })
@@ -179,6 +180,7 @@ async function getLatestDiscountsItems(
     .select(
       'pc_game_id, steam_app_id, slug, title, thumb, sale_price, normal_price, discount_percent, store_id, url, is_free_to_play, has_active_offer, is_catalog_ready, sort_latest, price_last_synced_at'
     )
+    
     .gt('discount_percent', 0)
     .order('price_last_synced_at', { ascending: false, nullsFirst: false })
     .order('discount_percent', { ascending: false })
@@ -202,6 +204,7 @@ async function getLatestReleaseItems(
     .select(
       'pc_game_id, steam_app_id, slug, title, thumb, sale_price, normal_price, discount_percent, store_id, url, is_free_to_play, has_active_offer, is_catalog_ready, sort_latest'
     )
+    
     .gt('sort_latest', 0)
     .order('sort_latest', { ascending: false })
     .order('discount_percent', { ascending: false })

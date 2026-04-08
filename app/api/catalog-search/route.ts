@@ -3,27 +3,22 @@ export const runtime = 'nodejs'
 import { createClient } from '@supabase/supabase-js'
 import { normalizeCanonicalTitle } from '@/lib/pcCanonical'
 
-type PcGameRow = {
-  id: string
-  steam_app_id?: string | null
-  slug?: string | null
-  steam_name?: string | null
-  canonical_title?: string | null
-  capsule_image?: string | null
-  header_image?: string | null
-  is_free_to_play?: boolean | null
-  is_active?: boolean | null
-  is_catalog_ready?: boolean | null
-}
-
-type PcStoreOfferRow = {
+type CatalogPublicRow = {
   pc_game_id: string
+  steam_app_id?: string | null
+  steam_type?: string | null
+  slug?: string | null
+  title?: string | null
+  thumb?: string | null
   sale_price?: number | string | null
   normal_price?: number | string | null
   discount_percent?: number | string | null
   store_id?: string | null
   url?: string | null
-  is_available?: boolean | null
+  is_free_to_play?: boolean | null
+  has_active_offer?: boolean | null
+  is_catalog_ready?: boolean | null
+  search_title_normalized?: string | null
 }
 
 type CatalogSearchResult = {
@@ -74,53 +69,40 @@ function formatSavings(value?: number | string | null) {
   return String(Math.max(0, Math.min(99, Math.round(amount))))
 }
 
-function chooseBestOffer(current: PcStoreOfferRow | undefined, incoming: PcStoreOfferRow) {
-  if (!current) return incoming
-
-  const currentDiscount = Number(current.discount_percent || 0)
-  const incomingDiscount = Number(incoming.discount_percent || 0)
-
-  if (incomingDiscount > currentDiscount) return incoming
-  if (incomingDiscount < currentDiscount) return current
-
-  const currentSale = Number(current.sale_price || 999999)
-  const incomingSale = Number(incoming.sale_price || 999999)
-
-  if (incomingSale < currentSale) return incoming
-  return current
-}
-
-function scoreGame(row: PcGameRow, normalizedQuery: string, hasOffer: boolean) {
-  const steamName = normalizeCanonicalTitle(String(row.steam_name || ''))
-  const canonicalTitle = normalizeCanonicalTitle(String(row.canonical_title || ''))
-  const title = steamName || canonicalTitle
+function scoreRow(row: CatalogPublicRow, normalizedQuery: string) {
+  const title = normalizeCanonicalTitle(String(row.title || ''))
+  const steamType = String(row.steam_type || '').trim().toLowerCase()
 
   if (!title) return -1
 
   let score = 0
 
   if (title === normalizedQuery) score += 500
-  if (steamName === normalizedQuery) score += 150
-  if (canonicalTitle === normalizedQuery) score += 120
+  if (title.startsWith(normalizedQuery)) score += 140
+  if (title.includes(normalizedQuery)) score += 70
 
-  if (steamName.startsWith(normalizedQuery)) score += 120
-  if (canonicalTitle.startsWith(normalizedQuery)) score += 100
-
-  if (steamName.includes(normalizedQuery)) score += 60
-  if (canonicalTitle.includes(normalizedQuery)) score += 50
-
-  if (row.is_catalog_ready) score += 20
-  if (row.capsule_image || row.header_image) score += 10
-  if (hasOffer) score += 15
+  if (steamType === 'game') score += 20
+  if (row.has_active_offer) score += 15
   if (row.is_free_to_play) score += 8
+  if (row.is_catalog_ready) score += 5
 
   return score
+}
+
+function getSafeTypeFilter(value: string) {
+  const normalized = String(value || 'all').trim().toLowerCase()
+
+  if (normalized === 'game') return 'game'
+  if (normalized === 'dlc') return 'dlc'
+  if (normalized === 'software') return 'software'
+  return 'all'
 }
 
 export async function GET(request: Request) {
   try {
     const { searchParams } = new URL(request.url)
     const rawTitle = searchParams.get('title')?.trim() || ''
+    const typeFilter = getSafeTypeFilter(searchParams.get('type') || 'all')
 
     if (rawTitle.length < 2) {
       return Response.json([], { status: 200 })
@@ -133,91 +115,62 @@ export async function GET(request: Request) {
 
     const supabase = getServiceSupabase()
 
-    const { data: matchedGames, error: gamesError } = await supabase
-      .from('pc_games')
+    let query = supabase
+      .from('catalog_public_cache')
       .select(
-        'id, steam_app_id, slug, steam_name, canonical_title, capsule_image, header_image, is_free_to_play, is_active, is_catalog_ready'
+        'pc_game_id, steam_app_id, steam_type, slug, title, thumb, sale_price, normal_price, discount_percent, store_id, url, is_free_to_play, has_active_offer, is_catalog_ready, search_title_normalized'
       )
-      .eq('is_active', true)
       .or(
         [
-          `steam_name.ilike.%${rawTitle}%`,
-          `canonical_title.ilike.%${rawTitle}%`,
-          `normalized_title.ilike.%${normalizedQuery}%`,
+          `title.ilike.%${rawTitle}%`,
+          `search_title_normalized.ilike.%${normalizedQuery}%`,
         ].join(',')
       )
       .limit(60)
 
-    if (gamesError) {
-      throw gamesError
+    if (typeFilter !== 'all') {
+      query = query.eq('steam_type', typeFilter)
     }
 
-    const games = Array.isArray(matchedGames) ? (matchedGames as PcGameRow[]) : []
+    const { data, error } = await query
 
-    if (!games.length) {
-      return Response.json([], { status: 200 })
+    if (error) {
+      throw error
     }
 
-    const gameIds = games
-      .map((game) => String(game.id || '').trim())
-      .filter(Boolean)
+    const rows = Array.isArray(data) ? (data as CatalogPublicRow[]) : []
 
-    let offersByGameId = new Map<string, PcStoreOfferRow>()
+    const results = rows
+      .map((row) => {
+        const id = String(row.pc_game_id || '').trim()
+        const steamType = String(row.steam_type || '').trim().toLowerCase()
+        const title = String(row.title || '').trim()
+        const slug = String(row.slug || '').trim()
+        const thumb = String(row.thumb || '').trim()
 
-    if (gameIds.length > 0) {
-      const { data: offers, error: offersError } = await supabase
-        .from('pc_store_offers')
-        .select(
-          'pc_game_id, sale_price, normal_price, discount_percent, store_id, url, is_available'
-        )
-        .eq('store_id', '1')
-        .eq('is_available', true)
-        .in('pc_game_id', gameIds)
+        if (!id || !title || !slug) {
+          return null
+        }
 
-      if (offersError) {
-        throw offersError
-      }
-
-      for (const row of (offers || []) as PcStoreOfferRow[]) {
-        const key = String(row.pc_game_id || '').trim()
-        if (!key) continue
-
-        offersByGameId.set(key, chooseBestOffer(offersByGameId.get(key), row))
-      }
-    }
-
-    const results = games
-      .map((game) => {
-        const id = String(game.id || '').trim()
-        const offer = offersByGameId.get(id)
-        const title = String(game.steam_name || game.canonical_title || '').trim()
-        const slug = String(game.slug || '').trim()
-        const thumb =
-          String(game.capsule_image || '').trim() ||
-          String(game.header_image || '').trim()
-
-        if (!title || !slug) return null
-
-        const hasActiveOffer = Boolean(offer)
-        const score = scoreGame(game, normalizedQuery, hasActiveOffer)
+        const score = scoreRow(row, normalizedQuery)
 
         return {
           score,
           item: {
             id,
-            steamAppID: String(game.steam_app_id || '').trim(),
+            steamAppID: String(row.steam_app_id || '').trim(),
             slug,
             title,
             thumb,
-            salePrice: formatMoney(offer?.sale_price),
-            normalPrice: formatMoney(offer?.normal_price),
-            savings: formatSavings(offer?.discount_percent),
-            storeID: String(offer?.store_id || '1').trim(),
-            url: String(offer?.url || '').trim(),
-                        isFreeToPlay: Boolean(game.is_free_to_play),
-            hasActiveOffer,
-            isCatalogReady: Boolean(game.is_catalog_ready),
-            canOpenPage: Boolean(game.is_catalog_ready && slug),
+            salePrice: formatMoney(row.sale_price),
+            normalPrice: formatMoney(row.normal_price),
+            savings: formatSavings(row.discount_percent),
+            storeID: String(row.store_id || '1').trim(),
+            url: String(row.url || '').trim(),
+            isFreeToPlay: Boolean(row.is_free_to_play),
+            hasActiveOffer: Boolean(row.has_active_offer),
+            isCatalogReady: Boolean(row.is_catalog_ready),
+            canOpenPage: steamType === 'game' && Boolean(slug),
           } satisfies CatalogSearchResult,
         }
       })
@@ -227,9 +180,7 @@ export async function GET(request: Request) {
           return b!.score - a!.score
         }
 
-        if (
-          Number(b!.item.savings || 0) !== Number(a!.item.savings || 0)
-        ) {
+        if (Number(b!.item.savings || 0) !== Number(a!.item.savings || 0)) {
           return Number(b!.item.savings || 0) - Number(a!.item.savings || 0)
         }
 

@@ -60,30 +60,9 @@ function formatMoney(value?: string | number | null) {
   return `$${amount.toFixed(2)}`
 }
 
-function getSafeDiscountPercent(
-  salePrice?: string | number | null,
-  normalPrice?: string | number | null,
-  savings?: string | number | null
-) {
-  const sale = Number(salePrice || 0)
-  const normal = Number(normalPrice || 0)
-  const rawSavings = Number(savings || 0)
-
-  if (normal > 0 && sale >= 0 && normal > sale) {
-    const computed = ((normal - sale) / normal) * 100
-    return Math.max(0, Math.min(99, Math.round(computed)))
-  }
-
-  if (Number.isFinite(rawSavings) && rawSavings > 0) {
-    return Math.max(0, Math.min(99, Math.round(rawSavings)))
-  }
-
-  return 0
-}
-
 function cleanDescription(value?: string | null) {
   const raw = String(value || '').trim()
-  if (!raw) return 'Description not available yet for this Steam PC entry.'
+  if (!raw) return 'Description not available yet.'
 
   return raw
     .replace(/<[^>]*>/g, ' ')
@@ -118,19 +97,58 @@ function pushTrackMessage(
 function MetricCard({
   label,
   value,
-  sublabel,
 }: {
   label: string
   value: string | number
-  sublabel?: string
 }) {
   return (
     <div className="rounded-2xl border border-zinc-800 bg-zinc-950 p-4">
       <p className="text-[10px] uppercase tracking-[0.2em] text-zinc-500">{label}</p>
       <p className="mt-2 text-2xl font-bold text-white">{value}</p>
-      {sublabel ? <p className="mt-1 text-[11px] text-zinc-500">{sublabel}</p> : null}
     </div>
   )
+}
+
+function getDetailDisplayState(input: {
+  salePrice?: string | number | null
+  normalPrice?: string | number | null
+  savings?: string | number | null
+  isFreeToPlay?: boolean
+  releaseDate?: string | null
+}) {
+  const sale = Number(input.salePrice || 0)
+  const normal = Number(input.normalPrice || 0)
+  const releaseDate = input.releaseDate ? new Date(input.releaseDate) : null
+  const now = new Date()
+
+  const isUpcoming =
+    !!releaseDate && !Number.isNaN(releaseDate.getTime()) && releaseDate.getTime() > now.getTime()
+
+  const hasSalePrice = Number.isFinite(sale) && sale > 0
+  const hasNormalPrice = Number.isFinite(normal) && normal > 0
+  const hasDiscount =
+    !isUpcoming &&
+    hasSalePrice &&
+    hasNormalPrice &&
+    normal > sale
+
+  const priceLabel = isUpcoming
+    ? 'TBA'
+    : hasSalePrice
+    ? `$${sale.toFixed(2)}`
+    : hasNormalPrice
+    ? `$${normal.toFixed(2)}`
+    : input.isFreeToPlay
+    ? 'Free'
+    : 'N/A'
+
+  return {
+    isUpcoming,
+    hasDiscount,
+    priceLabel,
+    discountLabel: hasDiscount ? `${Math.round(((normal - sale) / normal) * 100)}%` : '—',
+    showOldPrice: hasDiscount,
+  }
 }
 
 export default function PcCanonicalGamePage() {
@@ -274,11 +292,6 @@ export default function PcCanonicalGamePage() {
     return () => document.removeEventListener('keydown', onKeyDown)
   }, [lightboxOpen])
 
-  const heroOffer = game?.heroOffer || null
-  const safeSavings = heroOffer
-    ? getSafeDiscountPercent(heroOffer.salePrice, heroOffer.normalPrice, heroOffer.savings)
-    : 0
-
   const screenshots = useMemo(() => {
     if (!game) return []
 
@@ -294,7 +307,7 @@ export default function PcCanonicalGamePage() {
   const maxThumbOffset = Math.max(0, screenshots.length - 2)
   const visibleThumbs = screenshots.slice(thumbOffset, thumbOffset + 2)
 
-    const coverImage =
+  const coverImage =
     game?.headerImage ||
     screenshots?.[0] ||
     game?.heroImage ||
@@ -306,23 +319,30 @@ export default function PcCanonicalGamePage() {
   const metacritic =
     typeof game?.metacritic === 'number'
       ? game.metacritic
-      : heroOffer?.metacriticScore
-      ? Number(heroOffer.metacriticScore)
+      : game?.heroOffer?.metacriticScore
+      ? Number(game.heroOffer.metacriticScore)
       : null
 
   const releaseLabel = getReleaseLabel(game?.releaseDate || null)
-
   const genres =
     Array.isArray(game?.steamGenres) && game.steamGenres.length > 0
       ? game.steamGenres
       : []
+
+  const display = getDetailDisplayState({
+    salePrice: game?.heroOffer?.salePrice,
+    normalPrice: game?.heroOffer?.normalPrice,
+    savings: game?.heroOffer?.savings,
+    isFreeToPlay: game?.isFreeToPlay,
+    releaseDate: game?.releaseDate,
+  })
 
   if (loading) {
     return (
       <main className="min-h-screen bg-zinc-950 text-zinc-100">
         <section className="mx-auto max-w-6xl px-4 py-10 sm:px-6">
           <div className="rounded-2xl border border-zinc-800 bg-zinc-900 p-5 text-sm text-zinc-400">
-            Loading PC game page...
+            Loading game...
           </div>
         </section>
       </main>
@@ -343,7 +363,7 @@ export default function PcCanonicalGamePage() {
           </div>
 
           <div className="rounded-2xl border border-zinc-800 bg-zinc-900 p-5 text-sm text-zinc-400">
-            This PC game could not be resolved right now. Please try another entry.
+            This game could not be loaded right now.
           </div>
         </section>
       </main>
@@ -371,7 +391,7 @@ export default function PcCanonicalGamePage() {
             ) : null}
 
             <div className="grid items-start gap-6 lg:grid-cols-[420px_minmax(0,1fr)]">
-                            <div className="space-y-4">
+              <div className="space-y-4">
                 <div className="rounded-3xl border border-zinc-800 bg-zinc-950 p-3">
                   <div className="flex items-center justify-center overflow-hidden rounded-2xl bg-black">
                     <img
@@ -384,12 +404,7 @@ export default function PcCanonicalGamePage() {
 
                 <div>
                   <div className="flex items-center justify-between gap-3">
-                    <div>
-                      <h2 className="text-lg font-bold text-white">Screenshots</h2>
-                      <p className="text-sm text-zinc-400">
-                        Real Steam screenshots only. Click to expand.
-                      </p>
-                    </div>
+                    <h2 className="text-lg font-bold text-white">Screenshots</h2>
 
                     {screenshots.length > 4 ? (
                       <div className="flex items-center gap-2">
@@ -415,7 +430,7 @@ export default function PcCanonicalGamePage() {
                   </div>
 
                   {visibleThumbs.length > 0 ? (
-                                        <div className="mt-3 grid grid-cols-2 gap-3">
+                    <div className="mt-3 grid grid-cols-2 gap-3">
                       {visibleThumbs.map((shot) => (
                         <button
                           key={shot}
@@ -440,7 +455,7 @@ export default function PcCanonicalGamePage() {
                     </div>
                   ) : (
                     <div className="mt-3 rounded-2xl border border-zinc-800 bg-zinc-950 p-4 text-sm text-zinc-400">
-                      Screenshots not cached yet for this game.
+                      No screenshots yet.
                     </div>
                   )}
                 </div>
@@ -456,13 +471,15 @@ export default function PcCanonicalGamePage() {
                     Steam
                   </span>
 
-                  {game.isFreeToPlay ? (
+                  {!display.isUpcoming && game.isFreeToPlay && !display.hasDiscount ? (
                     <span className="rounded-full border border-sky-500/30 bg-sky-500/10 px-3 py-1 text-xs text-sky-300">
                       Free to play
                     </span>
-                  ) : safeSavings > 0 ? (
+                  ) : null}
+
+                  {display.hasDiscount ? (
                     <span className="rounded-full border border-emerald-500/30 bg-emerald-500/10 px-3 py-1 text-xs text-emerald-300">
-                      {safeSavings}% off
+                      {display.discountLabel} off
                     </span>
                   ) : null}
                 </div>
@@ -473,20 +490,12 @@ export default function PcCanonicalGamePage() {
 
                 <div className="mt-4 flex flex-wrap items-end gap-3">
                   <span className="text-4xl font-bold text-emerald-400">
-                    {game.isFreeToPlay
-                      ? 'Free'
-                      : heroOffer?.salePrice
-                      ? formatMoney(heroOffer.salePrice)
-                      : heroOffer?.normalPrice
-                      ? formatMoney(heroOffer.normalPrice)
-                      : 'View store'}
+                    {display.priceLabel}
                   </span>
 
-                  {heroOffer?.normalPrice &&
-                  Number(heroOffer.normalPrice) > Number(heroOffer.salePrice || 0) &&
-                  Number(heroOffer.salePrice || 0) > 0 ? (
+                  {display.showOldPrice ? (
                     <span className="pb-1 text-lg text-zinc-400 line-through">
-                      {formatMoney(heroOffer.normalPrice)}
+                      {formatMoney(game.heroOffer?.normalPrice)}
                     </span>
                   ) : null}
                 </div>
@@ -503,7 +512,7 @@ export default function PcCanonicalGamePage() {
                   ) : null}
                 </div>
 
-                                <div className="mt-5 flex flex-wrap items-center gap-3">
+                <div className="mt-5 flex flex-wrap items-center gap-3">
                   <button
                     disabled={authLoading}
                     onClick={async () => {
@@ -512,7 +521,7 @@ export default function PcCanonicalGamePage() {
                         return
                       }
 
-                                            try {
+                      try {
                         const {
                           data: { session },
                         } = await supabase.auth.getSession()
@@ -583,9 +592,9 @@ export default function PcCanonicalGamePage() {
                     {isTracked ? 'Tracked' : 'Track game'}
                   </button>
 
-                  {heroOffer?.url ? (
+                  {game.heroOffer?.url ? (
                     <Link
-                      href={heroOffer.url}
+                      href={game.heroOffer.url}
                       target="_blank"
                       rel="noreferrer"
                       onClick={() =>
@@ -599,14 +608,7 @@ export default function PcCanonicalGamePage() {
                       }
                       className="rounded-xl bg-white px-4 py-3 text-sm font-semibold text-black transition hover:opacity-90"
                     >
-                      Open on Steam —{' '}
-                      {game.isFreeToPlay
-                        ? 'Free'
-                        : heroOffer?.salePrice
-                        ? formatMoney(heroOffer.salePrice)
-                        : heroOffer?.normalPrice
-                        ? formatMoney(heroOffer.normalPrice)
-                        : 'View store'}
+                      Open on Steam — {display.priceLabel}
                     </Link>
                   ) : null}
                 </div>
@@ -614,40 +616,26 @@ export default function PcCanonicalGamePage() {
                 <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
                   <MetricCard
                     label="Current Price"
-                    value={
-                      game.isFreeToPlay
-                        ? 'Free'
-                        : heroOffer?.salePrice
-                        ? formatMoney(heroOffer.salePrice)
-                        : heroOffer?.normalPrice
-                        ? formatMoney(heroOffer.normalPrice)
-                        : 'N/A'
-                    }
-                    sublabel="Steam US cached price"
+                    value={display.priceLabel}
                   />
 
                   <MetricCard
                     label="Discount"
-                    value={game.isFreeToPlay ? 'Free' : safeSavings > 0 ? `${safeSavings}%` : '—'}
-                    sublabel="Current Steam discount"
+                    value={display.isUpcoming ? 'TBA' : display.hasDiscount ? display.discountLabel : '—'}
                   />
 
                   <MetricCard
                     label="Metacritic"
                     value={typeof metacritic === 'number' ? metacritic : '—'}
-                    sublabel={typeof metacritic === 'number' ? 'Steam-first metadata' : 'Not available yet'}
                   />
 
                   <MetricCard
                     label="Release Date"
                     value={releaseLabel}
-                    sublabel="Steam-first game data"
                   />
                 </div>
               </div>
             </div>
-
-            
           </div>
 
           <div className="grid gap-6 p-5 lg:grid-cols-[minmax(0,1fr)_320px]">
@@ -672,15 +660,16 @@ export default function PcCanonicalGamePage() {
 
             <aside className="rounded-3xl border border-zinc-800 bg-zinc-950 p-5">
               <h2 className="text-xl font-bold text-white">Store Offers</h2>
-              <p className="mt-2 text-sm text-zinc-400">Current Steam pricing entries resolved for this game.</p>
 
               <div className="mt-4 space-y-3">
                 {game.offers.map((offer) => {
-                  const savings = getSafeDiscountPercent(
-                    offer.salePrice,
-                    offer.normalPrice,
-                    offer.savings
-                  )
+                  const offerDisplay = getDetailDisplayState({
+                    salePrice: offer.salePrice,
+                    normalPrice: offer.normalPrice,
+                    savings: offer.savings,
+                    isFreeToPlay: game.isFreeToPlay,
+                    releaseDate: game.releaseDate,
+                  })
 
                   return (
                     <div
@@ -701,11 +690,11 @@ export default function PcCanonicalGamePage() {
                           </span>
                         </div>
 
-                        {savings > 0 ? (
+                        {offerDisplay.hasDiscount ? (
                           <span className="rounded-full border border-emerald-500/30 bg-emerald-500/10 px-2 py-1 text-xs text-emerald-300">
-                            {savings}% off
+                            {offerDisplay.discountLabel} off
                           </span>
-                        ) : game.isFreeToPlay ? (
+                        ) : !offerDisplay.isUpcoming && game.isFreeToPlay ? (
                           <span className="rounded-full border border-sky-500/30 bg-sky-500/10 px-2 py-1 text-xs text-sky-300">
                             Free
                           </span>
@@ -714,18 +703,10 @@ export default function PcCanonicalGamePage() {
 
                       <div className="mt-3 flex items-end justify-between gap-2">
                         <span className="text-2xl font-bold text-emerald-400">
-                          {game.isFreeToPlay
-                            ? 'Free'
-                            : offer.salePrice
-                            ? formatMoney(offer.salePrice)
-                            : offer.normalPrice
-                            ? formatMoney(offer.normalPrice)
-                            : 'View store'}
+                          {offerDisplay.priceLabel}
                         </span>
 
-                        {offer.normalPrice &&
-                        Number(offer.normalPrice) > Number(offer.salePrice || 0) &&
-                        Number(offer.salePrice || 0) > 0 ? (
+                        {offerDisplay.showOldPrice ? (
                           <span className="text-sm text-zinc-400 line-through">
                             {formatMoney(offer.normalPrice)}
                           </span>

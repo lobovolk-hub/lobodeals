@@ -15,23 +15,8 @@ type HomeItem = {
   storeID: string
   url: string
   platform: string
-}
-
-type SpotlightRow = {
-  section_key: string
-  position: number
-  pc_game_id: string
-  steam_app_id: string | null
-  slug: string
-  title: string
-  thumb: string
-  sale_price: number | string | null
-  normal_price: number | string | null
-  discount_percent: number | string | null
-  store_id: string | null
-  url: string | null
-  platform: string
-  updated_at: string
+  isFreeToPlay: boolean
+  sortLatest: number
 }
 
 type PcPublicCatalogRow = {
@@ -55,15 +40,11 @@ type PcPublicCatalogRow = {
 }
 
 type HomeData = {
-  storefront: {
-    steam_spotlight: HomeItem[]
-    best_deals: HomeItem[]
-    latest_discounts: HomeItem[]
-    new_releases: HomeItem[]
-    biggest_discounts: HomeItem[]
-    top_rated: HomeItem[]
-    updatedAt: string | null
-  }
+  bestDeals: HomeItem[]
+  latestDiscounts: HomeItem[]
+  latestReleases: HomeItem[]
+  biggestDiscounts: HomeItem[]
+  topRated: HomeItem[]
 }
 
 function getServiceSupabase() {
@@ -97,22 +78,6 @@ function formatSavings(value?: number | string | null) {
   return String(Math.max(0, Math.min(99, Math.round(amount))))
 }
 
-function mapSpotlightRow(row: SpotlightRow): HomeItem {
-  return {
-    id: String(row.pc_game_id || '').trim(),
-    steamAppID: String(row.steam_app_id || '').trim(),
-    slug: String(row.slug || '').trim(),
-    title: String(row.title || '').trim(),
-    thumb: String(row.thumb || '').trim(),
-    salePrice: formatMoney(row.sale_price),
-    normalPrice: formatMoney(row.normal_price),
-    savings: formatSavings(row.discount_percent),
-    storeID: String(row.store_id || '1').trim(),
-    url: String(row.url || '').trim(),
-    platform: String(row.platform || 'pc').trim(),
-  }
-}
-
 function mapCatalogRow(row: PcPublicCatalogRow): HomeItem {
   return {
     id: String(row.pc_game_id || '').trim(),
@@ -126,42 +91,63 @@ function mapCatalogRow(row: PcPublicCatalogRow): HomeItem {
     storeID: String(row.store_id || '1').trim(),
     url: String(row.url || '').trim(),
     platform: 'pc',
+    isFreeToPlay: Boolean(row.is_free_to_play),
+    sortLatest: Number(row.sort_latest || 0),
   }
 }
 
-async function getSpotlightItems(supabase: ReturnType<typeof getServiceSupabase>) {
-  const { data, error } = await supabase
-    .from('public_storefront_sections_cache')
-    .select(
-      'section_key, position, pc_game_id, steam_app_id, slug, title, thumb, sale_price, normal_price, discount_percent, store_id, url, platform, updated_at'
-    )
-    .eq('section_key', 'steam_spotlight')
-    .order('position', { ascending: true })
-    .limit(4)
+function getCardDisplayState(item: {
+  salePrice?: string
+  normalPrice?: string
+  savings?: string
+  isFreeToPlay?: boolean
+  sortLatest?: number
+}) {
+  const nowEpoch = Math.floor(Date.now() / 1000)
+  const sale = Number(item.salePrice || 0)
+  const normal = Number(item.normalPrice || 0)
+  const isUpcoming = Number(item.sortLatest || 0) > nowEpoch
 
-  if (error) {
-    throw error
-  }
+  const hasSalePrice = Number.isFinite(sale) && sale > 0
+  const hasNormalPrice = Number.isFinite(normal) && normal > 0
+  const hasDiscount =
+    !isUpcoming &&
+    hasSalePrice &&
+    hasNormalPrice &&
+    normal > sale
 
-  const rows = Array.isArray(data) ? (data as SpotlightRow[]) : []
+  const priceLabel = isUpcoming
+    ? 'TBA'
+    : hasSalePrice
+    ? `$${item.salePrice}`
+    : hasNormalPrice
+    ? `$${item.normalPrice}`
+    : item.isFreeToPlay
+    ? 'Free'
+    : 'No price'
 
   return {
-    items: rows.map(mapSpotlightRow),
-    updatedAt: rows.length > 0 ? rows[0].updated_at : null,
+    isUpcoming,
+    hasDiscount,
+    priceLabel,
+    showNormalPrice: hasDiscount,
   }
 }
 
-async function getBestDealsItems(supabase: ReturnType<typeof getServiceSupabase>) {
+async function getBestDealsItems(
+  supabase: ReturnType<typeof getServiceSupabase>,
+  limit: number
+) {
   const { data, error } = await supabase
     .from('pc_public_catalog_cache')
     .select(
-      'pc_game_id, steam_app_id, slug, title, thumb, sale_price, normal_price, discount_percent, store_id, url, is_free_to_play, has_active_offer, is_catalog_ready, sort_latest'
+      'pc_game_id, steam_app_id, slug, title, thumb, sale_price, normal_price, discount_percent, store_id, url, is_free_to_play, has_active_offer, sort_latest'
     )
-        .order('has_active_offer', { ascending: false })
+    .order('has_active_offer', { ascending: false })
     .order('discount_percent', { ascending: false })
     .order('sale_price', { ascending: true, nullsFirst: false })
     .order('sort_latest', { ascending: false })
-    .limit(4)
+    .limit(limit)
 
   if (error) {
     throw error
@@ -171,18 +157,20 @@ async function getBestDealsItems(supabase: ReturnType<typeof getServiceSupabase>
   return rows.map(mapCatalogRow)
 }
 
-async function getLatestDiscountsItems(supabase: ReturnType<typeof getServiceSupabase>) {
+async function getLatestDiscountsItems(
+  supabase: ReturnType<typeof getServiceSupabase>,
+  limit: number
+) {
   const { data, error } = await supabase
     .from('pc_public_catalog_cache')
     .select(
-      'pc_game_id, steam_app_id, slug, title, thumb, sale_price, normal_price, discount_percent, store_id, url, is_free_to_play, has_active_offer, is_catalog_ready, sort_latest, price_last_synced_at'
+      'pc_game_id, steam_app_id, slug, title, thumb, sale_price, normal_price, discount_percent, store_id, url, is_free_to_play, price_last_synced_at, sort_latest'
     )
-    
     .gt('discount_percent', 0)
     .order('price_last_synced_at', { ascending: false, nullsFirst: false })
     .order('discount_percent', { ascending: false })
     .order('sort_latest', { ascending: false })
-    .limit(4)
+    .limit(limit)
 
   if (error) {
     throw error
@@ -192,18 +180,22 @@ async function getLatestDiscountsItems(supabase: ReturnType<typeof getServiceSup
   return rows.map(mapCatalogRow)
 }
 
-async function getLatestReleaseItems(supabase: ReturnType<typeof getServiceSupabase>) {
+async function getLatestReleasesItems(
+  supabase: ReturnType<typeof getServiceSupabase>,
+  limit: number,
+  nowEpoch: number
+) {
   const { data, error } = await supabase
     .from('pc_public_catalog_cache')
     .select(
-      'pc_game_id, steam_app_id, slug, title, thumb, sale_price, normal_price, discount_percent, store_id, url, is_free_to_play, has_active_offer, is_catalog_ready, sort_latest'
+      'pc_game_id, steam_app_id, slug, title, thumb, sale_price, normal_price, discount_percent, store_id, url, is_free_to_play, sort_latest'
     )
-    
     .gt('sort_latest', 0)
+    .lte('sort_latest', nowEpoch)
     .order('sort_latest', { ascending: false })
     .order('discount_percent', { ascending: false })
     .order('title', { ascending: true })
-    .limit(4)
+    .limit(limit)
 
   if (error) {
     throw error
@@ -213,18 +205,20 @@ async function getLatestReleaseItems(supabase: ReturnType<typeof getServiceSupab
   return rows.map(mapCatalogRow)
 }
 
-async function getBiggestDiscountsItems(supabase: ReturnType<typeof getServiceSupabase>) {
+async function getBiggestDiscountsItems(
+  supabase: ReturnType<typeof getServiceSupabase>,
+  limit: number
+) {
   const { data, error } = await supabase
     .from('pc_public_catalog_cache')
     .select(
-      'pc_game_id, steam_app_id, slug, title, thumb, sale_price, normal_price, discount_percent, store_id, url, sort_discount, sort_latest'
+      'pc_game_id, steam_app_id, slug, title, thumb, sale_price, normal_price, discount_percent, store_id, url, is_free_to_play, sort_discount, sort_latest'
     )
-    
     .gt('discount_percent', 0)
     .order('sort_discount', { ascending: false })
     .order('sale_price', { ascending: true, nullsFirst: false })
     .order('sort_latest', { ascending: false })
-    .limit(4)
+    .limit(limit)
 
   if (error) {
     throw error
@@ -234,16 +228,19 @@ async function getBiggestDiscountsItems(supabase: ReturnType<typeof getServiceSu
   return rows.map(mapCatalogRow)
 }
 
-async function getTopRatedItems(supabase: ReturnType<typeof getServiceSupabase>) {
+async function getTopRatedItems(
+  supabase: ReturnType<typeof getServiceSupabase>,
+  limit: number
+) {
   const { data, error } = await supabase
     .from('pc_public_catalog_cache')
     .select(
-      'pc_game_id, steam_app_id, slug, title, thumb, sale_price, normal_price, discount_percent, store_id, url, metacritic, sort_latest'
+      'pc_game_id, steam_app_id, slug, title, thumb, sale_price, normal_price, discount_percent, store_id, url, is_free_to_play, metacritic, sort_latest'
     )
-        .gt('metacritic', 0)
+    .gt('metacritic', 0)
     .order('metacritic', { ascending: false })
     .order('sort_latest', { ascending: false })
-    .limit(4)
+    .limit(limit)
 
   if (error) {
     throw error
@@ -256,45 +253,39 @@ async function getTopRatedItems(supabase: ReturnType<typeof getServiceSupabase>)
 async function getHomeData(): Promise<HomeData> {
   try {
     const supabase = getServiceSupabase()
+    const sectionLimit = 6
+    const nowEpoch = Math.floor(Date.now() / 1000)
 
     const [
-      spotlightRes,
       bestDeals,
       latestDiscounts,
       latestReleases,
       biggestDiscounts,
       topRated,
     ] = await Promise.all([
-      getSpotlightItems(supabase),
-      getBestDealsItems(supabase),
-      getLatestDiscountsItems(supabase),
-      getLatestReleaseItems(supabase),
-      getBiggestDiscountsItems(supabase),
-      getTopRatedItems(supabase),
+      getBestDealsItems(supabase, sectionLimit),
+      getLatestDiscountsItems(supabase, sectionLimit),
+      getLatestReleasesItems(supabase, sectionLimit, nowEpoch),
+      getBiggestDiscountsItems(supabase, sectionLimit),
+      getTopRatedItems(supabase, sectionLimit),
     ])
 
     return {
-      storefront: {
-        steam_spotlight: spotlightRes.items,
-        best_deals: bestDeals,
-        latest_discounts: latestDiscounts,
-        new_releases: latestReleases,
-        biggest_discounts: biggestDiscounts,
-        top_rated: topRated,
-        updatedAt: spotlightRes.updatedAt,
-      },
+      bestDeals,
+      latestDiscounts,
+      latestReleases,
+      biggestDiscounts,
+      topRated,
     }
-  } catch {
+  } catch (error) {
+    console.error('home page error', error)
+
     return {
-      storefront: {
-        steam_spotlight: [],
-        best_deals: [],
-        latest_discounts: [],
-        new_releases: [],
-        biggest_discounts: [],
-        top_rated: [],
-        updatedAt: null,
-      },
+      bestDeals: [],
+      latestDiscounts: [],
+      latestReleases: [],
+      biggestDiscounts: [],
+      topRated: [],
     }
   }
 }
@@ -313,31 +304,31 @@ function buildGameHref(item: { slug: string; title: string }) {
 }
 
 function GameCard({ item }: { item: HomeItem }) {
-  const hasDiscount = Number(item.savings || 0) > 0
-  const hasSalePrice = !!item.salePrice
-  const hasNormalPrice =
-    !!item.normalPrice &&
-    Number(item.normalPrice) > Number(item.salePrice || 0)
+  const display = getCardDisplayState(item)
 
   return (
     <article className="overflow-hidden rounded-3xl border border-zinc-800 bg-zinc-900 shadow-lg transition hover:-translate-y-1">
-      <Link href={buildGameHref(item)}>
-        <img
-          src={item.thumb}
-          alt={item.title}
-          className="h-32 w-full object-cover transition hover:opacity-90 sm:h-40"
-        />
+      <Link href={buildGameHref(item)} className="block">
+        <div className="h-32 w-full bg-zinc-800 sm:h-36">
+          {item.thumb ? (
+            <img
+              src={item.thumb}
+              alt={item.title}
+              className="h-full w-full object-cover transition hover:opacity-90"
+            />
+          ) : null}
+        </div>
       </Link>
 
       <div className="p-3 sm:p-4">
-        <div className="mb-3 flex items-start justify-between gap-2 sm:gap-3">
+        <div className="mb-3 flex items-start justify-between gap-2">
           <Link href={buildGameHref(item)} className="min-w-0">
-            <h3 className="line-clamp-2 text-sm font-bold leading-5 transition hover:text-emerald-300 sm:text-base">
+            <h3 className="line-clamp-2 text-sm font-bold leading-5 text-zinc-100 transition hover:text-emerald-300 sm:text-base">
               {item.title}
             </h3>
           </Link>
 
-          {hasDiscount ? (
+          {display.hasDiscount ? (
             <span className="shrink-0 rounded-full border border-emerald-500/30 bg-emerald-500/10 px-2 py-1 text-[10px] font-medium text-emerald-300 sm:text-xs">
               -{item.savings}%
             </span>
@@ -347,10 +338,10 @@ function GameCard({ item }: { item: HomeItem }) {
         <div className="rounded-2xl border border-zinc-800 bg-zinc-950 p-3">
           <div className="flex items-end justify-between gap-2">
             <span className="text-lg font-bold text-emerald-400 sm:text-2xl">
-              {hasSalePrice ? `$${item.salePrice}` : 'Steam entry'}
+              {display.priceLabel}
             </span>
 
-            {hasNormalPrice ? (
+            {display.showNormalPrice ? (
               <span className="text-xs text-zinc-400 line-through sm:text-sm">
                 ${item.normalPrice}
               </span>
@@ -376,9 +367,9 @@ function HomeSection({
   }
 
   return (
-    <section className="mt-4 sm:mt-6">
-      <div className="mb-5 flex items-center justify-between gap-4">
-        <h2 className="text-2xl font-bold text-white">{title}</h2>
+    <section className="mt-6 sm:mt-8">
+      <div className="mb-4 flex items-center justify-between gap-4">
+        <h2 className="text-xl font-bold text-white sm:text-2xl">{title}</h2>
 
         <Link
           href={href}
@@ -388,7 +379,7 @@ function HomeSection({
         </Link>
       </div>
 
-      <div className="grid grid-cols-2 gap-4 xl:grid-cols-4">
+      <div className="grid grid-cols-2 gap-4 md:grid-cols-3 xl:grid-cols-5 2xl:grid-cols-6">
         {items.map((item) => (
           <GameCard key={`${title}-${item.id}-${item.steamAppID}`} item={item} />
         ))}
@@ -398,44 +389,38 @@ function HomeSection({
 }
 
 export default async function HomePage() {
-  const { storefront } = await getHomeData()
+  const data = await getHomeData()
 
   return (
     <main className="min-h-screen bg-zinc-950 text-zinc-100">
-      <section className="mx-auto max-w-7xl px-4 pt-0 pb-8 sm:px-6 sm:pt-0 sm:pb-10">
-        <HomeSection
-          title="Highlights"
-          items={storefront?.steam_spotlight || []}
-          href="/pc?page=1&sort=all"
-        />
-
+      <section className="mx-auto max-w-7xl px-4 pb-8 pt-2 sm:px-6 sm:pb-10 sm:pt-4">
         <HomeSection
           title="Best Deals"
-          items={storefront?.best_deals || []}
-          href="/pc?page=1&sort=best"
+          items={data.bestDeals}
+          href="/pc?page=1&sort=best-deals"
         />
 
         <HomeSection
           title="Latest Discounts"
-          items={storefront?.latest_discounts || []}
+          items={data.latestDiscounts}
           href="/pc?page=1&sort=latest-discounts"
         />
 
         <HomeSection
           title="Latest Releases"
-          items={storefront?.new_releases || []}
-          href="/pc?page=1&sort=latest"
+          items={data.latestReleases}
+          href="/pc?page=1&sort=latest-releases"
         />
 
         <HomeSection
           title="Biggest Discounts"
-          items={storefront?.biggest_discounts || []}
+          items={data.biggestDiscounts}
           href="/pc?page=1&sort=biggest-discount"
         />
 
         <HomeSection
           title="Top Rated"
-          items={storefront?.top_rated || []}
+          items={data.topRated}
           href="/pc?page=1&sort=top-rated"
         />
       </section>

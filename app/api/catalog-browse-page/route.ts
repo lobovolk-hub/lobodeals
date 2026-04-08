@@ -2,12 +2,13 @@ export const runtime = 'nodejs'
 
 import { createClient } from '@supabase/supabase-js'
 
-type PcPublicRow = {
+type CatalogPublicRow = {
   pc_game_id: string
   steam_app_id?: string | null
-  slug?: string | null
-  title?: string | null
-  thumb?: string | null
+  steam_type?: string | null
+  slug: string
+  title: string
+  thumb: string
   sale_price?: number | string | null
   normal_price?: number | string | null
   discount_percent?: number | string | null
@@ -17,12 +18,12 @@ type PcPublicRow = {
   has_active_offer?: boolean | null
   is_catalog_ready?: boolean | null
   sort_latest?: number | null
-  price_last_synced_at?: string | null
 }
 
-type PcBrowseItem = {
+type CatalogBrowseItem = {
   id: string
   steamAppID: string
+  steamType: string
   slug: string
   title: string
   thumb: string
@@ -34,6 +35,7 @@ type PcBrowseItem = {
   isFreeToPlay: boolean
   hasActiveOffer: boolean
   isCatalogReady: boolean
+  canOpenPage: boolean
   sortLatest: number
 }
 
@@ -42,7 +44,7 @@ function getServiceSupabase() {
   const serviceRole = process.env.SUPABASE_SERVICE_ROLE_KEY
 
   if (!url || !serviceRole) {
-    throw new Error('Missing Supabase env vars for pc browse page')
+    throw new Error('Missing Supabase env vars for catalog browse page')
   }
 
   return createClient(url, serviceRole)
@@ -81,10 +83,13 @@ function formatSavings(value?: number | string | null) {
   return String(Math.max(0, Math.min(99, Math.round(amount))))
 }
 
-function mapRowToItem(row: PcPublicRow): PcBrowseItem {
+function mapRowToItem(row: CatalogPublicRow): CatalogBrowseItem {
+  const steamType = String(row.steam_type || '').trim().toLowerCase()
+
   return {
     id: String(row.pc_game_id || '').trim(),
     steamAppID: String(row.steam_app_id || '').trim(),
+    steamType,
     slug: String(row.slug || '').trim(),
     title: String(row.title || '').trim(),
     thumb: String(row.thumb || '').trim(),
@@ -96,31 +101,24 @@ function mapRowToItem(row: PcPublicRow): PcBrowseItem {
     isFreeToPlay: Boolean(row.is_free_to_play),
     hasActiveOffer: Boolean(row.has_active_offer),
     isCatalogReady: Boolean(row.is_catalog_ready),
+    canOpenPage: steamType === 'game' && Boolean(String(row.slug || '').trim()),
     sortLatest: Number(row.sort_latest || 0),
   }
-}
-
-function getSafeSort(value: string | null) {
-  const safe = String(value || 'all').trim().toLowerCase()
-
-  if (safe === 'all') return 'all'
-  if (safe === 'best') return 'best-deals'
-  if (safe === 'best-deals') return 'best-deals'
-  if (safe === 'latest') return 'latest-releases'
-  if (safe === 'latest-releases') return 'latest-releases'
-  if (safe === 'latest-discounts') return 'latest-discounts'
-  if (safe === 'biggest-discount') return 'biggest-discount'
-
-  return 'all'
 }
 
 function applyCommonFilters(
   query: any,
   normalizedQuery: string,
+  typeFilter: string,
+  storeFilter: string,
   priceFilter: string
 ) {
-  if (normalizedQuery) {
-    query = query.ilike('search_title_normalized', `%${normalizedQuery}%`)
+  if (typeFilter !== 'all') {
+    query = query.eq('steam_type', typeFilter)
+  }
+
+  if (storeFilter !== 'all') {
+    query = query.eq('store_id', storeFilter)
   }
 
   if (priceFilter === 'under-5') {
@@ -131,31 +129,22 @@ function applyCommonFilters(
     query = query.gte('discount_percent', 80)
   }
 
-  return query
-}
-
-function applySortFilters(query: any, sort: string, nowEpoch: number) {
-  if (sort === 'latest-releases') {
-    query = query.gt('sort_latest', 0).lte('sort_latest', nowEpoch)
-  }
-
-  if (sort === 'latest-discounts' || sort === 'biggest-discount') {
-    query = query.gt('discount_percent', 0)
+  if (normalizedQuery) {
+    query = query.ilike('search_title_normalized', `%${normalizedQuery}%`)
   }
 
   return query
 }
 
-function applySortOrder(query: any, sort: string) {
-  if (sort === 'best-deals') {
+function applySort(query: any, sort: string) {
+  if (sort === 'biggest-discount') {
     return query
-      .order('has_active_offer', { ascending: false })
       .order('discount_percent', { ascending: false })
       .order('sale_price', { ascending: true, nullsFirst: false })
       .order('sort_latest', { ascending: false })
   }
 
-  if (sort === 'latest-releases') {
+  if (sort === 'latest') {
     return query
       .order('sort_latest', { ascending: false })
       .order('discount_percent', { ascending: false })
@@ -164,13 +153,15 @@ function applySortOrder(query: any, sort: string) {
 
   if (sort === 'latest-discounts') {
     return query
+      .gt('discount_percent', 0)
       .order('price_last_synced_at', { ascending: false, nullsFirst: false })
       .order('discount_percent', { ascending: false })
       .order('sort_latest', { ascending: false })
   }
 
-  if (sort === 'biggest-discount') {
+  if (sort === 'best') {
     return query
+      .order('has_active_offer', { ascending: false })
       .order('discount_percent', { ascending: false })
       .order('sale_price', { ascending: true, nullsFirst: false })
       .order('sort_latest', { ascending: false })
@@ -180,6 +171,43 @@ function applySortOrder(query: any, sort: string) {
     .order('has_active_offer', { ascending: false })
     .order('discount_percent', { ascending: false })
     .order('title', { ascending: true })
+}
+
+function isBaseBrowseView(
+  normalizedQuery: string,
+  typeFilter: string,
+  storeFilter: string,
+  priceFilter: string
+) {
+  return (
+    !normalizedQuery &&
+    typeFilter === 'all' &&
+    storeFilter === 'all' &&
+    priceFilter === 'all'
+  )
+}
+
+async function getCachedBaseTotal(supabase: any) {
+  const { data, error } = await supabase
+    .from('catalog_public_meta')
+    .select('total_items')
+    .eq('key', 'default')
+    .maybeSingle()
+
+  if (error) {
+    throw error
+  }
+
+  return Number(data?.total_items || 0)
+}
+
+function getSafeTypeFilter(value: string) {
+  const normalized = String(value || 'all').trim().toLowerCase()
+
+  if (normalized === 'game') return 'game'
+  if (normalized === 'dlc') return 'dlc'
+  if (normalized === 'software') return 'software'
+  return 'all'
 }
 
 export async function GET(request: Request) {
@@ -192,41 +220,70 @@ export async function GET(request: Request) {
       Math.min(60, Number(searchParams.get('pageSize') || '36'))
     )
     const query = searchParams.get('q') || ''
-    const sort = getSafeSort(searchParams.get('sort'))
-    const priceFilter = String(searchParams.get('price') || 'all').trim().toLowerCase()
+    const sort = searchParams.get('sort') || 'all'
+    const typeFilter = getSafeTypeFilter(searchParams.get('type') || 'all')
+    const storeFilter = searchParams.get('store') || 'all'
+    const priceFilter = searchParams.get('price') || 'all'
+
     const normalizedQuery = normalizeSteamTitle(query)
-    const nowEpoch = Math.floor(Date.now() / 1000)
+    const baseView = isBaseBrowseView(
+      normalizedQuery,
+      typeFilter,
+      storeFilter,
+      priceFilter
+    )
 
     const supabase = getServiceSupabase()
 
-    let countQuery = supabase
-      .from('pc_public_catalog_cache')
-      .select('pc_game_id', { count: 'exact', head: true })
+    let totalItems = 0
 
-    countQuery = applyCommonFilters(countQuery, normalizedQuery, priceFilter)
-    countQuery = applySortFilters(countQuery, sort, nowEpoch)
+    if (baseView) {
+      totalItems = await getCachedBaseTotal(supabase)
+    } else {
+      let countQuery = supabase
+        .from('catalog_public_cache')
+        .select('pc_game_id', { count: 'exact', head: true })
 
-    const { count, error: countError } = await countQuery
-
-    if (countError) {
-      throw countError
-    }
-
-    const totalItems = Number(count || 0)
-    const totalPages = totalItems > 0 ? Math.ceil(totalItems / pageSize) : 1
-    const safePage = totalItems > 0 ? Math.min(requestedPage, totalPages) : 1
-    const from = (safePage - 1) * pageSize
-    const to = from + pageSize - 1
-
-    let dataQuery = supabase
-      .from('pc_public_catalog_cache')
-      .select(
-        'pc_game_id, steam_app_id, slug, title, thumb, sale_price, normal_price, discount_percent, store_id, url, is_free_to_play, has_active_offer, is_catalog_ready, sort_latest, price_last_synced_at'
+      countQuery = applyCommonFilters(
+        countQuery,
+        normalizedQuery,
+        typeFilter,
+        storeFilter,
+        priceFilter
       )
 
-    dataQuery = applyCommonFilters(dataQuery, normalizedQuery, priceFilter)
-    dataQuery = applySortFilters(dataQuery, sort, nowEpoch)
-    dataQuery = applySortOrder(dataQuery, sort).range(from, to)
+      if (sort === 'latest-discounts') {
+        countQuery = countQuery.gt('discount_percent', 0)
+      }
+
+      const { count, error: countError } = await countQuery
+
+      if (countError) {
+        throw countError
+      }
+
+      totalItems = Number(count || 0)
+    }
+
+    const totalPages = totalItems > 0 ? Math.ceil(totalItems / pageSize) : 1
+    const safePage = totalItems > 0 ? Math.min(requestedPage, totalPages) : 1
+    const safeFrom = (safePage - 1) * pageSize
+
+    let dataQuery = supabase
+      .from('catalog_public_cache')
+      .select(
+        'pc_game_id, steam_app_id, steam_type, slug, title, thumb, sale_price, normal_price, discount_percent, store_id, url, is_free_to_play, has_active_offer, is_catalog_ready, sort_latest'
+      )
+
+    dataQuery = applyCommonFilters(
+      dataQuery,
+      normalizedQuery,
+      typeFilter,
+      storeFilter,
+      priceFilter
+    )
+
+    dataQuery = applySort(dataQuery, sort).range(safeFrom, safeFrom + pageSize - 1)
 
     const { data, error: dataError } = await dataQuery
 
@@ -234,8 +291,8 @@ export async function GET(request: Request) {
       throw dataError
     }
 
-    const rows = Array.isArray(data) ? (data as PcPublicRow[]) : []
-    const items = rows.map(mapRowToItem)
+    const rawItems = Array.isArray(data) ? (data as CatalogPublicRow[]) : []
+    const items = rawItems.slice(0, pageSize).map(mapRowToItem)
 
     return Response.json({
       items,
@@ -245,10 +302,10 @@ export async function GET(request: Request) {
       pageSize,
       hasNextPage: safePage < totalPages,
       mode: 'cache',
-      source: 'pc_public_catalog_cache',
+      source: 'catalog_public_cache',
     })
   } catch (error) {
-    console.error('pc browse page error', error)
+    console.error('catalog browse page error', error)
 
     return Response.json({
       items: [],
@@ -258,7 +315,7 @@ export async function GET(request: Request) {
       pageSize: 36,
       hasNextPage: false,
       mode: 'error',
-      source: 'pc_public_catalog_cache',
+      source: 'catalog_public_cache',
     })
   }
 }

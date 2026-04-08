@@ -165,7 +165,7 @@ export default function Navbar() {
                   </Link>
 
                   <Link
-                    href="/pc?page=1&sort=best"
+                    href="/pc?page=1&sort=best-deals"
                     onClick={() => setPlatformsOpen(false)}
                     className="block px-4 py-3 text-sm text-zinc-100 transition hover:bg-zinc-900"
                   >
@@ -181,7 +181,7 @@ export default function Navbar() {
                   </Link>
 
                   <Link
-                    href="/pc?page=1&sort=latest"
+                    href="/pc?page=1&sort=latest-releases"
                     onClick={() => setPlatformsOpen(false)}
                     className="block px-4 py-3 text-sm text-zinc-100 transition hover:bg-zinc-900"
                   >
@@ -202,18 +202,6 @@ export default function Navbar() {
                     className="block px-4 py-3 text-sm text-zinc-100 transition hover:bg-zinc-900"
                   >
                     Top Rated
-                  </Link>
-
-                  <div className="border-t border-zinc-800 px-4 py-2 text-[11px] uppercase tracking-[0.25em] text-zinc-500">
-                    Next platform
-                  </div>
-
-                  <Link
-                    href="/playstation"
-                    onClick={() => setPlatformsOpen(false)}
-                    className="block px-4 py-3 text-sm text-zinc-400 transition hover:bg-zinc-900"
-                  >
-                    PlayStation
                   </Link>
                 </div>
               )}
@@ -337,7 +325,7 @@ export default function Navbar() {
                   </Link>
 
                   <Link
-                    href="/pc?page=1&sort=best"
+                    href="/pc?page=1&sort=best-deals"
                     onClick={closeMobileMenu}
                     className="rounded-lg px-3 py-2 text-zinc-100 transition hover:bg-zinc-800"
                   >
@@ -353,7 +341,7 @@ export default function Navbar() {
                   </Link>
 
                   <Link
-                    href="/pc?page=1&sort=latest"
+                    href="/pc?page=1&sort=latest-releases"
                     onClick={closeMobileMenu}
                     className="rounded-lg px-3 py-2 text-zinc-100 transition hover:bg-zinc-800"
                   >
@@ -374,18 +362,6 @@ export default function Navbar() {
                     className="rounded-lg px-3 py-2 text-zinc-100 transition hover:bg-zinc-800"
                   >
                     Top Rated
-                  </Link>
-
-                  <div className="px-3 py-2 text-[11px] uppercase tracking-[0.25em] text-zinc-500">
-                    Next platform
-                  </div>
-
-                  <Link
-                    href="/playstation"
-                    onClick={closeMobileMenu}
-                    className="rounded-lg px-3 py-2 text-zinc-400 transition hover:bg-zinc-800"
-                  >
-                    PlayStation
                   </Link>
                 </div>
               )}

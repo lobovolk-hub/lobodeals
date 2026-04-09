@@ -1,93 +1,79 @@
 export const runtime = 'nodejs'
 
 import { createClient } from '@supabase/supabase-js'
-import {
-  makePcCanonicalKey,
-  makePcGameSlug,
-} from '@/lib/pcCanonical'
+
+type SteamAppDetailsData = {
+  name?: string
+  type?: string
+  short_description?: string
+  detailed_description?: string
+  header_image?: string
+  capsule_image?: string
+  background?: string
+  website?: string
+  is_free?: boolean
+  screenshots?: Array<{
+    id?: number
+    path_thumbnail?: string
+    path_full?: string
+  }>
+  price_overview?: {
+    currency?: string
+    initial?: number
+    final?: number
+    discount_percent?: number
+    initial_formatted?: string
+    final_formatted?: string
+  }
+  release_date?: {
+    coming_soon?: boolean
+    date?: string
+  }
+  metacritic?: {
+    score?: number
+    url?: string
+  }
+}
 
 type SteamAppDetailsResponse = Record<
   string,
   {
     success?: boolean
-    data?: {
-      name?: string
-      type?: string
-      short_description?: string
-      detailed_description?: string
-      about_the_game?: string
-      header_image?: string
-      capsule_image?: string
-      background?: string
-      background_raw?: string
-      is_free?: boolean
-      release_date?: {
-        date?: string
-        coming_soon?: boolean
-      }
-      metacritic?: {
-        score?: number
-        url?: string
-      }
-      reviews?: string
-      genres?: Array<{
-        id?: string | number
-        description?: string
-      }>
-      developers?: string[]
-      publishers?: string[]
-      price_overview?: {
-        currency?: string
-        initial?: number
-        final?: number
-        discount_percent?: number
-        initial_formatted?: string
-        final_formatted?: string
-      }
-      screenshots?: Array<{
-        id?: number
-        path_full?: string
-      }>
-      movies?: Array<{
-        id?: number
-        name?: string
-        thumbnail?: string
-        mp4?: {
-          max?: string
-          '480'?: string
-        }
-        webm?: {
-          max?: string
-          '480'?: string
-        }
-        highlight?: boolean
-      }>
-    }
+    data?: SteamAppDetailsData
   }
 >
+
+type SyncLogRow = {
+  id: string
+}
+
+type CandidateScope = 'visible' | 'full_games'
+
+type EnrichCandidateRow = {
+  pc_game_id?: string | null
+  steam_app_id?: string | null
+  title?: string | null
+  slug?: string | null
+  priority_order?: number | null
+  priority_bucket?: string | null
+  screenshot_count?: number | null
+  release_date?: string | null
+  metacritic?: number | null
+  effective_price_last_synced_at?: string | null
+}
 
 type PcGameRow = {
   id: string
   steam_app_id?: string | null
   steam_name?: string | null
   canonical_title?: string | null
-  steam_type?: string | null
-  hero_image_url?: string | null
-  metacritic?: number | null
-  clip_url?: string | null
   slug?: string | null
+  updated_at?: string | null
+  steam_type?: string | null
 }
 
-type OfferRow = {
-  pc_game_id?: string | null
-  sale_price?: number | string | null
-  normal_price?: number | string | null
-  currency_code?: string | null
-  price_source?: string | null
-  price_last_synced_at?: string | null
-  region_code?: string | null
-  is_available?: boolean | null
-}
+const REGION_CODE = 'us'
+const STORE_ID = '1'
 
 function getServiceSupabase() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL
@@ -102,7 +88,7 @@ function getServiceSupabase() {
 
 function isAuthorized(request: Request) {
   const authHeader = request.headers.get('authorization') || ''
-  const token = String(process.env.INTERNAL_REFRESH_TOKEN || '').trim()
+  const token = process.env.INTERNAL_REFRESH_TOKEN || ''
 
   if (!token) {
     throw new Error('Missing INTERNAL_REFRESH_TOKEN')
@@ -111,343 +97,314 @@ function isAuthorized(request: Request) {
   return authHeader === `Bearer ${token}`
 }
 
-function maskAuthorization(request: Request) {
-  const authHeader = String(request.headers.get('authorization') || '').trim()
-  if (!authHeader) return '(missing)'
-
-  const compact = authHeader.replace(/\s+/g, ' ').trim()
-  if (compact.length <= 20) return compact
-
-  return `${compact.slice(0, 12)}...${compact.slice(-6)}`
+function normalizeScope(value: unknown): CandidateScope {
+  return value === 'full_games' ? 'full_games' : 'visible'
 }
 
-function getHeaderValue(request: Request, name: string) {
-  return String(request.headers.get(name) || '').trim() || null
-}
-
-function buildRequestTraceNotes(request: Request) {
-  const details = {
-    method: request.method,
-    host: getHeaderValue(request, 'host'),
-    origin: getHeaderValue(request, 'origin'),
-    referer: getHeaderValue(request, 'referer'),
-    user_agent: getHeaderValue(request, 'user-agent'),
-    x_forwarded_for: getHeaderValue(request, 'x-forwarded-for'),
-    x_real_ip: getHeaderValue(request, 'x-real-ip'),
-    x_forwarded_host: getHeaderValue(request, 'x-forwarded-host'),
-    x_forwarded_proto: getHeaderValue(request, 'x-forwarded-proto'),
-    x_vercel_id: getHeaderValue(request, 'x-vercel-id'),
-    x_vercel_ip_country: getHeaderValue(request, 'x-vercel-ip-country'),
-    x_vercel_forwarded_for: getHeaderValue(request, 'x-vercel-forwarded-for'),
-    cf_ray: getHeaderValue(request, 'cf-ray'),
-    auth: maskAuthorization(request),
-  }
-
-  return `request_trace ${JSON.stringify(details)}`
-}
-
-async function postponeFailedGameRetry(
-  supabase: ReturnType<typeof getServiceSupabase>,
-  gameId: string
-) {
-  const safeId = String(gameId || '').trim()
-  if (!safeId) return
-
-  const { error } = await supabase
-    .from('pc_games')
-    .update({
-      updated_at: new Date().toISOString(),
-    })
-    .eq('id', safeId)
-
-  if (error) {
-    console.error('postponeFailedGameRetry failed', error)
-  }
-}
-
-function dedupeStrings(values: Array<string | null | undefined>) {
-  return Array.from(
-    new Set(
-      values
-        .map((value) => String(value || '').trim())
-        .filter(Boolean)
-    )
-  )
-}
-
-function normalizeSteamGenres(
-  value?: Array<{
-    id?: string | number
-    description?: string
-  }>
-) {
-  if (!Array.isArray(value)) return []
-
-  return dedupeStrings(value.map((item) => String(item?.description || '')))
-}
-
-function extractSteamMovieUrl(
-  movies?: Array<{
-    mp4?: {
-      max?: string
-      '480'?: string
-    }
-    webm?: {
-      max?: string
-      '480'?: string
-    }
-    highlight?: boolean
-  }>
-) {
-  if (!Array.isArray(movies) || movies.length === 0) return ''
-
-  const preferred =
-    movies.find((movie) => movie?.highlight) ||
-    movies[0]
-
-  return String(
-    preferred?.mp4?.max ||
-      preferred?.mp4?.['480'] ||
-      preferred?.webm?.max ||
-      preferred?.webm?.['480'] ||
-      ''
-  ).trim()
-}
-
-function extractMetacriticFromReviews(reviews?: string | null) {
-  const raw = String(reviews || '').trim()
-  if (!raw) return null
-
-  const normalized = raw.replace(/\u2013|\u2014/g, '-')
-  const match = normalized.match(/(\d{2,3})\s*-\s*metacritic/i)
-
-  if (!match) {
-    return null
-  }
-
-  const score = Number(match[1])
-  if (!Number.isFinite(score)) {
-    return null
-  }
-
-  if (score < 0 || score > 100) {
-    return null
-  }
-
-  return score
-}
-
-function parseSteamReleaseDate(value?: string | null) {
-  const raw = String(value || '').trim()
-  if (!raw) return null
-
-  const normalized = raw.toLowerCase()
-
-  if (
-    normalized === 'coming soon' ||
-    normalized === 'to be announced' ||
-    normalized === 'tba'
-  ) {
-    return null
-  }
-
-  const parsed = new Date(raw)
-  if (Number.isNaN(parsed.getTime())) {
-    return null
-  }
-
-  return parsed.toISOString().slice(0, 10)
-}
-
-async function insertSyncLog(
-  supabase: ReturnType<typeof getServiceSupabase>,
-  params: {
-    jobType: string
-    status: 'success' | 'error'
-    notes: string
-    itemsProcessed?: number | null
-    startedAt?: string
-    finishedAt?: string
-  }
-) {
-  const startedAt = params.startedAt || new Date().toISOString()
-  const finishedAt = params.finishedAt || new Date().toISOString()
-
-  const { error } = await supabase.from('sync_logs').insert([
-    {
-      job_type: params.jobType,
-      status: params.status,
-      notes: params.notes,
-      items_processed:
-        typeof params.itemsProcessed === 'number' ? params.itemsProcessed : null,
-      started_at: startedAt,
-      finished_at: finishedAt,
-    },
-  ])
-
-  if (error) {
-    console.error('sync_logs insert failed', error)
-  }
-}
-
-async function loadTargetedGames(
-  supabase: ReturnType<typeof getServiceSupabase>,
-  steamAppIDs: string[],
-  titles: string[]
-) {
-  const collected = new Map<string, PcGameRow>()
-
-  if (steamAppIDs.length > 0) {
-    const { data, error } = await supabase
-      .from('pc_games')
-      .select('id, steam_app_id, steam_name, canonical_title, steam_type, hero_image_url, metacritic, clip_url, slug')
-      .in('steam_app_id', steamAppIDs)
-
-    if (error) throw error
-
-    for (const row of (Array.isArray(data) ? data : []) as PcGameRow[]) {
-      collected.set(String(row.id), row)
-    }
-  }
-
-  for (const title of titles) {
-    const { data, error } = await supabase
-      .from('pc_games')
-      .select('id, steam_app_id, steam_name, canonical_title, steam_type, hero_image_url, metacritic, clip_url, slug')
-      .or(
-        [
-          `steam_name.ilike.%${title}%`,
-          `canonical_title.ilike.%${title}%`,
-        ].join(',')
-      )
-      .limit(15)
-
-    if (error) throw error
-
-    for (const row of (Array.isArray(data) ? data : []) as PcGameRow[]) {
-      collected.set(String(row.id), row)
-    }
-  }
-
-  return Array.from(collected.values())
-}
-
-async function loadPriorityGames(
-  supabase: ReturnType<typeof getServiceSupabase>,
-  limit: number
-) {
-  const { data, error } = await supabase
-    .from('pc_games')
-    .select('id, steam_app_id, steam_name, canonical_title, steam_type, hero_image_url, metacritic, clip_url, updated_at, slug')
-    .eq('is_catalog_ready', true)
-    .eq('steam_type', 'game')
-    .order('updated_at', { ascending: true, nullsFirst: true })
-    .limit(Math.max(limit * 8, 200))
-
-  if (error) throw error
-
-  const candidateGames = Array.isArray(data) ? (data as PcGameRow[]) : []
-  if (candidateGames.length === 0) return []
-
-  const candidateIds = candidateGames.map((row) => String(row.id || '')).filter(Boolean)
-
-  const { data: offerRows, error: offerError } = await supabase
-    .from('pc_store_offers')
-    .select('pc_game_id, sale_price, normal_price, currency_code, price_source, price_last_synced_at, region_code, is_available')
-    .eq('store_id', '1')
-    .eq('region_code', 'us')
-    .in('pc_game_id', candidateIds)
-
-  if (offerError) throw offerError
-
-  const offerByGameId = new Map<string, OfferRow>()
-
-  for (const row of Array.isArray(offerRows) ? offerRows : []) {
-    const key = String((row as any)?.pc_game_id || '').trim()
-    if (!key) continue
-    offerByGameId.set(key, row as OfferRow)
-  }
-
-  const ranked = [...candidateGames].sort((a, b) => {
-    const aOffer = offerByGameId.get(String(a.id))
-    const bOffer = offerByGameId.get(String(b.id))
-
-    const aHasModernPrice =
-      !!aOffer &&
-      aOffer.price_source === 'steam_appdetails_us' &&
-      !!String(aOffer.price_last_synced_at || '').trim()
-
-    const bHasModernPrice =
-      !!bOffer &&
-      bOffer.price_source === 'steam_appdetails_us' &&
-      !!String(bOffer.price_last_synced_at || '').trim()
-
-    if (aHasModernPrice !== bHasModernPrice) {
-      return Number(aHasModernPrice) - Number(bHasModernPrice)
-    }
-
-    const aMissingMeta =
-      Number(!String(a.hero_image_url || '').trim()) +
-      Number(!(Number(a.metacritic || 0) > 0)) +
-      Number(!String(a.clip_url || '').trim())
-
-    const bMissingMeta =
-      Number(!String(b.hero_image_url || '').trim()) +
-      Number(!(Number(b.metacritic || 0) > 0)) +
-      Number(!String(b.clip_url || '').trim())
-
-    if (bMissingMeta !== aMissingMeta) {
-      return bMissingMeta - aMissingMeta
-    }
-
-    return 0
-  })
-
-  return ranked.slice(0, limit)
+function normalizeText(value: unknown) {
+  const text = String(value || '').trim()
+  return text || null
 }
 
 function centsToMoney(value?: number | null) {
   const amount = Number(value || 0)
-  if (!Number.isFinite(amount) || amount <= 0) return null
+
+  if (!Number.isFinite(amount) || amount <= 0) {
+    return null
+  }
+
   return Number((amount / 100).toFixed(2))
 }
 
-export async function POST(request: Request) {
+function resolveDiscountPercent(params: {
+  salePrice?: number | null
+  normalPrice?: number | null
+  apiDiscountPercent?: number | null
+  isFree?: boolean
+}) {
+  const salePrice = Number(params.salePrice ?? NaN)
+  const normalPrice = Number(params.normalPrice ?? NaN)
+  const apiDiscount = Number(params.apiDiscountPercent ?? 0)
+
+  if (params.isFree) {
+    return 0
+  }
+
+  if (
+    Number.isFinite(normalPrice) &&
+    Number.isFinite(salePrice) &&
+    normalPrice > 0 &&
+    salePrice >= 0
+  ) {
+    if (salePrice >= normalPrice) {
+      return 0
+    }
+
+    return Math.max(
+      0,
+      Math.min(100, Math.round(((normalPrice - salePrice) / normalPrice) * 100))
+    )
+  }
+
+  if (!Number.isFinite(apiDiscount) || apiDiscount <= 0) {
+    return 0
+  }
+
+  return Math.max(0, Math.min(100, Math.round(apiDiscount)))
+}
+
+function parseSteamReleaseDate(rawValue?: string | null) {
+  const raw = String(rawValue || '').trim()
+  if (!raw) return null
+
+  const safe = raw
+    .replace(/\bSept\b/gi, 'Sep')
+    .replace(/\s+/g, ' ')
+    .trim()
+
+  const direct = Date.parse(safe)
+  if (Number.isFinite(direct)) {
+    return new Date(direct).toISOString().slice(0, 10)
+  }
+
+  const noComma = safe.replace(',', '')
+  const secondTry = Date.parse(noComma)
+  if (Number.isFinite(secondTry)) {
+    return new Date(secondTry).toISOString().slice(0, 10)
+  }
+
+  const monthYearMatch = noComma.match(/^([A-Za-z]{3,9})\s+(\d{4})$/)
+  if (monthYearMatch) {
+    const month = monthYearMatch[1]
+    const year = monthYearMatch[2]
+    const inferred = Date.parse(`${month} 1 ${year}`)
+    if (Number.isFinite(inferred)) {
+      return new Date(inferred).toISOString().slice(0, 10)
+    }
+  }
+
+  const yearOnlyMatch = noComma.match(/^(\d{4})$/)
+  if (yearOnlyMatch) {
+    return `${yearOnlyMatch[1]}-01-01`
+  }
+
+  return null
+}
+
+function buildUniqueScreenshots(gameId: string, screenshots?: SteamAppDetailsData['screenshots']) {
+  if (!Array.isArray(screenshots) || screenshots.length === 0) {
+    return []
+  }
+
+  const seen = new Set<string>()
+  const uniqueUrls: string[] = []
+
+  for (const shot of screenshots) {
+    const url =
+      normalizeText(shot?.path_full) ||
+      normalizeText(shot?.path_thumbnail)
+
+    if (!url) continue
+    if (seen.has(url)) continue
+
+    seen.add(url)
+    uniqueUrls.push(url)
+  }
+
+  return uniqueUrls.map((imageUrl, index) => ({
+    pc_game_id: gameId,
+    image_url: imageUrl,
+    sort_order: index,
+  }))
+}
+
+async function createSyncLog(jobType: string, notes: string) {
   const supabase = getServiceSupabase()
-  const jobStartedAt = new Date().toISOString()
+
+  const { data, error } = await supabase
+    .from('sync_logs')
+    .insert({
+      job_type: jobType,
+      status: 'running',
+      notes,
+      items_processed: 0,
+      started_at: new Date().toISOString(),
+    })
+    .select('id')
+    .single()
+
+  if (error) {
+    throw new Error(`createSyncLog failed: ${error.message}`)
+  }
+
+  return data as SyncLogRow
+}
+
+async function finishSyncLog(
+  logId: string,
+  status: 'success' | 'error',
+  notes: string,
+  itemsProcessed: number
+) {
+  const supabase = getServiceSupabase()
+
+  const { error } = await supabase
+    .from('sync_logs')
+    .update({
+      status,
+      notes,
+      items_processed: itemsProcessed,
+      finished_at: new Date().toISOString(),
+    })
+    .eq('id', logId)
+
+  if (error) {
+    throw new Error(`finishSyncLog failed: ${error.message}`)
+  }
+}
+
+async function loadPriorityVisibleCandidates(
+  supabase: ReturnType<typeof getServiceSupabase>,
+  desiredCount: number
+) {
+  const { data, error } = await supabase.rpc(
+    'get_priority_visible_enrich_candidates',
+    { p_limit: desiredCount }
+  )
+
+  if (error) {
+    throw new Error(
+      `loadPriorityVisibleCandidates rpc failed: ${error.message}`
+    )
+  }
+
+  const rows = Array.isArray(data) ? (data as EnrichCandidateRow[]) : []
+
+  return rows
+    .map((row) => ({
+      id: String(row.pc_game_id || '').trim(),
+      steam_app_id: String(row.steam_app_id || '').trim(),
+      steam_name: normalizeText(row.title),
+      canonical_title: normalizeText(row.title),
+      slug: normalizeText(row.slug),
+      updated_at: normalizeText(row.effective_price_last_synced_at),
+      steam_type: 'game',
+    }))
+    .filter((row) => row.id && row.steam_app_id)
+}
+
+async function loadFullGameCandidates(
+  supabase: ReturnType<typeof getServiceSupabase>,
+  desiredCount: number
+) {
+  const pageSize = 200
+  const maxScanPages = 12
+  const seenIds = new Set<string>()
+  const results: PcGameRow[] = []
+
+  for (let page = 0; page < maxScanPages && results.length < desiredCount; page += 1) {
+    const from = page * pageSize
+    const to = from + pageSize - 1
+
+    const { data, error } = await supabase
+      .from('pc_games')
+      .select(
+        'id, steam_app_id, steam_name, canonical_title, slug, updated_at, steam_type'
+      )
+      .eq('steam_type', 'game')
+      .eq('steam_inventory_source', 'steam_istoreservice')
+      .not('steam_app_id', 'is', null)
+      .order('updated_at', { ascending: true, nullsFirst: true })
+      .range(from, to)
+
+    if (error) {
+      throw new Error(`loadFullGameCandidates failed: ${error.message}`)
+    }
+
+    const games = Array.isArray(data) ? (data as PcGameRow[]) : []
+    if (!games.length) break
+
+    for (const game of games) {
+      const gameId = String(game.id || '').trim()
+      const steamAppID = String(game.steam_app_id || '').trim()
+
+      if (!gameId || !steamAppID) continue
+      if (seenIds.has(gameId)) continue
+
+      seenIds.add(gameId)
+      results.push(game)
+
+      if (results.length >= desiredCount) {
+        break
+      }
+    }
+
+    if (games.length < pageSize) {
+      break
+    }
+  }
+
+  return results.slice(0, desiredCount)
+}
+
+async function loadCandidateGames(
+  supabase: ReturnType<typeof getServiceSupabase>,
+  desiredCount: number,
+  scope: CandidateScope
+) {
+  if (scope === 'visible') {
+    return loadPriorityVisibleCandidates(supabase, desiredCount)
+  }
+
+  return loadFullGameCandidates(supabase, desiredCount)
+}
+
+export async function POST(request: Request) {
+  let logId: string | null = null
 
   try {
-    const requestTraceNotes = buildRequestTraceNotes(request)
-    const authorized = isAuthorized(request)
+    const hasAuthHeader = !!request.headers.get('authorization')
 
-    await insertSyncLog(supabase, {
-      jobType: 'enrich_request_trace',
-      status: authorized ? 'success' : 'error',
-      notes: `${authorized ? 'authorized' : 'unauthorized'} ${requestTraceNotes}`,
-      itemsProcessed: 1,
-      startedAt: jobStartedAt,
-      finishedAt: new Date().toISOString(),
-    })
-
-    if (!authorized) {
-      return Response.json(
-        {
-          success: false,
-          error: 'Unauthorized',
-        },
-        { status: 401 }
-      )
+    if (hasAuthHeader && !isAuthorized(request)) {
+      return Response.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
     const body = await request.json().catch(() => ({}))
     const iterations = Math.max(1, Math.min(50, Number(body?.iterations || 1)))
-    const batchSize = Math.max(1, Math.min(50, Number(body?.batchSize || 10)))
-    const steamAppIDs = Array.isArray(body?.steamAppIDs)
-      ? dedupeStrings(body.steamAppIDs.map((value: unknown) => String(value)))
-      : []
-    const titles = Array.isArray(body?.titles)
-      ? dedupeStrings(body.titles.map((value: unknown) => String(value)))
-      : []
+    const batchSize = Math.max(1, Math.min(100, Number(body?.batchSize || 25)))
+    const desiredCount = iterations * batchSize
+    const scope = normalizeScope(body?.scope)
+
+    const log = await createSyncLog(
+      'steam_appdetails_enrich',
+      `Steam-only enrich started (target ${desiredCount}, scope ${scope}, iterations ${iterations}, batchSize ${batchSize})`
+    )
+    logId = log.id
+
+    const supabase = getServiceSupabase()
+    const candidates = await loadCandidateGames(supabase, desiredCount, scope)
+
+    if (!candidates.length) {
+      await finishSyncLog(
+        logId,
+        'success',
+        `Steam-only enrich found no candidates (target ${desiredCount}, scope ${scope})`,
+        0
+      )
+
+      return Response.json({
+        success: true,
+        processed: 0,
+        enriched: 0,
+        screenshotsInserted: 0,
+        rateLimited: 0,
+        priceRowsUpserted: 0,
+        iterations,
+        batchSize,
+        scope,
+        note: `No enrich candidates found for scope ${scope}`,
+      })
+    }
 
     let processed = 0
     let enriched = 0
@@ -455,231 +412,158 @@ export async function POST(request: Request) {
     let rateLimited = 0
     let priceRowsUpserted = 0
 
-    let targetedGames: PcGameRow[] | null = null
+    for (const game of candidates) {
+      const gameId = String(game.id || '').trim()
+      const steamAppID = String(game.steam_app_id || '').trim()
 
-    if (steamAppIDs.length > 0 || titles.length > 0) {
-      targetedGames = await loadTargetedGames(supabase, steamAppIDs, titles)
-    }
+      if (!gameId || !steamAppID) continue
 
-    for (let i = 0; i < iterations; i += 1) {
-      let games: PcGameRow[] = []
+      processed += 1
 
-      if (targetedGames) {
-        const start = i * batchSize
-        games = targetedGames.slice(start, start + batchSize)
-      } else {
-        games = await loadPriorityGames(supabase, batchSize)
+      const appdetailsUrl =
+        `https://store.steampowered.com/api/appdetails?appids=${steamAppID}` +
+        `&cc=${REGION_CODE}&l=english`
+
+      const response = await fetch(appdetailsUrl, {
+        headers: {
+          'User-Agent': 'LoboDeals/2.6 enrich',
+        },
+        cache: 'no-store',
+      })
+
+      if (response.status === 429) {
+        rateLimited += 1
+        continue
       }
 
-      if (games.length === 0) break
+      if (!response.ok) {
+        continue
+      }
 
-      for (const game of games) {
-        const steamAppID = String(game.steam_app_id || '').trim()
-        if (!steamAppID) continue
+      const json = (await response.json()) as SteamAppDetailsResponse
+      const entry = json?.[steamAppID]
 
-        processed += 1
+      if (!entry?.success || !entry.data) {
+        continue
+      }
 
-        const appdetailsUrl =
-          `https://store.steampowered.com/api/appdetails?appids=${steamAppID}` +
-          `&cc=us&l=english`
+      const data = entry.data
+      const nowIso = new Date().toISOString()
 
-        const response = await fetch(appdetailsUrl, {
-          headers: {
-            'User-Agent': 'LoboDeals/2.52k',
-          },
-          cache: 'no-store',
-        })
+      const resolvedType = normalizeText(data.type)?.toLowerCase() || 'game'
+      const shortDescription = normalizeText(data.short_description)
+      const detailedDescription = normalizeText(data.detailed_description)
+      const headerImage = normalizeText(data.header_image)
+      const capsuleImage = normalizeText(data.capsule_image)
+      const heroImage = normalizeText(data.background)
+      const steamName = normalizeText(data.name)
+      const releaseDate = parseSteamReleaseDate(data.release_date?.date || null)
+      const metacritic =
+        Number.isFinite(Number(data.metacritic?.score))
+          ? Number(data.metacritic?.score)
+          : null
+      const isFreeToPlay = Boolean(data.is_free)
 
-        if (response.status === 429) {
-          rateLimited += 1
-          await insertSyncLog(supabase, {
-            jobType: 'steam_appdetails_enrich',
-            status: 'error',
-            notes: `Steam returned 429 during enrich for app ${steamAppID}`,
-            itemsProcessed: 1,
-          })
-          continue
-        }
+      const gamePatch: Record<string, unknown> = {
+        steam_type: resolvedType,
+        is_free_to_play: isFreeToPlay,
+        updated_at: nowIso,
+      }
 
-        if (!response.ok) {
-          await postponeFailedGameRetry(supabase, game.id)
+      if (steamName) gamePatch.steam_name = steamName
+      if (shortDescription) gamePatch.short_description = shortDescription
+      if (detailedDescription) gamePatch.description = detailedDescription
+      if (headerImage) gamePatch.header_image = headerImage
+      if (capsuleImage) gamePatch.capsule_image = capsuleImage
+      if (heroImage) gamePatch.hero_image_url = heroImage
+      if (releaseDate) gamePatch.release_date = releaseDate
+      if (metacritic !== null && metacritic > 0) gamePatch.metacritic = metacritic
 
-          await insertSyncLog(supabase, {
-            jobType: 'steam_appdetails_enrich',
-            status: 'error',
-            notes: `Steam appdetails request failed for app ${steamAppID} with status ${response.status}`,
-            itemsProcessed: 1,
-          })
-          continue
-        }
+      const { error: gameError } = await supabase
+        .from('pc_games')
+        .update(gamePatch)
+        .eq('id', gameId)
 
-        const json = (await response.json()) as SteamAppDetailsResponse
-        const entry = json?.[steamAppID]
+      if (gameError) {
+        throw new Error(`pc_games update failed for ${steamAppID}: ${gameError.message}`)
+      }
 
-        if (!entry?.success || !entry.data) {
-          await postponeFailedGameRetry(supabase, game.id)
+      const screenshots = buildUniqueScreenshots(gameId, data.screenshots)
 
-          await insertSyncLog(supabase, {
-            jobType: 'steam_appdetails_enrich',
-            status: 'error',
-            notes: `Steam appdetails returned no usable data for app ${steamAppID}`,
-            itemsProcessed: 1,
-          })
-          continue
-        }
-
-        const data = entry.data
-
-        const canonicalTitle = String(
-          data.name || game.steam_name || game.canonical_title || ''
-        ).trim()
-
-        const steamGenres = normalizeSteamGenres(data.genres)
-        const steamDevelopers = dedupeStrings(Array.isArray(data.developers) ? data.developers : [])
-        const steamPublishers = dedupeStrings(Array.isArray(data.publishers) ? data.publishers : [])
-
-        const steamMovieUrl = extractSteamMovieUrl(data.movies)
-        const steamMetacritic = Number(data.metacritic?.score || 0)
-        const reviewsMetacritic = extractMetacriticFromReviews(data.reviews || null)
-
-        const heroImageUrl =
-          String(data.background_raw || '').trim() ||
-          String(data.background || '').trim() ||
-          String(data.header_image || '').trim()
-
-        const clipUrl = steamMovieUrl || ''
-        const metacritic =
-          steamMetacritic > 0
-            ? steamMetacritic
-            : reviewsMetacritic && reviewsMetacritic > 0
-            ? reviewsMetacritic
-            : null
-
-        const safeReleaseDate = parseSteamReleaseDate(data.release_date?.date || null)
-        const existingSlug = String(game.slug || '').trim()
-        const nextSlug =
-          existingSlug ||
-          (canonicalTitle ? makePcGameSlug(canonicalTitle, steamAppID) : '')
-
-        const { error: updateError } = await supabase
-          .from('pc_games')
-          .update({
-            steam_name: canonicalTitle || null,
-            canonical_title: canonicalTitle || null,
-            canonical_key: canonicalTitle ? makePcCanonicalKey(canonicalTitle) : null,
-            normalized_title: canonicalTitle ? canonicalTitle.toLowerCase().trim() : null,
-            slug: nextSlug || null,
-            steam_type: String(data.type || '').trim() || null,
-            short_description: String(data.short_description || '').trim() || null,
-            description:
-              String(data.about_the_game || '').trim() ||
-              String(data.detailed_description || '').trim() ||
-              null,
-            header_image: String(data.header_image || '').trim() || null,
-            capsule_image: String(data.capsule_image || '').trim() || null,
-            is_free_to_play: Boolean(data.is_free),
-            is_catalog_ready: true,
-            release_date: safeReleaseDate,
-            hero_image_url: heroImageUrl || null,
-            clip_url: clipUrl || null,
-            steam_movie_url: clipUrl || null,
-            metacritic: metacritic,
-            steam_genres: steamGenres.length > 0 ? steamGenres : null,
-            steam_developers: steamDevelopers.length > 0 ? steamDevelopers : null,
-            steam_publishers: steamPublishers.length > 0 ? steamPublishers : null,
-            updated_at: new Date().toISOString(),
-          })
-          .eq('id', game.id)
-
-        if (updateError) {
-          await insertSyncLog(supabase, {
-            jobType: 'steam_appdetails_enrich',
-            status: 'error',
-            notes: `Could not update pc_games during enrich for app ${steamAppID}: ${updateError.message}`,
-            itemsProcessed: 1,
-          })
-          continue
-        }
-
-        const priceOverview = data.price_overview
-        const salePrice = centsToMoney(priceOverview?.final || null)
-        const normalPrice = centsToMoney(priceOverview?.initial || null)
-        const discountPercent = Number(priceOverview?.discount_percent || 0)
-
-        const offerPayload = {
-          pc_game_id: game.id,
-          store_id: '1',
-          region_code: 'us',
-          currency_code: String(priceOverview?.currency || '').trim() || null,
-          sale_price: salePrice,
-          normal_price: normalPrice,
-          discount_percent: discountPercent,
-          final_formatted: String(priceOverview?.final_formatted || '').trim() || null,
-          initial_formatted: String(priceOverview?.initial_formatted || '').trim() || null,
-          price_source: 'steam_appdetails_us',
-          price_last_synced_at: new Date().toISOString(),
-          url: `https://store.steampowered.com/app/${steamAppID}/`,
-          is_available: Boolean(data.is_free || salePrice || normalPrice),
-        }
-
-        const { error: offerError } = await supabase
-          .from('pc_store_offers')
-          .upsert([offerPayload], {
-            onConflict: 'pc_game_id,store_id,region_code',
-          })
-
-        if (!offerError) {
-          priceRowsUpserted += 1
-        }
-
-        const screenshotRows = Array.isArray(data.screenshots)
-          ? data.screenshots
-              .map((shot, index) => ({
-                pc_game_id: game.id,
-                image_url: String(shot?.path_full || '').trim(),
-                sort_order: index,
-              }))
-              .filter((row) => row.image_url)
-          : []
-
-        await supabase
+      if (screenshots.length > 0) {
+        const { error: deleteShotsError } = await supabase
           .from('pc_game_screenshots')
           .delete()
-          .eq('pc_game_id', game.id)
+          .eq('pc_game_id', gameId)
 
-        if (screenshotRows.length > 0) {
-          const { error: screenshotsError } = await supabase
-            .from('pc_game_screenshots')
-            .insert(screenshotRows)
-
-          if (!screenshotsError) {
-            screenshotsInserted += screenshotRows.length
-          }
+        if (deleteShotsError) {
+          throw new Error(
+            `pc_game_screenshots delete failed for ${steamAppID}: ${deleteShotsError.message}`
+          )
         }
 
-        enriched += 1
+        const { error: insertShotsError } = await supabase
+          .from('pc_game_screenshots')
+          .insert(screenshots)
+
+        if (insertShotsError) {
+          throw new Error(
+            `pc_game_screenshots insert failed for ${steamAppID}: ${insertShotsError.message}`
+          )
+        }
+
+        screenshotsInserted += screenshots.length
       }
 
-      if (targetedGames) {
-        const consumed = (i + 1) * batchSize
-        if (consumed >= targetedGames.length) {
-          break
-        }
+      const priceOverview = data.price_overview
+      const salePrice = centsToMoney(priceOverview?.final || null)
+      const normalPrice = centsToMoney(priceOverview?.initial || null)
+      const discountPercent = resolveDiscountPercent({
+        salePrice,
+        normalPrice,
+        apiDiscountPercent: priceOverview?.discount_percent || 0,
+        isFree: isFreeToPlay,
+      })
+      const isAvailable = Boolean(isFreeToPlay || salePrice || normalPrice)
+
+      const offerPayload = {
+        pc_game_id: gameId,
+        store_id: STORE_ID,
+        region_code: REGION_CODE,
+        currency_code: normalizeText(priceOverview?.currency),
+        sale_price: salePrice,
+        normal_price: normalPrice,
+        discount_percent: discountPercent,
+        final_formatted: normalizeText(priceOverview?.final_formatted),
+        initial_formatted: normalizeText(priceOverview?.initial_formatted),
+        price_source: 'steam_appdetails_us',
+        price_last_synced_at: nowIso,
+        url: `https://store.steampowered.com/app/${steamAppID}/`,
+        is_available: isAvailable,
       }
+
+      const { error: offerError } = await supabase
+        .from('pc_store_offers')
+        .upsert([offerPayload], {
+          onConflict: 'pc_game_id,store_id,region_code',
+        })
+
+      if (offerError) {
+        throw new Error(
+          `pc_store_offers upsert failed for ${steamAppID}: ${offerError.message}`
+        )
+      }
+
+      priceRowsUpserted += 1
+      enriched += 1
     }
 
-    await insertSyncLog(supabase, {
-      jobType: 'steam_appdetails_enrich',
-      status: 'success',
-      notes:
-        `Steam-only enrich finished ` +
-        `(processed ${processed}, enriched ${enriched}, screenshotsInserted ${screenshotsInserted}, ` +
-        `rateLimited ${rateLimited}, priceRowsUpserted ${priceRowsUpserted}, ` +
-        `iterations ${iterations}, batchSize ${batchSize})`,
-      itemsProcessed: processed,
-      startedAt: jobStartedAt,
-      finishedAt: new Date().toISOString(),
-    })
+    await finishSyncLog(
+      logId,
+      'success',
+      `Steam-only enrich finished (processed ${processed}, enriched ${enriched}, screenshotsInserted ${screenshotsInserted}, rateLimited ${rateLimited}, priceRowsUpserted ${priceRowsUpserted}, iterations ${iterations}, batchSize ${batchSize}, scope ${scope})`,
+      processed
+    )
 
     return Response.json({
       success: true,
@@ -690,28 +574,28 @@ export async function POST(request: Request) {
       priceRowsUpserted,
       iterations,
       batchSize,
-      targetedSteamAppIDs: steamAppIDs,
-      targetedTitles: titles,
+      scope,
     })
   } catch (error) {
-    console.error('internal enrich error', error)
+    console.error('internal-enrich-steam-appdetails error', error)
 
-    await insertSyncLog(supabase, {
-      jobType: 'steam_appdetails_enrich',
-      status: 'error',
-      notes:
-        `Steam-only enrich crashed: ${
-          error instanceof Error ? error.message : 'Unknown error'
-        }`,
-      itemsProcessed: 0,
-      startedAt: jobStartedAt,
-      finishedAt: new Date().toISOString(),
-    })
+    if (logId) {
+      try {
+        await finishSyncLog(
+          logId,
+          'error',
+          error instanceof Error ? error.message : 'Unknown enrich error',
+          0
+        )
+      } catch {
+        // no-op
+      }
+    }
 
     return Response.json(
       {
         success: false,
-        error: error instanceof Error ? error.message : 'Unknown error',
+        error: error instanceof Error ? error.message : 'Unknown enrich error',
       },
       { status: 500 }
     )

@@ -49,6 +49,10 @@ type OfferRow = {
   price_source?: string | null
   price_last_synced_at?: string | null
   region_code?: string | null
+  sale_price?: number | null
+  normal_price?: number | null
+  discount_percent?: number | null
+  is_available?: boolean | null
 }
 
 type SyncLogRow = {
@@ -57,7 +61,13 @@ type SyncLogRow = {
 
 type BackfillScope = 'visible' | 'full_games'
 
+type CandidateScoreRow = PcGameRow & {
+  current_sync_at?: string | null
+  priority: number
+}
+
 const REGION_CODE = 'us'
+const STORE_ID = '1'
 
 function getServiceSupabase() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL
@@ -93,6 +103,104 @@ function centsToMoney(value?: number | null) {
 
 function normalizeScope(value: unknown): BackfillScope {
   return value === 'full_games' ? 'full_games' : 'visible'
+}
+
+function normalizeText(value: unknown) {
+  const text = String(value || '').trim()
+  return text || null
+}
+
+function parseDateMs(value?: string | null) {
+  const ms = Date.parse(String(value || ''))
+  return Number.isFinite(ms) ? ms : null
+}
+
+function compareSyncAsc(a?: string | null, b?: string | null) {
+  const aMs = parseDateMs(a)
+  const bMs = parseDateMs(b)
+
+  if (aMs === null && bMs === null) return 0
+  if (aMs === null) return -1
+  if (bMs === null) return 1
+
+  return aMs - bMs
+}
+
+function getVisiblePriority(syncAt?: string | null) {
+  const ms = parseDateMs(syncAt)
+
+  if (!ms) return 0
+
+  const ageHours = (Date.now() - ms) / (1000 * 60 * 60)
+
+  if (ageHours >= 72) return 1
+  if (ageHours >= 24) return 2
+  if (ageHours >= 6) return 3
+  if (ageHours >= 1) return 4
+
+  return 99
+}
+
+function getFullGamesPriority(syncAt?: string | null) {
+  const ms = parseDateMs(syncAt)
+
+  if (!ms) return 0
+
+  const ageHours = (Date.now() - ms) / (1000 * 60 * 60)
+
+  if (ageHours >= 24 * 30) return 1
+  if (ageHours >= 24 * 7) return 2
+  if (ageHours >= 24) return 3
+  if (ageHours >= 6) return 4
+
+  return 99
+}
+
+function resolveDiscountPercent(params: {
+  salePrice?: number | null
+  normalPrice?: number | null
+  apiDiscountPercent?: number | null
+  isFree?: boolean
+}) {
+  const salePrice = Number(params.salePrice ?? NaN)
+  const normalPrice = Number(params.normalPrice ?? NaN)
+  const apiDiscount = Number(params.apiDiscountPercent ?? 0)
+
+  if (params.isFree) {
+    return 0
+  }
+
+  if (
+    Number.isFinite(normalPrice) &&
+    Number.isFinite(salePrice) &&
+    normalPrice > 0 &&
+    salePrice >= 0
+  ) {
+    if (salePrice >= normalPrice) {
+      return 0
+    }
+
+    return Math.max(
+      0,
+      Math.min(100, Math.round(((normalPrice - salePrice) / normalPrice) * 100))
+    )
+  }
+
+  if (!Number.isFinite(apiDiscount) || apiDiscount <= 0) {
+    return 0
+  }
+
+  return Math.max(0, Math.min(100, Math.round(apiDiscount)))
+}
+
+function chunkArray<T>(items: T[], chunkSize: number) {
+  const chunks: T[][] = []
+
+  for (let i = 0; i < items.length; i += chunkSize) {
+    chunks.push(items.slice(i, i + chunkSize))
+  }
+
+  return chunks
 }
 
 async function createSyncLog(jobType: string, notes: string) {
@@ -140,26 +248,79 @@ async function finishSyncLog(
   }
 }
 
+async function loadOfferMap(
+  supabase: ReturnType<typeof getServiceSupabase>,
+  gameIds: string[]
+) {
+  const offers = new Map<string, OfferRow>()
+  const chunkSize = 200
+
+  for (let i = 0; i < gameIds.length; i += chunkSize) {
+    const idChunk = gameIds.slice(i, i + chunkSize)
+
+    const { data, error } = await supabase
+      .from('pc_store_offers')
+      .select(
+        'pc_game_id, price_source, price_last_synced_at, region_code, sale_price, normal_price, discount_percent, is_available'
+      )
+      .eq('store_id', STORE_ID)
+      .eq('region_code', REGION_CODE)
+      .in('pc_game_id', idChunk)
+
+    if (error) {
+      throw new Error(`loadOfferMap pc_store_offers failed: ${error.message}`)
+    }
+
+    for (const row of (Array.isArray(data) ? data : []) as OfferRow[]) {
+      const gameId = String(row.pc_game_id || '').trim()
+      if (!gameId) continue
+
+      const existing = offers.get(gameId)
+      if (!existing) {
+        offers.set(gameId, row)
+        continue
+      }
+
+      if (
+        compareSyncAsc(
+          existing.price_last_synced_at || null,
+          row.price_last_synced_at || null
+        ) < 0
+      ) {
+        offers.set(gameId, row)
+      }
+    }
+  }
+
+  return offers
+}
+
 async function loadVisibleCandidates(
   supabase: ReturnType<typeof getServiceSupabase>,
   desiredCount: number
 ) {
-  const fetchCount = Math.min(Math.max(desiredCount * 3, 200), 1000)
+  const fetchCount = Math.min(Math.max(desiredCount * 12, 1000), 5000)
 
   const { data, error } = await supabase
     .from('pc_public_catalog_cache')
     .select('pc_game_id, steam_app_id, title, slug, price_last_synced_at')
-    .eq('steam_type', 'game')
     .not('steam_app_id', 'is', null)
     .order('price_last_synced_at', { ascending: true, nullsFirst: true })
     .limit(fetchCount)
 
   if (error) {
-    throw new Error(`loadVisibleCandidates pc_public_catalog_cache failed: ${error.message}`)
+    throw new Error(
+      `loadVisibleCandidates pc_public_catalog_cache failed: ${error.message}`
+    )
   }
 
   const rows = Array.isArray(data) ? (data as VisibleCatalogRow[]) : []
-  const results: PcGameRow[] = []
+  const gameIds = rows
+    .map((row) => String(row.pc_game_id || '').trim())
+    .filter(Boolean)
+
+  const offerMap = await loadOfferMap(supabase, gameIds)
+  const scored: CandidateScoreRow[] = []
   const seenIds = new Set<string>()
 
   for (const row of rows) {
@@ -168,37 +329,55 @@ async function loadVisibleCandidates(
 
     if (!gameId || !steamAppID) continue
     if (seenIds.has(gameId)) continue
-
     seenIds.add(gameId)
 
-    results.push({
+    const offer = offerMap.get(gameId)
+    const syncAt = offer?.price_last_synced_at || row.price_last_synced_at || null
+    const priority = getVisiblePriority(syncAt)
+
+    if (priority >= 99) {
+      continue
+    }
+
+    scored.push({
       id: gameId,
       steam_app_id: steamAppID,
-      steam_name: String(row.title || '').trim() || null,
-      canonical_title: String(row.title || '').trim() || null,
-      slug: String(row.slug || '').trim() || null,
+      steam_name: normalizeText(row.title),
+      canonical_title: normalizeText(row.title),
+      slug: normalizeText(row.slug),
       steam_type: 'game',
+      current_sync_at: syncAt,
+      priority,
     })
-
-    if (results.length >= desiredCount) {
-      break
-    }
   }
 
-  return results
+  scored.sort((a, b) => {
+    if (a.priority !== b.priority) return a.priority - b.priority
+
+    const syncCompare = compareSyncAsc(
+      a.current_sync_at || null,
+      b.current_sync_at || null
+    )
+    if (syncCompare !== 0) return syncCompare
+
+    return String(a.steam_name || a.canonical_title || '').localeCompare(
+      String(b.steam_name || b.canonical_title || '')
+    )
+  })
+
+  return scored.slice(0, desiredCount)
 }
 
 async function loadFullGameCandidates(
   supabase: ReturnType<typeof getServiceSupabase>,
   desiredCount: number
 ) {
-  const results: PcGameRow[] = []
+  const pageSize = 200
+  const maxScanPages = 12
   const seenIds = new Set<string>()
+  const scored: CandidateScoreRow[] = []
 
-  const pageSize = 250
-  const maxScanPages = 20
-
-  for (let page = 0; page < maxScanPages && results.length < desiredCount; page += 1) {
+  for (let page = 0; page < maxScanPages && scored.length < desiredCount * 4; page += 1) {
     const from = page * pageSize
     const to = from + pageSize - 1
 
@@ -223,51 +402,29 @@ async function loadFullGameCandidates(
     }
 
     const gameIds = games.map((game) => String(game.id || '').trim()).filter(Boolean)
-    const modernSyncedIds = new Set<string>()
-    const chunkSize = 100
-
-    for (let i = 0; i < gameIds.length; i += chunkSize) {
-      const idChunk = gameIds.slice(i, i + chunkSize)
-
-      const { data: offerRows, error: offerError } = await supabase
-        .from('pc_store_offers')
-        .select('pc_game_id, price_source, price_last_synced_at, region_code')
-        .eq('store_id', '1')
-        .eq('region_code', REGION_CODE)
-        .in('pc_game_id', idChunk)
-
-      if (offerError) {
-        throw new Error(
-          `loadFullGameCandidates pc_store_offers failed: ${offerError.message}`
-        )
-      }
-
-      for (const row of (Array.isArray(offerRows) ? offerRows : []) as OfferRow[]) {
-        const gameId = String(row.pc_game_id || '').trim()
-        const hasModernPrice =
-          row.region_code === REGION_CODE &&
-          row.price_source === 'steam_appdetails_us' &&
-          !!String(row.price_last_synced_at || '').trim()
-
-        if (gameId && hasModernPrice) {
-          modernSyncedIds.add(gameId)
-        }
-      }
-    }
+    const offerMap = await loadOfferMap(supabase, gameIds)
 
     for (const game of games) {
       const gameId = String(game.id || '').trim()
-      if (!gameId) continue
+      const steamAppID = String(game.steam_app_id || '').trim()
+
+      if (!gameId || !steamAppID) continue
       if (seenIds.has(gameId)) continue
       seenIds.add(gameId)
 
-      if (modernSyncedIds.has(gameId)) continue
+      const offer = offerMap.get(gameId)
+      const syncAt = offer?.price_last_synced_at || null
+      const priority = getFullGamesPriority(syncAt)
 
-      results.push(game)
-
-      if (results.length >= desiredCount) {
-        break
+      if (priority >= 99) {
+        continue
       }
+
+      scored.push({
+        ...game,
+        current_sync_at: syncAt,
+        priority,
+      })
     }
 
     if (games.length < pageSize) {
@@ -275,7 +432,19 @@ async function loadFullGameCandidates(
     }
   }
 
-  return results.slice(0, desiredCount)
+  scored.sort((a, b) => {
+    if (a.priority !== b.priority) return a.priority - b.priority
+
+    const syncCompare = compareSyncAsc(
+      a.current_sync_at || null,
+      b.current_sync_at || null
+    )
+    if (syncCompare !== 0) return syncCompare
+
+    return compareSyncAsc(a.updated_at || null, b.updated_at || null)
+  })
+
+  return scored.slice(0, desiredCount)
 }
 
 async function loadCandidateGames(
@@ -319,7 +488,7 @@ export async function POST(request: Request) {
       await finishSyncLog(
         logId,
         'success',
-        `No candidate games without modern US price found for scope ${scope}`,
+        `No stale or missing US price candidates found for scope ${scope}`,
         0
       )
 
@@ -330,7 +499,7 @@ export async function POST(request: Request) {
         rateLimited: 0,
         target: desiredCount,
         scope,
-        note: `No candidate games without modern US price found for scope ${scope}`,
+        note: `No stale or missing US price candidates found for scope ${scope}`,
       })
     }
 
@@ -344,16 +513,15 @@ export async function POST(request: Request) {
 
       processed += 1
 
-      const appdetailsUrl =
-        `https://store.steampowered.com/api/appdetails?appids=${steamAppID}` +
-        `&cc=${REGION_CODE}&l=english`
-
-      const response = await fetch(appdetailsUrl, {
-        headers: {
-          'User-Agent': 'LoboDeals/2.5k',
-        },
-        cache: 'no-store',
-      })
+      const response = await fetch(
+        `https://store.steampowered.com/api/appdetails?appids=${steamAppID}&cc=${REGION_CODE}&l=english`,
+        {
+          headers: {
+            'User-Agent': 'LoboDeals/2.5k',
+          },
+          cache: 'no-store',
+        }
+      )
 
       if (response.status === 429) {
         rateLimited += 1
@@ -372,9 +540,9 @@ export async function POST(request: Request) {
       }
 
       const data = entry.data
-      const resolvedType = String(data.type || '').trim().toLowerCase()
+      const resolvedType = normalizeText(data.type)?.toLowerCase() || 'game'
 
-      if (scope === 'full_games' && resolvedType && resolvedType !== 'game') {
+      if (scope === 'full_games' && resolvedType !== 'game') {
         const { error: classifyError } = await supabase
           .from('pc_games')
           .update({
@@ -392,26 +560,32 @@ export async function POST(request: Request) {
         continue
       }
 
-      const priceOverview = data.price_overview
-      const salePrice = centsToMoney(priceOverview?.final || null)
-      const normalPrice = centsToMoney(priceOverview?.initial || null)
-      const discountPercent = Number(priceOverview?.discount_percent || 0)
-      const isAvailable = Boolean(data.is_free || salePrice || normalPrice)
+      const salePrice = centsToMoney(data.price_overview?.final || null)
+      const normalPrice = centsToMoney(data.price_overview?.initial || null)
+      const isFree = Boolean(data.is_free)
+      const discountPercent = resolveDiscountPercent({
+        salePrice,
+        normalPrice,
+        apiDiscountPercent: data.price_overview?.discount_percent || 0,
+        isFree,
+      })
+
+      const nowIso = new Date().toISOString()
 
       const offerPayload = {
         pc_game_id: game.id,
-        store_id: '1',
+        store_id: STORE_ID,
         region_code: REGION_CODE,
-        currency_code: String(priceOverview?.currency || '').trim() || null,
+        currency_code: normalizeText(data.price_overview?.currency),
         sale_price: salePrice,
         normal_price: normalPrice,
         discount_percent: discountPercent,
-        final_formatted: String(priceOverview?.final_formatted || '').trim() || null,
-        initial_formatted: String(priceOverview?.initial_formatted || '').trim() || null,
+        final_formatted: normalizeText(data.price_overview?.final_formatted),
+        initial_formatted: normalizeText(data.price_overview?.initial_formatted),
         price_source: 'steam_appdetails_us',
-        price_last_synced_at: new Date().toISOString(),
+        price_last_synced_at: nowIso,
         url: `https://store.steampowered.com/app/${steamAppID}/`,
-        is_available: isAvailable,
+        is_available: Boolean(isFree || salePrice || normalPrice),
       }
 
       const { error: offerError } = await supabase
@@ -426,17 +600,25 @@ export async function POST(request: Request) {
         )
       }
 
+      const gamePatch: Record<string, unknown> = {
+        steam_type: resolvedType,
+        is_free_to_play: isFree,
+        updated_at: nowIso,
+      }
+
+      const steamName = normalizeText(data.name)
+      const shortDescription = normalizeText(data.short_description)
+      const headerImage = normalizeText(data.header_image)
+      const capsuleImage = normalizeText(data.capsule_image)
+
+      if (steamName) gamePatch.steam_name = steamName
+      if (shortDescription) gamePatch.short_description = shortDescription
+      if (headerImage) gamePatch.header_image = headerImage
+      if (capsuleImage) gamePatch.capsule_image = capsuleImage
+
       const { error: gameError } = await supabase
         .from('pc_games')
-        .update({
-          steam_type: String(data.type || '').trim() || 'game',
-          is_free_to_play: Boolean(data.is_free),
-          short_description: String(data.short_description || '').trim() || null,
-          header_image: String(data.header_image || '').trim() || null,
-          capsule_image: String(data.capsule_image || '').trim() || null,
-          is_catalog_ready: true,
-          updated_at: new Date().toISOString(),
-        })
+        .update(gamePatch)
         .eq('id', game.id)
 
       if (gameError) {

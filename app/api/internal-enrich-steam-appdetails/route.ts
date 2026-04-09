@@ -265,11 +265,11 @@ async function finishSyncLog(
 
 async function loadPriorityVisibleCandidates(
   supabase: ReturnType<typeof getServiceSupabase>,
-  desiredCount: number
+  limit: number
 ) {
   const { data, error } = await supabase.rpc(
     'get_priority_visible_enrich_candidates',
-    { p_limit: desiredCount }
+    { p_limit: limit }
   )
 
   if (error) {
@@ -295,68 +295,48 @@ async function loadPriorityVisibleCandidates(
 
 async function loadFullGameCandidates(
   supabase: ReturnType<typeof getServiceSupabase>,
-  desiredCount: number
+  limit: number
 ) {
-  const pageSize = 200
-  const maxScanPages = 12
-  const seenIds = new Set<string>()
-  const results: PcGameRow[] = []
+  const { data, error } = await supabase
+    .from('pc_games')
+    .select(
+      'id, steam_app_id, steam_name, canonical_title, slug, updated_at, steam_type'
+    )
+    .eq('steam_type', 'game')
+    .eq('steam_inventory_source', 'steam_istoreservice')
+    .not('steam_app_id', 'is', null)
+    .order('updated_at', { ascending: true, nullsFirst: true })
+    .limit(limit)
 
-  for (let page = 0; page < maxScanPages && results.length < desiredCount; page += 1) {
-    const from = page * pageSize
-    const to = from + pageSize - 1
-
-    const { data, error } = await supabase
-      .from('pc_games')
-      .select(
-        'id, steam_app_id, steam_name, canonical_title, slug, updated_at, steam_type'
-      )
-      .eq('steam_type', 'game')
-      .eq('steam_inventory_source', 'steam_istoreservice')
-      .not('steam_app_id', 'is', null)
-      .order('updated_at', { ascending: true, nullsFirst: true })
-      .range(from, to)
-
-    if (error) {
-      throw new Error(`loadFullGameCandidates failed: ${error.message}`)
-    }
-
-    const games = Array.isArray(data) ? (data as PcGameRow[]) : []
-    if (!games.length) break
-
-    for (const game of games) {
-      const gameId = String(game.id || '').trim()
-      const steamAppID = String(game.steam_app_id || '').trim()
-
-      if (!gameId || !steamAppID) continue
-      if (seenIds.has(gameId)) continue
-
-      seenIds.add(gameId)
-      results.push(game)
-
-      if (results.length >= desiredCount) {
-        break
-      }
-    }
-
-    if (games.length < pageSize) {
-      break
-    }
+  if (error) {
+    throw new Error(`loadFullGameCandidates failed: ${error.message}`)
   }
 
-  return results.slice(0, desiredCount)
+  const rows = Array.isArray(data) ? (data as PcGameRow[]) : []
+
+  return rows
+    .map((row) => ({
+      id: String(row.id || '').trim(),
+      steam_app_id: String(row.steam_app_id || '').trim(),
+      steam_name: normalizeText(row.steam_name),
+      canonical_title: normalizeText(row.canonical_title),
+      slug: normalizeText(row.slug),
+      updated_at: normalizeText(row.updated_at),
+      steam_type: normalizeText(row.steam_type),
+    }))
+    .filter((row) => row.id && row.steam_app_id)
 }
 
 async function loadCandidateGames(
   supabase: ReturnType<typeof getServiceSupabase>,
-  desiredCount: number,
+  limit: number,
   scope: CandidateScope
 ) {
   if (scope === 'visible') {
-    return loadPriorityVisibleCandidates(supabase, desiredCount)
+    return loadPriorityVisibleCandidates(supabase, limit)
   }
 
-  return loadFullGameCandidates(supabase, desiredCount)
+  return loadFullGameCandidates(supabase, limit)
 }
 
 export async function POST(request: Request) {
@@ -372,39 +352,16 @@ export async function POST(request: Request) {
     const body = await request.json().catch(() => ({}))
     const iterations = Math.max(1, Math.min(50, Number(body?.iterations || 1)))
     const batchSize = Math.max(1, Math.min(100, Number(body?.batchSize || 25)))
-    const desiredCount = iterations * batchSize
     const scope = normalizeScope(body?.scope)
 
     const log = await createSyncLog(
       'steam_appdetails_enrich',
-      `Steam-only enrich started (target ${desiredCount}, scope ${scope}, iterations ${iterations}, batchSize ${batchSize})`
+      `Steam-only enrich started (scope ${scope}, iterations ${iterations}, batchSize ${batchSize})`
     )
     logId = log.id
 
     const supabase = getServiceSupabase()
-    const candidates = await loadCandidateGames(supabase, desiredCount, scope)
-
-    if (!candidates.length) {
-      await finishSyncLog(
-        logId,
-        'success',
-        `Steam-only enrich found no candidates (target ${desiredCount}, scope ${scope})`,
-        0
-      )
-
-      return Response.json({
-        success: true,
-        processed: 0,
-        enriched: 0,
-        screenshotsInserted: 0,
-        rateLimited: 0,
-        priceRowsUpserted: 0,
-        iterations,
-        batchSize,
-        scope,
-        note: `No enrich candidates found for scope ${scope}`,
-      })
-    }
+    const processedIds = new Set<string>()
 
     let processed = 0
     let enriched = 0
@@ -412,150 +369,162 @@ export async function POST(request: Request) {
     let rateLimited = 0
     let priceRowsUpserted = 0
 
-    for (const game of candidates) {
-      const gameId = String(game.id || '').trim()
-      const steamAppID = String(game.steam_app_id || '').trim()
+    for (let i = 0; i < iterations; i += 1) {
+      const rawCandidates = await loadCandidateGames(supabase, batchSize, scope)
+      const candidates = rawCandidates
+        .filter((game) => !processedIds.has(String(game.id || '').trim()))
+        .slice(0, batchSize)
 
-      if (!gameId || !steamAppID) continue
-
-      processed += 1
-
-      const appdetailsUrl =
-        `https://store.steampowered.com/api/appdetails?appids=${steamAppID}` +
-        `&cc=${REGION_CODE}&l=english`
-
-      const response = await fetch(appdetailsUrl, {
-        headers: {
-          'User-Agent': 'LoboDeals/2.6 enrich',
-        },
-        cache: 'no-store',
-      })
-
-      if (response.status === 429) {
-        rateLimited += 1
-        continue
+      if (!candidates.length) {
+        break
       }
 
-      if (!response.ok) {
-        continue
-      }
+      for (const game of candidates) {
+        const gameId = String(game.id || '').trim()
+        const steamAppID = String(game.steam_app_id || '').trim()
 
-      const json = (await response.json()) as SteamAppDetailsResponse
-      const entry = json?.[steamAppID]
+        if (!gameId || !steamAppID) continue
 
-      if (!entry?.success || !entry.data) {
-        continue
-      }
+        processedIds.add(gameId)
+        processed += 1
 
-      const data = entry.data
-      const nowIso = new Date().toISOString()
+        const appdetailsUrl =
+          `https://store.steampowered.com/api/appdetails?appids=${steamAppID}` +
+          `&cc=${REGION_CODE}&l=english`
 
-      const resolvedType = normalizeText(data.type)?.toLowerCase() || 'game'
-      const shortDescription = normalizeText(data.short_description)
-      const detailedDescription = normalizeText(data.detailed_description)
-      const headerImage = normalizeText(data.header_image)
-      const capsuleImage = normalizeText(data.capsule_image)
-      const heroImage = normalizeText(data.background)
-      const steamName = normalizeText(data.name)
-      const releaseDate = parseSteamReleaseDate(data.release_date?.date || null)
-      const metacritic =
-        Number.isFinite(Number(data.metacritic?.score))
-          ? Number(data.metacritic?.score)
-          : null
-      const isFreeToPlay = Boolean(data.is_free)
-
-      const gamePatch: Record<string, unknown> = {
-        steam_type: resolvedType,
-        is_free_to_play: isFreeToPlay,
-        updated_at: nowIso,
-      }
-
-      if (steamName) gamePatch.steam_name = steamName
-      if (shortDescription) gamePatch.short_description = shortDescription
-      if (detailedDescription) gamePatch.description = detailedDescription
-      if (headerImage) gamePatch.header_image = headerImage
-      if (capsuleImage) gamePatch.capsule_image = capsuleImage
-      if (heroImage) gamePatch.hero_image_url = heroImage
-      if (releaseDate) gamePatch.release_date = releaseDate
-      if (metacritic !== null && metacritic > 0) gamePatch.metacritic = metacritic
-
-      const { error: gameError } = await supabase
-        .from('pc_games')
-        .update(gamePatch)
-        .eq('id', gameId)
-
-      if (gameError) {
-        throw new Error(`pc_games update failed for ${steamAppID}: ${gameError.message}`)
-      }
-
-      const screenshots = buildUniqueScreenshots(gameId, data.screenshots)
-
-      if (screenshots.length > 0) {
-        const { error: deleteShotsError } = await supabase
-          .from('pc_game_screenshots')
-          .delete()
-          .eq('pc_game_id', gameId)
-
-        if (deleteShotsError) {
-          throw new Error(
-            `pc_game_screenshots delete failed for ${steamAppID}: ${deleteShotsError.message}`
-          )
-        }
-
-        const { error: insertShotsError } = await supabase
-          .from('pc_game_screenshots')
-          .insert(screenshots)
-
-        if (insertShotsError) {
-          throw new Error(
-            `pc_game_screenshots insert failed for ${steamAppID}: ${insertShotsError.message}`
-          )
-        }
-
-        screenshotsInserted += screenshots.length
-      }
-
-      const priceOverview = data.price_overview
-      const salePrice = centsToMoney(priceOverview?.final || null)
-      const normalPrice = centsToMoney(priceOverview?.initial || null)
-      const discountPercent = resolveDiscountPercent({
-        salePrice,
-        normalPrice,
-        apiDiscountPercent: priceOverview?.discount_percent || 0,
-        isFree: isFreeToPlay,
-      })
-      const isAvailable = Boolean(isFreeToPlay || salePrice || normalPrice)
-
-      const offerPayload = {
-        pc_game_id: gameId,
-        store_id: STORE_ID,
-        region_code: REGION_CODE,
-        currency_code: normalizeText(priceOverview?.currency),
-        sale_price: salePrice,
-        normal_price: normalPrice,
-        discount_percent: discountPercent,
-        final_formatted: normalizeText(priceOverview?.final_formatted),
-        initial_formatted: normalizeText(priceOverview?.initial_formatted),
-        price_source: 'steam_appdetails_us',
-        price_last_synced_at: nowIso,
-        url: `https://store.steampowered.com/app/${steamAppID}/`,
-        is_available: isAvailable,
-      }
-
-      const { error: offerError } = await supabase
-        .from('pc_store_offers')
-        .upsert([offerPayload], {
-          onConflict: 'pc_game_id,store_id,region_code',
+        const response = await fetch(appdetailsUrl, {
+          headers: {
+            'User-Agent': 'LoboDeals/2.6 enrich',
+          },
+          cache: 'no-store',
         })
 
-      if (offerError) {
-        throw new Error(
-          `pc_store_offers upsert failed for ${steamAppID}: ${offerError.message}`
-        )
-      }
+        if (response.status === 429) {
+          rateLimited += 1
+          continue
+        }
 
-      priceRowsUpserted += 1
-      enriched += 1
+        if (!response.ok) {
+          continue
+        }
+
+        const json = (await response.json()) as SteamAppDetailsResponse
+        const entry = json?.[steamAppID]
+
+        if (!entry?.success || !entry.data) {
+          continue
+        }
+
+        const data = entry.data
+        const nowIso = new Date().toISOString()
+
+        const resolvedType = normalizeText(data.type)?.toLowerCase() || 'game'
+        const shortDescription = normalizeText(data.short_description)
+        const detailedDescription = normalizeText(data.detailed_description)
+        const headerImage = normalizeText(data.header_image)
+        const capsuleImage = normalizeText(data.capsule_image)
+        const heroImage = normalizeText(data.background)
+        const steamName = normalizeText(data.name)
+        const releaseDate = parseSteamReleaseDate(data.release_date?.date || null)
+        const metacritic =
+          Number.isFinite(Number(data.metacritic?.score))
+            ? Number(data.metacritic?.score)
+            : null
+        const isFreeToPlay = Boolean(data.is_free)
+
+        const gamePatch: Record<string, unknown> = {
+          steam_type: resolvedType,
+          is_free_to_play: isFreeToPlay,
+          updated_at: nowIso,
+        }
+
+        if (steamName) gamePatch.steam_name = steamName
+        if (shortDescription) gamePatch.short_description = shortDescription
+        if (detailedDescription) gamePatch.description = detailedDescription
+        if (headerImage) gamePatch.header_image = headerImage
+        if (capsuleImage) gamePatch.capsule_image = capsuleImage
+        if (heroImage) gamePatch.hero_image_url = heroImage
+        if (releaseDate) gamePatch.release_date = releaseDate
+        if (metacritic !== null && metacritic > 0) gamePatch.metacritic = metacritic
+
+        const { error: gameError } = await supabase
+          .from('pc_games')
+          .update(gamePatch)
+          .eq('id', gameId)
+
+        if (gameError) {
+          throw new Error(`pc_games update failed for ${steamAppID}: ${gameError.message}`)
+        }
+
+        const screenshots = buildUniqueScreenshots(gameId, data.screenshots)
+
+        if (screenshots.length > 0) {
+          const { error: deleteShotsError } = await supabase
+            .from('pc_game_screenshots')
+            .delete()
+            .eq('pc_game_id', gameId)
+
+          if (deleteShotsError) {
+            throw new Error(
+              `pc_game_screenshots delete failed for ${steamAppID}: ${deleteShotsError.message}`
+            )
+          }
+
+          const { error: insertShotsError } = await supabase
+            .from('pc_game_screenshots')
+            .insert(screenshots)
+
+          if (insertShotsError) {
+            throw new Error(
+              `pc_game_screenshots insert failed for ${steamAppID}: ${insertShotsError.message}`
+            )
+          }
+
+          screenshotsInserted += screenshots.length
+        }
+
+        const priceOverview = data.price_overview
+        const salePrice = centsToMoney(priceOverview?.final || null)
+        const normalPrice = centsToMoney(priceOverview?.initial || null)
+        const discountPercent = resolveDiscountPercent({
+          salePrice,
+          normalPrice,
+          apiDiscountPercent: priceOverview?.discount_percent || 0,
+          isFree: isFreeToPlay,
+        })
+        const isAvailable = Boolean(isFreeToPlay || salePrice || normalPrice)
+
+        const offerPayload = {
+          pc_game_id: gameId,
+          store_id: STORE_ID,
+          region_code: REGION_CODE,
+          currency_code: normalizeText(priceOverview?.currency),
+          sale_price: salePrice,
+          normal_price: normalPrice,
+          discount_percent: discountPercent,
+          final_formatted: normalizeText(priceOverview?.final_formatted),
+          initial_formatted: normalizeText(priceOverview?.initial_formatted),
+          price_source: 'steam_appdetails_us',
+          price_last_synced_at: nowIso,
+          url: `https://store.steampowered.com/app/${steamAppID}/`,
+          is_available: isAvailable,
+        }
+
+        const { error: offerError } = await supabase
+          .from('pc_store_offers')
+          .upsert([offerPayload], {
+            onConflict: 'pc_game_id,store_id,region_code',
+          })
+
+        if (offerError) {
+          throw new Error(
+            `pc_store_offers upsert failed for ${steamAppID}: ${offerError.message}`
+          )
+        }
+
+        priceRowsUpserted += 1
+        enriched += 1
+      }
     }
 
     await finishSyncLog(

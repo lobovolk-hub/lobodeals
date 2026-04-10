@@ -1,264 +1,258 @@
 export const runtime = 'nodejs'
 
+import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 
-type PcPublicRow = {
-  pc_game_id: string
-  steam_app_id?: string | null
-  slug?: string | null
-  title?: string | null
-  thumb?: string | null
-  sale_price?: number | string | null
-  normal_price?: number | string | null
-  discount_percent?: number | string | null
-  store_id?: string | null
-  url?: string | null
-  is_free_to_play?: boolean | null
-  has_active_offer?: boolean | null
-  is_catalog_ready?: boolean | null
-  sort_latest?: number | null
-  price_last_synced_at?: string | null
+type CacheRow = {
+  pc_game_id: string | null
+  steam_app_id: string | null
+  slug: string | null
+  title: string | null
+  thumb: string | null
+  sale_price: number | string | null
+  normal_price: number | string | null
+  discount_percent: number | string | null
+  store_id: string | null
+  url: string | null
+  is_free_to_play: boolean | null
+  has_active_offer: boolean | null
+  is_catalog_ready: boolean | null
+  sort_latest: number | null
+  metacritic: number | null
+  price_last_synced_at: string | null
 }
 
-type PcBrowseItem = {
-  id: string
-  steamAppID: string
-  slug: string
-  title: string
-  thumb: string
-  salePrice: string
-  normalPrice: string
-  savings: string
-  storeID: string
-  url: string
-  isFreeToPlay: boolean
-  hasActiveOffer: boolean
-  isCatalogReady: boolean
-  sortLatest: number
-}
+type SortKey =
+  | 'all'
+  | 'best-deals'
+  | 'latest-discounts'
+  | 'latest-releases'
+  | 'biggest-discount'
+  | 'top-rated'
 
-function getServiceSupabase() {
+function getSupabase() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL
-  const serviceRole = process.env.SUPABASE_SERVICE_ROLE_KEY
+  const key =
+    process.env.SUPABASE_SERVICE_ROLE_KEY ||
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
 
-  if (!url || !serviceRole) {
-    throw new Error('Missing Supabase env vars for pc browse page')
+  if (!url || !key) {
+    throw new Error('Missing Supabase env vars for /api/pc-browse-page')
   }
 
-  return createClient(url, serviceRole)
+  return createClient(url, key)
 }
 
-function normalizeSteamTitle(value: string) {
-  return value
-    .normalize('NFKD')
-    .replace(/[\u0300-\u036f]/g, '')
-    .replace(/[®™©]/g, '')
-    .toLowerCase()
-    .trim()
-    .replace(/[:\-–—_/.,+!?'"]/g, ' ')
-    .replace(/[^a-z0-9\s]/g, ' ')
-    .replace(/\s+/g, ' ')
-    .trim()
-}
+function normalizeSort(value: string | null): SortKey {
+  const safe = String(value || '').trim().toLowerCase()
 
-function formatMoney(value?: number | string | null) {
-  const amount = Number(value || 0)
-
-  if (!Number.isFinite(amount) || amount <= 0) {
-    return ''
-  }
-
-  return amount.toFixed(2)
-}
-
-function formatSavings(value?: number | string | null) {
-  const amount = Number(value || 0)
-
-  if (!Number.isFinite(amount) || amount <= 0) {
-    return '0'
-  }
-
-  return String(Math.max(0, Math.min(99, Math.round(amount))))
-}
-
-function mapRowToItem(row: PcPublicRow): PcBrowseItem {
-  return {
-    id: String(row.pc_game_id || '').trim(),
-    steamAppID: String(row.steam_app_id || '').trim(),
-    slug: String(row.slug || '').trim(),
-    title: String(row.title || '').trim(),
-    thumb: String(row.thumb || '').trim(),
-    salePrice: formatMoney(row.sale_price),
-    normalPrice: formatMoney(row.normal_price),
-    savings: formatSavings(row.discount_percent),
-    storeID: String(row.store_id || '1').trim(),
-    url: String(row.url || '').trim(),
-    isFreeToPlay: Boolean(row.is_free_to_play),
-    hasActiveOffer: Boolean(row.has_active_offer),
-    isCatalogReady: Boolean(row.is_catalog_ready),
-    sortLatest: Number(row.sort_latest || 0),
-  }
-}
-
-function getSafeSort(value: string | null) {
-  const safe = String(value || 'all').trim().toLowerCase()
-
-  if (safe === 'all') return 'all'
-  if (safe === 'best') return 'best-deals'
-  if (safe === 'best-deals') return 'best-deals'
-  if (safe === 'latest') return 'latest-releases'
-  if (safe === 'latest-releases') return 'latest-releases'
+  if (safe === 'best' || safe === 'best-deals') return 'best-deals'
   if (safe === 'latest-discounts') return 'latest-discounts'
+  if (safe === 'latest' || safe === 'latest-releases') return 'latest-releases'
   if (safe === 'biggest-discount') return 'biggest-discount'
-
+  if (safe === 'top-rated') return 'top-rated'
   return 'all'
 }
 
-function applyCommonFilters(
-  query: any,
-  normalizedQuery: string,
-  priceFilter: string
-) {
-  if (normalizedQuery) {
-    query = query.ilike('search_title_normalized', `%${normalizedQuery}%`)
+function clampPage(value: string | null) {
+  const page = Number(value || 1)
+  if (!Number.isFinite(page) || page < 1) return 1
+  return Math.floor(page)
+}
+
+function clampPageSize(value: string | null) {
+  const size = Number(value || 36)
+  if (!Number.isFinite(size) || size < 1) return 36
+  return Math.min(Math.floor(size), 100)
+}
+
+function toPriceString(value: number | string | null) {
+  if (value === null || value === undefined || value === '') return null
+  const num = Number(value)
+  if (!Number.isFinite(num)) return null
+  return num.toFixed(2)
+}
+
+function toSavingsString(value: number | string | null) {
+  if (value === null || value === undefined || value === '') return null
+  const num = Number(value)
+  if (!Number.isFinite(num)) return null
+  return String(Math.round(num))
+}
+
+function applySearchFilter(query: any, rawQuery: string) {
+  const q = rawQuery.trim()
+  if (!q) return query
+
+  const escaped = q.replace(/[%_]/g, '')
+  if (!escaped) return query
+
+  return query.or(
+    [
+      `title.ilike.%${escaped}%`,
+      `slug.ilike.%${escaped}%`,
+    ].join(',')
+  )
+}
+
+function applyPriceFilter(query: any, price: string | null) {
+  const safe = String(price || '').trim().toLowerCase()
+
+  if (safe === 'under-5') {
+    return query.or('sale_price.lte.5,and(sale_price.is.null,normal_price.lte.5)')
   }
 
-  if (priceFilter === 'under-5') {
-    query = query.gt('sale_price', 0).lt('sale_price', 5)
-  } else if (priceFilter === 'under-10') {
-    query = query.gt('sale_price', 0).lt('sale_price', 10)
-  } else if (priceFilter === 'over-80') {
-    query = query.gte('discount_percent', 80)
+  if (safe === 'under-10') {
+    return query.or('sale_price.lte.10,and(sale_price.is.null,normal_price.lte.10)')
+  }
+
+  if (safe === '80-plus') {
+    return query.gte('discount_percent', 80)
   }
 
   return query
 }
 
-function applySortFilters(query: any, sort: string, nowEpoch: number) {
-  if (sort === 'latest-releases') {
-    query = query.gt('sort_latest', 0).lte('sort_latest', nowEpoch)
-  }
+function applySort(query: any, sort: SortKey) {
+  switch (sort) {
+    case 'top-rated':
+      return query
+        .gt('metacritic', 0)
+        .order('metacritic', { ascending: false, nullsFirst: false })
+        .order('title', { ascending: true })
 
-  if (sort === 'latest-discounts' || sort === 'biggest-discount') {
-    query = query.gt('discount_percent', 0)
-  }
+    case 'latest-releases':
+      return query
+        .order('sort_latest', { ascending: false, nullsFirst: false })
+        .order('title', { ascending: true })
 
-  return query
+    case 'latest-discounts':
+      return query
+        .order('price_last_synced_at', { ascending: false, nullsFirst: false })
+        .order('discount_percent', { ascending: false, nullsFirst: false })
+        .order('title', { ascending: true })
+
+    case 'biggest-discount':
+    case 'best-deals':
+    case 'all':
+    default:
+      return query
+        .order('discount_percent', { ascending: false, nullsFirst: false })
+        .order('title', { ascending: true })
+  }
 }
 
-function applySortOrder(query: any, sort: string) {
-  if (sort === 'best-deals') {
-    return query
-      .order('has_active_offer', { ascending: false })
-      .order('discount_percent', { ascending: false })
-      .order('sale_price', { ascending: true, nullsFirst: false })
-      .order('sort_latest', { ascending: false })
-  }
-
-  if (sort === 'latest-releases') {
-    return query
-      .order('sort_latest', { ascending: false })
-      .order('discount_percent', { ascending: false })
-      .order('title', { ascending: true })
-  }
-
-  if (sort === 'latest-discounts') {
-    return query
-      .order('price_last_synced_at', { ascending: false, nullsFirst: false })
-      .order('discount_percent', { ascending: false })
-      .order('sort_latest', { ascending: false })
-  }
-
-  if (sort === 'biggest-discount') {
-    return query
-      .order('discount_percent', { ascending: false })
-      .order('sale_price', { ascending: true, nullsFirst: false })
-      .order('sort_latest', { ascending: false })
-  }
-
-  return query
-    .order('has_active_offer', { ascending: false })
-    .order('discount_percent', { ascending: false })
-    .order('title', { ascending: true })
-}
-
-export async function GET(request: Request) {
+export async function GET(request: NextRequest) {
   try {
+    const supabase = getSupabase()
     const { searchParams } = new URL(request.url)
 
-    const requestedPage = Math.max(1, Number(searchParams.get('page') || '1'))
-    const pageSize = Math.max(
-      1,
-      Math.min(60, Number(searchParams.get('pageSize') || '36'))
-    )
-    const query = searchParams.get('q') || ''
-    const sort = getSafeSort(searchParams.get('sort'))
-    const priceFilter = String(searchParams.get('price') || 'all').trim().toLowerCase()
-    const normalizedQuery = normalizeSteamTitle(query)
-    const nowEpoch = Math.floor(Date.now() / 1000)
+    const requestedPage = clampPage(searchParams.get('page'))
+    const pageSize = clampPageSize(searchParams.get('pageSize'))
+    const sort = normalizeSort(searchParams.get('sort'))
+    const q = String(searchParams.get('q') || '').trim()
+    const price = searchParams.get('price')
 
-    const supabase = getServiceSupabase()
-
-    let countQuery = supabase
+    let countQuery: any = supabase
       .from('pc_public_catalog_cache')
       .select('pc_game_id', { count: 'exact', head: true })
 
-    countQuery = applyCommonFilters(countQuery, normalizedQuery, priceFilter)
-    countQuery = applySortFilters(countQuery, sort, nowEpoch)
+    countQuery = applySearchFilter(countQuery, q)
+    countQuery = applyPriceFilter(countQuery, price)
+
+    if (sort === 'top-rated') {
+      countQuery = countQuery.gt('metacritic', 0)
+    }
 
     const { count, error: countError } = await countQuery
 
     if (countError) {
-      throw countError
+      throw new Error(`pc-browse-page count failed: ${countError.message}`)
     }
 
     const totalItems = Number(count || 0)
     const totalPages = totalItems > 0 ? Math.ceil(totalItems / pageSize) : 1
-    const safePage = totalItems > 0 ? Math.min(requestedPage, totalPages) : 1
-    const from = (safePage - 1) * pageSize
+    const page = Math.min(requestedPage, totalPages)
+    const from = (page - 1) * pageSize
     const to = from + pageSize - 1
 
-    let dataQuery = supabase
+    let dataQuery: any = supabase
       .from('pc_public_catalog_cache')
       .select(
-        'pc_game_id, steam_app_id, slug, title, thumb, sale_price, normal_price, discount_percent, store_id, url, is_free_to_play, has_active_offer, is_catalog_ready, sort_latest, price_last_synced_at'
+        [
+          'pc_game_id',
+          'steam_app_id',
+          'slug',
+          'title',
+          'thumb',
+          'sale_price',
+          'normal_price',
+          'discount_percent',
+          'store_id',
+          'url',
+          'is_free_to_play',
+          'has_active_offer',
+          'is_catalog_ready',
+          'sort_latest',
+          'metacritic',
+          'price_last_synced_at',
+        ].join(',')
       )
 
-    dataQuery = applyCommonFilters(dataQuery, normalizedQuery, priceFilter)
-    dataQuery = applySortFilters(dataQuery, sort, nowEpoch)
-    dataQuery = applySortOrder(dataQuery, sort).range(from, to)
+    dataQuery = applySearchFilter(dataQuery, q)
+    dataQuery = applyPriceFilter(dataQuery, price)
+    dataQuery = applySort(dataQuery, sort)
+    dataQuery = dataQuery.range(from, to)
 
-    const { data, error: dataError } = await dataQuery
+    const { data, error } = await dataQuery
 
-    if (dataError) {
-      throw dataError
+    if (error) {
+      throw new Error(`pc-browse-page failed: ${error.message}`)
     }
 
-    const rows = Array.isArray(data) ? (data as PcPublicRow[]) : []
-    const items = rows.map(mapRowToItem)
+    const rows = Array.isArray(data) ? (data as CacheRow[]) : []
 
-    return Response.json({
-      items,
+    return NextResponse.json({
+      items: rows.map((row) => ({
+        id: row.pc_game_id,
+        steamAppID: row.steam_app_id,
+        slug: row.slug,
+        title: row.title,
+        thumb: row.thumb,
+        salePrice: toPriceString(row.sale_price),
+        normalPrice: toPriceString(row.normal_price),
+        savings: toSavingsString(row.discount_percent),
+        storeID: row.store_id,
+        url: row.url,
+        isFreeToPlay: Boolean(row.is_free_to_play),
+        hasActiveOffer: Boolean(row.has_active_offer),
+        isCatalogReady: Boolean(row.is_catalog_ready),
+        sortLatest: Number(row.sort_latest || 0),
+        metacritic:
+          row.metacritic !== null && row.metacritic !== undefined
+            ? Number(row.metacritic)
+            : null,
+      })),
       totalItems,
       totalPages,
-      page: safePage,
+      page,
       pageSize,
-      hasNextPage: safePage < totalPages,
+      hasNextPage: page < totalPages,
       mode: 'cache',
       source: 'pc_public_catalog_cache',
+      appliedSort: sort,
     })
   } catch (error) {
-    console.error('pc browse page error', error)
+    console.error('/api/pc-browse-page error', error)
 
-    return Response.json({
-      items: [],
-      totalItems: 0,
-      totalPages: 1,
-      page: 1,
-      pageSize: 36,
-      hasNextPage: false,
-      mode: 'error',
-      source: 'pc_public_catalog_cache',
-    })
+    return NextResponse.json(
+      {
+        error:
+          error instanceof Error
+            ? error.message
+            : 'Unknown /api/pc-browse-page error',
+      },
+      { status: 500 }
+    )
   }
 }

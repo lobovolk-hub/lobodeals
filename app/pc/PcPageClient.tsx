@@ -1,535 +1,182 @@
 'use client'
 
 import Link from 'next/link'
+import { usePathname, useRouter, useSearchParams } from 'next/navigation'
 import { useEffect, useMemo, useState } from 'react'
-import { useRouter, useSearchParams } from 'next/navigation'
-import { getStoreLogo, getStoreName } from '@/lib/storeMap'
-import { supabase } from '@/lib/supabaseClient'
-import { trackClick } from '@/lib/analytics'
 
-type PcBrowseItem = {
+type BrowseItem = {
   id: string
   steamAppID: string
   slug: string
   title: string
-  thumb: string
-  salePrice: string
-  normalPrice: string
-  savings: string
-  storeID: string
-  url: string
+  thumb: string | null
+  salePrice: string | null
+  normalPrice: string | null
+  savings: string | null
+  storeID: string | null
+  url: string | null
   isFreeToPlay: boolean
   hasActiveOffer: boolean
   isCatalogReady: boolean
-  sortLatest?: number
+  sortLatest: number
+  metacritic?: number | null
 }
 
-type PcBrowsePageResponse = {
-  items: PcBrowseItem[]
-  totalItems: number | null
-  totalPages: number | null
-  page: number
-  pageSize: number
-  hasNextPage: boolean
-  mode?: 'cache' | 'error'
-  source?: string
-}
-
-type TopRatedPcGame = {
-  steamAppID: string
-  slug: string
-  title: string
-  salePrice: string
-  normalPrice: string
-  savings: string
-  thumb: string
-  storeID: string
-  platform: string
-  url: string
-  metacritic: number
-  isFreeToPlay: boolean
-  sortLatest?: number
-}
-
-type TopRatedResponse = {
-  items: TopRatedPcGame[]
+type BrowseResponse = {
+  items: BrowseItem[]
   totalItems: number
   totalPages: number
   page: number
   pageSize: number
   hasNextPage: boolean
-  mode?: 'top-rated'
-  source?: string
+  mode: string
+  source: string
+  appliedSort?: string
 }
 
-type UnifiedCardItem = PcBrowseItem | TopRatedPcGame
+type PcPageClientProps = {
+  initialPage?: number | string
+  initialSort?: string
+  initialQuery?: string
+  initialPrice?: string
+  initialPageSize?: number | string
+  [key: string]: unknown
+}
 
 const PAGE_SIZE = 36
-const TOP_RATED_MIN_RESULTS = 1
 
-const PRICE_FILTERS = [
-  { value: 'all', label: 'Any price' },
-  { value: 'under-5', label: 'Under $5' },
-  { value: 'under-10', label: 'Under $10' },
-  { value: 'over-80', label: '80%+ off' },
+const SORT_OPTIONS = [
+  { key: 'all', label: 'PC' },
+  { key: 'best-deals', label: 'Best Deals' },
+  { key: 'latest-discounts', label: 'Latest Discounts' },
+  { key: 'latest-releases', label: 'Latest Releases' },
+  { key: 'biggest-discount', label: 'Biggest Discounts' },
+  { key: 'top-rated', label: 'Top Rated' },
 ] as const
 
-const SORT_FILTERS = [
-  { value: 'all', label: 'PC' },
-  { value: 'best-deals', label: 'Best Deals' },
-  { value: 'latest-discounts', label: 'Latest Discounts' },
-  { value: 'latest-releases', label: 'Latest Releases' },
-  { value: 'biggest-discount', label: 'Biggest Discounts' },
-  { value: 'top-rated', label: 'Top Rated' },
+const PRICE_OPTIONS = [
+  { key: '', label: 'Any price' },
+  { key: 'under-5', label: 'Under $5' },
+  { key: 'under-10', label: 'Under $10' },
+  { key: '80-plus', label: '80%+ off' },
 ] as const
 
-function buildSteamCanonicalHref(item: { title: string; slug?: string }) {
-  const slug =
-    String(item.slug || '').trim() ||
-    item.title
-      .toLowerCase()
-      .trim()
-      .replace(/[^a-z0-9\s-]/g, '')
-      .replace(/\s+/g, '-')
-      .replace(/-+/g, '-')
+function normalizeSort(value: string | null | undefined) {
+  const safe = String(value || '').trim().toLowerCase()
 
-  return `/pc/${encodeURIComponent(slug)}`
+  if (safe === 'best') return 'best-deals'
+  if (safe === 'latest') return 'latest-releases'
+  if (safe === 'best-deals') return 'best-deals'
+  if (safe === 'latest-discounts') return 'latest-discounts'
+  if (safe === 'latest-releases') return 'latest-releases'
+  if (safe === 'biggest-discount') return 'biggest-discount'
+  if (safe === 'top-rated') return 'top-rated'
+  return 'all'
 }
 
-function pushTrackMessage(
-  setTrackMessage: React.Dispatch<React.SetStateAction<string>>,
-  message: string
-) {
-  setTrackMessage(message)
-  window.setTimeout(() => setTrackMessage(''), 2500)
+function moneyLabel(item: BrowseItem) {
+  if (item.isFreeToPlay) return 'Free'
+  if (item.salePrice) return `$${item.salePrice}`
+  if (item.normalPrice) return `$${item.normalPrice}`
+  return 'TBA'
 }
 
-function buildPageList(currentPage: number, totalPages: number) {
-  if (totalPages <= 1) return [1]
-
-  const pages = new Set<number>()
-  pages.add(1)
-  pages.add(totalPages)
-
-  for (let i = currentPage - 2; i <= currentPage + 2; i += 1) {
-    if (i >= 1 && i <= totalPages) {
-      pages.add(i)
-    }
+function originalPriceLabel(item: BrowseItem) {
+  if (item.salePrice && item.normalPrice && item.salePrice !== item.normalPrice) {
+    return `$${item.normalPrice}`
   }
-
-  return Array.from(pages).sort((a, b) => a - b)
+  return null
 }
 
-function getCardDisplayState(item: {
-  salePrice?: string
-  normalPrice?: string
-  savings?: string
-  isFreeToPlay?: boolean
-  sortLatest?: number
-}) {
-  const nowEpoch = Math.floor(Date.now() / 1000)
-  const sale = Number(item.salePrice || 0)
-  const normal = Number(item.normalPrice || 0)
-  const isUpcoming = Number(item.sortLatest || 0) > nowEpoch
-
-  const hasSalePrice = Number.isFinite(sale) && sale > 0
-  const hasNormalPrice = Number.isFinite(normal) && normal > 0
-  const hasDiscount =
-    !isUpcoming &&
-    hasSalePrice &&
-    hasNormalPrice &&
-    normal > sale
-
-  const priceLabel = isUpcoming
-    ? 'TBA'
-    : hasSalePrice
-    ? `$${item.salePrice}`
-    : hasNormalPrice
-    ? `$${item.normalPrice}`
-    : item.isFreeToPlay
-    ? 'Free'
-    : 'No price'
-
-  return {
-    isUpcoming,
-    hasDiscount,
-    priceLabel,
-    showNormalPrice: hasDiscount,
-  }
+function gameHref(item: BrowseItem) {
+  return `/pc/${item.slug}`
 }
 
-function FilterChip({
-  label,
-  active,
-  onClick,
-}: {
-  label: string
-  active: boolean
-  onClick: () => void
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className={`rounded-xl px-3 py-2 text-sm transition ${
-        active
-          ? 'border border-emerald-500/30 bg-emerald-500/10 text-emerald-300'
-          : 'border border-zinc-800 bg-zinc-900 text-zinc-200 hover:bg-zinc-800'
-      }`}
-    >
-      {label}
-    </button>
-  )
-}
-
-function SteamCard({
-  item,
-  userId,
-  trackedIds,
-  setTrackedIds,
-  setTrackMessage,
-}: {
-  item: UnifiedCardItem
-  userId: string | null
-  trackedIds: string[]
-  setTrackedIds: React.Dispatch<React.SetStateAction<string[]>>
-  setTrackMessage: React.Dispatch<React.SetStateAction<string>>
-}) {
-  const display = getCardDisplayState(item)
-  const steamDealID = `steam-${item.steamAppID}`
-  const isTracked = Array.isArray(trackedIds) && trackedIds.includes(steamDealID)
-  const canonicalHref = buildSteamCanonicalHref(item)
-  const isTopRatedItem = 'metacritic' in item
-
-  return (
-    <article className="overflow-hidden rounded-3xl border border-zinc-800 bg-zinc-900 shadow-lg transition hover:-translate-y-1">
-      <Link href={canonicalHref} className="block">
-        <div className="h-32 w-full bg-zinc-800 sm:h-36">
-          {item.thumb ? (
-            <img
-              src={item.thumb}
-              alt={item.title}
-              className="h-full w-full object-cover transition hover:opacity-90"
-            />
-          ) : null}
-        </div>
-      </Link>
-
-      <div className="p-3 sm:p-4">
-        <div className="mb-3 flex items-start justify-between gap-2">
-          <Link href={canonicalHref} className="min-w-0">
-            <h3 className="line-clamp-2 text-sm font-bold leading-5 text-zinc-100 transition hover:text-emerald-300 sm:text-base">
-              {item.title}
-            </h3>
-          </Link>
-
-          <div className="flex shrink-0 flex-col items-end gap-2">
-            {display.hasDiscount ? (
-              <span className="rounded-full border border-emerald-500/30 bg-emerald-500/10 px-2 py-1 text-[10px] font-medium text-emerald-300 sm:text-xs">
-                -{item.savings}%
-              </span>
-            ) : null}
-
-            {isTopRatedItem ? (
-              <span className="rounded-full border border-amber-500/30 bg-amber-500/10 px-2 py-1 text-[10px] font-medium text-amber-300 sm:text-xs">
-                MC {item.metacritic}
-              </span>
-            ) : null}
-          </div>
-        </div>
-
-        <div className="rounded-2xl border border-zinc-800 bg-zinc-950 p-3">
-          <div className="flex items-center justify-between gap-2">
-            <p className="text-lg font-bold text-emerald-400 sm:text-2xl">
-              {display.priceLabel}
-            </p>
-
-            {display.showNormalPrice ? (
-              <p className="text-xs text-zinc-400 line-through sm:text-sm">
-                ${item.normalPrice}
-              </p>
-            ) : null}
-          </div>
-
-          <div className="mt-2 inline-flex items-center gap-2 rounded-full border border-zinc-700 bg-zinc-900 px-3 py-1 text-[11px] text-zinc-300">
-            {getStoreLogo(item.storeID) ? (
-              <img
-                src={getStoreLogo(item.storeID)!}
-                alt={getStoreName(item.storeID)}
-                className="h-4 w-4 object-contain"
-              />
-            ) : null}
-            <span>{getStoreName(item.storeID)}</span>
-          </div>
-        </div>
-
-        <div className="mt-3 grid gap-2">
-          <button
-            type="button"
-            onClick={async () => {
-              if (!userId) {
-                pushTrackMessage(setTrackMessage, 'Sign in to track games')
-                return
-              }
-
-              try {
-                const {
-                  data: { session },
-                } = await supabase.auth.getSession()
-
-                const accessToken = session?.access_token
-
-                if (!accessToken) {
-                  pushTrackMessage(setTrackMessage, 'Sign in to track games')
-                  return
-                }
-
-                const res = await fetch('/api/track', {
-                  method: 'POST',
-                  headers: {
-                    'Content-Type': 'application/json',
-                    Authorization: `Bearer ${accessToken}`,
-                  },
-                  body: JSON.stringify({
-                    dealID: steamDealID,
-                    gameID: '',
-                    title: item.title,
-                    thumb: item.thumb,
-                    salePrice: item.salePrice,
-                    normalPrice: item.normalPrice,
-                    storeID: item.storeID || '1',
-                  }),
-                })
-
-                const data = await res.json()
-
-                if (data.success && data.action === 'added') {
-                  setTrackedIds((prev) =>
-                    prev.includes(steamDealID) ? prev : [...prev, steamDealID]
-                  )
-                  trackClick({
-                    dealID: steamDealID,
-                    title: item.title,
-                    salePrice: item.salePrice,
-                    normalPrice: item.normalPrice,
-                    clickType: 'track_add',
-                  })
-                  pushTrackMessage(setTrackMessage, `Added to tracked: ${item.title}`)
-                  return
-                }
-
-                if (data.success && data.action === 'removed') {
-                  setTrackedIds((prev) => prev.filter((id) => id !== steamDealID))
-                  trackClick({
-                    dealID: steamDealID,
-                    title: item.title,
-                    salePrice: item.salePrice,
-                    normalPrice: item.normalPrice,
-                    clickType: 'track_remove',
-                  })
-                  pushTrackMessage(setTrackMessage, `Removed from tracked: ${item.title}`)
-                  return
-                }
-
-                pushTrackMessage(
-                  setTrackMessage,
-                  `Track error: ${data.error || 'Unknown error'}`
-                )
-              } catch {
-                pushTrackMessage(setTrackMessage, 'Could not update tracked right now')
-              }
-            }}
-            className={`rounded-xl px-4 py-2 text-center text-sm font-medium transition ${
-              isTracked
-                ? 'border border-emerald-500/30 bg-emerald-500/10 text-emerald-300'
-                : 'border border-zinc-700 bg-zinc-950 text-zinc-100 hover:bg-zinc-800'
-            }`}
-          >
-            {isTracked ? 'Tracked' : 'Track game'}
-          </button>
-
-          <Link
-            href={canonicalHref}
-            onClick={() =>
-              trackClick({
-                dealID: steamDealID,
-                title: item.title,
-                salePrice: item.salePrice,
-                normalPrice: item.normalPrice,
-                clickType: 'card_click_pc',
-              })
-            }
-            className="rounded-xl bg-white px-4 py-2 text-center text-sm font-semibold text-black transition hover:opacity-90"
-          >
-            Open game page
-          </Link>
-        </div>
-      </div>
-    </article>
-  )
-}
-
-export default function PcPageClient() {
+export default function PcPageClient(props: PcPageClientProps) {
   const router = useRouter()
+  const pathname = usePathname()
   const searchParams = useSearchParams()
 
-  const currentPage = Math.max(1, Number(searchParams.get('page') || '1'))
-  const activeQuery = searchParams.get('q') || ''
-  const requestedSort = searchParams.get('sort') || 'all'
-  const priceFilter = searchParams.get('price') || 'all'
+  const currentPage = Math.max(
+    1,
+    Number(searchParams.get('page') || props.initialPage || 1) || 1
+  )
+  const currentSort = normalizeSort(
+    searchParams.get('sort') || String(props.initialSort || 'all')
+  )
+  const currentQuery = String(
+    searchParams.get('q') || props.initialQuery || ''
+  ).trim()
+  const currentPrice = String(
+    searchParams.get('price') || props.initialPrice || ''
+  ).trim()
 
-  const [queryInput, setQueryInput] = useState(activeQuery)
-  const [browseGames, setBrowseGames] = useState<PcBrowseItem[]>([])
-  const [browseTotalItems, setBrowseTotalItems] = useState(0)
-  const [browseTotalPages, setBrowseTotalPages] = useState(1)
-  const [topRatedGames, setTopRatedGames] = useState<TopRatedPcGame[]>([])
-
-  const [loading, setLoading] = useState(true)
-  const [userId, setUserId] = useState<string | null>(null)
-  const [trackedIds, setTrackedIds] = useState<string[]>([])
-  const [trackMessage, setTrackMessage] = useState('')
-
-  const topRatedReady = topRatedGames.length >= TOP_RATED_MIN_RESULTS
-  const sort = requestedSort
+  const [inputValue, setInputValue] = useState(currentQuery)
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const [data, setData] = useState<BrowseResponse>({
+    items: [],
+    totalItems: 0,
+    totalPages: 1,
+    page: currentPage,
+    pageSize: PAGE_SIZE,
+    hasNextPage: false,
+    mode: 'cache',
+    source: 'pc_public_catalog_cache',
+    appliedSort: currentSort,
+  })
 
   useEffect(() => {
-    setQueryInput(activeQuery)
-  }, [activeQuery])
+    setInputValue(currentQuery)
+  }, [currentQuery])
 
-  const buildUrl = (page: number, updates?: Record<string, string | null>) => {
-    const params = new URLSearchParams(searchParams.toString())
+  const requestUrl = useMemo(() => {
+    const params = new URLSearchParams()
+    params.set('page', String(currentPage))
+    params.set('pageSize', String(PAGE_SIZE))
+    params.set('sort', currentSort)
 
-    params.set('page', String(page))
+    if (currentQuery) {
+      params.set('q', currentQuery)
+    }
 
-    Object.entries(updates || {}).forEach(([key, value]) => {
-      if (!value || value === 'all') {
-        params.delete(key)
-      } else {
-        params.set(key, value)
-      }
-    })
+    if (currentPrice) {
+      params.set('price', currentPrice)
+    }
 
-    const queryString = params.toString()
-    return `/pc${queryString ? `?${queryString}` : ''}`
-  }
-
-  const applyPrice = (value: string) => {
-    router.push(buildUrl(1, { price: value }))
-  }
-
-  const applySort = (value: string) => {
-    router.push(buildUrl(1, { sort: value }))
-  }
-
-  const applyQuery = () => {
-    const trimmed = queryInput.trim()
-    router.push(buildUrl(1, { q: trimmed || null }))
-  }
-
-  const clearQuery = () => {
-    setQueryInput('')
-    router.push(buildUrl(1, { q: null }))
-  }
-
-  const resetFilters = () => {
-    setQueryInput('')
-    router.push('/pc?page=1')
-  }
+    return `/api/pc-browse-page?${params.toString()}`
+  }, [currentPage, currentSort, currentQuery, currentPrice])
 
   useEffect(() => {
     let cancelled = false
 
-    const loadUserState = async () => {
-      try {
-        const {
-          data: { session },
-        } = await supabase.auth.getSession()
-
-        const currentUserId = session?.user?.id ?? null
-
-        if (!cancelled) {
-          setUserId(currentUserId)
-        }
-
-        if (currentUserId) {
-          const { data } = await supabase
-            .from('tracked_games')
-            .select('deal_id')
-            .eq('user_id', currentUserId)
-
-          if (!cancelled) {
-            setTrackedIds(Array.isArray(data) ? data.map((row) => row.deal_id) : [])
-          }
-        } else if (!cancelled) {
-          setTrackedIds([])
-        }
-      } catch (error) {
-        console.error(error)
-      }
-    }
-
-    loadUserState()
-
-    return () => {
-      cancelled = true
-    }
-  }, [])
-
-  useEffect(() => {
-    let cancelled = false
-
-    const loadView = async () => {
+    async function run() {
       try {
         setLoading(true)
+        setError(null)
 
-        if (sort === 'top-rated') {
-          const params = new URLSearchParams()
-          params.set('page', String(currentPage))
-          params.set('pageSize', String(PAGE_SIZE))
+        const res = await fetch(requestUrl, { cache: 'no-store' })
+        const json = (await res.json()) as BrowseResponse | { error?: string }
 
-          if (activeQuery.trim()) params.set('q', activeQuery.trim())
-          if (priceFilter !== 'all') params.set('price', priceFilter)
-
-          const topRatedRes = await fetch(`/api/pc-top-rated?${params.toString()}`)
-          const topRatedData: TopRatedResponse = await topRatedRes.json()
-
-          if (!cancelled) {
-            setTopRatedGames(
-              Array.isArray(topRatedData?.items) ? topRatedData.items : []
-            )
-            setBrowseGames([])
-            setBrowseTotalItems(Number(topRatedData?.totalItems || 0))
-            setBrowseTotalPages(Math.max(1, Number(topRatedData?.totalPages || 1)))
-          }
-
-          return
+        if (!res.ok) {
+          throw new Error(
+            'error' in json && json.error ? json.error : 'Failed to load /pc browse page'
+          )
         }
 
-        const params = new URLSearchParams()
-        params.set('page', String(currentPage))
-        params.set('pageSize', String(PAGE_SIZE))
-
-        if (activeQuery.trim()) params.set('q', activeQuery.trim())
-        if (sort !== 'all') params.set('sort', sort)
-        if (priceFilter !== 'all') params.set('price', priceFilter)
-
-        const browseRes = await fetch(`/api/pc-browse-page?${params.toString()}`)
-        const browseData: PcBrowsePageResponse = await browseRes.json()
-
         if (!cancelled) {
-          setBrowseGames(Array.isArray(browseData?.items) ? browseData.items : [])
-          setBrowseTotalItems(Number(browseData?.totalItems || 0))
-          setBrowseTotalPages(Math.max(1, Number(browseData?.totalPages || 1)))
-          setTopRatedGames([])
+          setData(json as BrowseResponse)
         }
-      } catch (error) {
-        console.error(error)
-
+      } catch (err) {
         if (!cancelled) {
-          setBrowseGames([])
-          setBrowseTotalItems(0)
-          setBrowseTotalPages(1)
-          setTopRatedGames([])
+          setError(err instanceof Error ? err.message : 'Unknown client error')
+          setData((prev) => ({
+            ...prev,
+            items: [],
+            totalItems: 0,
+            totalPages: 1,
+            hasNextPage: false,
+          }))
         }
       } finally {
         if (!cancelled) {
@@ -538,250 +185,262 @@ export default function PcPageClient() {
       }
     }
 
-    loadView()
+    run()
 
     return () => {
       cancelled = true
     }
-  }, [currentPage, activeQuery, sort, priceFilter])
+  }, [requestUrl])
 
-  const filteredDeals = useMemo(() => {
-    if (sort === 'top-rated' && topRatedReady) {
-      return {
-        mode: 'top-rated' as const,
-        items: topRatedGames,
-      }
+  function updateUrl(next: {
+    page?: number
+    sort?: string
+    q?: string
+    price?: string
+  }) {
+    const params = new URLSearchParams(searchParams.toString())
+
+    const nextPage = Math.max(1, Number(next.page ?? currentPage) || 1)
+    const nextSort = normalizeSort(next.sort ?? currentSort)
+    const nextQuery = String(next.q ?? currentQuery).trim()
+    const nextPrice = String(next.price ?? currentPrice).trim()
+
+    params.set('page', String(nextPage))
+    params.set('sort', nextSort)
+
+    if (nextQuery) {
+      params.set('q', nextQuery)
+    } else {
+      params.delete('q')
     }
 
-    return {
-      mode: 'browse' as const,
-      items: browseGames,
+    if (nextPrice) {
+      params.set('price', nextPrice)
+    } else {
+      params.delete('price')
     }
-  }, [browseGames, topRatedGames, sort, topRatedReady])
 
-  const isServerBrowseMode =
-    filteredDeals.mode === 'browse' &&
-    sort !== 'top-rated'
+    router.replace(`${pathname}?${params.toString()}`, { scroll: false })
+  }
 
-  const totalItems = isServerBrowseMode
-    ? browseTotalItems
-    : filteredDeals.items.length
+  function handleSearchSubmit() {
+    updateUrl({
+      page: 1,
+      q: inputValue,
+    })
+  }
 
-  const totalPages = isServerBrowseMode
-    ? Math.max(1, browseTotalPages)
-    : Math.max(1, Math.ceil(totalItems / PAGE_SIZE))
+  function handleResetAll() {
+    setInputValue('')
+    router.replace(`${pathname}?page=1&sort=all`, { scroll: false })
+  }
 
-  const safePage = Math.min(currentPage, totalPages)
-
-  const paginatedItems: UnifiedCardItem[] = isServerBrowseMode
-    ? filteredDeals.items
-    : filteredDeals.items.slice((safePage - 1) * PAGE_SIZE, safePage * PAGE_SIZE)
-
-  const activeFilterLabels = [
-    activeQuery.trim() ? `Search: "${activeQuery.trim()}"` : null,
-    priceFilter === 'under-5'
-      ? 'Under $5'
-      : priceFilter === 'under-10'
-      ? 'Under $10'
-      : priceFilter === 'over-80'
-      ? '80%+ off'
-      : null,
-    sort === 'best-deals'
-      ? 'Best Deals'
-      : sort === 'top-rated'
-      ? 'Top Rated'
-      : sort === 'biggest-discount'
-      ? 'Biggest Discounts'
-      : sort === 'latest-releases'
-      ? 'Latest Releases'
-      : sort === 'latest-discounts'
-      ? 'Latest Discounts'
-      : null,
-  ].filter(Boolean) as string[]
-
-  const hasActiveFilters =
-    !!activeQuery.trim() ||
-    priceFilter !== 'all' ||
-    sort !== 'all'
-
-  const pageList = useMemo(() => buildPageList(safePage, totalPages), [safePage, totalPages])
+  const pageLabel =
+    data.totalPages > 1
+      ? `Page ${data.page} of ${data.totalPages}`
+      : 'Page 1 of 1'
 
   return (
-    <main className="min-h-screen bg-zinc-950 text-zinc-100">
-      <section className="mx-auto max-w-7xl px-4 py-6 sm:px-6 sm:py-8">
-        <div className="mb-5 flex flex-col gap-4">
-          <div className="flex flex-col gap-3 lg:flex-row">
-            <div className="relative flex-1">
-              <input
-                value={queryInput}
-                onChange={(e) => setQueryInput(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter') {
-                    applyQuery()
-                  }
-                }}
-                placeholder="Search PC games"
-                className="w-full rounded-2xl border border-zinc-800 bg-zinc-900 px-4 py-3 text-sm text-zinc-100 outline-none placeholder:text-zinc-500"
-              />
-
-              {queryInput.trim().length > 0 ? (
-                <button
-                  type="button"
-                  onClick={clearQuery}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 rounded-lg px-2 py-1 text-xs text-zinc-400 transition hover:bg-zinc-800 hover:text-zinc-100"
-                >
-                  Clear
-                </button>
-              ) : null}
-            </div>
-
-            <button
-              type="button"
-              onClick={applyQuery}
-              className="rounded-2xl bg-white px-5 py-3 text-sm font-semibold text-black transition hover:opacity-90"
-            >
-              Search
-            </button>
-          </div>
-
-          <div className="flex flex-wrap gap-2">
-            {SORT_FILTERS.map((item) => (
-              <FilterChip
-                key={item.value}
-                label={item.label}
-                active={sort === item.value}
-                onClick={() => applySort(item.value)}
-              />
-            ))}
-          </div>
-
-          <div className="flex flex-wrap gap-2">
-            {PRICE_FILTERS.map((price) => (
-              <FilterChip
-                key={price.value}
-                label={price.label}
-                active={priceFilter === price.value}
-                onClick={() => applyPrice(price.value)}
-              />
-            ))}
-          </div>
+    <div className="mx-auto w-full max-w-7xl px-4 py-6 md:px-6">
+      <div className="mb-6">
+        <div className="flex flex-col gap-3 md:flex-row">
+          <input
+            value={inputValue}
+            onChange={(e) => setInputValue(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') {
+                handleSearchSubmit()
+              }
+            }}
+            placeholder="Search PC games"
+            className="h-12 flex-1 rounded-2xl border border-white/10 bg-white/[0.03] px-4 text-white outline-none ring-0 placeholder:text-white/40"
+          />
+          <button
+            onClick={handleSearchSubmit}
+            className="h-12 rounded-2xl bg-white px-6 font-semibold text-black"
+          >
+            Search
+          </button>
         </div>
+      </div>
 
-        {hasActiveFilters ? (
-          <div className="mb-5 flex flex-wrap items-center gap-2">
-            {activeFilterLabels.map((label) => (
-              <span
-                key={label}
-                className="rounded-full border border-zinc-700 bg-zinc-900 px-3 py-1 text-xs text-zinc-300"
-              >
-                {label}
-              </span>
-            ))}
-
+      <div className="mb-4 flex flex-wrap gap-2">
+        {SORT_OPTIONS.map((option) => {
+          const active = currentSort === option.key
+          return (
             <button
-              type="button"
-              onClick={resetFilters}
-              className="rounded-full border border-emerald-500/30 bg-emerald-500/10 px-3 py-1 text-xs font-medium text-emerald-300 transition hover:bg-emerald-500/20"
+              key={option.key}
+              onClick={() => updateUrl({ page: 1, sort: option.key })}
+              className={[
+                'rounded-xl border px-4 py-2 text-sm transition',
+                active
+                  ? 'border-emerald-500/60 bg-emerald-500/15 text-emerald-300'
+                  : 'border-white/10 bg-white/[0.03] text-white/85 hover:bg-white/[0.06]',
+              ].join(' ')}
             >
-              Reset all
+              {option.label}
             </button>
-          </div>
-        ) : null}
+          )
+        })}
+      </div>
 
-        <div className="mb-5 flex items-center justify-between gap-3">
-          <div className="text-sm text-zinc-400">
-            {loading ? 'Loading...' : `${totalItems.toLocaleString()} games`}
-          </div>
+      <div className="mb-4 flex flex-wrap gap-2">
+        {PRICE_OPTIONS.map((option) => {
+          const active = currentPrice === option.key
+          return (
+            <button
+              key={option.label}
+              onClick={() => updateUrl({ page: 1, price: option.key })}
+              className={[
+                'rounded-xl border px-4 py-2 text-sm transition',
+                active
+                  ? 'border-emerald-500/60 bg-emerald-500/15 text-emerald-300'
+                  : 'border-white/10 bg-white/[0.03] text-white/85 hover:bg-white/[0.06]',
+              ].join(' ')}
+            >
+              {option.label}
+            </button>
+          )
+        })}
 
-          {trackMessage ? (
-            <div className="text-sm text-emerald-300">{trackMessage}</div>
-          ) : null}
-        </div>
-
-        {loading ? (
-          <div className="grid grid-cols-2 gap-4 md:grid-cols-3 xl:grid-cols-5 2xl:grid-cols-6">
-            {Array.from({ length: 12 }).map((_, index) => (
-              <div
-                key={index}
-                className="overflow-hidden rounded-3xl border border-zinc-800 bg-zinc-900"
-              >
-                <div className="h-32 w-full animate-pulse bg-zinc-800 sm:h-36" />
-                <div className="p-4">
-                  <div className="h-4 animate-pulse rounded bg-zinc-800" />
-                  <div className="mt-3 h-9 animate-pulse rounded bg-zinc-800" />
-                  <div className="mt-3 h-8 animate-pulse rounded bg-zinc-800" />
-                </div>
-              </div>
-            ))}
-          </div>
-        ) : paginatedItems.length === 0 ? (
-          <div className="rounded-3xl border border-zinc-800 bg-zinc-900 p-8 text-sm text-zinc-400">
-            No games found for the current filters.
-          </div>
-        ) : (
-          <>
-            <div className="grid grid-cols-2 gap-4 md:grid-cols-3 xl:grid-cols-5 2xl:grid-cols-6">
-              {paginatedItems.map((item) => (
-                <SteamCard
-                  key={`${item.steamAppID}-${item.title}`}
-                  item={item}
-                  userId={userId}
-                  trackedIds={trackedIds}
-                  setTrackedIds={setTrackedIds}
-                  setTrackMessage={setTrackMessage}
-                />
-              ))}
-            </div>
-
-            {totalPages > 1 ? (
-              <div className="mt-8 flex flex-wrap items-center justify-center gap-2">
-                <button
-                  type="button"
-                  disabled={safePage <= 1}
-                  onClick={() => router.push(buildUrl(safePage - 1))}
-                  className="rounded-xl border border-zinc-800 bg-zinc-900 px-4 py-2 text-sm text-zinc-200 transition hover:bg-zinc-800 disabled:cursor-not-allowed disabled:opacity-40"
-                >
-                  Prev
-                </button>
-
-                {pageList.map((pageNumber, index) => {
-                  const previous = pageList[index - 1]
-                  const showDots = previous && pageNumber - previous > 1
-
-                  return (
-                    <div key={pageNumber} className="flex items-center gap-2">
-                      {showDots ? (
-                        <span className="px-1 text-sm text-zinc-500">…</span>
-                      ) : null}
-
-                      <button
-                        type="button"
-                        onClick={() => router.push(buildUrl(pageNumber))}
-                        className={`rounded-xl px-4 py-2 text-sm transition ${
-                          pageNumber === safePage
-                            ? 'bg-white text-black'
-                            : 'border border-zinc-800 bg-zinc-900 text-zinc-200 hover:bg-zinc-800'
-                        }`}
-                      >
-                        {pageNumber}
-                      </button>
-                    </div>
-                  )
-                })}
-
-                <button
-                  type="button"
-                  disabled={safePage >= totalPages}
-                  onClick={() => router.push(buildUrl(safePage + 1))}
-                  className="rounded-xl border border-zinc-800 bg-zinc-900 px-4 py-2 text-sm text-zinc-200 transition hover:bg-zinc-800 disabled:cursor-not-allowed disabled:opacity-40"
-                >
-                  Next
-                </button>
-              </div>
-            ) : null}
-          </>
+        {(currentQuery || currentPrice || currentSort !== 'all') && (
+          <button
+            onClick={handleResetAll}
+            className="rounded-xl border border-emerald-500/60 bg-emerald-500/15 px-4 py-2 text-sm text-emerald-300"
+          >
+            Reset all
+          </button>
         )}
-      </section>
-    </main>
+      </div>
+
+      {(currentQuery || currentPrice) && (
+        <div className="mb-4 flex flex-wrap items-center gap-2 text-sm text-white/70">
+          {currentQuery && (
+            <span className="rounded-full border border-white/10 bg-white/[0.03] px-3 py-1">
+              Search: "{currentQuery}"
+            </span>
+          )}
+          {currentPrice && (
+            <span className="rounded-full border border-white/10 bg-white/[0.03] px-3 py-1">
+              Price filter: {currentPrice}
+            </span>
+          )}
+        </div>
+      )}
+
+      <div className="mb-4 flex items-center justify-between gap-4">
+        <div className="text-sm text-white/70">
+          {loading ? 'Loading…' : `${data.totalItems.toLocaleString()} games`}
+        </div>
+
+        <div className="text-sm text-white/60">{pageLabel}</div>
+      </div>
+
+      {error && (
+        <div className="mb-6 rounded-2xl border border-red-500/30 bg-red-500/10 p-4 text-sm text-red-200">
+          {error}
+        </div>
+      )}
+
+      <div className="grid grid-cols-2 gap-4 md:grid-cols-3 xl:grid-cols-6">
+        {data.items.map((item) => (
+          <div
+            key={item.id}
+            className="overflow-hidden rounded-3xl border border-white/10 bg-white/[0.03]"
+          >
+            <Link href={gameHref(item)} className="block">
+              <div className="aspect-[16/9] w-full overflow-hidden bg-white/[0.04]">
+                {item.thumb ? (
+                  <img
+                    src={item.thumb}
+                    alt={item.title}
+                    className="h-full w-full object-cover"
+                  />
+                ) : (
+                  <div className="flex h-full w-full items-center justify-center text-xs text-white/40">
+                    No image
+                  </div>
+                )}
+              </div>
+            </Link>
+
+            <div className="p-3">
+              <div className="mb-2 flex items-start justify-between gap-2">
+                <div className="min-w-0">
+                  <div className="line-clamp-2 text-sm font-semibold text-white">
+                    {item.title}
+                  </div>
+                </div>
+
+                {typeof item.metacritic === 'number' && item.metacritic > 0 && (
+                  <span className="shrink-0 rounded-md border border-amber-500/40 bg-amber-500/10 px-2 py-0.5 text-[10px] font-semibold text-amber-300">
+                    MC {item.metacritic}
+                  </span>
+                )}
+              </div>
+
+              <div className="mb-2 flex items-center gap-2">
+                {item.savings && Number(item.savings) > 0 && (
+                  <span className="rounded-full border border-emerald-500/30 bg-emerald-500/10 px-2 py-0.5 text-[11px] font-medium text-emerald-300">
+                    -{item.savings}%
+                  </span>
+                )}
+                {item.isFreeToPlay && (
+                  <span className="rounded-full border border-sky-500/30 bg-sky-500/10 px-2 py-0.5 text-[11px] font-medium text-sky-300">
+                    Free to play
+                  </span>
+                )}
+              </div>
+
+              <div className="mb-3 rounded-2xl bg-black/40 p-3">
+                <div className="text-2xl font-bold text-emerald-400">
+                  {moneyLabel(item)}
+                </div>
+                {originalPriceLabel(item) && (
+                  <div className="text-sm text-white/45 line-through">
+                    {originalPriceLabel(item)}
+                  </div>
+                )}
+              </div>
+
+              <div className="flex flex-col gap-2">
+                <Link
+                  href={gameHref(item)}
+                  className="rounded-2xl bg-white px-4 py-2 text-center text-sm font-semibold text-black"
+                >
+                  Open game page
+                </Link>
+              </div>
+            </div>
+          </div>
+        ))}
+      </div>
+
+      {!loading && data.items.length === 0 && !error && (
+        <div className="mt-8 rounded-2xl border border-white/10 bg-white/[0.03] p-6 text-center text-white/70">
+          No games found.
+        </div>
+      )}
+
+      <div className="mt-8 flex items-center justify-center gap-3">
+        <button
+          disabled={currentPage <= 1}
+          onClick={() => updateUrl({ page: currentPage - 1 })}
+          className="rounded-2xl border border-white/10 bg-white/[0.03] px-4 py-2 text-sm text-white disabled:cursor-not-allowed disabled:opacity-40"
+        >
+          Previous
+        </button>
+
+        <span className="text-sm text-white/70">{pageLabel}</span>
+
+        <button
+          disabled={!data.hasNextPage}
+          onClick={() => updateUrl({ page: currentPage + 1 })}
+          className="rounded-2xl border border-white/10 bg-white/[0.03] px-4 py-2 text-sm text-white disabled:cursor-not-allowed disabled:opacity-40"
+        >
+          Next
+        </button>
+      </div>
+    </div>
   )
 }

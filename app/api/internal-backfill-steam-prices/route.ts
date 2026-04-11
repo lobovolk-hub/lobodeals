@@ -42,6 +42,10 @@ type VisibleCatalogRow = {
   title?: string | null
   slug?: string | null
   price_last_synced_at?: string | null
+  has_active_offer?: boolean | null
+  discount_percent?: number | null
+  sale_price?: number | null
+  normal_price?: number | null
 }
 
 type OfferRow = {
@@ -64,6 +68,7 @@ type BackfillScope = 'visible' | 'full_games'
 type CandidateScoreRow = PcGameRow & {
   current_sync_at?: string | null
   priority: number
+  lane: 'discount_hot' | 'priced_warm' | 'fallback_cold'
 }
 
 const REGION_CODE = 'us'
@@ -126,19 +131,87 @@ function compareSyncAsc(a?: string | null, b?: string | null) {
   return aMs - bMs
 }
 
-function getVisiblePriority(syncAt?: string | null) {
+function getAgeHours(syncAt?: string | null) {
   const ms = parseDateMs(syncAt)
 
-  if (!ms) return 0
+  if (!ms) return Number.POSITIVE_INFINITY
 
-  const ageHours = (Date.now() - ms) / (1000 * 60 * 60)
+  return (Date.now() - ms) / (1000 * 60 * 60)
+}
 
-  if (ageHours >= 72) return 1
-  if (ageHours >= 24) return 2
-  if (ageHours >= 6) return 3
-  if (ageHours >= 1) return 4
+function hasKnownPrice(
+  salePrice?: number | null,
+  normalPrice?: number | null
+) {
+  const sale = Number(salePrice ?? NaN)
+  const normal = Number(normalPrice ?? NaN)
+
+  return (
+    (Number.isFinite(sale) && sale > 0) || (Number.isFinite(normal) && normal > 0)
+  )
+}
+
+function getVisiblePriority(params: {
+  syncAt?: string | null
+  discountPercent?: number | null
+  salePrice?: number | null
+  normalPrice?: number | null
+  hasActiveOffer?: boolean | null
+}) {
+  const ageHours = getAgeHours(params.syncAt)
+  const discountPercent = Number(params.discountPercent ?? 0)
+  const knownPrice = hasKnownPrice(params.salePrice, params.normalPrice)
+  const hasActiveOffer = Boolean(params.hasActiveOffer)
+
+  // Hot lane: visible discounted rows first.
+  if (discountPercent > 0 && hasActiveOffer) {
+    if (ageHours >= 48) return 0
+    if (ageHours >= 24) return 1
+    if (ageHours >= 12) return 2
+    if (ageHours >= 6) return 3
+    if (ageHours >= 1) return 4
+    return 99
+  }
+
+  // Warm lane: visible rows with known price but no discount.
+  if (knownPrice && hasActiveOffer) {
+    if (ageHours >= 120) return 10
+    if (ageHours >= 72) return 11
+    if (ageHours >= 48) return 12
+    if (ageHours >= 24) return 13
+    if (ageHours >= 6) return 14
+    return 99
+  }
+
+  // Cold lane: available rows with weak/empty pricing state.
+  if (ageHours >= 168) return 20
+  if (ageHours >= 120) return 21
+  if (ageHours >= 72) return 22
+  if (ageHours >= 24) return 23
+  if (ageHours >= 6) return 24
 
   return 99
+}
+
+function getVisibleLane(params: {
+  discountPercent?: number | null
+  salePrice?: number | null
+  normalPrice?: number | null
+  hasActiveOffer?: boolean | null
+}): CandidateScoreRow['lane'] {
+  const discountPercent = Number(params.discountPercent ?? 0)
+  const knownPrice = hasKnownPrice(params.salePrice, params.normalPrice)
+  const hasActiveOffer = Boolean(params.hasActiveOffer)
+
+  if (discountPercent > 0 && hasActiveOffer) {
+    return 'discount_hot'
+  }
+
+  if (knownPrice && hasActiveOffer) {
+    return 'priced_warm'
+  }
+
+  return 'fallback_cold'
 }
 
 function getFullGamesPriority(syncAt?: string | null) {
@@ -295,49 +368,119 @@ async function loadOfferMap(
   return offers
 }
 
+async function loadVisibleRowsByQuery(
+  supabase: ReturnType<typeof getServiceSupabase>,
+  limit: number,
+  mode: 'discount_hot' | 'priced_warm' | 'fallback_cold'
+) {
+  let query: any = supabase
+    .from('pc_public_catalog_cache')
+    .select(
+      'pc_game_id, steam_app_id, title, slug, price_last_synced_at, has_active_offer, discount_percent, sale_price, normal_price'
+    )
+    .not('steam_app_id', 'is', null)
+    .order('price_last_synced_at', { ascending: true, nullsFirst: true })
+    .limit(limit)
+
+  if (mode === 'discount_hot') {
+    query = query.eq('has_active_offer', true).gt('discount_percent', 0)
+  } else if (mode === 'priced_warm') {
+    query = query
+      .eq('has_active_offer', true)
+      .eq('discount_percent', 0)
+      .or('sale_price.not.is.null,normal_price.not.is.null')
+  }
+
+  const { data, error } = await query
+
+  if (error) {
+    throw new Error(
+      `loadVisibleRowsByQuery pc_public_catalog_cache failed: ${error.message}`
+    )
+  }
+
+  return Array.isArray(data) ? (data as VisibleCatalogRow[]) : []
+}
+
 async function loadVisibleCandidates(
   supabase: ReturnType<typeof getServiceSupabase>,
   desiredCount: number
 ) {
-  const fetchCount = Math.min(Math.max(desiredCount * 12, 1000), 5000)
+  const discountFetchCount = Math.min(
+    Math.max(desiredCount * 10, 500),
+    2500
+  )
+  const pricedFetchCount = Math.min(
+    Math.max(desiredCount * 8, 500),
+    2000
+  )
+  const fallbackFetchCount = Math.min(
+    Math.max(desiredCount * 8, 500),
+    2000
+  )
 
-  const { data, error } = await supabase
-    .from('pc_public_catalog_cache')
-    .select('pc_game_id, steam_app_id, title, slug, price_last_synced_at')
-    .not('steam_app_id', 'is', null)
-    .order('price_last_synced_at', { ascending: true, nullsFirst: true })
-    .limit(fetchCount)
+  const [discountRows, pricedRows, fallbackRows] = await Promise.all([
+    loadVisibleRowsByQuery(supabase, discountFetchCount, 'discount_hot'),
+    loadVisibleRowsByQuery(supabase, pricedFetchCount, 'priced_warm'),
+    loadVisibleRowsByQuery(supabase, fallbackFetchCount, 'fallback_cold'),
+  ])
 
-  if (error) {
-    throw new Error(
-      `loadVisibleCandidates pc_public_catalog_cache failed: ${error.message}`
-    )
-  }
-
-  const rows = Array.isArray(data) ? (data as VisibleCatalogRow[]) : []
-  const gameIds = rows
-    .map((row) => String(row.pc_game_id || '').trim())
-    .filter(Boolean)
-
-  const offerMap = await loadOfferMap(supabase, gameIds)
-  const scored: CandidateScoreRow[] = []
+  const mergedRows = [...discountRows, ...pricedRows, ...fallbackRows]
+  const uniqueRows: VisibleCatalogRow[] = []
   const seenIds = new Set<string>()
 
-  for (const row of rows) {
+  for (const row of mergedRows) {
     const gameId = String(row.pc_game_id || '').trim()
     const steamAppID = String(row.steam_app_id || '').trim()
 
     if (!gameId || !steamAppID) continue
     if (seenIds.has(gameId)) continue
+
     seenIds.add(gameId)
+    uniqueRows.push(row)
+  }
+
+  const gameIds = uniqueRows
+    .map((row) => String(row.pc_game_id || '').trim())
+    .filter(Boolean)
+
+  const offerMap = await loadOfferMap(supabase, gameIds)
+  const scored: CandidateScoreRow[] = []
+
+  for (const row of uniqueRows) {
+    const gameId = String(row.pc_game_id || '').trim()
+    const steamAppID = String(row.steam_app_id || '').trim()
+
+    if (!gameId || !steamAppID) continue
 
     const offer = offerMap.get(gameId)
+
     const syncAt = offer?.price_last_synced_at || row.price_last_synced_at || null
-    const priority = getVisiblePriority(syncAt)
+    const discountPercent =
+      offer?.discount_percent ?? row.discount_percent ?? 0
+    const salePrice = offer?.sale_price ?? row.sale_price ?? null
+    const normalPrice = offer?.normal_price ?? row.normal_price ?? null
+    const hasActiveOffer =
+      offer?.is_available ?? row.has_active_offer ?? false
+
+    const priority = getVisiblePriority({
+      syncAt,
+      discountPercent,
+      salePrice,
+      normalPrice,
+      hasActiveOffer,
+    })
 
     if (priority >= 99) {
       continue
     }
+
+    const lane = getVisibleLane({
+      discountPercent,
+      salePrice,
+      normalPrice,
+      hasActiveOffer,
+    })
 
     scored.push({
       id: gameId,
@@ -348,11 +491,22 @@ async function loadVisibleCandidates(
       steam_type: 'game',
       current_sync_at: syncAt,
       priority,
+      lane,
     })
   }
 
   scored.sort((a, b) => {
     if (a.priority !== b.priority) return a.priority - b.priority
+
+    const laneOrder = {
+      discount_hot: 0,
+      priced_warm: 1,
+      fallback_cold: 2,
+    } as const
+
+    if (laneOrder[a.lane] !== laneOrder[b.lane]) {
+      return laneOrder[a.lane] - laneOrder[b.lane]
+    }
 
     const syncCompare = compareSyncAsc(
       a.current_sync_at || null,
@@ -377,7 +531,11 @@ async function loadFullGameCandidates(
   const seenIds = new Set<string>()
   const scored: CandidateScoreRow[] = []
 
-  for (let page = 0; page < maxScanPages && scored.length < desiredCount * 4; page += 1) {
+  for (
+    let page = 0;
+    page < maxScanPages && scored.length < desiredCount * 4;
+    page += 1
+  ) {
     const from = page * pageSize
     const to = from + pageSize - 1
 
@@ -424,6 +582,7 @@ async function loadFullGameCandidates(
         ...game,
         current_sync_at: syncAt,
         priority,
+        lane: 'fallback_cold',
       })
     }
 

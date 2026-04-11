@@ -375,9 +375,11 @@ export default function PcPageClient(props: PcPageClientProps) {
             <div className="p-3">
               <div className="mb-2 flex items-start justify-between gap-2">
                 <div className="min-w-0">
-                  <div className="line-clamp-2 text-sm font-semibold text-white">
-                    {item.title}
-                  </div>
+                  <Link href={gameHref(item)} className="block">
+                    <div className="line-clamp-2 text-sm font-semibold text-white transition hover:text-emerald-300">
+                      {item.title}
+                    </div>
+                  </Link>
                 </div>
 
                 {typeof item.metacritic === 'number' && item.metacritic > 0 && (
@@ -400,7 +402,7 @@ export default function PcPageClient(props: PcPageClientProps) {
                 )}
               </div>
 
-              <div className="mb-3 rounded-2xl bg-black/40 p-3">
+              <div className="rounded-2xl bg-black/40 p-3">
                 <div className="text-2xl font-bold text-emerald-400">
                   {moneyLabel(item)}
                 </div>
@@ -409,15 +411,6 @@ export default function PcPageClient(props: PcPageClientProps) {
                     {originalPriceLabel(item)}
                   </div>
                 )}
-              </div>
-
-              <div className="flex flex-col gap-2">
-                <Link
-                  href={gameHref(item)}
-                  className="rounded-2xl bg-white px-4 py-2 text-center text-sm font-semibold text-black"
-                >
-                  Open game page
-                </Link>
               </div>
             </div>
           </div>

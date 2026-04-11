@@ -63,6 +63,15 @@ function normalizeSteamTitle(value: string) {
     .trim()
 }
 
+function getSafeTypeFilter(value: string) {
+  const normalized = String(value || 'all').trim().toLowerCase()
+
+  if (normalized === 'game') return 'game'
+  if (normalized === 'dlc') return 'dlc'
+  if (normalized === 'software') return 'software'
+  return 'all'
+}
+
 function formatMoney(value?: number | string | null) {
   const amount = Number(value || 0)
 
@@ -109,24 +118,10 @@ function mapRowToItem(row: CatalogPublicRow): CatalogBrowseItem {
 function applyCommonFilters(
   query: any,
   normalizedQuery: string,
-  typeFilter: string,
-  storeFilter: string,
-  priceFilter: string
+  typeFilter: string
 ) {
   if (typeFilter !== 'all') {
     query = query.eq('steam_type', typeFilter)
-  }
-
-  if (storeFilter !== 'all') {
-    query = query.eq('store_id', storeFilter)
-  }
-
-  if (priceFilter === 'under-5') {
-    query = query.gt('sale_price', 0).lt('sale_price', 5)
-  } else if (priceFilter === 'under-10') {
-    query = query.gt('sale_price', 0).lt('sale_price', 10)
-  } else if (priceFilter === 'over-80') {
-    query = query.gte('discount_percent', 80)
   }
 
   if (normalizedQuery) {
@@ -136,55 +131,10 @@ function applyCommonFilters(
   return query
 }
 
-function applySort(query: any, sort: string) {
-  if (sort === 'biggest-discount') {
-    return query
-      .order('discount_percent', { ascending: false })
-      .order('sale_price', { ascending: true, nullsFirst: false })
-      .order('sort_latest', { ascending: false })
-  }
-
-  if (sort === 'latest') {
-    return query
-      .order('sort_latest', { ascending: false })
-      .order('discount_percent', { ascending: false })
-      .order('title', { ascending: true })
-  }
-
-  if (sort === 'latest-discounts') {
-    return query
-      .gt('discount_percent', 0)
-      .order('price_last_synced_at', { ascending: false, nullsFirst: false })
-      .order('discount_percent', { ascending: false })
-      .order('sort_latest', { ascending: false })
-  }
-
-  if (sort === 'best') {
-    return query
-      .order('has_active_offer', { ascending: false })
-      .order('discount_percent', { ascending: false })
-      .order('sale_price', { ascending: true, nullsFirst: false })
-      .order('sort_latest', { ascending: false })
-  }
-
+function applyCatalogDefaultSort(query: any) {
   return query
-    .order('has_active_offer', { ascending: false })
-    .order('discount_percent', { ascending: false })
+    .order('steam_type', { ascending: true })
     .order('title', { ascending: true })
-}
-
-function isBaseBrowseView(
-  normalizedQuery: string,
-  typeFilter: string,
-  storeFilter: string,
-  priceFilter: string
-) {
-  return (
-    !normalizedQuery &&
-    typeFilter === 'all' &&
-    storeFilter === 'all' &&
-    priceFilter === 'all'
-  )
 }
 
 async function getCachedBaseTotal(supabase: any) {
@@ -201,15 +151,6 @@ async function getCachedBaseTotal(supabase: any) {
   return Number(data?.total_items || 0)
 }
 
-function getSafeTypeFilter(value: string) {
-  const normalized = String(value || 'all').trim().toLowerCase()
-
-  if (normalized === 'game') return 'game'
-  if (normalized === 'dlc') return 'dlc'
-  if (normalized === 'software') return 'software'
-  return 'all'
-}
-
 export async function GET(request: Request) {
   try {
     const { searchParams } = new URL(request.url)
@@ -219,42 +160,23 @@ export async function GET(request: Request) {
       1,
       Math.min(60, Number(searchParams.get('pageSize') || '36'))
     )
-    const query = searchParams.get('q') || ''
-    const sort = searchParams.get('sort') || 'all'
-    const typeFilter = getSafeTypeFilter(searchParams.get('type') || 'all')
-    const storeFilter = searchParams.get('store') || 'all'
-    const priceFilter = searchParams.get('price') || 'all'
 
+    const query = searchParams.get('q') || ''
+    const typeFilter = getSafeTypeFilter(searchParams.get('type') || 'all')
     const normalizedQuery = normalizeSteamTitle(query)
-    const baseView = isBaseBrowseView(
-      normalizedQuery,
-      typeFilter,
-      storeFilter,
-      priceFilter
-    )
 
     const supabase = getServiceSupabase()
 
     let totalItems = 0
 
-    if (baseView) {
+    if (!normalizedQuery && typeFilter === 'all') {
       totalItems = await getCachedBaseTotal(supabase)
     } else {
-      let countQuery = supabase
+      let countQuery: any = supabase
         .from('catalog_public_cache')
         .select('pc_game_id', { count: 'exact', head: true })
 
-      countQuery = applyCommonFilters(
-        countQuery,
-        normalizedQuery,
-        typeFilter,
-        storeFilter,
-        priceFilter
-      )
-
-      if (sort === 'latest-discounts') {
-        countQuery = countQuery.gt('discount_percent', 0)
-      }
+      countQuery = applyCommonFilters(countQuery, normalizedQuery, typeFilter)
 
       const { count, error: countError } = await countQuery
 
@@ -269,21 +191,29 @@ export async function GET(request: Request) {
     const safePage = totalItems > 0 ? Math.min(requestedPage, totalPages) : 1
     const safeFrom = (safePage - 1) * pageSize
 
-    let dataQuery = supabase
-      .from('catalog_public_cache')
-      .select(
-        'pc_game_id, steam_app_id, steam_type, slug, title, thumb, sale_price, normal_price, discount_percent, store_id, url, is_free_to_play, has_active_offer, is_catalog_ready, sort_latest'
-      )
-
-    dataQuery = applyCommonFilters(
-      dataQuery,
-      normalizedQuery,
-      typeFilter,
-      storeFilter,
-      priceFilter
+    let dataQuery: any = supabase.from('catalog_public_cache').select(
+      [
+        'pc_game_id',
+        'steam_app_id',
+        'steam_type',
+        'slug',
+        'title',
+        'thumb',
+        'sale_price',
+        'normal_price',
+        'discount_percent',
+        'store_id',
+        'url',
+        'is_free_to_play',
+        'has_active_offer',
+        'is_catalog_ready',
+        'sort_latest',
+      ].join(', ')
     )
 
-    dataQuery = applySort(dataQuery, sort).range(safeFrom, safeFrom + pageSize - 1)
+    dataQuery = applyCommonFilters(dataQuery, normalizedQuery, typeFilter)
+    dataQuery = applyCatalogDefaultSort(dataQuery)
+    dataQuery = dataQuery.range(safeFrom, safeFrom + pageSize - 1)
 
     const { data, error: dataError } = await dataQuery
 
@@ -303,6 +233,7 @@ export async function GET(request: Request) {
       hasNextPage: safePage < totalPages,
       mode: 'cache',
       source: 'catalog_public_cache',
+      appliedType: typeFilter,
     })
   } catch (error) {
     console.error('catalog browse page error', error)

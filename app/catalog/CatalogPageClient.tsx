@@ -33,6 +33,7 @@ type CatalogBrowseResponse = {
   hasNextPage: boolean
   mode?: 'cache' | 'error'
   source?: string
+  appliedType?: string
 }
 
 const PAGE_SIZE = 36
@@ -41,17 +42,6 @@ function normalizePage(value: string | null) {
   const parsed = Number(value || '1')
   if (!Number.isFinite(parsed) || parsed < 1) return 1
   return Math.floor(parsed)
-}
-
-function normalizeSort(value: string | null) {
-  const safe = String(value || 'best').trim().toLowerCase()
-
-  if (safe === 'best') return 'best'
-  if (safe === 'latest') return 'latest'
-  if (safe === 'biggest-discount') return 'biggest-discount'
-  if (safe === 'latest-discounts') return 'latest-discounts'
-
-  return 'best'
 }
 
 function normalizeType(value: string | null) {
@@ -125,12 +115,12 @@ function getCardDisplayState(item: {
   const priceLabel = isUpcoming
     ? 'TBA'
     : hasSalePrice
-    ? `$${item.salePrice}`
-    : hasNormalPrice
-    ? `$${item.normalPrice}`
-    : item.isFreeToPlay
-    ? 'Free'
-    : 'No price'
+      ? `$${item.salePrice}`
+      : hasNormalPrice
+        ? `$${item.normalPrice}`
+        : item.isFreeToPlay
+          ? 'Free'
+          : 'No price'
 
   return {
     isUpcoming,
@@ -161,7 +151,6 @@ export default function CatalogPageClient() {
   const searchParams = useSearchParams()
 
   const page = normalizePage(searchParams.get('page'))
-  const sort = normalizeSort(searchParams.get('sort'))
   const type = normalizeType(searchParams.get('type'))
   const activeQuery = (searchParams.get('q') || '').trim()
 
@@ -193,7 +182,6 @@ export default function CatalogPageClient() {
         const params = new URLSearchParams()
         params.set('page', String(page))
         params.set('pageSize', String(PAGE_SIZE))
-        params.set('sort', sort)
         params.set('type', type)
 
         if (activeQuery) {
@@ -226,7 +214,7 @@ export default function CatalogPageClient() {
     loadBrowse()
 
     return () => controller.abort()
-  }, [page, sort, type, activeQuery])
+  }, [page, type, activeQuery])
 
   useEffect(() => {
     const q = queryInput.trim()
@@ -321,15 +309,6 @@ export default function CatalogPageClient() {
   const changeType = (nextType: 'all' | 'game' | 'dlc' | 'software') => {
     updateUrl({
       type: nextType === 'all' ? null : nextType,
-      page: '1',
-    })
-  }
-
-  const changeSort = (
-    nextSort: 'best' | 'latest' | 'biggest-discount' | 'latest-discounts'
-  ) => {
-    updateUrl({
-      sort: nextSort === 'best' ? null : nextSort,
       page: '1',
     })
   }
@@ -478,118 +457,65 @@ export default function CatalogPageClient() {
           ) : null}
         </div>
 
-        <div className="mb-5 flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-          <div className="flex flex-wrap gap-2">
-            <button
-              type="button"
-              onClick={() => changeType('all')}
-              className={`rounded-xl px-3 py-2 text-sm transition ${
-                type === 'all'
-                  ? 'border border-emerald-500/30 bg-emerald-500/10 text-emerald-300'
-                  : 'border border-zinc-800 bg-zinc-900 text-zinc-200 hover:bg-zinc-800'
-              }`}
-            >
-              All
-            </button>
+        <div className="mb-5 flex flex-wrap gap-2">
+          <button
+            type="button"
+            onClick={() => changeType('all')}
+            className={`rounded-xl px-3 py-2 text-sm transition ${
+              type === 'all'
+                ? 'border border-emerald-500/30 bg-emerald-500/10 text-emerald-300'
+                : 'border border-zinc-800 bg-zinc-900 text-zinc-200 hover:bg-zinc-800'
+            }`}
+          >
+            All
+          </button>
 
-            <button
-              type="button"
-              onClick={() => changeType('game')}
-              className={`rounded-xl px-3 py-2 text-sm transition ${
-                type === 'game'
-                  ? 'border border-emerald-500/30 bg-emerald-500/10 text-emerald-300'
-                  : 'border border-zinc-800 bg-zinc-900 text-zinc-200 hover:bg-zinc-800'
-              }`}
-            >
-              Games
-            </button>
+          <button
+            type="button"
+            onClick={() => changeType('game')}
+            className={`rounded-xl px-3 py-2 text-sm transition ${
+              type === 'game'
+                ? 'border border-emerald-500/30 bg-emerald-500/10 text-emerald-300'
+                : 'border border-zinc-800 bg-zinc-900 text-zinc-200 hover:bg-zinc-800'
+            }`}
+          >
+            Games
+          </button>
 
-            <button
-              type="button"
-              onClick={() => changeType('dlc')}
-              className={`rounded-xl px-3 py-2 text-sm transition ${
-                type === 'dlc'
-                  ? 'border border-amber-500/30 bg-amber-500/10 text-amber-300'
-                  : 'border border-zinc-800 bg-zinc-900 text-zinc-200 hover:bg-zinc-800'
-              }`}
-            >
-              DLC
-            </button>
+          <button
+            type="button"
+            onClick={() => changeType('dlc')}
+            className={`rounded-xl px-3 py-2 text-sm transition ${
+              type === 'dlc'
+                ? 'border border-amber-500/30 bg-amber-500/10 text-amber-300'
+                : 'border border-zinc-800 bg-zinc-900 text-zinc-200 hover:bg-zinc-800'
+            }`}
+          >
+            DLC
+          </button>
 
-            <button
-              type="button"
-              onClick={() => changeType('software')}
-              className={`rounded-xl px-3 py-2 text-sm transition ${
-                type === 'software'
-                  ? 'border border-sky-500/30 bg-sky-500/10 text-sky-300'
-                  : 'border border-zinc-800 bg-zinc-900 text-zinc-200 hover:bg-zinc-800'
-              }`}
-            >
-              Software
-            </button>
-          </div>
-
-          <div className="flex flex-wrap gap-2">
-            <button
-              type="button"
-              onClick={() => changeSort('best')}
-              className={`rounded-xl px-3 py-2 text-sm transition ${
-                sort === 'best'
-                  ? 'border border-white/20 bg-white text-black'
-                  : 'border border-zinc-800 bg-zinc-900 text-zinc-200 hover:bg-zinc-800'
-              }`}
-            >
-              Best
-            </button>
-
-            <button
-              type="button"
-              onClick={() => changeSort('latest')}
-              className={`rounded-xl px-3 py-2 text-sm transition ${
-                sort === 'latest'
-                  ? 'border border-white/20 bg-white text-black'
-                  : 'border border-zinc-800 bg-zinc-900 text-zinc-200 hover:bg-zinc-800'
-              }`}
-            >
-              Latest
-            </button>
-
-            <button
-              type="button"
-              onClick={() => changeSort('biggest-discount')}
-              className={`rounded-xl px-3 py-2 text-sm transition ${
-                sort === 'biggest-discount'
-                  ? 'border border-white/20 bg-white text-black'
-                  : 'border border-zinc-800 bg-zinc-900 text-zinc-200 hover:bg-zinc-800'
-              }`}
-            >
-              Biggest Discount
-            </button>
-
-            <button
-              type="button"
-              onClick={() => changeSort('latest-discounts')}
-              className={`rounded-xl px-3 py-2 text-sm transition ${
-                sort === 'latest-discounts'
-                  ? 'border border-white/20 bg-white text-black'
-                  : 'border border-zinc-800 bg-zinc-900 text-zinc-200 hover:bg-zinc-800'
-              }`}
-            >
-              Latest Discounts
-            </button>
-          </div>
+          <button
+            type="button"
+            onClick={() => changeType('software')}
+            className={`rounded-xl px-3 py-2 text-sm transition ${
+              type === 'software'
+                ? 'border border-sky-500/30 bg-sky-500/10 text-sky-300'
+                : 'border border-zinc-800 bg-zinc-900 text-zinc-200 hover:bg-zinc-800'
+            }`}
+          >
+            Software
+          </button>
         </div>
 
-        <div className="mb-5 flex items-center justify-between gap-3">
+        <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
           <div className="text-sm text-zinc-400">
             {loading ? 'Loading...' : `${totalItems.toLocaleString()} items`}
           </div>
 
-          {activeQuery ? (
-            <div className="text-xs uppercase tracking-[0.2em] text-zinc-500">
-              Search: {activeQuery}
-            </div>
-          ) : null}
+          <div className="flex flex-wrap items-center gap-2 text-xs uppercase tracking-[0.2em] text-zinc-500">
+            {type !== 'all' ? <span>Type: {type}</span> : null}
+            {activeQuery ? <span>Search: {activeQuery}</span> : null}
+          </div>
         </div>
 
         {error ? (

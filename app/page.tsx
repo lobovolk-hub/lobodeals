@@ -2,6 +2,12 @@ export const revalidate = 300
 
 import Link from 'next/link'
 import { createClient } from '@supabase/supabase-js'
+import {
+  buildPcBrowseDataQuery,
+  type PcBrowseRow,
+  PC_PUBLIC_BROWSE_SELECT,
+} from '@/lib/server/pcBrowseShared'
+import { type PcSectionKey } from '@/lib/server/pcSectionRules'
 
 type HomeItem = {
   id: string
@@ -17,26 +23,6 @@ type HomeItem = {
   platform: string
   isFreeToPlay: boolean
   sortLatest: number
-}
-
-type PcPublicCatalogRow = {
-  pc_game_id: string
-  steam_app_id?: string | null
-  slug: string
-  title: string
-  thumb: string
-  sale_price?: number | string | null
-  normal_price?: number | string | null
-  discount_percent?: number | string | null
-  store_id?: string | null
-  url?: string | null
-  is_free_to_play?: boolean | null
-  has_active_offer?: boolean | null
-  is_catalog_ready?: boolean | null
-  sort_latest?: number | null
-  price_last_synced_at?: string | null
-  metacritic?: number | null
-  sort_discount?: number | null
 }
 
 type HomeData = {
@@ -78,7 +64,7 @@ function formatSavings(value?: number | string | null) {
   return String(Math.max(0, Math.min(99, Math.round(amount))))
 }
 
-function mapCatalogRow(row: PcPublicCatalogRow): HomeItem {
+function mapBrowseRow(row: PcBrowseRow): HomeItem {
   return {
     id: String(row.pc_game_id || '').trim(),
     steamAppID: String(row.steam_app_id || '').trim(),
@@ -119,12 +105,12 @@ function getCardDisplayState(item: {
   const priceLabel = isUpcoming
     ? 'TBA'
     : hasSalePrice
-    ? `$${item.salePrice}`
-    : hasNormalPrice
-    ? `$${item.normalPrice}`
-    : item.isFreeToPlay
-    ? 'Free'
-    : 'No price'
+      ? `$${item.salePrice}`
+      : hasNormalPrice
+        ? `$${item.normalPrice}`
+        : item.isFreeToPlay
+          ? 'Free'
+          : 'No price'
 
   return {
     isUpcoming,
@@ -134,127 +120,36 @@ function getCardDisplayState(item: {
   }
 }
 
-async function getBestDealsItems(
+async function getSectionItems(
   supabase: ReturnType<typeof getServiceSupabase>,
+  section: PcSectionKey,
   limit: number
 ) {
-  const { data, error } = await supabase
+  let query: any = supabase
     .from('pc_public_catalog_cache')
-    .select(
-      'pc_game_id, steam_app_id, slug, title, thumb, sale_price, normal_price, discount_percent, store_id, url, is_free_to_play, has_active_offer, sort_latest'
-    )
-    .order('has_active_offer', { ascending: false })
-    .order('discount_percent', { ascending: false })
-    .order('sale_price', { ascending: true, nullsFirst: false })
-    .order('sort_latest', { ascending: false })
-    .limit(limit)
+    .select(PC_PUBLIC_BROWSE_SELECT)
+
+  query = buildPcBrowseDataQuery(query, {
+    sort: section,
+    query: '',
+  })
+
+  query = query.limit(limit)
+
+  const { data, error } = await query
 
   if (error) {
     throw error
   }
 
-  const rows = Array.isArray(data) ? (data as PcPublicCatalogRow[]) : []
-  return rows.map(mapCatalogRow)
-}
-
-async function getLatestDiscountsItems(
-  supabase: ReturnType<typeof getServiceSupabase>,
-  limit: number
-) {
-  const { data, error } = await supabase
-    .from('pc_public_catalog_cache')
-    .select(
-      'pc_game_id, steam_app_id, slug, title, thumb, sale_price, normal_price, discount_percent, store_id, url, is_free_to_play, price_last_synced_at, sort_latest'
-    )
-    .gt('discount_percent', 0)
-    .order('price_last_synced_at', { ascending: false, nullsFirst: false })
-    .order('discount_percent', { ascending: false })
-    .order('sort_latest', { ascending: false })
-    .limit(limit)
-
-  if (error) {
-    throw error
-  }
-
-  const rows = Array.isArray(data) ? (data as PcPublicCatalogRow[]) : []
-  return rows.map(mapCatalogRow)
-}
-
-async function getLatestReleasesItems(
-  supabase: ReturnType<typeof getServiceSupabase>,
-  limit: number,
-  nowEpoch: number
-) {
-  const { data, error } = await supabase
-    .from('pc_public_catalog_cache')
-    .select(
-      'pc_game_id, steam_app_id, slug, title, thumb, sale_price, normal_price, discount_percent, store_id, url, is_free_to_play, sort_latest'
-    )
-    .gt('sort_latest', 0)
-    .lte('sort_latest', nowEpoch)
-    .order('sort_latest', { ascending: false })
-    .order('discount_percent', { ascending: false })
-    .order('title', { ascending: true })
-    .limit(limit)
-
-  if (error) {
-    throw error
-  }
-
-  const rows = Array.isArray(data) ? (data as PcPublicCatalogRow[]) : []
-  return rows.map(mapCatalogRow)
-}
-
-async function getBiggestDiscountsItems(
-  supabase: ReturnType<typeof getServiceSupabase>,
-  limit: number
-) {
-  const { data, error } = await supabase
-    .from('pc_public_catalog_cache')
-    .select(
-      'pc_game_id, steam_app_id, slug, title, thumb, sale_price, normal_price, discount_percent, store_id, url, is_free_to_play, sort_discount, sort_latest'
-    )
-    .gt('discount_percent', 0)
-    .order('sort_discount', { ascending: false })
-    .order('sale_price', { ascending: true, nullsFirst: false })
-    .order('sort_latest', { ascending: false })
-    .limit(limit)
-
-  if (error) {
-    throw error
-  }
-
-  const rows = Array.isArray(data) ? (data as PcPublicCatalogRow[]) : []
-  return rows.map(mapCatalogRow)
-}
-
-async function getTopRatedItems(
-  supabase: ReturnType<typeof getServiceSupabase>,
-  limit: number
-) {
-  const { data, error } = await supabase
-    .from('pc_public_catalog_cache')
-    .select(
-      'pc_game_id, steam_app_id, slug, title, thumb, sale_price, normal_price, discount_percent, store_id, url, is_free_to_play, metacritic, sort_latest'
-    )
-    .gt('metacritic', 0)
-    .order('metacritic', { ascending: false })
-    .order('sort_latest', { ascending: false })
-    .limit(limit)
-
-  if (error) {
-    throw error
-  }
-
-  const rows = Array.isArray(data) ? (data as PcPublicCatalogRow[]) : []
-  return rows.map(mapCatalogRow)
+  const rows = Array.isArray(data) ? (data as PcBrowseRow[]) : []
+  return rows.map(mapBrowseRow)
 }
 
 async function getHomeData(): Promise<HomeData> {
   try {
     const supabase = getServiceSupabase()
     const sectionLimit = 6
-    const nowEpoch = Math.floor(Date.now() / 1000)
 
     const [
       bestDeals,
@@ -263,11 +158,11 @@ async function getHomeData(): Promise<HomeData> {
       biggestDiscounts,
       topRated,
     ] = await Promise.all([
-      getBestDealsItems(supabase, sectionLimit),
-      getLatestDiscountsItems(supabase, sectionLimit),
-      getLatestReleasesItems(supabase, sectionLimit, nowEpoch),
-      getBiggestDiscountsItems(supabase, sectionLimit),
-      getTopRatedItems(supabase, sectionLimit),
+      getSectionItems(supabase, 'best-deals', sectionLimit),
+      getSectionItems(supabase, 'latest-discounts', sectionLimit),
+      getSectionItems(supabase, 'latest-releases', sectionLimit),
+      getSectionItems(supabase, 'biggest-discount', sectionLimit),
+      getSectionItems(supabase, 'top-rated', sectionLimit),
     ])
 
     return {

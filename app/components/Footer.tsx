@@ -69,16 +69,34 @@ export default function Footer() {
               <Link href="/pc?page=1&sort=all" className="transition hover:text-white">
                 PC
               </Link>
-              <Link href="/pc?page=1&sort=best" className="transition hover:text-white">
+              <Link
+                href="/pc?page=1&sort=best-deals"
+                className="transition hover:text-white"
+              >
                 Best Deals
               </Link>
-              <Link href="/pc?page=1&sort=latest-discounts" className="transition hover:text-white">
+              <Link
+                href="/pc?page=1&sort=latest-discounts"
+                className="transition hover:text-white"
+              >
                 Latest Discounts
               </Link>
-              <Link href="/pc?page=1&sort=latest" className="transition hover:text-white">
+              <Link
+                href="/pc?page=1&sort=latest-releases"
+                className="transition hover:text-white"
+              >
                 Latest Releases
               </Link>
-              <Link href="/pc?page=1&sort=top-rated" className="transition hover:text-white">
+              <Link
+                href="/pc?page=1&sort=biggest-discount"
+                className="transition hover:text-white"
+              >
+                Biggest Discounts
+              </Link>
+              <Link
+                href="/pc?page=1&sort=top-rated"
+                className="transition hover:text-white"
+              >
                 Top Rated
               </Link>
               <Link href="/tracked" className="transition hover:text-white">

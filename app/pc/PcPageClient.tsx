@@ -3,6 +3,7 @@
 import Link from 'next/link'
 import { usePathname, useRouter, useSearchParams } from 'next/navigation'
 import { useEffect, useMemo, useState } from 'react'
+import { normalizePcSectionKey } from '@/lib/server/pcSectionRules'
 
 type BrowseItem = {
   id: string
@@ -61,35 +62,40 @@ const PRICE_OPTIONS = [
   { key: '80-plus', label: '80%+ off' },
 ] as const
 
-function normalizeSort(value: string | null | undefined) {
-  const safe = String(value || '').trim().toLowerCase()
-
-  if (safe === 'best') return 'best-deals'
-  if (safe === 'latest') return 'latest-releases'
-  if (safe === 'best-deals') return 'best-deals'
-  if (safe === 'latest-discounts') return 'latest-discounts'
-  if (safe === 'latest-releases') return 'latest-releases'
-  if (safe === 'biggest-discount') return 'biggest-discount'
-  if (safe === 'top-rated') return 'top-rated'
-  return 'all'
-}
-
 function moneyLabel(item: BrowseItem) {
+  const nowEpoch = Math.floor(Date.now() / 1000)
+  const isUpcoming = Number(item.sortLatest || 0) > nowEpoch
+
+  if (isUpcoming) return 'TBA'
   if (item.isFreeToPlay) return 'Free'
   if (item.salePrice) return `$${item.salePrice}`
   if (item.normalPrice) return `$${item.normalPrice}`
-  return 'TBA'
+  return 'No price'
 }
 
 function originalPriceLabel(item: BrowseItem) {
-  if (item.salePrice && item.normalPrice && item.salePrice !== item.normalPrice) {
+  const sale = Number(item.salePrice || 0)
+  const normal = Number(item.normalPrice || 0)
+
+  if (
+    Number.isFinite(sale) &&
+    Number.isFinite(normal) &&
+    sale > 0 &&
+    normal > sale
+  ) {
     return `$${item.normalPrice}`
   }
+
   return null
 }
 
 function gameHref(item: BrowseItem) {
   return `/pc/${item.slug}`
+}
+
+function getPriceFilterLabel(value: string) {
+  const match = PRICE_OPTIONS.find((option) => option.key === value)
+  return match?.label || value
 }
 
 export default function PcPageClient(props: PcPageClientProps) {
@@ -101,7 +107,7 @@ export default function PcPageClient(props: PcPageClientProps) {
     1,
     Number(searchParams.get('page') || props.initialPage || 1) || 1
   )
-  const currentSort = normalizeSort(
+  const currentSort = normalizePcSectionKey(
     searchParams.get('sort') || String(props.initialSort || 'all')
   )
   const currentQuery = String(
@@ -160,7 +166,9 @@ export default function PcPageClient(props: PcPageClientProps) {
 
         if (!res.ok) {
           throw new Error(
-            'error' in json && json.error ? json.error : 'Failed to load /pc browse page'
+            'error' in json && json.error
+              ? json.error
+              : 'Failed to load /pc browse page'
           )
         }
 
@@ -201,7 +209,7 @@ export default function PcPageClient(props: PcPageClientProps) {
     const params = new URLSearchParams(searchParams.toString())
 
     const nextPage = Math.max(1, Number(next.page ?? currentPage) || 1)
-    const nextSort = normalizeSort(next.sort ?? currentSort)
+    const nextSort = normalizePcSectionKey(next.sort ?? currentSort)
     const nextQuery = String(next.q ?? currentQuery).trim()
     const nextPrice = String(next.price ?? currentPrice).trim()
 
@@ -322,7 +330,7 @@ export default function PcPageClient(props: PcPageClientProps) {
           )}
           {currentPrice && (
             <span className="rounded-full border border-white/10 bg-white/[0.03] px-3 py-1">
-              Price filter: {currentPrice}
+              Price filter: {getPriceFilterLabel(currentPrice)}
             </span>
           )}
         </div>
@@ -379,7 +387,7 @@ export default function PcPageClient(props: PcPageClientProps) {
                 )}
               </div>
 
-              <div className="mb-2 flex items-center gap-2">
+              <div className="mb-2 flex flex-wrap items-center gap-2">
                 {item.savings && Number(item.savings) > 0 && (
                   <span className="rounded-full border border-emerald-500/30 bg-emerald-500/10 px-2 py-0.5 text-[11px] font-medium text-emerald-300">
                     -{item.savings}%

@@ -4,19 +4,12 @@ import Link from 'next/link'
 import { useEffect, useRef, useState } from 'react'
 import { supabase } from '@/lib/supabaseClient'
 import RegionSelector from '@/app/components/RegionSelector'
-import {
-  DEFAULT_REGION,
-  REGION_STORAGE_KEY,
-  RegionCode,
-  isRegionCode,
-} from '@/lib/region'
 
 export default function Navbar() {
   const [userEmail, setUserEmail] = useState<string | null>(null)
   const [platformsOpen, setPlatformsOpen] = useState(false)
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
   const [mobilePlatformsOpen, setMobilePlatformsOpen] = useState(false)
-  const [region, setRegion] = useState<RegionCode>(DEFAULT_REGION)
   const dropdownRef = useRef<HTMLDivElement | null>(null)
 
   useEffect(() => {
@@ -57,46 +50,9 @@ export default function Navbar() {
     }
   }, [])
 
-  useEffect(() => {
-    const loadRegion = () => {
-      const stored =
-        typeof window !== 'undefined'
-          ? window.localStorage.getItem(REGION_STORAGE_KEY)
-          : null
-
-      if (stored && isRegionCode(stored)) {
-        setRegion(stored)
-        return
-      }
-
-      setRegion(DEFAULT_REGION)
-    }
-
-    loadRegion()
-
-    const handleRegionChange = (event: Event) => {
-      const customEvent = event as CustomEvent<string>
-      const value = customEvent.detail
-
-      if (value && isRegionCode(value)) {
-        setRegion(value)
-      } else {
-        loadRegion()
-      }
-    }
-
-    window.addEventListener(
-      'lobodeals-region-change',
-      handleRegionChange as EventListener
-    )
-
-    return () => {
-      window.removeEventListener(
-        'lobodeals-region-change',
-        handleRegionChange as EventListener
-      )
-    }
-  }, [])
+  const closeDesktopExplore = () => {
+    setPlatformsOpen(false)
+  }
 
   const closeMobileMenu = () => {
     setMobileMenuOpen(false)
@@ -150,6 +106,8 @@ export default function Navbar() {
                 type="button"
                 onClick={() => setPlatformsOpen((prev) => !prev)}
                 className="rounded-xl px-3 py-2 text-zinc-200 transition hover:bg-zinc-800"
+                aria-expanded={platformsOpen}
+                aria-haspopup="menu"
               >
                 Explore ▾
               </button>
@@ -158,7 +116,7 @@ export default function Navbar() {
                 <div className="absolute right-0 top-full z-[130] mt-2 w-64 overflow-hidden rounded-2xl border border-zinc-800 bg-zinc-950 shadow-2xl ring-1 ring-black/30">
                   <Link
                     href="/pc?page=1&sort=all"
-                    onClick={() => setPlatformsOpen(false)}
+                    onClick={closeDesktopExplore}
                     className="block px-4 py-3 text-sm text-zinc-100 transition hover:bg-zinc-900"
                   >
                     PC
@@ -166,7 +124,7 @@ export default function Navbar() {
 
                   <Link
                     href="/pc?page=1&sort=best-deals"
-                    onClick={() => setPlatformsOpen(false)}
+                    onClick={closeDesktopExplore}
                     className="block px-4 py-3 text-sm text-zinc-100 transition hover:bg-zinc-900"
                   >
                     Best Deals
@@ -174,7 +132,7 @@ export default function Navbar() {
 
                   <Link
                     href="/pc?page=1&sort=latest-discounts"
-                    onClick={() => setPlatformsOpen(false)}
+                    onClick={closeDesktopExplore}
                     className="block px-4 py-3 text-sm text-zinc-100 transition hover:bg-zinc-900"
                   >
                     Latest Discounts
@@ -182,7 +140,7 @@ export default function Navbar() {
 
                   <Link
                     href="/pc?page=1&sort=latest-releases"
-                    onClick={() => setPlatformsOpen(false)}
+                    onClick={closeDesktopExplore}
                     className="block px-4 py-3 text-sm text-zinc-100 transition hover:bg-zinc-900"
                   >
                     Latest Releases
@@ -190,7 +148,7 @@ export default function Navbar() {
 
                   <Link
                     href="/pc?page=1&sort=biggest-discount"
-                    onClick={() => setPlatformsOpen(false)}
+                    onClick={closeDesktopExplore}
                     className="block px-4 py-3 text-sm text-zinc-100 transition hover:bg-zinc-900"
                   >
                     Biggest Discounts
@@ -198,7 +156,7 @@ export default function Navbar() {
 
                   <Link
                     href="/pc?page=1&sort=top-rated"
-                    onClick={() => setPlatformsOpen(false)}
+                    onClick={closeDesktopExplore}
                     className="block px-4 py-3 text-sm text-zinc-100 transition hover:bg-zinc-900"
                   >
                     Top Rated

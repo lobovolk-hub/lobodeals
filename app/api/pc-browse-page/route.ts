@@ -2,33 +2,12 @@ export const runtime = 'nodejs'
 
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
-
-type CacheRow = {
-  pc_game_id: string | null
-  steam_app_id: string | null
-  slug: string | null
-  title: string | null
-  thumb: string | null
-  sale_price: number | string | null
-  normal_price: number | string | null
-  discount_percent: number | string | null
-  store_id: string | null
-  url: string | null
-  is_free_to_play: boolean | null
-  has_active_offer: boolean | null
-  is_catalog_ready: boolean | null
-  sort_latest: number | null
-  metacritic: number | null
-  price_last_synced_at: string | null
-}
-
-type SortKey =
-  | 'all'
-  | 'best-deals'
-  | 'latest-discounts'
-  | 'latest-releases'
-  | 'biggest-discount'
-  | 'top-rated'
+import {
+  buildPcBrowseCountQuery,
+  buildPcBrowseDataQuery,
+  type PcBrowseRow,
+  PC_PUBLIC_BROWSE_SELECT,
+} from '@/lib/server/pcBrowseShared'
 
 function getSupabase() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL
@@ -41,17 +20,6 @@ function getSupabase() {
   }
 
   return createClient(url, key)
-}
-
-function normalizeSort(value: string | null): SortKey {
-  const safe = String(value || '').trim().toLowerCase()
-
-  if (safe === 'best' || safe === 'best-deals') return 'best-deals'
-  if (safe === 'latest-discounts') return 'latest-discounts'
-  if (safe === 'latest' || safe === 'latest-releases') return 'latest-releases'
-  if (safe === 'biggest-discount') return 'biggest-discount'
-  if (safe === 'top-rated') return 'top-rated'
-  return 'all'
 }
 
 function clampPage(value: string | null) {
@@ -80,30 +48,19 @@ function toSavingsString(value: number | string | null) {
   return String(Math.round(num))
 }
 
-function applySearchFilter(query: any, rawQuery: string) {
-  const q = rawQuery.trim()
-  if (!q) return query
-
-  const escaped = q.replace(/[%_]/g, '')
-  if (!escaped) return query
-
-  return query.or(
-    [
-      `title.ilike.%${escaped}%`,
-      `slug.ilike.%${escaped}%`,
-    ].join(',')
-  )
-}
-
 function applyPriceFilter(query: any, price: string | null) {
-  const safe = String(price || '').trim().toLowerCase()
+  const safe = String(price || '')
+    .trim()
+    .toLowerCase()
 
   if (safe === 'under-5') {
     return query.or('sale_price.lte.5,and(sale_price.is.null,normal_price.lte.5)')
   }
 
   if (safe === 'under-10') {
-    return query.or('sale_price.lte.10,and(sale_price.is.null,normal_price.lte.10)')
+    return query.or(
+      'sale_price.lte.10,and(sale_price.is.null,normal_price.lte.10)'
+    )
   }
 
   if (safe === '80-plus') {
@@ -113,35 +70,6 @@ function applyPriceFilter(query: any, price: string | null) {
   return query
 }
 
-function applySort(query: any, sort: SortKey) {
-  switch (sort) {
-    case 'top-rated':
-      return query
-        .gt('metacritic', 0)
-        .order('metacritic', { ascending: false, nullsFirst: false })
-        .order('title', { ascending: true })
-
-    case 'latest-releases':
-      return query
-        .order('sort_latest', { ascending: false, nullsFirst: false })
-        .order('title', { ascending: true })
-
-    case 'latest-discounts':
-      return query
-        .order('price_last_synced_at', { ascending: false, nullsFirst: false })
-        .order('discount_percent', { ascending: false, nullsFirst: false })
-        .order('title', { ascending: true })
-
-    case 'biggest-discount':
-    case 'best-deals':
-    case 'all':
-    default:
-      return query
-        .order('discount_percent', { ascending: false, nullsFirst: false })
-        .order('title', { ascending: true })
-  }
-}
-
 export async function GET(request: NextRequest) {
   try {
     const supabase = getSupabase()
@@ -149,7 +77,7 @@ export async function GET(request: NextRequest) {
 
     const requestedPage = clampPage(searchParams.get('page'))
     const pageSize = clampPageSize(searchParams.get('pageSize'))
-    const sort = normalizeSort(searchParams.get('sort'))
+    const sort = searchParams.get('sort')
     const q = String(searchParams.get('q') || '').trim()
     const price = searchParams.get('price')
 
@@ -157,12 +85,11 @@ export async function GET(request: NextRequest) {
       .from('pc_public_catalog_cache')
       .select('pc_game_id', { count: 'exact', head: true })
 
-    countQuery = applySearchFilter(countQuery, q)
+    countQuery = buildPcBrowseCountQuery(countQuery, {
+      sort,
+      query: q,
+    })
     countQuery = applyPriceFilter(countQuery, price)
-
-    if (sort === 'top-rated') {
-      countQuery = countQuery.gt('metacritic', 0)
-    }
 
     const { count, error: countError } = await countQuery
 
@@ -178,30 +105,13 @@ export async function GET(request: NextRequest) {
 
     let dataQuery: any = supabase
       .from('pc_public_catalog_cache')
-      .select(
-        [
-          'pc_game_id',
-          'steam_app_id',
-          'slug',
-          'title',
-          'thumb',
-          'sale_price',
-          'normal_price',
-          'discount_percent',
-          'store_id',
-          'url',
-          'is_free_to_play',
-          'has_active_offer',
-          'is_catalog_ready',
-          'sort_latest',
-          'metacritic',
-          'price_last_synced_at',
-        ].join(',')
-      )
+      .select(PC_PUBLIC_BROWSE_SELECT)
 
-    dataQuery = applySearchFilter(dataQuery, q)
+    dataQuery = buildPcBrowseDataQuery(dataQuery, {
+      sort,
+      query: q,
+    })
     dataQuery = applyPriceFilter(dataQuery, price)
-    dataQuery = applySort(dataQuery, sort)
     dataQuery = dataQuery.range(from, to)
 
     const { data, error } = await dataQuery
@@ -210,7 +120,7 @@ export async function GET(request: NextRequest) {
       throw new Error(`pc-browse-page failed: ${error.message}`)
     }
 
-    const rows = Array.isArray(data) ? (data as CacheRow[]) : []
+    const rows = Array.isArray(data) ? (data as PcBrowseRow[]) : []
 
     return NextResponse.json({
       items: rows.map((row) => ({

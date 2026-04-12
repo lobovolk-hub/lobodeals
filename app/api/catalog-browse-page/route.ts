@@ -18,6 +18,7 @@ type CatalogPublicRow = {
   has_active_offer?: boolean | null
   is_catalog_ready?: boolean | null
   sort_latest?: number | null
+  metacritic?: number | null
 }
 
 type CatalogBrowseItem = {
@@ -37,6 +38,7 @@ type CatalogBrowseItem = {
   isCatalogReady: boolean
   canOpenPage: boolean
   sortLatest: number
+  metacritic: number | null
 }
 
 function getServiceSupabase() {
@@ -112,6 +114,10 @@ function mapRowToItem(row: CatalogPublicRow): CatalogBrowseItem {
     isCatalogReady: Boolean(row.is_catalog_ready),
     canOpenPage: steamType === 'game' && Boolean(String(row.slug || '').trim()),
     sortLatest: Number(row.sort_latest || 0),
+    metacritic:
+      row.metacritic !== null && row.metacritic !== undefined
+        ? Number(row.metacritic)
+        : null,
   }
 }
 
@@ -132,9 +138,7 @@ function applyCommonFilters(
 }
 
 function applyCatalogDefaultSort(query: any) {
-  return query
-    .order('steam_type', { ascending: true })
-    .order('title', { ascending: true })
+  return query.order('steam_type', { ascending: true }).order('title', { ascending: true })
 }
 
 async function getCachedBaseTotal(supabase: any) {
@@ -208,6 +212,7 @@ export async function GET(request: Request) {
         'has_active_offer',
         'is_catalog_ready',
         'sort_latest',
+        'metacritic',
       ].join(', ')
     )
 

@@ -1,0 +1,185 @@
+Lista de tablas públicas
+| table_name              |
+| ----------------------- |
+| catalog_public_cache    |
+| catalog_public_meta     |
+| clicks                  |
+| pc_game_screenshots     |
+| pc_games                |
+| pc_price_history_events |
+| pc_price_state_current  |
+| pc_public_catalog_cache |
+| pc_public_catalog_meta  |
+| pc_store_offers         |
+| sync_logs               |
+| tracked_games           |
+| user_profiles           |
+
+Columnas de las tablas clave
+| table_name              | ordinal_position | column_name                 | data_type                | is_nullable |
+| ----------------------- | ---------------- | --------------------------- | ------------------------ | ----------- |
+| catalog_public_cache    | 1                | pc_game_id                  | text                     | NO          |
+| catalog_public_cache    | 2                | steam_app_id                | text                     | YES         |
+| catalog_public_cache    | 3                | steam_app_sort              | bigint                   | NO          |
+| catalog_public_cache    | 4                | steam_type                  | text                     | NO          |
+| catalog_public_cache    | 5                | slug                        | text                     | NO          |
+| catalog_public_cache    | 6                | title                       | text                     | NO          |
+| catalog_public_cache    | 7                | thumb                       | text                     | NO          |
+| catalog_public_cache    | 8                | is_free_to_play             | boolean                  | NO          |
+| catalog_public_cache    | 9                | has_active_offer            | boolean                  | NO          |
+| catalog_public_cache    | 10               | is_catalog_ready            | boolean                  | NO          |
+| catalog_public_cache    | 11               | sale_price                  | numeric                  | YES         |
+| catalog_public_cache    | 12               | normal_price                | numeric                  | YES         |
+| catalog_public_cache    | 13               | discount_percent            | integer                  | NO          |
+| catalog_public_cache    | 14               | store_id                    | text                     | YES         |
+| catalog_public_cache    | 15               | url                         | text                     | YES         |
+| catalog_public_cache    | 16               | region_code                 | text                     | YES         |
+| catalog_public_cache    | 17               | currency_code               | text                     | YES         |
+| catalog_public_cache    | 18               | price_source                | text                     | YES         |
+| catalog_public_cache    | 19               | price_last_synced_at        | timestamp with time zone | YES         |
+| catalog_public_cache    | 20               | search_title                | text                     | NO          |
+| catalog_public_cache    | 21               | search_title_normalized     | text                     | NO          |
+| catalog_public_cache    | 22               | sort_discount               | integer                  | NO          |
+| catalog_public_cache    | 23               | sort_latest                 | bigint                   | NO          |
+| catalog_public_cache    | 24               | metacritic                  | integer                  | YES         |
+| catalog_public_cache    | 25               | updated_at                  | timestamp with time zone | NO          |
+| catalog_public_meta     | 1                | key                         | text                     | NO          |
+| catalog_public_meta     | 2                | total_items                 | integer                  | NO          |
+| catalog_public_meta     | 3                | updated_at                  | timestamp with time zone | NO          |
+| clicks                  | 1                | id                          | uuid                     | NO          |
+| clicks                  | 2                | deal_id                     | text                     | YES         |
+| clicks                  | 3                | title                       | text                     | YES         |
+| clicks                  | 4                | sale_price                  | text                     | YES         |
+| clicks                  | 5                | normal_price                | text                     | YES         |
+| clicks                  | 6                | created_at                  | timestamp with time zone | NO          |
+| clicks                  | 7                | click_type                  | text                     | YES         |
+| pc_game_screenshots     | 1                | id                          | uuid                     | NO          |
+| pc_game_screenshots     | 2                | pc_game_id                  | uuid                     | NO          |
+| pc_game_screenshots     | 3                | image_url                   | text                     | NO          |
+| pc_game_screenshots     | 4                | sort_order                  | integer                  | NO          |
+| pc_game_screenshots     | 5                | created_at                  | timestamp with time zone | NO          |
+| pc_games                | 1                | id                          | uuid                     | NO          |
+| pc_games                | 2                | steam_app_id                | text                     | NO          |
+| pc_games                | 3                | slug                        | text                     | NO          |
+| pc_games                | 4                | canonical_title             | text                     | NO          |
+| pc_games                | 5                | normalized_title            | text                     | NO          |
+| pc_games                | 6                | canonical_key               | text                     | NO          |
+| pc_games                | 7                | is_free_to_play             | boolean                  | NO          |
+| pc_games                | 8                | is_active                   | boolean                  | NO          |
+| pc_games                | 9                | rawg_id                     | integer                  | YES         |
+| pc_games                | 10               | metacritic                  | integer                  | YES         |
+| pc_games                | 11               | rating                      | numeric                  | YES         |
+| pc_games                | 12               | release_date                | date                     | YES         |
+| pc_games                | 13               | short_description           | text                     | YES         |
+| pc_games                | 14               | description                 | text                     | YES         |
+| pc_games                | 15               | background_image            | text                     | YES         |
+| pc_games                | 16               | header_image                | text                     | YES         |
+| pc_games                | 17               | capsule_image               | text                     | YES         |
+| pc_games                | 18               | clip_url                    | text                     | YES         |
+| pc_games                | 19               | last_metadata_sync_at       | timestamp with time zone | YES         |
+| pc_games                | 20               | created_at                  | timestamp with time zone | NO          |
+| pc_games                | 21               | updated_at                  | timestamp with time zone | NO          |
+| pc_games                | 22               | steam_type                  | text                     | YES         |
+| pc_games                | 23               | is_catalog_ready            | boolean                  | NO          |
+| pc_games                | 24               | steam_last_sync_at          | timestamp with time zone | YES         |
+| pc_games                | 25               | steam_name                  | text                     | YES         |
+| pc_games                | 26               | hero_image_url              | text                     | YES         |
+| pc_games                | 27               | rawg_description            | text                     | YES         |
+| pc_games                | 28               | rawg_genres                 | jsonb                    | YES         |
+| pc_games                | 29               | rawg_platforms              | jsonb                    | YES         |
+| pc_games                | 30               | steam_genres                | ARRAY                    | YES         |
+| pc_games                | 31               | steam_developers            | ARRAY                    | YES         |
+| pc_games                | 32               | steam_publishers            | ARRAY                    | YES         |
+| pc_games                | 33               | steam_movie_url             | text                     | YES         |
+| pc_games                | 34               | steam_catalog_last_modified | bigint                   | YES         |
+| pc_games                | 35               | steam_price_change_number   | bigint                   | YES         |
+| pc_games                | 36               | steam_catalog_first_seen_at | timestamp with time zone | YES         |
+| pc_games                | 37               | steam_catalog_last_seen_at  | timestamp with time zone | YES         |
+| pc_games                | 38               | steam_inventory_source      | text                     | YES         |
+| pc_price_history_events | 1                | id                          | uuid                     | NO          |
+| pc_price_history_events | 2                | pc_game_id                  | uuid                     | NO          |
+| pc_price_history_events | 3                | store_id                    | text                     | NO          |
+| pc_price_history_events | 4                | region_code                 | text                     | NO          |
+| pc_price_history_events | 5                | sale_price                  | numeric                  | YES         |
+| pc_price_history_events | 6                | normal_price                | numeric                  | YES         |
+| pc_price_history_events | 7                | discount_percent            | integer                  | NO          |
+| pc_price_history_events | 8                | is_available                | boolean                  | NO          |
+| pc_price_history_events | 9                | price_source                | text                     | YES         |
+| pc_price_history_events | 10               | currency_code               | text                     | YES         |
+| pc_price_history_events | 11               | url                         | text                     | YES         |
+| pc_price_history_events | 12               | event_type                  | text                     | NO          |
+| pc_price_history_events | 13               | captured_at                 | timestamp with time zone | NO          |
+| pc_price_history_events | 14               | previous_sale_price         | numeric                  | YES         |
+| pc_price_history_events | 15               | previous_normal_price       | numeric                  | YES         |
+| pc_price_history_events | 16               | previous_discount_percent   | integer                  | YES         |
+| pc_price_history_events | 17               | previous_is_available       | boolean                  | YES         |
+| pc_price_state_current  | 1                | pc_game_id                  | uuid                     | NO          |
+| pc_price_state_current  | 2                | store_id                    | text                     | NO          |
+| pc_price_state_current  | 3                | region_code                 | text                     | NO          |
+| pc_price_state_current  | 4                | sale_price                  | numeric                  | YES         |
+| pc_price_state_current  | 5                | normal_price                | numeric                  | YES         |
+
+Conteo de filas de tablas clave
+| table_name              | total  |
+| ----------------------- | ------ |
+| pc_games                | 221954 |
+| pc_public_catalog_cache | 32757  |
+| pc_store_offers         | 40601  |
+| pc_game_screenshots     | 106910 |
+| sync_logs               | 2266   |
+| catalog_public_cache    | 32810  |
+
+Lista de funciones SQL del esquema public
+| routine_name                              | routine_type |
+| ----------------------------------------- | ------------ |
+| capture_pc_price_history                  | FUNCTION     |
+| finalize_pc_public_layers                 | FUNCTION     |
+| get_priority_visible_enrich_candidates    | FUNCTION     |
+| get_stale_visible_price_candidates        | FUNCTION     |
+| gin_extract_query_trgm                    | FUNCTION     |
+| gin_extract_value_trgm                    | FUNCTION     |
+| gin_trgm_consistent                       | FUNCTION     |
+| gin_trgm_triconsistent                    | FUNCTION     |
+| gtrgm_compress                            | FUNCTION     |
+| gtrgm_consistent                          | FUNCTION     |
+| gtrgm_decompress                          | FUNCTION     |
+| gtrgm_distance                            | FUNCTION     |
+| gtrgm_in                                  | FUNCTION     |
+| gtrgm_options                             | FUNCTION     |
+| gtrgm_out                                 | FUNCTION     |
+| gtrgm_penalty                             | FUNCTION     |
+| gtrgm_picksplit                           | FUNCTION     |
+| gtrgm_same                                | FUNCTION     |
+| gtrgm_union                               | FUNCTION     |
+| refresh_catalog_public_cache              | FUNCTION     |
+| refresh_pc_public_catalog_batch           | FUNCTION     |
+| refresh_pc_public_catalog_cache           | FUNCTION     |
+| refresh_pc_public_layers                  | FUNCTION     |
+| refresh_public_storefront_sections_cache  | FUNCTION     |
+| refresh_steam_spotlight_cache             | FUNCTION     |
+| rls_auto_enable                           | FUNCTION     |
+| run_public_pc_layer_refresh               | FUNCTION     |
+| set_limit                                 | FUNCTION     |
+| set_updated_at                            | FUNCTION     |
+| show_limit                                | FUNCTION     |
+| show_trgm                                 | FUNCTION     |
+| similarity                                | FUNCTION     |
+| similarity_dist                           | FUNCTION     |
+| similarity_op                             | FUNCTION     |
+| strict_word_similarity                    | FUNCTION     |
+| strict_word_similarity_commutator_op      | FUNCTION     |
+| strict_word_similarity_dist_commutator_op | FUNCTION     |
+| strict_word_similarity_dist_op            | FUNCTION     |
+| strict_word_similarity_op                 | FUNCTION     |
+| word_similarity                           | FUNCTION     |
+| word_similarity_commutator_op             | FUNCTION     |
+| word_similarity_dist_commutator_op        | FUNCTION     |
+| word_similarity_dist_op                   | FUNCTION     |
+| word_similarity_op                        | FUNCTION     |
+
+Jobs/crons de Supabase
+| jobid | schedule      | command                                                                                    | nodename  | nodeport | database | username | active | jobname                        |
+| ----- | ------------- | ------------------------------------------------------------------------------------------ | --------- | -------- | -------- | -------- | ------ | ------------------------------ |
+| 3     | 20,50 * * * * | select public.capture_pc_price_history();                                                  | localhost | 5432     | postgres | postgres | false  | pc-price-history-capture       |
+| 4     | 10,40 * * * * | set statement_timeout = '10min'; select public.refresh_pc_public_catalog_cache();          | localhost | 5432     | postgres | postgres | false  | pc-public-catalog-refresh      |
+| 5     | 12,42 * * * * | set statement_timeout = '10min'; select public.refresh_public_storefront_sections_cache(); | localhost | 5432     | postgres | postgres | false  | pc-storefront-sections-refresh |

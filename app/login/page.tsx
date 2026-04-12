@@ -1,7 +1,7 @@
 'use client'
 
 import Link from 'next/link'
-import { Suspense, useEffect, useState } from 'react'
+import { Suspense, useEffect, useMemo, useState } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { supabase } from '@/lib/supabaseClient'
 
@@ -30,14 +30,55 @@ function LoginPageInner() {
   const [password, setPassword] = useState('')
   const [confirmPassword, setConfirmPassword] = useState('')
   const [loading, setLoading] = useState(false)
+  const [googleLoading, setGoogleLoading] = useState(false)
   const [message, setMessage] = useState('')
   const [errorMessage, setErrorMessage] = useState('')
+
+  const oauthRequested = useMemo(
+    () => searchParams.get('oauth') === 'google',
+    [searchParams]
+  )
 
   useEffect(() => {
     if (searchParams.get('verified') === '1') {
       setMessage('Email verified. You can now sign in with your username or email and password.')
     }
   }, [searchParams])
+
+  useEffect(() => {
+    let cancelled = false
+
+    const syncSessionAfterOAuth = async () => {
+      try {
+        const {
+          data: { session },
+        } = await supabase.auth.getSession()
+
+        if (cancelled) return
+
+        if (session?.user) {
+          router.push('/tracked')
+          router.refresh()
+        } else if (oauthRequested) {
+          setErrorMessage('Google sign-in did not complete. Please try again.')
+        }
+      } catch (error) {
+        console.error(error)
+
+        if (!cancelled && oauthRequested) {
+          setErrorMessage('Unexpected Google sign-in error.')
+        }
+      }
+    }
+
+    if (oauthRequested) {
+      syncSessionAfterOAuth()
+    }
+
+    return () => {
+      cancelled = true
+    }
+  }, [oauthRequested, router])
 
   const resetMessages = () => {
     setMessage('')
@@ -95,6 +136,36 @@ function LoginPageInner() {
       setErrorMessage('Unexpected login error.')
     } finally {
       setLoading(false)
+    }
+  }
+
+  const handleGoogleLogin = async () => {
+    resetMessages()
+    setGoogleLoading(true)
+
+    try {
+      const origin =
+        typeof window !== 'undefined'
+          ? window.location.origin
+          : process.env.NEXT_PUBLIC_SITE_URL || 'https://lobodeals.com'
+
+      const redirectTo = `${origin}/login?oauth=google`
+
+      const { error } = await supabase.auth.signInWithOAuth({
+        provider: 'google',
+        options: {
+          redirectTo,
+        },
+      })
+
+      if (error) {
+        setErrorMessage(error.message || 'Could not start Google sign-in.')
+        setGoogleLoading(false)
+      }
+    } catch (error) {
+      console.error(error)
+      setErrorMessage('Unexpected Google sign-in error.')
+      setGoogleLoading(false)
     }
   }
 
@@ -249,7 +320,7 @@ function LoginPageInner() {
             </h1>
             <p className="mt-2 text-sm text-zinc-400">
               {mode === 'login'
-                ? 'Sign in with your username or your email and password.'
+                ? 'Sign in with your username, your email, or continue with Google.'
                 : mode === 'signup'
                 ? 'Create your account with email, username, and a password between 8 and 12 characters.'
                 : 'Enter your email or username and we will send a password recovery email.'}
@@ -313,6 +384,37 @@ function LoginPageInner() {
             <div className="mb-4 rounded-2xl border border-red-500/20 bg-red-500/10 px-4 py-3 text-sm text-red-300">
               {errorMessage}
             </div>
+          ) : null}
+
+          {mode !== 'recover' ? (
+            <>
+              <button
+                type="button"
+                onClick={handleGoogleLogin}
+                disabled={loading || googleLoading}
+                className="mb-4 flex w-full items-center justify-center gap-3 rounded-2xl border border-zinc-700 bg-white px-5 py-3 text-sm font-semibold text-black transition hover:opacity-90 disabled:opacity-60"
+              >
+                <svg
+                  aria-hidden="true"
+                  viewBox="0 0 24 24"
+                  className="h-5 w-5"
+                >
+                  <path
+                    fill="#EA4335"
+                    d="M12 10.2v3.9h5.5c-.2 1.3-1.5 3.9-5.5 3.9-3.3 0-6.1-2.8-6.1-6.2s2.8-6.2 6.1-6.2c1.9 0 3.1.8 3.9 1.5l2.7-2.6C16.9 2.9 14.7 2 12 2 6.9 2 2.8 6.2 2.8 11.3S6.9 20.7 12 20.7c6.9 0 9.1-4.8 9.1-7.3 0-.5 0-.8-.1-1.2H12z"
+                  />
+                </svg>
+                {googleLoading ? 'Redirecting to Google...' : 'Continue with Google'}
+              </button>
+
+              <div className="mb-4 flex items-center gap-3">
+                <div className="h-px flex-1 bg-zinc-800" />
+                <span className="text-xs uppercase tracking-[0.2em] text-zinc-500">
+                  or
+                </span>
+                <div className="h-px flex-1 bg-zinc-800" />
+              </div>
+            </>
           ) : null}
 
           <div className="grid gap-4">
@@ -433,7 +535,7 @@ function LoginPageInner() {
             <button
               type="button"
               onClick={submit}
-              disabled={loading}
+              disabled={loading || googleLoading}
               className="rounded-2xl bg-white px-5 py-3 text-sm font-semibold text-black transition hover:opacity-90 disabled:opacity-60"
             >
               {loading
@@ -452,7 +554,7 @@ function LoginPageInner() {
 
           <div className="mt-6 rounded-2xl border border-zinc-800 bg-zinc-950 p-4">
             <p className="text-sm text-zinc-400">
-              LoboDeals now supports account creation with email + username + password, login with username or email, and password recovery by email.
+              You can sign in with email, username, or Google. Account creation still supports email + username + password.
             </p>
           </div>
 

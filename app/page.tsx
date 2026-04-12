@@ -23,6 +23,7 @@ type HomeItem = {
   platform: string
   isFreeToPlay: boolean
   sortLatest: number
+  metacritic: number | null
 }
 
 type HomeData = {
@@ -79,6 +80,10 @@ function mapBrowseRow(row: PcBrowseRow): HomeItem {
     platform: 'pc',
     isFreeToPlay: Boolean(row.is_free_to_play),
     sortLatest: Number(row.sort_latest || 0),
+    metacritic:
+      row.metacritic !== null && row.metacritic !== undefined
+        ? Number(row.metacritic)
+        : null,
   }
 }
 
@@ -202,49 +207,65 @@ function GameCard({ item }: { item: HomeItem }) {
   const display = getCardDisplayState(item)
 
   return (
-    <article className="overflow-hidden rounded-3xl border border-zinc-800 bg-zinc-900 shadow-lg transition hover:-translate-y-1">
+    <div className="overflow-hidden rounded-3xl border border-white/10 bg-white/[0.03]">
       <Link href={buildGameHref(item)} className="block">
-        <div className="h-32 w-full bg-zinc-800 sm:h-36">
+        <div className="aspect-[16/9] w-full overflow-hidden bg-white/[0.04]">
           {item.thumb ? (
             <img
               src={item.thumb}
               alt={item.title}
-              className="h-full w-full object-cover transition hover:opacity-90"
+              className="h-full w-full object-cover"
             />
-          ) : null}
+          ) : (
+            <div className="flex h-full w-full items-center justify-center text-xs text-white/40">
+              No image
+            </div>
+          )}
         </div>
       </Link>
 
-      <div className="p-3 sm:p-4">
-        <div className="mb-3 flex items-start justify-between gap-2">
-          <Link href={buildGameHref(item)} className="min-w-0">
-            <h3 className="line-clamp-2 text-sm font-bold leading-5 text-zinc-100 transition hover:text-emerald-300 sm:text-base">
-              {item.title}
-            </h3>
-          </Link>
+      <div className="p-3">
+        <div className="mb-2 flex items-start justify-between gap-2">
+          <div className="min-w-0">
+            <Link href={buildGameHref(item)} className="block">
+              <div className="line-clamp-2 text-sm font-semibold text-white transition hover:text-emerald-300">
+                {item.title}
+              </div>
+            </Link>
+          </div>
 
-          {display.hasDiscount ? (
-            <span className="shrink-0 rounded-full border border-emerald-500/30 bg-emerald-500/10 px-2 py-1 text-[10px] font-medium text-emerald-300 sm:text-xs">
+          {typeof item.metacritic === 'number' && item.metacritic > 0 && (
+            <span className="shrink-0 rounded-md border border-amber-500/40 bg-amber-500/10 px-2 py-0.5 text-[10px] font-semibold text-amber-300">
+              MC {item.metacritic}
+            </span>
+          )}
+        </div>
+
+        <div className="mb-2 flex flex-wrap items-center gap-2">
+          {item.savings && Number(item.savings) > 0 && (
+            <span className="rounded-full border border-emerald-500/30 bg-emerald-500/10 px-2 py-0.5 text-[11px] font-medium text-emerald-300">
               -{item.savings}%
             </span>
-          ) : null}
+          )}
+          {item.isFreeToPlay && (
+            <span className="rounded-full border border-sky-500/30 bg-sky-500/10 px-2 py-0.5 text-[11px] font-medium text-sky-300">
+              Free to play
+            </span>
+          )}
         </div>
 
-        <div className="rounded-2xl border border-zinc-800 bg-zinc-950 p-3">
-          <div className="flex items-end justify-between gap-2">
-            <span className="text-lg font-bold text-emerald-400 sm:text-2xl">
-              {display.priceLabel}
-            </span>
-
-            {display.showNormalPrice ? (
-              <span className="text-xs text-zinc-400 line-through sm:text-sm">
-                ${item.normalPrice}
-              </span>
-            ) : null}
+        <div className="rounded-2xl bg-black/40 p-3">
+          <div className="text-2xl font-bold text-emerald-400">
+            {display.priceLabel}
           </div>
+          {display.showNormalPrice && (
+            <div className="text-sm text-white/45 line-through">
+              ${item.normalPrice}
+            </div>
+          )}
         </div>
       </div>
-    </article>
+    </div>
   )
 }
 

@@ -22,6 +22,7 @@ type CatalogItem = {
   isCatalogReady: boolean
   canOpenPage: boolean
   sortLatest: number
+  metacritic?: number | null
 }
 
 type CatalogBrowseResponse = {
@@ -487,7 +488,7 @@ export default function CatalogPageClient() {
             onClick={() => changeType('dlc')}
             className={`rounded-xl px-3 py-2 text-sm transition ${
               type === 'dlc'
-                ? 'border border-amber-500/30 bg-amber-500/10 text-amber-300'
+                ? 'border border-emerald-500/30 bg-emerald-500/10 text-emerald-300'
                 : 'border border-zinc-800 bg-zinc-900 text-zinc-200 hover:bg-zinc-800'
             }`}
           >
@@ -499,7 +500,7 @@ export default function CatalogPageClient() {
             onClick={() => changeType('software')}
             className={`rounded-xl px-3 py-2 text-sm transition ${
               type === 'software'
-                ? 'border border-sky-500/30 bg-sky-500/10 text-sky-300'
+                ? 'border border-emerald-500/30 bg-emerald-500/10 text-emerald-300'
                 : 'border border-zinc-800 bg-zinc-900 text-zinc-200 hover:bg-zinc-800'
             }`}
           >
@@ -512,43 +513,24 @@ export default function CatalogPageClient() {
             {loading ? 'Loading...' : `${totalItems.toLocaleString()} items`}
           </div>
 
-          <div className="flex flex-wrap items-center gap-2 text-xs uppercase tracking-[0.2em] text-zinc-500">
-            {type !== 'all' ? <span>Type: {type}</span> : null}
-            {activeQuery ? <span>Search: {activeQuery}</span> : null}
+          <div className="text-sm text-zinc-500">
+            Page {page} of {Math.max(1, totalPages)}
           </div>
         </div>
 
         {error ? (
-          <div className="rounded-2xl border border-zinc-800 bg-zinc-900 p-4 text-sm text-zinc-400">
+          <div className="rounded-2xl border border-red-500/30 bg-red-500/10 p-4 text-sm text-red-200">
             {error}
           </div>
         ) : null}
 
-        {!error && loading ? (
-          <div className="grid grid-cols-2 gap-4 md:grid-cols-3 xl:grid-cols-5 2xl:grid-cols-6">
-            {Array.from({ length: 12 }).map((_, index) => (
-              <div
-                key={index}
-                className="overflow-hidden rounded-3xl border border-zinc-800 bg-zinc-900"
-              >
-                <div className="h-32 w-full animate-pulse bg-zinc-800" />
-                <div className="p-4">
-                  <div className="h-4 animate-pulse rounded bg-zinc-800" />
-                  <div className="mt-3 h-9 animate-pulse rounded bg-zinc-800" />
-                  <div className="mt-3 h-8 animate-pulse rounded bg-zinc-800" />
-                </div>
-              </div>
-            ))}
+        {!loading && items.length === 0 && !error ? (
+          <div className="rounded-2xl border border-zinc-800 bg-zinc-900 p-6 text-center text-sm text-zinc-400">
+            No items found for this catalog view.
           </div>
         ) : null}
 
-        {!loading && !error && items.length === 0 ? (
-          <div className="rounded-2xl border border-zinc-800 bg-zinc-900 p-4 text-sm text-zinc-400">
-            No items found for the current filters.
-          </div>
-        ) : null}
-
-        {!loading && !error && items.length > 0 ? (
+        {items.length > 0 ? (
           <>
             <div className="grid grid-cols-2 gap-4 md:grid-cols-3 xl:grid-cols-5 2xl:grid-cols-6">
               {items.map((item) => {
@@ -556,100 +538,122 @@ export default function CatalogPageClient() {
                 const external = !item.canOpenPage && Boolean(item.url)
                 const display = getCardDisplayState(item)
 
+                const titleBlock = (
+                  <div className="line-clamp-2 text-sm font-semibold text-white transition hover:text-emerald-300">
+                    {item.title}
+                  </div>
+                )
+
                 return (
                   <article
                     key={item.id}
-                    className="overflow-hidden rounded-3xl border border-zinc-800 bg-zinc-900 shadow-lg transition hover:-translate-y-1"
+                    className="overflow-hidden rounded-3xl border border-white/10 bg-white/[0.03]"
                   >
                     {item.canOpenPage ? (
-                      <Link href={href} className="block h-32 w-full bg-zinc-800">
-                        {item.thumb ? (
-                          <img
-                            src={item.thumb}
-                            alt={item.title || 'Catalog item'}
-                            className="h-full w-full object-cover transition hover:opacity-90"
-                          />
-                        ) : null}
+                      <Link href={href} className="block">
+                        <div className="aspect-[16/9] w-full overflow-hidden bg-white/[0.04]">
+                          {item.thumb ? (
+                            <img
+                              src={item.thumb}
+                              alt={item.title || 'Catalog item'}
+                              className="h-full w-full object-cover"
+                            />
+                          ) : (
+                            <div className="flex h-full w-full items-center justify-center text-xs text-white/40">
+                              No image
+                            </div>
+                          )}
+                        </div>
                       </Link>
                     ) : external ? (
-                      <a
-                        href={href}
-                        target="_blank"
-                        rel="noreferrer"
-                        className="block h-32 w-full bg-zinc-800"
-                      >
-                        {item.thumb ? (
-                          <img
-                            src={item.thumb}
-                            alt={item.title || 'Catalog item'}
-                            className="h-full w-full object-cover transition hover:opacity-90"
-                          />
-                        ) : null}
+                      <a href={href} target="_blank" rel="noreferrer" className="block">
+                        <div className="aspect-[16/9] w-full overflow-hidden bg-white/[0.04]">
+                          {item.thumb ? (
+                            <img
+                              src={item.thumb}
+                              alt={item.title || 'Catalog item'}
+                              className="h-full w-full object-cover"
+                            />
+                          ) : (
+                            <div className="flex h-full w-full items-center justify-center text-xs text-white/40">
+                              No image
+                            </div>
+                          )}
+                        </div>
                       </a>
                     ) : (
-                      <div className="block h-32 w-full bg-zinc-800">
+                      <div className="aspect-[16/9] w-full overflow-hidden bg-white/[0.04]">
                         {item.thumb ? (
                           <img
                             src={item.thumb}
                             alt={item.title || 'Catalog item'}
                             className="h-full w-full object-cover opacity-90"
                           />
-                        ) : null}
+                        ) : (
+                          <div className="flex h-full w-full items-center justify-center text-xs text-white/40">
+                            No image
+                          </div>
+                        )}
                       </div>
                     )}
 
-                    <div className="p-4">
-                      <div className="mb-3 flex items-start justify-between gap-2">
+                    <div className="p-3">
+                      <div className="mb-2 flex items-start justify-between gap-2">
+                        <div className="min-w-0">
+                          {item.canOpenPage ? (
+                            <Link href={href} className="block">
+                              {titleBlock}
+                            </Link>
+                          ) : external ? (
+                            <a href={href} target="_blank" rel="noreferrer" className="block">
+                              {titleBlock}
+                            </a>
+                          ) : (
+                            <div className="line-clamp-2 text-sm font-semibold text-white">
+                              {item.title}
+                            </div>
+                          )}
+                        </div>
+
+                        {typeof item.metacritic === 'number' && item.metacritic > 0 ? (
+                          <span className="shrink-0 rounded-md border border-amber-500/40 bg-amber-500/10 px-2 py-0.5 text-[10px] font-semibold text-amber-300">
+                            MC {item.metacritic}
+                          </span>
+                        ) : null}
+                      </div>
+
+                      <div className="mb-2 flex flex-wrap items-center gap-2">
+                        {item.savings && Number(item.savings) > 0 ? (
+                          <span className="rounded-full border border-emerald-500/30 bg-emerald-500/10 px-2 py-0.5 text-[11px] font-medium text-emerald-300">
+                            -{item.savings}%
+                          </span>
+                        ) : null}
+
                         <span
-                          className={`rounded-full border px-2 py-1 text-[10px] font-medium uppercase tracking-wider ${getTypeBadgeClass(
+                          className={`rounded-full border px-2 py-0.5 text-[11px] font-medium uppercase tracking-wide ${getTypeBadgeClass(
                             item
                           )}`}
                         >
                           {getTypeLabel(item)}
                         </span>
 
-                        {display.hasDiscount ? (
-                          <span className="rounded-full border border-emerald-500/30 bg-emerald-500/10 px-2 py-1 text-[10px] font-medium text-emerald-300">
-                            -{item.savings}%
+                        {item.isFreeToPlay ? (
+                          <span className="rounded-full border border-sky-500/30 bg-sky-500/10 px-2 py-0.5 text-[11px] font-medium text-sky-300">
+                            Free to play
                           </span>
                         ) : null}
                       </div>
 
-                      {item.canOpenPage ? (
-                        <Link href={href}>
-                          <h2 className="line-clamp-2 min-h-[2.75rem] text-sm font-bold leading-5 transition hover:text-emerald-300">
-                            {item.title}
-                          </h2>
-                        </Link>
-                      ) : external ? (
-                        <a
-                          href={href}
-                          target="_blank"
-                          rel="noreferrer"
-                          className="block"
-                        >
-                          <h2 className="line-clamp-2 min-h-[2.75rem] text-sm font-bold leading-5 transition hover:text-emerald-300">
-                            {item.title}
-                          </h2>
-                        </a>
-                      ) : (
-                        <h2 className="line-clamp-2 min-h-[2.75rem] text-sm font-bold leading-5 text-zinc-100">
-                          {item.title}
-                        </h2>
-                      )}
-
-                      <div className="mt-3 rounded-2xl border border-zinc-800 bg-zinc-950 p-3">
-                        <div className="flex items-center justify-between gap-2">
-                          <p className="text-xl font-bold text-zinc-100">
-                            {display.priceLabel}
-                          </p>
-
-                          {display.showNormalPrice ? (
-                            <p className="text-xs text-zinc-400 line-through">
-                              ${item.normalPrice}
-                            </p>
-                          ) : null}
+                      <div className="rounded-2xl bg-black/40 p-3">
+                        <div className="text-2xl font-bold text-emerald-400">
+                          {display.priceLabel}
                         </div>
+
+                        {display.showNormalPrice ? (
+                          <div className="text-sm text-white/45 line-through">
+                            ${item.normalPrice}
+                          </div>
+                        ) : null}
 
                         {item.hasActiveOffer ? (
                           <div className="mt-2 inline-flex items-center gap-2 rounded-full border border-zinc-700 bg-zinc-900 px-3 py-1 text-[11px] text-zinc-300">

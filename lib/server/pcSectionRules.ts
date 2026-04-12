@@ -54,8 +54,6 @@ export const PC_SECTION_KEYS: readonly PcSectionKey[] = [
   'top-rated',
 ] as const
 
-export const BEST_DEALS_MIN_METACRITIC = 60
-export const BEST_DEALS_MIN_DISCOUNT = 70
 export const LATEST_RELEASES_WINDOW_DAYS = 30
 
 const PC_SECTION_LABELS: Record<PcSectionKey, string> = {
@@ -75,8 +73,8 @@ const PC_SECTION_SORT_RULES: Record<PcSectionKey, PcSectionSortRule[]> = {
   'best-deals': [
     { column: 'metacritic', ascending: false, nullsFirst: false },
     { column: 'discount_percent', ascending: false, nullsFirst: false },
-    { column: 'normal_price', ascending: false, nullsFirst: false },
     { column: 'price_last_synced_at', ascending: false, nullsFirst: false },
+    { column: 'normal_price', ascending: false, nullsFirst: false },
     { column: 'title', ascending: true },
   ],
   'latest-discounts': [
@@ -143,8 +141,6 @@ export function getPcSectionFilterSpec(
         requireDiscount: true,
         requireActiveOffer: true,
         requireMetacritic: true,
-        minDiscountPercent: BEST_DEALS_MIN_DISCOUNT,
-        minMetacritic: BEST_DEALS_MIN_METACRITIC,
         maxSortLatest: timeContext.nowEpoch,
       }
 

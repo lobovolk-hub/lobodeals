@@ -63,7 +63,7 @@ type SyncLogRow = {
   id: string
 }
 
-type BackfillScope = 'visible' | 'full_games'
+type BackfillScope = 'visible' | 'full_games' | 'ready_backlog'
 
 type CandidateScoreRow = PcGameRow & {
   current_sync_at?: string | null
@@ -107,7 +107,9 @@ function centsToMoney(value?: number | null) {
 }
 
 function normalizeScope(value: unknown): BackfillScope {
-  return value === 'full_games' ? 'full_games' : 'visible'
+  if (value === 'full_games') return 'full_games'
+  if (value === 'ready_backlog') return 'ready_backlog'
+  return 'visible'
 }
 
 function normalizeText(value: unknown) {
@@ -368,6 +370,35 @@ async function loadOfferMap(
   return offers
 }
 
+async function loadVisibleIdSet(
+  supabase: ReturnType<typeof getServiceSupabase>,
+  gameIds: string[]
+) {
+  const visibleIds = new Set<string>()
+  const chunkSize = 200
+
+  for (let i = 0; i < gameIds.length; i += chunkSize) {
+    const idChunk = gameIds.slice(i, i + chunkSize)
+
+    const { data, error } = await supabase
+      .from('pc_public_catalog_cache')
+      .select('pc_game_id')
+      .in('pc_game_id', idChunk)
+
+    if (error) {
+      throw new Error(`loadVisibleIdSet pc_public_catalog_cache failed: ${error.message}`)
+    }
+
+    for (const row of Array.isArray(data) ? data : []) {
+      const gameId = String((row as { pc_game_id?: string | null }).pc_game_id || '').trim()
+      if (!gameId) continue
+      visibleIds.add(gameId)
+    }
+  }
+
+  return visibleIds
+}
+
 async function loadVisibleRowsByQuery(
   supabase: ReturnType<typeof getServiceSupabase>,
   limit: number,
@@ -606,6 +637,103 @@ async function loadFullGameCandidates(
   return scored.slice(0, desiredCount)
 }
 
+async function loadReadyBacklogCandidates(
+  supabase: ReturnType<typeof getServiceSupabase>,
+  desiredCount: number
+) {
+  const pageSize = 200
+  const maxScanPages = 20
+  const seenIds = new Set<string>()
+  const scored: CandidateScoreRow[] = []
+
+  for (
+    let page = 0;
+    page < maxScanPages && scored.length < desiredCount * 4;
+    page += 1
+  ) {
+    const from = page * pageSize
+    const to = from + pageSize - 1
+
+    const { data, error } = await supabase
+      .from('pc_games')
+      .select(
+        'id, steam_app_id, steam_name, canonical_title, slug, updated_at, is_active, steam_type'
+      )
+      .eq('steam_type', 'game')
+      .eq('steam_inventory_source', 'steam_istoreservice')
+      .eq('is_catalog_ready', true)
+      .eq('is_free_to_play', false)
+      .not('steam_app_id', 'is', null)
+      .order('updated_at', { ascending: true, nullsFirst: true })
+      .range(from, to)
+
+    if (error) {
+      throw new Error(`loadReadyBacklogCandidates pc_games failed: ${error.message}`)
+    }
+
+    const games = Array.isArray(data) ? (data as PcGameRow[]) : []
+    if (!games.length) {
+      break
+    }
+
+    const gameIds = games.map((game) => String(game.id || '').trim()).filter(Boolean)
+    const [offerMap, visibleIds] = await Promise.all([
+      loadOfferMap(supabase, gameIds),
+      loadVisibleIdSet(supabase, gameIds),
+    ])
+
+    for (const game of games) {
+      const gameId = String(game.id || '').trim()
+      const steamAppID = String(game.steam_app_id || '').trim()
+
+      if (!gameId || !steamAppID) continue
+      if (seenIds.has(gameId)) continue
+      seenIds.add(gameId)
+
+      if (visibleIds.has(gameId)) {
+        continue
+      }
+
+      const offer = offerMap.get(gameId)
+      if (offer?.is_available) {
+        continue
+      }
+
+      const syncAt = offer?.price_last_synced_at || null
+      const priority = getFullGamesPriority(syncAt)
+
+      if (priority >= 99) {
+        continue
+      }
+
+      scored.push({
+        ...game,
+        current_sync_at: syncAt,
+        priority,
+        lane: 'fallback_cold',
+      })
+    }
+
+    if (games.length < pageSize) {
+      break
+    }
+  }
+
+  scored.sort((a, b) => {
+    if (a.priority !== b.priority) return a.priority - b.priority
+
+    const syncCompare = compareSyncAsc(
+      a.current_sync_at || null,
+      b.current_sync_at || null
+    )
+    if (syncCompare !== 0) return syncCompare
+
+    return compareSyncAsc(a.updated_at || null, b.updated_at || null)
+  })
+
+  return scored.slice(0, desiredCount)
+}
+
 async function loadCandidateGames(
   supabase: ReturnType<typeof getServiceSupabase>,
   desiredCount: number,
@@ -613,6 +741,10 @@ async function loadCandidateGames(
 ) {
   if (scope === 'visible') {
     return loadVisibleCandidates(supabase, desiredCount)
+  }
+
+  if (scope === 'ready_backlog') {
+    return loadReadyBacklogCandidates(supabase, desiredCount)
   }
 
   return loadFullGameCandidates(supabase, desiredCount)

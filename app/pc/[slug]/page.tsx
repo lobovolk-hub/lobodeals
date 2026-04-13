@@ -406,7 +406,7 @@ export default function PcCanonicalGamePage() {
                   <div className="flex items-center justify-between gap-3">
                     <h2 className="text-lg font-bold text-white">Screenshots</h2>
 
-                    {screenshots.length > 4 ? (
+                    {screenshots.length > 2 ? (
                       <div className="flex items-center gap-2">
                         <button
                           type="button"

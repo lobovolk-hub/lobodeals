@@ -126,7 +126,7 @@ export async function GET(request: Request) {
       )
       .ilike('search_title_normalized', `%${normalizedTitle}%`)
 
-    if (type === 'game' || type === 'dlc' || type === 'software') {
+    if (type === 'game' || type === 'dlc') {
       query = query.eq('steam_type', type)
     }
 

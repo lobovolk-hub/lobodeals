@@ -50,8 +50,6 @@ function normalizeType(value: string | null) {
 
   if (safe === 'game') return 'game'
   if (safe === 'dlc') return 'dlc'
-  if (safe === 'software') return 'software'
-
   return 'all'
 }
 
@@ -74,17 +72,11 @@ function getTypeLabel(item: CatalogItem) {
 
   if (type === 'game') return 'Game'
   if (type === 'dlc') return 'DLC'
-  if (type === 'software') return 'Software'
-
   return 'Item'
 }
 
 function getTypeBadgeClass(item: CatalogItem) {
   const type = String(item.steamType || '').trim().toLowerCase()
-
-  if (type === 'software') {
-    return 'border-sky-500/30 bg-sky-500/10 text-sky-300'
-  }
 
   if (type === 'dlc') {
     return 'border-amber-500/30 bg-amber-500/10 text-amber-300'
@@ -307,7 +299,7 @@ export default function CatalogPageClient() {
     })
   }
 
-  const changeType = (nextType: 'all' | 'game' | 'dlc' | 'software') => {
+  const changeType = (nextType: 'all' | 'game' | 'dlc') => {
     updateUrl({
       type: nextType === 'all' ? null : nextType,
       page: '1',
@@ -493,20 +485,7 @@ export default function CatalogPageClient() {
             }`}
           >
             DLC
-          </button>
-
-          <button
-            type="button"
-            onClick={() => changeType('software')}
-            className={`rounded-xl px-3 py-2 text-sm transition ${
-              type === 'software'
-                ? 'border border-emerald-500/30 bg-emerald-500/10 text-emerald-300'
-                : 'border border-zinc-800 bg-zinc-900 text-zinc-200 hover:bg-zinc-800'
-            }`}
-          >
-            Software
-          </button>
-        </div>
+          </button>        </div>
 
         <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
           <div className="text-sm text-zinc-400">

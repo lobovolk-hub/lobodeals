@@ -70,7 +70,6 @@ function getSafeTypeFilter(value: string) {
 
   if (normalized === 'game') return 'game'
   if (normalized === 'dlc') return 'dlc'
-  if (normalized === 'software') return 'software'
   return 'all'
 }
 

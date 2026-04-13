@@ -273,11 +273,10 @@ function getCategoriesFromBody(body: ImportBody): InventoryCategory[] {
   const includeVideos = body.include_videos === true
   const includeHardware = body.include_hardware === true
 
-  const categories: InventoryCategory[] = [
-    categoryMap.game,
-    categoryMap.dlc,
-    categoryMap.software,
-  ]
+const categories: InventoryCategory[] = [
+  categoryMap.game,
+  categoryMap.dlc,
+]
 
   if (includeVideos) categories.push(categoryMap.video)
   if (includeHardware) categories.push(categoryMap.hardware)

@@ -1,15 +1,26 @@
 export const runtime = 'nodejs'
 
+import { createClient } from '@supabase/supabase-js'
+
 type CandidateScope = 'visible' | 'full_games'
 
-type PromoteResponse = {
-  success?: boolean
-  promoted?: number
-  demoted?: number
-  totalGames?: number
-  readyGames?: number
-  visibleGames?: number
-  error?: string
+type PromoteRow = {
+  promoted_count?: number | null
+  demoted_count?: number | null
+  total_games?: number | null
+  ready_games?: number | null
+  visible_games?: number | null
+}
+
+function getServiceSupabase() {
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL
+  const serviceRole = process.env.SUPABASE_SERVICE_ROLE_KEY
+
+  if (!url || !serviceRole) {
+    throw new Error('Missing Supabase env vars for internal run steam catalog enrich')
+  }
+
+  return createClient(url, serviceRole)
 }
 
 function isAuthorized(request: Request) {
@@ -127,30 +138,23 @@ export async function POST(request: Request) {
       }
     }
 
-    let promoteResult: PromoteResponse | null = null
+    let promoteResult: {
+      promoted?: number
+      demoted?: number
+      totalGames?: number
+      readyGames?: number
+      visibleGames?: number
+    } | null = null
 
     if (promoteAfterRun && totalProcessed > 0 && scope === 'full_games') {
-      const promoteRes = await fetch(
-        `${origin}/api/internal-promote-public-ready-games`,
-        {
-          method: 'POST',
-          headers: {
-            Authorization: authHeader,
-            'Content-Type': 'application/json',
-          },
-          cache: 'no-store',
-        }
-      )
+      const supabase = getServiceSupabase()
+      const { data, error } = await supabase.rpc('promote_public_ready_games')
 
-      promoteResult = (await promoteRes.json().catch(() => ({}))) as PromoteResponse
-
-      if (!promoteRes.ok || !promoteResult?.success) {
+      if (error) {
         return Response.json(
           {
             success: false,
-            error:
-              promoteResult?.error ||
-              `Promote step failed with status ${promoteRes.status}`,
+            error: `promote_public_ready_games failed: ${error.message}`,
             iterationsRequested: iterations,
             batchSize,
             concurrency,
@@ -161,10 +165,19 @@ export async function POST(request: Request) {
             totalRateLimited,
             totalPriceRowsUpserted,
             runs,
-            promoteResult,
           },
           { status: 500 }
         )
+      }
+
+      const row = (Array.isArray(data) ? data[0] : data || {}) as PromoteRow
+
+      promoteResult = {
+        promoted: Number(row?.promoted_count || 0),
+        demoted: Number(row?.demoted_count || 0),
+        totalGames: Number(row?.total_games || 0),
+        readyGames: Number(row?.ready_games || 0),
+        visibleGames: Number(row?.visible_games || 0),
       }
     }
 

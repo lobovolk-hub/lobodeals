@@ -6,6 +6,7 @@ import { useRouter, useSearchParams } from 'next/navigation'
 import { supabase } from '@/lib/supabaseClient'
 
 type Mode = 'login' | 'signup' | 'recover'
+type SocialProvider = 'google' | 'facebook'
 
 function isValidEmail(value: string) {
   return /\S+@\S+\.\S+/.test(value)
@@ -30,14 +31,19 @@ function LoginPageInner() {
   const [password, setPassword] = useState('')
   const [confirmPassword, setConfirmPassword] = useState('')
   const [loading, setLoading] = useState(false)
-  const [googleLoading, setGoogleLoading] = useState(false)
+  const [socialLoading, setSocialLoading] = useState<SocialProvider | null>(null)
   const [message, setMessage] = useState('')
   const [errorMessage, setErrorMessage] = useState('')
 
-  const oauthRequested = useMemo(
-    () => searchParams.get('oauth') === 'google',
-    [searchParams]
-  )
+  const oauthProvider = useMemo(() => {
+    const value = searchParams.get('oauth')
+
+    if (value === 'google' || value === 'facebook') {
+      return value
+    }
+
+    return null
+  }, [searchParams])
 
   useEffect(() => {
     if (searchParams.get('verified') === '1') {
@@ -48,7 +54,7 @@ function LoginPageInner() {
   useEffect(() => {
     let cancelled = false
 
-    const syncSessionAfterOAuth = async () => {
+    async function syncSessionAfterOAuth() {
       try {
         const {
           data: { session },
@@ -59,26 +65,39 @@ function LoginPageInner() {
         if (session?.user) {
           router.push('/tracked')
           router.refresh()
-        } else if (oauthRequested) {
-          setErrorMessage('Google sign-in did not complete. Please try again.')
+          return
+        }
+
+        if (oauthProvider) {
+          setErrorMessage(
+            `${
+              oauthProvider === 'google' ? 'Google' : 'Facebook'
+            } sign-in did not complete. Please try again.`
+          )
         }
       } catch (error) {
         console.error(error)
 
-        if (!cancelled && oauthRequested) {
-          setErrorMessage('Unexpected Google sign-in error.')
+        if (!cancelled && oauthProvider) {
+          setErrorMessage(
+            `Unexpected ${oauthProvider === 'google' ? 'Google' : 'Facebook'} sign-in error.`
+          )
+        }
+      } finally {
+        if (!cancelled) {
+          setSocialLoading(null)
         }
       }
     }
 
-    if (oauthRequested) {
+    if (oauthProvider) {
       syncSessionAfterOAuth()
     }
 
     return () => {
       cancelled = true
     }
-  }, [oauthRequested, router])
+  }, [oauthProvider, router])
 
   const resetMessages = () => {
     setMessage('')
@@ -139,9 +158,9 @@ function LoginPageInner() {
     }
   }
 
-  const handleGoogleLogin = async () => {
+  const handleSocialLogin = async (provider: SocialProvider) => {
     resetMessages()
-    setGoogleLoading(true)
+    setSocialLoading(provider)
 
     try {
       const origin =
@@ -149,23 +168,28 @@ function LoginPageInner() {
           ? window.location.origin
           : process.env.NEXT_PUBLIC_SITE_URL || 'https://lobodeals.com'
 
-      const redirectTo = `${origin}/login?oauth=google`
+      const redirectTo = `${origin}/login?oauth=${provider}`
 
       const { error } = await supabase.auth.signInWithOAuth({
-        provider: 'google',
+        provider,
         options: {
           redirectTo,
         },
       })
 
       if (error) {
-        setErrorMessage(error.message || 'Could not start Google sign-in.')
-        setGoogleLoading(false)
+        setErrorMessage(
+          error.message ||
+            `Could not start ${provider === 'google' ? 'Google' : 'Facebook'} sign-in.`
+        )
+        setSocialLoading(null)
       }
     } catch (error) {
       console.error(error)
-      setErrorMessage('Unexpected Google sign-in error.')
-      setGoogleLoading(false)
+      setErrorMessage(
+        `Unexpected ${provider === 'google' ? 'Google' : 'Facebook'} sign-in error.`
+      )
+      setSocialLoading(null)
     }
   }
 
@@ -320,7 +344,7 @@ function LoginPageInner() {
             </h1>
             <p className="mt-2 text-sm text-zinc-400">
               {mode === 'login'
-                ? 'Sign in with your username, your email, or continue with Google.'
+                ? 'Sign in with your username, your email, Google, or Facebook.'
                 : mode === 'signup'
                 ? 'Create your account with email, username, and a password between 8 and 12 characters.'
                 : 'Enter your email or username and we will send a password recovery email.'}
@@ -388,24 +412,49 @@ function LoginPageInner() {
 
           {mode !== 'recover' ? (
             <>
-              <button
-                type="button"
-                onClick={handleGoogleLogin}
-                disabled={loading || googleLoading}
-                className="mb-4 flex w-full items-center justify-center gap-3 rounded-2xl border border-zinc-700 bg-white px-5 py-3 text-sm font-semibold text-black transition hover:opacity-90 disabled:opacity-60"
-              >
-                <svg
-                  aria-hidden="true"
-                  viewBox="0 0 24 24"
-                  className="h-5 w-5"
+              <div className="mb-4 grid grid-cols-1 gap-3 sm:grid-cols-2">
+                <button
+                  type="button"
+                  onClick={() => handleSocialLogin('google')}
+                  disabled={loading || socialLoading !== null}
+                  className="flex w-full items-center justify-center gap-3 rounded-2xl border border-zinc-700 bg-white px-5 py-3 text-sm font-semibold text-black transition hover:opacity-90 disabled:opacity-60"
                 >
-                  <path
-                    fill="#EA4335"
-                    d="M12 10.2v3.9h5.5c-.2 1.3-1.5 3.9-5.5 3.9-3.3 0-6.1-2.8-6.1-6.2s2.8-6.2 6.1-6.2c1.9 0 3.1.8 3.9 1.5l2.7-2.6C16.9 2.9 14.7 2 12 2 6.9 2 2.8 6.2 2.8 11.3S6.9 20.7 12 20.7c6.9 0 9.1-4.8 9.1-7.3 0-.5 0-.8-.1-1.2H12z"
-                  />
-                </svg>
-                {googleLoading ? 'Redirecting to Google...' : 'Continue with Google'}
-              </button>
+                  <svg
+                    aria-hidden="true"
+                    viewBox="0 0 24 24"
+                    className="h-5 w-5"
+                  >
+                    <path
+                      fill="#EA4335"
+                      d="M12 10.2v3.9h5.5c-.2 1.3-1.5 3.9-5.5 3.9-3.3 0-6.1-2.8-6.1-6.2s2.8-6.2 6.1-6.2c1.9 0 3.1.8 3.9 1.5l2.7-2.6C16.9 2.9 14.7 2 12 2 6.9 2 2.8 6.2 2.8 11.3S6.9 20.7 12 20.7c6.9 0 9.1-4.8 9.1-7.3 0-.5 0-.8-.1-1.2H12z"
+                    />
+                  </svg>
+                  {socialLoading === 'google'
+                    ? 'Redirecting...'
+                    : 'Continue with Google'}
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => handleSocialLogin('facebook')}
+                  disabled={loading || socialLoading !== null}
+                  className="flex w-full items-center justify-center gap-3 rounded-2xl border border-[#1877F2]/30 bg-[#1877F2]/10 px-5 py-3 text-sm font-semibold text-[#9dc4ff] transition hover:bg-[#1877F2]/15 disabled:opacity-60"
+                >
+                  <svg
+                    aria-hidden="true"
+                    viewBox="0 0 24 24"
+                    className="h-5 w-5"
+                  >
+                    <path
+                      fill="currentColor"
+                      d="M24 12.073C24 5.405 18.627 0 12 0S0 5.405 0 12.073c0 6.019 4.388 11.008 10.125 11.927v-8.437H7.078v-3.49h3.047V9.413c0-3.03 1.792-4.704 4.533-4.704 1.313 0 2.686.236 2.686.236v2.973H15.83c-1.491 0-1.956.931-1.956 1.887v2.268h3.328l-.532 3.49h-2.796V24C19.612 23.081 24 18.092 24 12.073z"
+                    />
+                  </svg>
+                  {socialLoading === 'facebook'
+                    ? 'Redirecting...'
+                    : 'Continue with Facebook'}
+                </button>
+              </div>
 
               <div className="mb-4 flex items-center gap-3">
                 <div className="h-px flex-1 bg-zinc-800" />
@@ -535,7 +584,7 @@ function LoginPageInner() {
             <button
               type="button"
               onClick={submit}
-              disabled={loading || googleLoading}
+              disabled={loading || socialLoading !== null}
               className="rounded-2xl bg-white px-5 py-3 text-sm font-semibold text-black transition hover:opacity-90 disabled:opacity-60"
             >
               {loading
@@ -554,7 +603,7 @@ function LoginPageInner() {
 
           <div className="mt-6 rounded-2xl border border-zinc-800 bg-zinc-950 p-4">
             <p className="text-sm text-zinc-400">
-              You can sign in with email, username, or Google. Account creation still supports email + username + password.
+              You can sign in with email, username, Google, or Facebook. If the provider uses the same verified email, your account can stay connected under the same profile.
             </p>
           </div>
 

@@ -1,27 +1,6 @@
 export const runtime = 'nodejs'
 
-import { createClient } from '@supabase/supabase-js'
-
 type CandidateScope = 'visible' | 'full_games'
-
-type PromoteRow = {
-  promoted_count?: number | null
-  demoted_count?: number | null
-  total_games?: number | null
-  ready_games?: number | null
-  visible_games?: number | null
-}
-
-function getServiceSupabase() {
-  const url = process.env.NEXT_PUBLIC_SUPABASE_URL
-  const serviceRole = process.env.SUPABASE_SERVICE_ROLE_KEY
-
-  if (!url || !serviceRole) {
-    throw new Error('Missing Supabase env vars for internal run steam catalog enrich')
-  }
-
-  return createClient(url, serviceRole)
-}
 
 function isAuthorized(request: Request) {
   const authHeader = request.headers.get('authorization') || ''
@@ -47,13 +26,11 @@ export async function POST(request: Request) {
     const body = await request.json().catch(() => ({}))
 
     const requestedIterations = Number(body?.iterations || 10)
-    const requestedBatchSize = Number(body?.batchSize || 50)
+    const requestedBatchSize = Number(body?.batchSize || 25)
     const requestedConcurrency = Number(body?.concurrency || 2)
     const scope = normalizeScope(body?.scope)
     const promoteAfterRun =
-      typeof body?.promoteAfterRun === 'boolean'
-        ? body.promoteAfterRun
-        : scope === 'full_games'
+      typeof body?.promoteAfterRun === 'boolean' ? body.promoteAfterRun : false
 
     const iterations = Math.max(1, Math.min(100, requestedIterations))
     const batchSize = Math.max(1, Math.min(100, requestedBatchSize))
@@ -138,63 +115,25 @@ export async function POST(request: Request) {
       }
     }
 
-    let promoteResult: {
-      promoted?: number
-      demoted?: number
-      totalGames?: number
-      readyGames?: number
-      visibleGames?: number
-    } | null = null
-
-    if (promoteAfterRun && totalProcessed > 0 && scope === 'full_games') {
-      const supabase = getServiceSupabase()
-      const { data, error } = await supabase.rpc('promote_public_ready_games')
-
-      if (error) {
-        return Response.json(
-          {
-            success: false,
-            error: `promote_public_ready_games failed: ${error.message}`,
-            iterationsRequested: iterations,
-            batchSize,
-            concurrency,
-            scope,
-            totalProcessed,
-            totalEnriched,
-            totalScreenshotsInserted,
-            totalRateLimited,
-            totalPriceRowsUpserted,
-            runs,
-          },
-          { status: 500 }
-        )
-      }
-
-      const row = (Array.isArray(data) ? data[0] : data || {}) as PromoteRow
-
-      promoteResult = {
-        promoted: Number(row?.promoted_count || 0),
-        demoted: Number(row?.demoted_count || 0),
-        totalGames: Number(row?.total_games || 0),
-        readyGames: Number(row?.ready_games || 0),
-        visibleGames: Number(row?.visible_games || 0),
-      }
-    }
-
     return Response.json({
       success: true,
+      mode: 'enrich_only',
       iterationsRequested: iterations,
       batchSize,
       concurrency,
       scope,
-      promoteAfterRun,
+      promoteAfterRunRequested: promoteAfterRun,
+      promotionDeferredToSql: true,
       totalProcessed,
       totalEnriched,
       totalScreenshotsInserted,
       totalRateLimited,
       totalPriceRowsUpserted,
       runs,
-      promoteResult,
+      nextStep:
+        scope === 'full_games'
+          ? 'Run select * from public.promote_public_ready_games(); in Supabase SQL after this enrich pass.'
+          : 'No SQL promotion step required for visible maintenance runs.',
     })
   } catch (error) {
     console.error('internal-run-steam-catalog-enrich error', error)

@@ -6,7 +6,7 @@ import { useRouter, useSearchParams } from 'next/navigation'
 import { supabase } from '@/lib/supabaseClient'
 
 type Mode = 'login' | 'signup' | 'recover'
-type SocialProvider = 'google' | 'facebook'
+type SocialProvider = 'google'
 
 function isValidEmail(value: string) {
   return /\S+@\S+\.\S+/.test(value)
@@ -38,7 +38,7 @@ function LoginPageInner() {
   const oauthProvider = useMemo(() => {
     const value = searchParams.get('oauth')
 
-    if (value === 'google' || value === 'facebook') {
+    if (value === 'google') {
       return value
     }
 
@@ -69,19 +69,13 @@ function LoginPageInner() {
         }
 
         if (oauthProvider) {
-          setErrorMessage(
-            `${
-              oauthProvider === 'google' ? 'Google' : 'Facebook'
-            } sign-in did not complete. Please try again.`
-          )
+          setErrorMessage('Google sign-in did not complete. Please try again.')
         }
       } catch (error) {
         console.error(error)
 
         if (!cancelled && oauthProvider) {
-          setErrorMessage(
-            `Unexpected ${oauthProvider === 'google' ? 'Google' : 'Facebook'} sign-in error.`
-          )
+          setErrorMessage('Unexpected Google sign-in error.')
         }
       } finally {
         if (!cancelled) {
@@ -178,17 +172,12 @@ function LoginPageInner() {
       })
 
       if (error) {
-        setErrorMessage(
-          error.message ||
-            `Could not start ${provider === 'google' ? 'Google' : 'Facebook'} sign-in.`
-        )
+        setErrorMessage(error.message || 'Could not start Google sign-in.')
         setSocialLoading(null)
       }
     } catch (error) {
       console.error(error)
-      setErrorMessage(
-        `Unexpected ${provider === 'google' ? 'Google' : 'Facebook'} sign-in error.`
-      )
+      setErrorMessage('Unexpected Google sign-in error.')
       setSocialLoading(null)
     }
   }
@@ -344,7 +333,7 @@ function LoginPageInner() {
             </h1>
             <p className="mt-2 text-sm text-zinc-400">
               {mode === 'login'
-                ? 'Sign in with your username, your email, Google, or Facebook.'
+                ? 'Sign in with your username, your email, or Google.'
                 : mode === 'signup'
                 ? 'Create your account with email, username, and a password between 8 and 12 characters.'
                 : 'Enter your email or username and we will send a password recovery email.'}
@@ -412,7 +401,7 @@ function LoginPageInner() {
 
           {mode !== 'recover' ? (
             <>
-              <div className="mb-4 grid grid-cols-1 gap-3 sm:grid-cols-2">
+              <div className="mb-4">
                 <button
                   type="button"
                   onClick={() => handleSocialLogin('google')}
@@ -432,27 +421,6 @@ function LoginPageInner() {
                   {socialLoading === 'google'
                     ? 'Redirecting...'
                     : 'Continue with Google'}
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => handleSocialLogin('facebook')}
-                  disabled={loading || socialLoading !== null}
-                  className="flex w-full items-center justify-center gap-3 rounded-2xl border border-[#1877F2]/30 bg-[#1877F2]/10 px-5 py-3 text-sm font-semibold text-[#9dc4ff] transition hover:bg-[#1877F2]/15 disabled:opacity-60"
-                >
-                  <svg
-                    aria-hidden="true"
-                    viewBox="0 0 24 24"
-                    className="h-5 w-5"
-                  >
-                    <path
-                      fill="currentColor"
-                      d="M24 12.073C24 5.405 18.627 0 12 0S0 5.405 0 12.073c0 6.019 4.388 11.008 10.125 11.927v-8.437H7.078v-3.49h3.047V9.413c0-3.03 1.792-4.704 4.533-4.704 1.313 0 2.686.236 2.686.236v2.973H15.83c-1.491 0-1.956.931-1.956 1.887v2.268h3.328l-.532 3.49h-2.796V24C19.612 23.081 24 18.092 24 12.073z"
-                    />
-                  </svg>
-                  {socialLoading === 'facebook'
-                    ? 'Redirecting...'
-                    : 'Continue with Facebook'}
                 </button>
               </div>
 
@@ -603,7 +571,7 @@ function LoginPageInner() {
 
           <div className="mt-6 rounded-2xl border border-zinc-800 bg-zinc-950 p-4">
             <p className="text-sm text-zinc-400">
-              You can sign in with email, username, Google, or Facebook. If the provider uses the same verified email, your account can stay connected under the same profile.
+              You can sign in with email, username, or Google. If Google uses the same verified email, your account can stay connected under the same profile.
             </p>
           </div>
 

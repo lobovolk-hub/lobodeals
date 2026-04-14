@@ -6,7 +6,6 @@ type SteamAppDetailsData = {
   name?: string
   type?: string
   short_description?: string
-  detailed_description?: string
   header_image?: string
   capsule_image?: string
   background?: string
@@ -658,7 +657,6 @@ export async function POST(request: Request) {
 
       const resolvedType = normalizeText(data.type)?.toLowerCase() || 'game'
       const shortDescription = normalizeText(data.short_description)
-      const detailedDescription = normalizeText(data.detailed_description)
       const headerImage = normalizeText(data.header_image)
       const capsuleImage = normalizeText(data.capsule_image)
       const heroImage = normalizeText(data.background)
@@ -678,7 +676,6 @@ export async function POST(request: Request) {
 
       if (steamName) gamePatch.steam_name = steamName
       if (shortDescription) gamePatch.short_description = shortDescription
-      if (detailedDescription) gamePatch.description = detailedDescription
       if (headerImage) gamePatch.header_image = headerImage
       if (capsuleImage) gamePatch.capsule_image = capsuleImage
       if (heroImage) gamePatch.hero_image_url = heroImage

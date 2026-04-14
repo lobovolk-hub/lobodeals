@@ -36,7 +36,6 @@ type CanonicalPcGameLocal = {
   isFreeToPlay: boolean
   releaseDate: string | null
   shortDescription: string | null
-  description: string | null
   headerImage: string | null
   capsuleImage: string | null
   screenshots: string[]
@@ -315,7 +314,7 @@ export default function PcCanonicalGamePage() {
     game?.capsuleImage ||
     '/placeholder-game.jpg'
 
-  const description = cleanDescription(game?.description || game?.shortDescription || '')
+  const description = cleanDescription(game?.shortDescription || '')
   const metacritic =
     typeof game?.metacritic === 'number'
       ? game.metacritic

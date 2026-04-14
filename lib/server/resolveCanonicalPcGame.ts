@@ -26,7 +26,6 @@ type PcGameRow = {
   is_catalog_ready?: boolean | null
   release_date?: string | null
   short_description?: string | null
-  description?: string | null
   header_image?: string | null
   capsule_image?: string | null
   hero_image_url?: string | null
@@ -83,7 +82,6 @@ export type CanonicalPcGameLocal = {
   isFreeToPlay: boolean
   releaseDate: string | null
   shortDescription: string | null
-  description: string | null
   headerImage: string | null
   capsuleImage: string | null
   heroImage: string | null
@@ -153,7 +151,7 @@ async function findGameRow(
   if (!slug) return null
 
   const selectFields =
-    'id, steam_app_id, slug, steam_name, canonical_title, canonical_key, normalized_title, steam_type, is_free_to_play, is_active, is_catalog_ready, release_date, short_description, description, header_image, capsule_image, hero_image_url, clip_url, metacritic, steam_genres, steam_developers, steam_publishers, steam_movie_url'
+    'id, steam_app_id, slug, steam_name, canonical_title, canonical_key, normalized_title, steam_type, is_free_to_play, is_active, is_catalog_ready, release_date, short_description, header_image, capsule_image, hero_image_url, clip_url, metacritic, steam_genres, steam_developers, steam_publishers, steam_movie_url'
 
   const { data: bySlug, error: slugError } = await supabase
     .from('pc_games')
@@ -337,7 +335,6 @@ export async function resolveCanonicalPcGame(
     isFreeToPlay: Boolean(game.is_free_to_play),
     releaseDate: String(game.release_date || '').trim() || null,
     shortDescription: String(game.short_description || '').trim() || null,
-    description: String(game.description || '').trim() || null,
     headerImage: String(game.header_image || '').trim() || null,
     capsuleImage: String(game.capsule_image || '').trim() || null,
     heroImage: String(game.hero_image_url || '').trim() || null,

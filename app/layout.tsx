@@ -10,9 +10,6 @@ export const metadata: Metadata = {
   title: 'LoboDeals — Steam PC game deals, prices, and catalog',
   description:
     'Browse Steam PC games and DLC, track prices, and discover the latest deals in one clean catalog with LoboDeals.',
-  alternates: {
-    canonical: 'https://www.lobodeals.com',
-  },
   robots: {
     index: true,
     follow: true,

@@ -1,4 +1,39 @@
+import type { Metadata } from 'next'
 export const revalidate = 300
+
+export const metadata: Metadata = {
+  title: 'LoboDeals — Steam PC game deals, prices, and catalog',
+  description:
+    'Browse Steam PC games and DLC, track prices, and discover the latest deals in one clean catalog with LoboDeals.',
+  alternates: {
+    canonical: 'https://www.lobodeals.com',
+  },
+  openGraph: {
+    title: 'LoboDeals — Steam PC game deals, prices, and catalog',
+    description:
+      'Browse Steam PC games and DLC, track prices, and discover the latest deals in one clean catalog with LoboDeals.',
+    url: 'https://www.lobodeals.com',
+    siteName: 'LoboDeals',
+    images: [
+      {
+        url: '/og-lobodeals.png',
+        width: 1200,
+        height: 630,
+        alt: 'LoboDeals',
+      },
+    ],
+    locale: 'en_US',
+    type: 'website',
+  },
+  twitter: {
+    card: 'summary_large_image',
+    title: 'LoboDeals — Steam PC game deals, prices, and catalog',
+    description:
+      'Browse Steam PC games and DLC, track prices, and discover the latest deals in one clean catalog with LoboDeals.',
+    images: ['/og-lobodeals.png'],
+  },
+}
+
 
 import Link from 'next/link'
 import { createClient } from '@supabase/supabase-js'

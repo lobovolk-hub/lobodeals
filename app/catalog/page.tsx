@@ -1,3 +1,38 @@
+
+export const metadata: Metadata = {
+  title: 'Catalog | LoboDeals',
+  description:
+    'Explore the LoboDeals catalog of Steam PC games and DLC, with one clean place to browse titles, prices, and current deals.',
+  alternates: {
+    canonical: 'https://www.lobodeals.com/catalog',
+  },
+  openGraph: {
+    title: 'Catalog | LoboDeals',
+    description:
+      'Explore the LoboDeals catalog of Steam PC games and DLC, with one clean place to browse titles, prices, and current deals.',
+    url: 'https://www.lobodeals.com/catalog',
+    siteName: 'LoboDeals',
+    images: [
+      {
+        url: '/og-lobodeals.png',
+        width: 1200,
+        height: 630,
+        alt: 'LoboDeals',
+      },
+    ],
+    locale: 'en_US',
+    type: 'website',
+  },
+  twitter: {
+    card: 'summary_large_image',
+    title: 'Catalog | LoboDeals',
+    description:
+      'Explore the LoboDeals catalog of Steam PC games and DLC, with one clean place to browse titles, prices, and current deals.',
+    images: ['/og-lobodeals.png'],
+  },
+}
+
+import type { Metadata } from 'next'
 import { Suspense } from 'react'
 import CatalogPageClient from './CatalogPageClient'
 

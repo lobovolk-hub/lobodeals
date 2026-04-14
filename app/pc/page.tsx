@@ -1,3 +1,38 @@
+
+export const metadata: Metadata = {
+  title: 'PC Deals and Catalog | LoboDeals',
+  description:
+    'Browse Steam PC games, compare prices, and discover the latest discounts and top-rated releases on LoboDeals.',
+  alternates: {
+    canonical: 'https://www.lobodeals.com/pc',
+  },
+  openGraph: {
+    title: 'PC Deals and Catalog | LoboDeals',
+    description:
+      'Browse Steam PC games, compare prices, and discover the latest discounts and top-rated releases on LoboDeals.',
+    url: 'https://www.lobodeals.com/pc',
+    siteName: 'LoboDeals',
+    images: [
+      {
+        url: '/og-lobodeals.png',
+        width: 1200,
+        height: 630,
+        alt: 'LoboDeals',
+      },
+    ],
+    locale: 'en_US',
+    type: 'website',
+  },
+  twitter: {
+    card: 'summary_large_image',
+    title: 'PC Deals and Catalog | LoboDeals',
+    description:
+      'Browse Steam PC games, compare prices, and discover the latest discounts and top-rated releases on LoboDeals.',
+    images: ['/og-lobodeals.png'],
+  },
+}
+
+import type { Metadata } from 'next'
 import { Suspense } from 'react'
 import PcPageClient from './PcPageClient'
 

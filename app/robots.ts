@@ -5,7 +5,11 @@ export default function robots(): MetadataRoute.Robots {
     rules: [
       {
         userAgent: '*',
-        allow: '/',
+        allow: [
+          '/',
+          '/api/catalog-browse-page',
+          '/api/catalog-suggest',
+        ],
         disallow: [
           '/api/',
           '/login',

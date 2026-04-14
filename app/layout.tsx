@@ -7,13 +7,20 @@ import GoogleAnalytics from '@/app/components/GoogleAnalytics'
 
 export const metadata: Metadata = {
   metadataBase: new URL('https://www.lobodeals.com'),
-  title: 'LoboDeals — Steam-first PC game deals and catalog',
+  title: 'LoboDeals — Steam PC game deals, prices, and catalog',
   description:
-    'Browse the Steam PC catalog, discover discounts, and open one canonical local page per game with LoboDeals.',
+    'Browse Steam PC games and DLC, track prices, and discover the latest deals in one clean catalog with LoboDeals.',
+  alternates: {
+    canonical: 'https://www.lobodeals.com',
+  },
+  robots: {
+    index: true,
+    follow: true,
+  },
   openGraph: {
-    title: 'LoboDeals — Steam-first PC game deals and catalog',
+    title: 'LoboDeals — Steam PC game deals, prices, and catalog',
     description:
-      'Browse the Steam PC catalog, discover discounts, and open one canonical local page per game with LoboDeals.',
+      'Browse Steam PC games and DLC, track prices, and discover the latest deals in one clean catalog with LoboDeals.',
     url: 'https://www.lobodeals.com',
     siteName: 'LoboDeals',
     images: [
@@ -29,9 +36,9 @@ export const metadata: Metadata = {
   },
   twitter: {
     card: 'summary_large_image',
-    title: 'LoboDeals — Steam-first PC game deals and catalog',
+    title: 'LoboDeals — Steam PC game deals, prices, and catalog',
     description:
-      'Browse the Steam PC catalog, discover discounts, and open one canonical local page per game with LoboDeals.',
+      'Browse Steam PC games and DLC, track prices, and discover the latest deals in one clean catalog with LoboDeals.',
     images: ['/og-lobodeals.png'],
   },
   icons: {

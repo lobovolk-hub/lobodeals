@@ -402,34 +402,34 @@ export default function PcCanonicalGamePage() {
                   </div>
                 </div>
 
-                <div>
-                  <div className="flex items-center justify-between gap-3">
-                    <h2 className="text-lg font-bold text-white">Screenshots</h2>
+                {visibleThumbs.length > 0 ? (
+                  <div>
+                    <div className="flex items-center justify-between gap-3">
+                      <h2 className="text-lg font-bold text-white">Screenshots</h2>
 
-                    {screenshots.length > 2 ? (
-                      <div className="flex items-center gap-2">
-                        <button
-                          type="button"
-                          disabled={thumbOffset <= 0}
-                          onClick={() => setThumbOffset((prev) => Math.max(0, prev - 1))}
-                          className="rounded-xl border border-zinc-700 px-3 py-2 text-xs font-medium text-zinc-100 transition hover:bg-zinc-800 disabled:cursor-not-allowed disabled:opacity-40"
-                        >
-                          ←
-                        </button>
+                      {screenshots.length > 2 ? (
+                        <div className="flex items-center gap-2">
+                          <button
+                            type="button"
+                            disabled={thumbOffset <= 0}
+                            onClick={() => setThumbOffset((prev) => Math.max(0, prev - 1))}
+                            className="rounded-xl border border-zinc-700 px-3 py-2 text-xs font-medium text-zinc-100 transition hover:bg-zinc-800 disabled:cursor-not-allowed disabled:opacity-40"
+                          >
+                            ←
+                          </button>
 
-                        <button
-                          type="button"
-                          disabled={thumbOffset >= maxThumbOffset}
-                          onClick={() => setThumbOffset((prev) => Math.min(maxThumbOffset, prev + 1))}
-                          className="rounded-xl border border-zinc-700 px-3 py-2 text-xs font-medium text-zinc-100 transition hover:bg-zinc-800 disabled:cursor-not-allowed disabled:opacity-40"
-                        >
-                          →
-                        </button>
-                      </div>
-                    ) : null}
-                  </div>
+                          <button
+                            type="button"
+                            disabled={thumbOffset >= maxThumbOffset}
+                            onClick={() => setThumbOffset((prev) => Math.min(maxThumbOffset, prev + 1))}
+                            className="rounded-xl border border-zinc-700 px-3 py-2 text-xs font-medium text-zinc-100 transition hover:bg-zinc-800 disabled:cursor-not-allowed disabled:opacity-40"
+                          >
+                            →
+                          </button>
+                        </div>
+                      ) : null}
+                    </div>
 
-                  {visibleThumbs.length > 0 ? (
                     <div className="mt-3 grid grid-cols-2 gap-3">
                       {visibleThumbs.map((shot) => (
                         <button
@@ -453,12 +453,8 @@ export default function PcCanonicalGamePage() {
                         </button>
                       ))}
                     </div>
-                  ) : (
-                    <div className="mt-3 rounded-2xl border border-zinc-800 bg-zinc-950 p-4 text-sm text-zinc-400">
-                      No screenshots yet.
-                    </div>
-                  )}
-                </div>
+                  </div>
+                ) : null}
               </div>
 
               <div className="min-w-0">

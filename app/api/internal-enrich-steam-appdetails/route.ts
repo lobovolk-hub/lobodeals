@@ -71,11 +71,6 @@ type PcGameMetaRow = {
   metacritic?: number | null
 }
 
-type ScreenshotRow = {
-  pc_game_id?: string | null
-  image_url?: string | null
-}
-
 type EnrichCandidate = {
   id: string
   steam_app_id: string
@@ -87,7 +82,6 @@ type EnrichCandidate = {
   has_active_offer?: boolean
   discount_percent?: number
   price_last_synced_at?: string | null
-  screenshot_count?: number
   release_date?: string | null
   metacritic?: number | null
   priority_order: number
@@ -213,35 +207,6 @@ function parseSteamReleaseDate(rawValue?: string | null) {
   return null
 }
 
-function buildUniqueScreenshots(
-  gameId: string,
-  screenshots?: SteamAppDetailsData['screenshots']
-) {
-  if (!Array.isArray(screenshots) || screenshots.length === 0) {
-    return []
-  }
-
-  const seen = new Set<string>()
-  const uniqueUrls: string[] = []
-
-  for (const shot of screenshots) {
-    const url =
-      normalizeText(shot?.path_full) || normalizeText(shot?.path_thumbnail)
-
-    if (!url) continue
-    if (seen.has(url)) continue
-
-    seen.add(url)
-    uniqueUrls.push(url)
-  }
-
-  return uniqueUrls.map((imageUrl, index) => ({
-    pc_game_id: gameId,
-    image_url: imageUrl,
-    sort_order: index,
-  }))
-}
-
 function parseDateMs(value?: string | null) {
   const ms = Date.parse(String(value || ''))
   return Number.isFinite(ms) ? ms : null
@@ -280,45 +245,29 @@ function chunkArray<T>(items: T[], chunkSize: number) {
 }
 
 function classifyVisibleCandidate(params: {
-  screenshot_count: number
   release_date?: string | null
   metacritic?: number | null
 }) {
-  const screenshotCount = Number(params.screenshot_count || 0)
   const hasReleaseDate = Boolean(params.release_date)
   const metacritic = Number(params.metacritic || 0)
 
-  if (screenshotCount === 0 && !hasReleaseDate) {
+  if (!hasReleaseDate) {
     return {
       priority_order: 1,
-      priority_bucket: 'P1_missing_screenshot_and_release_date',
+      priority_bucket: 'P1_missing_release_date',
     }
   }
 
-  if (screenshotCount === 0 && hasReleaseDate) {
+  if (metacritic <= 0) {
     return {
       priority_order: 2,
-      priority_bucket: 'P2_only_missing_screenshot',
-    }
-  }
-
-  if (screenshotCount >= 1 && !hasReleaseDate) {
-    return {
-      priority_order: 3,
-      priority_bucket: 'P3_only_missing_release_date',
-    }
-  }
-
-  if (screenshotCount >= 1 && hasReleaseDate && metacritic <= 0) {
-    return {
-      priority_order: 4,
-      priority_bucket: 'P4_premium_without_metacritic',
+      priority_bucket: 'P2_missing_metacritic',
     }
   }
 
   return {
-    priority_order: 5,
-    priority_bucket: 'P5_premium_with_metacritic',
+    priority_order: 3,
+    priority_bucket: 'P3_catalog_maintenance',
   }
 }
 
@@ -437,35 +386,6 @@ async function loadPcGameMetaMap(
   return metaMap
 }
 
-async function loadScreenshotCountMap(
-  supabase: ReturnType<typeof getServiceSupabase>,
-  gameIds: string[]
-) {
-  const countMap = new Map<string, number>()
-
-  for (const chunk of chunkArray(gameIds, 500)) {
-    const { data, error } = await supabase
-      .from('pc_game_screenshots')
-      .select('pc_game_id, image_url')
-      .in('pc_game_id', chunk)
-
-    if (error) {
-      throw new Error(`loadScreenshotCountMap failed: ${error.message}`)
-    }
-
-    for (const row of (Array.isArray(data) ? data : []) as ScreenshotRow[]) {
-      const gameId = String(row.pc_game_id || '').trim()
-      const imageUrl = String(row.image_url || '').trim()
-
-      if (!gameId || !imageUrl) continue
-
-      countMap.set(gameId, (countMap.get(gameId) || 0) + 1)
-    }
-  }
-
-  return countMap
-}
-
 async function loadPriorityVisibleCandidates(
   supabase: ReturnType<typeof getServiceSupabase>,
   desiredCount: number
@@ -499,10 +419,7 @@ async function loadPriorityVisibleCandidates(
     .map((row) => String(row.pc_game_id || '').trim())
     .filter(Boolean)
 
-  const [metaMap, screenshotCountMap] = await Promise.all([
-    loadPcGameMetaMap(supabase, gameIds),
-    loadScreenshotCountMap(supabase, gameIds),
-  ])
+  const metaMap = await loadPcGameMetaMap(supabase, gameIds)
 
   const candidates: EnrichCandidate[] = []
 
@@ -513,13 +430,11 @@ async function loadPriorityVisibleCandidates(
 
     if (!gameId || !steamAppID || !meta) continue
 
-    const screenshotCount = Number(screenshotCountMap.get(gameId) || 0)
     const releaseDate = normalizeText(meta.release_date)
     const metacritic =
       Number.isFinite(Number(meta.metacritic)) ? Number(meta.metacritic) : null
 
     const classified = classifyVisibleCandidate({
-      screenshot_count: screenshotCount,
       release_date: releaseDate,
       metacritic,
     })
@@ -535,7 +450,6 @@ async function loadPriorityVisibleCandidates(
       has_active_offer: Boolean(row.has_active_offer),
       discount_percent: Number(row.discount_percent || 0),
       price_last_synced_at: normalizeText(row.price_last_synced_at),
-      screenshot_count: screenshotCount,
       release_date: releaseDate,
       metacritic,
       priority_order: classified.priority_order,
@@ -700,9 +614,9 @@ export async function POST(request: Request) {
 
     let processed = 0
     let enriched = 0
-    let screenshotsInserted = 0
     let rateLimited = 0
     let priceRowsUpserted = 0
+    const screenshotsInserted = 0
 
     await runWithConcurrency(candidates, concurrency, async (game) => {
       const gameId = String(game.id || '').trim()
@@ -781,34 +695,6 @@ export async function POST(request: Request) {
           `pc_games update failed for ${steamAppID}: ${gameError.message}`
         )
       }
-
-      const screenshots = buildUniqueScreenshots(gameId, data.screenshots)
-
-      if (screenshots.length > 0) {
-        const { error: deleteShotsError } = await supabase
-          .from('pc_game_screenshots')
-          .delete()
-          .eq('pc_game_id', gameId)
-
-        if (deleteShotsError) {
-          throw new Error(
-            `pc_game_screenshots delete failed for ${steamAppID}: ${deleteShotsError.message}`
-          )
-        }
-
-        const { error: insertShotsError } = await supabase
-          .from('pc_game_screenshots')
-          .insert(screenshots)
-
-        if (insertShotsError) {
-          throw new Error(
-            `pc_game_screenshots insert failed for ${steamAppID}: ${insertShotsError.message}`
-          )
-        }
-
-        screenshotsInserted += screenshots.length
-      }
-
       const priceOverview = data.price_overview
       const salePrice = centsToMoney(priceOverview?.final || null)
       const normalPrice = centsToMoney(priceOverview?.initial || null)

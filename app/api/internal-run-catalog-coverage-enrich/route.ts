@@ -6,6 +6,7 @@ type PcGameRow = {
   id: string
   steam_app_id?: string | null
   metacritic?: number | null
+  release_date?: string | null
 }
 
 function getServiceSupabase() {
@@ -64,7 +65,7 @@ export async function POST(request: Request) {
 
     const { data: games, error: gamesError } = await supabase
       .from('pc_games')
-      .select('id, steam_app_id, metacritic')
+      .select('id, steam_app_id, metacritic, release_date')
       .eq('is_catalog_ready', true)
       .eq('steam_type', 'game')
       .not('steam_app_id', 'is', null)
@@ -75,37 +76,12 @@ export async function POST(request: Request) {
     }
 
     const typedGames = Array.isArray(games) ? (games as PcGameRow[]) : []
-    const gameIds = typedGames
-      .map((row) => String(row.id || '').trim())
-      .filter(Boolean)
-
-    const screenshotSet = new Set<string>()
-
-    const idChunks = chunkArray(gameIds, 100)
-
-    for (const ids of idChunks) {
-      const { data: screenshotRows, error: screenshotError } = await supabase
-        .from('pc_game_screenshots')
-        .select('pc_game_id')
-        .in('pc_game_id', ids)
-
-      if (screenshotError) {
-        throw new Error(`screenshots query failed: ${screenshotError.message}`)
-      }
-
-      for (const row of Array.isArray(screenshotRows) ? screenshotRows : []) {
-        const key = String((row as any)?.pc_game_id || '').trim()
-        if (key) screenshotSet.add(key)
-      }
-    }
-
     const targets = dedupeStrings(
       typedGames
         .filter((game) => {
-          const gameId = String(game.id || '').trim()
-          const hasScreenshots = screenshotSet.has(gameId)
           const hasMetacritic = Number(game.metacritic || 0) > 0
-          return !hasScreenshots || !hasMetacritic
+          const hasReleaseDate = Boolean(String(game.release_date || '').trim())
+          return !hasMetacritic || !hasReleaseDate
         })
         .map((game) => String(game.steam_app_id || '').trim())
     ).slice(0, maxTargets)
@@ -118,7 +94,6 @@ export async function POST(request: Request) {
       ok: boolean
       targetedSteamAppIDs: string[]
       enriched?: number
-      screenshotsInserted?: number
       error?: string
     }> = []
 
@@ -146,7 +121,6 @@ export async function POST(request: Request) {
         ok: Boolean(res.ok && data?.success),
         targetedSteamAppIDs: chunk,
         enriched: Number(data?.enriched || 0),
-        screenshotsInserted: Number(data?.screenshotsInserted || 0),
         error: !res.ok || !data?.success ? data?.error || 'Chunk failed' : undefined,
       })
     }

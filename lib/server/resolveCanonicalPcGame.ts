@@ -54,11 +54,6 @@ type PcStoreOfferRow = {
   initial_formatted?: string | null
 }
 
-type PcScreenshotRow = {
-  image_url?: string | null
-  sort_order?: number | null
-}
-
 export type CanonicalPcOfferLocal = {
   id: string
   source: 'steam'
@@ -251,21 +246,6 @@ async function loadOffers(
   })
 }
 
-async function loadScreenshots(
-  supabase: ReturnType<typeof getServiceSupabase>,
-  pcGameId: string
-) {
-  const { data, error } = await supabase
-    .from('pc_game_screenshots')
-    .select('image_url, sort_order')
-    .eq('pc_game_id', pcGameId)
-    .order('sort_order', { ascending: true })
-
-  if (error) throw error
-
-  return Array.isArray(data) ? (data as PcScreenshotRow[]) : []
-}
-
 export async function resolveCanonicalPcGame(
   input: ResolveCanonicalPcGameInput
 ): Promise<CanonicalPcGameLocal | null> {
@@ -277,7 +257,6 @@ export async function resolveCanonicalPcGame(
   const offers = await loadOffers(supabase, game.id)
   if (offers.length === 0) return null
 
-  const screenshotsRows = await loadScreenshots(supabase, game.id)
 
   const canonicalTitle =
     String(game.canonical_title || '').trim() ||
@@ -346,9 +325,7 @@ export async function resolveCanonicalPcGame(
         typeof metacritic === 'number' ? String(metacritic) : undefined,
     } satisfies CanonicalPcOfferLocal)
 
-  const screenshots = dedupeStrings(
-    screenshotsRows.map((row) => String(row.image_url || '').trim())
-  )
+  const screenshots: string[] = []
 
   return {
     id: game.id,

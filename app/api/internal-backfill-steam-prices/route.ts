@@ -743,14 +743,14 @@ async function loadListableMissingUsOfferCandidates(
   supabase: ReturnType<typeof getServiceSupabase>,
   desiredCount: number
 ) {
-  const pageSize = 200
-  const maxScanPages = 40
+  const pageSize = Math.max(desiredCount * 3, 150)
+  const maxScanPages = 12
   const seenIds = new Set<string>()
   const scored: CandidateScoreRow[] = []
 
   for (
     let page = 0;
-    page < maxScanPages && scored.length < desiredCount * 4;
+    page < maxScanPages && scored.length < desiredCount * 3;
     page += 1
   ) {
     const from = page * pageSize
@@ -759,14 +759,10 @@ async function loadListableMissingUsOfferCandidates(
     const { data, error } = await supabase
       .from('pc_games')
       .select(
-        'id, steam_app_id, steam_name, canonical_title, slug, updated_at, is_active, steam_type, is_free_to_play, header_image, capsule_image, hero_image_url, is_catalog_ready'
+        'id, steam_app_id, steam_name, canonical_title, slug, updated_at, is_active, steam_type, is_free_to_play, is_catalog_ready'
       )
       .eq('steam_type', 'game')
-      .eq('steam_inventory_source', 'steam_istoreservice')
-      .eq('is_catalog_ready', false)
-      .eq('is_free_to_play', false)
       .not('steam_app_id', 'is', null)
-      .not('slug', 'is', null)
       .order('updated_at', { ascending: true, nullsFirst: true })
       .range(from, to)
 
@@ -777,19 +773,13 @@ async function loadListableMissingUsOfferCandidates(
     }
 
     const games = Array.isArray(data) ? (data as any[]) : []
-    if (!games.length) {
-      break
-    }
+    if (!games.length) break
 
     const filteredGames = games.filter((game) => {
-      const resolvedTitle =
-        normalizeText(game.steam_name) || normalizeText(game.canonical_title)
-      const hasThumb =
-        normalizeText(game.header_image) ||
-        normalizeText(game.capsule_image) ||
-        normalizeText(game.hero_image_url)
-
-      return Boolean(resolvedTitle && hasThumb)
+      if (seenIds.has(String(game.id))) return false
+      if (game.is_catalog_ready === true) return false
+      if (game.is_free_to_play === true) return false
+      return true
     })
 
     const gameIds = filteredGames
@@ -807,16 +797,9 @@ async function loadListableMissingUsOfferCandidates(
       seenIds.add(gameId)
 
       const offer = offerMap.get(gameId)
-
-      if (offer) {
-        continue
-      }
+      if (offer) continue
 
       const priority = getFullGamesPriority(game.updated_at || null)
-
-      if (priority >= 99) {
-        continue
-      }
 
       scored.push({
         ...game,
@@ -826,14 +809,11 @@ async function loadListableMissingUsOfferCandidates(
       })
     }
 
-    if (games.length < pageSize) {
-      break
-    }
+    if (games.length < pageSize) break
   }
 
   scored.sort((a, b) => {
     if (a.priority !== b.priority) return a.priority - b.priority
-
     return compareSyncAsc(a.updated_at || null, b.updated_at || null)
   })
 

@@ -63,7 +63,11 @@ type SyncLogRow = {
   id: string
 }
 
-type BackfillScope = 'visible' | 'full_games' | 'ready_backlog'
+type BackfillScope =
+  | 'visible'
+  | 'full_games'
+  | 'ready_backlog'
+  | 'listable_missing_us_offer'
 
 type CandidateScoreRow = PcGameRow & {
   current_sync_at?: string | null
@@ -109,6 +113,7 @@ function centsToMoney(value?: number | null) {
 function normalizeScope(value: unknown): BackfillScope {
   if (value === 'full_games') return 'full_games'
   if (value === 'ready_backlog') return 'ready_backlog'
+  if (value === 'listable_missing_us_offer') return 'listable_missing_us_offer'
   return 'visible'
 }
 
@@ -734,6 +739,107 @@ async function loadReadyBacklogCandidates(
   return scored.slice(0, desiredCount)
 }
 
+async function loadListableMissingUsOfferCandidates(
+  supabase: ReturnType<typeof getServiceSupabase>,
+  desiredCount: number
+) {
+  const pageSize = 200
+  const maxScanPages = 40
+  const seenIds = new Set<string>()
+  const scored: CandidateScoreRow[] = []
+
+  for (
+    let page = 0;
+    page < maxScanPages && scored.length < desiredCount * 4;
+    page += 1
+  ) {
+    const from = page * pageSize
+    const to = from + pageSize - 1
+
+    const { data, error } = await supabase
+      .from('pc_games')
+      .select(
+        'id, steam_app_id, steam_name, canonical_title, slug, updated_at, is_active, steam_type, is_free_to_play, header_image, capsule_image, hero_image_url, is_catalog_ready'
+      )
+      .eq('steam_type', 'game')
+      .eq('steam_inventory_source', 'steam_istoreservice')
+      .eq('is_catalog_ready', false)
+      .eq('is_free_to_play', false)
+      .not('steam_app_id', 'is', null)
+      .not('slug', 'is', null)
+      .order('updated_at', { ascending: true, nullsFirst: true })
+      .range(from, to)
+
+    if (error) {
+      throw new Error(
+        `loadListableMissingUsOfferCandidates pc_games failed: ${error.message}`
+      )
+    }
+
+    const games = Array.isArray(data) ? (data as any[]) : []
+    if (!games.length) {
+      break
+    }
+
+    const filteredGames = games.filter((game) => {
+      const resolvedTitle =
+        normalizeText(game.steam_name) || normalizeText(game.canonical_title)
+      const hasThumb =
+        normalizeText(game.header_image) ||
+        normalizeText(game.capsule_image) ||
+        normalizeText(game.hero_image_url)
+
+      return Boolean(resolvedTitle && hasThumb)
+    })
+
+    const gameIds = filteredGames
+      .map((game) => String(game.id || '').trim())
+      .filter(Boolean)
+
+    const offerMap = await loadOfferMap(supabase, gameIds)
+
+    for (const game of filteredGames) {
+      const gameId = String(game.id || '').trim()
+      const steamAppID = String(game.steam_app_id || '').trim()
+
+      if (!gameId || !steamAppID) continue
+      if (seenIds.has(gameId)) continue
+      seenIds.add(gameId)
+
+      const offer = offerMap.get(gameId)
+
+      if (offer) {
+        continue
+      }
+
+      const priority = getFullGamesPriority(game.updated_at || null)
+
+      if (priority >= 99) {
+        continue
+      }
+
+      scored.push({
+        ...game,
+        current_sync_at: null,
+        priority,
+        lane: 'fallback_cold',
+      })
+    }
+
+    if (games.length < pageSize) {
+      break
+    }
+  }
+
+  scored.sort((a, b) => {
+    if (a.priority !== b.priority) return a.priority - b.priority
+
+    return compareSyncAsc(a.updated_at || null, b.updated_at || null)
+  })
+
+  return scored.slice(0, desiredCount)
+}
+
 async function loadCandidateGames(
   supabase: ReturnType<typeof getServiceSupabase>,
   desiredCount: number,
@@ -745,6 +851,10 @@ async function loadCandidateGames(
 
   if (scope === 'ready_backlog') {
     return loadReadyBacklogCandidates(supabase, desiredCount)
+  }
+
+  if (scope === 'listable_missing_us_offer') {
+    return loadListableMissingUsOfferCandidates(supabase, desiredCount)
   }
 
   return loadFullGameCandidates(supabase, desiredCount)

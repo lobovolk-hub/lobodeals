@@ -1,5 +1,6 @@
 import Link from 'next/link'
 import { createServerSupabaseClient } from '@/lib/supabase/server'
+import { MobileSiteHeader } from './mobile-site-header'
 
 const primaryLinks = [
   { href: '/', label: 'Home' },
@@ -58,7 +59,9 @@ export async function SiteHeader() {
 
   return (
     <header className="sticky top-0 z-50 border-b border-zinc-800 bg-black/95 text-white backdrop-blur">
-      <div className="mx-auto flex max-w-[1700px] items-center justify-between gap-6 px-6 py-4">
+      <MobileSiteHeader isLoggedIn={isLoggedIn} />
+
+      <div className="mx-auto hidden max-w-[1700px] items-center justify-between gap-6 px-6 py-4 md:flex">
         <Link href="/" className="flex items-center gap-3">
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img
@@ -75,7 +78,7 @@ export async function SiteHeader() {
           </div>
         </Link>
 
-        <nav className="hidden items-center gap-6 text-sm font-semibold text-zinc-300 md:flex">
+        <nav className="flex items-center gap-6 text-sm font-semibold text-zinc-300">
           {primaryLinks.map((link) => (
             <Link
               key={link.href}
@@ -87,26 +90,9 @@ export async function SiteHeader() {
           ))}
         </nav>
 
-        <div className="hidden items-center gap-2 md:flex">
+        <div className="flex items-center gap-2">
           <AccountLinks isLoggedIn={isLoggedIn} />
         </div>
-
-        <nav className="flex items-center gap-2 text-xs font-semibold text-zinc-300 sm:gap-3 sm:text-sm md:hidden">
-          <Link href="/catalog" className="transition hover:text-white">
-            Catalog
-          </Link>
-
-          <Link href="/deals" className="transition hover:text-white">
-            Deals
-          </Link>
-
-          <Link
-            href={isLoggedIn ? '/profile' : '/login'}
-            className="shrink-0 whitespace-nowrap transition hover:text-white"
-          >
-            {isLoggedIn ? 'Profile' : 'Login'}
-          </Link>
-        </nav>
       </div>
     </header>
   )
@@ -126,7 +112,7 @@ export async function SiteFooter() {
       ]
     : [
         { href: '/tracked', label: 'Tracked' },
-        { href: '/login', label: 'Log in' },
+        { href: '/login', label: 'Login' },
       ]
 
   return (

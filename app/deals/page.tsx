@@ -400,7 +400,7 @@ export default async function DealsPage({ searchParams }: DealsPageProps) {
           </div>
         ) : null}
 
-        <section className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-6">
+        <section className="grid grid-cols-2 gap-2 sm:gap-3 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-6">
           {items.map((item) => (
             <ItemCard key={item.id} item={item} />
           ))}

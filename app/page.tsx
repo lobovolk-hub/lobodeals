@@ -80,7 +80,7 @@ function Grid({ items }: { items: ItemCardData[] }) {
   }
 
   return (
-    <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
+    <div className="grid grid-cols-2 gap-2 sm:gap-3 lg:grid-cols-3 xl:grid-cols-6">
       {items.map((item) => (
         <ItemCard key={item.id} item={item} />
       ))}

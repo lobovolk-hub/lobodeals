@@ -39,7 +39,7 @@ function AccountLinks({ isLoggedIn }: { isLoggedIn: boolean }) {
 
       <Link
         href="/login"
-        className="rounded-xl bg-white px-4 py-2 text-sm font-bold text-black transition hover:opacity-90"
+        className="shrink-0 whitespace-nowrap rounded-xl border border-zinc-700 px-3 py-2 text-sm font-bold text-zinc-300 transition hover:border-zinc-500 hover:text-white"
       >
         Login
       </Link>

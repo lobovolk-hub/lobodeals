@@ -3,7 +3,6 @@ import type { Metadata } from 'next'
 import type { ReactNode } from 'react'
 import { supabase } from '@/lib/supabase'
 import { HomeFeaturedCarousel } from '@/components/home-featured-carousel'
-import { HomeSearchBar } from '@/components/home-search-bar'
 import { ItemCard, type ItemCardData } from '@/components/item-card'
 
 export const dynamic = 'force-dynamic'
@@ -191,15 +190,7 @@ export default async function HomePage() {
   return (
     <main className="min-h-screen bg-black text-white">
       <div className="mx-auto max-w-[1700px] px-6 py-10">
-        <div className="mb-8 space-y-4">
-  <HomeSearchBar
-    totalLabel={
-      count !== null
-        ? `${count.toLocaleString('en-US')} games tracked`
-        : undefined
-    }
-  />
-
+        <div className="mb-8">
   <h1 className="text-4xl font-black tracking-tight md:text-5xl">
     LoboDeals' choice
   </h1>

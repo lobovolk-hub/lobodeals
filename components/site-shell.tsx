@@ -1,6 +1,7 @@
 import Link from 'next/link'
 import { createServerSupabaseClient } from '@/lib/supabase/server'
 import { MobileSiteHeader } from './mobile-site-header'
+import { SiteHeaderSearch } from './site-header-search'
 
 const primaryLinks = [
   { href: '/', label: 'Home' },
@@ -61,8 +62,8 @@ export async function SiteHeader() {
     <header className="sticky top-0 z-50 border-b border-zinc-800 bg-black/95 text-white backdrop-blur">
       <MobileSiteHeader isLoggedIn={isLoggedIn} />
 
-      <div className="mx-auto hidden max-w-[1700px] items-center justify-between gap-6 px-6 py-4 md:flex">
-        <Link href="/" className="flex items-center gap-3">
+      <div className="mx-auto hidden max-w-[1700px] items-center justify-between gap-5 px-6 py-4 md:flex">
+        <Link href="/" className="flex shrink-0 items-center gap-3">
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img
             src="/logo.png"
@@ -78,7 +79,7 @@ export async function SiteHeader() {
           </div>
         </Link>
 
-        <nav className="flex items-center gap-6 text-sm font-semibold text-zinc-300">
+        <nav className="flex shrink-0 items-center gap-5 text-sm font-semibold text-zinc-300">
           {primaryLinks.map((link) => (
             <Link
               key={link.href}
@@ -90,7 +91,9 @@ export async function SiteHeader() {
           ))}
         </nav>
 
-        <div className="flex items-center gap-2">
+        <SiteHeaderSearch />
+
+        <div className="flex shrink-0 items-center gap-2">
           <AccountLinks isLoggedIn={isLoggedIn} />
         </div>
       </div>

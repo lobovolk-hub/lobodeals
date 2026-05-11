@@ -5,6 +5,7 @@ import { ItemCard, type ItemCardData } from '@/components/item-card'
 
 export const dynamic = 'force-dynamic'
 export const revalidate = 0
+
 export const metadata: Metadata = {
   title: 'PlayStation deals',
   description:
@@ -57,6 +58,16 @@ function isValidTab(value: string | undefined): value is TabKey {
 
 function isValidSort(value: string | undefined): value is SortKey {
   return sortOptions.some((sort) => sort.key === value)
+}
+
+function getSafePage(value: string | undefined) {
+  const parsed = Number(value || '1')
+
+  if (!Number.isFinite(parsed)) {
+    return 1
+  }
+
+  return Math.max(1, Math.floor(parsed))
 }
 
 function getDealsHref({
@@ -220,7 +231,7 @@ export default async function DealsPage({ searchParams }: DealsPageProps) {
   const letter = (params.letter || 'ALL').toUpperCase()
   const sort = isValidSort(params.sort) ? params.sort : 'discount'
 
-  const page = Math.max(1, Number(params.page || '1'))
+  const page = getSafePage(params.page)
   const from = (page - 1) * PAGE_SIZE
   const to = from + PAGE_SIZE - 1
 
@@ -280,216 +291,126 @@ export default async function DealsPage({ searchParams }: DealsPageProps) {
     <main className="min-h-screen bg-black text-white">
       <div className="mx-auto max-w-[1700px] px-6 py-10">
         <section className="mb-8 rounded-3xl border border-zinc-800 bg-zinc-900 p-6 md:p-8">
-          <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
-            <div>
-              <h1 className="text-3xl font-bold tracking-tight md:text-4xl">
-  Deals
-</h1>
-            </div>
+          <div className="flex items-center justify-between gap-3">
+            <h1 className="text-3xl font-bold tracking-tight md:text-4xl">
+              Deals
+            </h1>
 
-            <div className="rounded-2xl border border-zinc-800 bg-black px-4 py-3 text-sm text-zinc-300">
+            <div className="shrink-0 rounded-xl border border-zinc-800 bg-black px-3 py-2 text-xs text-zinc-300 sm:text-sm">
               <span className="font-semibold text-white">{totalItems}</span>{' '}
               deals found
             </div>
           </div>
 
-          <div className="mt-5 space-y-3 lg:hidden">
-  <details className="rounded-2xl border border-zinc-800 bg-black">
-    <summary className="flex cursor-pointer list-none items-center justify-between gap-3 px-4 py-3 text-sm font-bold text-white [&::-webkit-details-marker]:hidden">
-      <span>Type</span>
-      <span className="text-zinc-500">
-        {tabs.find((item) => item.key === tab)?.label || 'All'}
-      </span>
-    </summary>
+          <div className="relative mt-5 grid grid-cols-3 gap-2">
+            <details className="group">
+              <summary className="flex h-12 cursor-pointer list-none items-center justify-center rounded-xl border border-zinc-800 bg-black px-2 text-xs font-black text-white transition hover:border-zinc-600 [&::-webkit-details-marker]:hidden">
+                Type
+              </summary>
 
-    <div className="grid grid-cols-2 gap-2 border-t border-zinc-800 p-3">
-      {tabs.map((item) => {
-        const isActive = item.key === tab
+              <div className="absolute left-0 right-0 z-40 mt-2 rounded-2xl border border-zinc-800 bg-black p-3 shadow-2xl">
+                <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+                  {tabs.map((item) => {
+                    const isActive = item.key === tab
 
-        return (
-          <Link
-            key={item.key}
-            href={getDealsHref({
-              tab: item.key,
-              letter,
-              sort,
-            })}
-            className={
-              isActive
-                ? 'rounded-xl bg-white px-3 py-2 text-center text-xs font-bold text-black'
-                : 'rounded-xl border border-zinc-700 px-3 py-2 text-center text-xs font-bold text-zinc-300 transition hover:border-zinc-500 hover:text-white'
-            }
-          >
-            {item.label}
-          </Link>
-        )
-      })}
-    </div>
-  </details>
+                    return (
+                      <Link
+                        key={item.key}
+                        href={getDealsHref({
+                          tab: item.key,
+                          letter,
+                          sort,
+                        })}
+                        className={
+                          isActive
+                            ? 'rounded-xl bg-white px-3 py-2 text-center text-xs font-bold text-black'
+                            : 'rounded-xl border border-zinc-700 px-3 py-2 text-center text-xs font-bold text-zinc-300 transition hover:border-zinc-500 hover:text-white'
+                        }
+                      >
+                        {item.label}
+                      </Link>
+                    )
+                  })}
+                </div>
+              </div>
+            </details>
 
-  <details className="rounded-2xl border border-zinc-800 bg-black">
-    <summary className="flex cursor-pointer list-none items-center justify-between gap-3 px-4 py-3 text-sm font-bold text-white [&::-webkit-details-marker]:hidden">
-      <span>Category</span>
-      <span className="text-zinc-500">
-        {sortOptions.find((item) => item.key === sort)?.label ||
-          'Highest discounts'}
-      </span>
-    </summary>
+            <details className="group">
+              <summary className="flex h-12 cursor-pointer list-none items-center justify-center rounded-xl border border-zinc-800 bg-black px-2 text-xs font-black text-white transition hover:border-zinc-600 [&::-webkit-details-marker]:hidden">
+                Category
+              </summary>
 
-    <div className="grid grid-cols-1 gap-2 border-t border-zinc-800 p-3">
-      {sortOptions.map((item) => {
-        const isActive = item.key === sort
+              <div className="absolute left-0 right-0 z-40 mt-2 rounded-2xl border border-zinc-800 bg-black p-3 shadow-2xl">
+                <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
+                  {sortOptions.map((item) => {
+                    const isActive = item.key === sort
 
-        return (
-          <Link
-            key={item.key}
-            href={getDealsHref({
-              tab,
-              letter,
-              sort: item.key,
-            })}
-            className={
-              isActive
-                ? 'rounded-xl bg-white px-3 py-2 text-center text-xs font-bold text-black'
-                : 'rounded-xl border border-zinc-700 px-3 py-2 text-center text-xs font-bold text-zinc-300 transition hover:border-zinc-500 hover:text-white'
-            }
-          >
-            {item.label}
-          </Link>
-        )
-      })}
-    </div>
-  </details>
+                    return (
+                      <Link
+                        key={item.key}
+                        href={getDealsHref({
+                          tab,
+                          letter,
+                          sort: item.key,
+                        })}
+                        className={
+                          isActive
+                            ? 'rounded-xl bg-white px-3 py-2 text-center text-xs font-bold text-black'
+                            : 'rounded-xl border border-zinc-700 px-3 py-2 text-center text-xs font-bold text-zinc-300 transition hover:border-zinc-500 hover:text-white'
+                        }
+                      >
+                        {item.label}
+                      </Link>
+                    )
+                  })}
+                </div>
+              </div>
+            </details>
 
-  <details className="rounded-2xl border border-zinc-800 bg-black">
-    <summary className="flex cursor-pointer list-none items-center justify-between gap-3 px-4 py-3 text-sm font-bold text-white [&::-webkit-details-marker]:hidden">
-      <span>Letters</span>
-      <span className="text-zinc-500">
-        {letter === 'ALL' ? 'All' : letter}
-      </span>
-    </summary>
+            <details className="group">
+              <summary className="flex h-12 cursor-pointer list-none items-center justify-center rounded-xl border border-zinc-800 bg-black px-2 text-xs font-black text-white transition hover:border-zinc-600 [&::-webkit-details-marker]:hidden">
+                Letters
+              </summary>
 
-    <div className="grid grid-cols-6 gap-2 border-t border-zinc-800 p-3">
-      <Link
-        href={getDealsHref({ tab, sort })}
-        className={
-          letter === 'ALL'
-            ? 'rounded-lg bg-white px-2 py-2 text-center text-xs font-bold text-black'
-            : 'rounded-lg border border-zinc-700 px-2 py-2 text-center text-xs font-bold text-zinc-300 transition hover:border-zinc-500 hover:text-white'
-        }
-      >
-        All
-      </Link>
+              <div className="absolute left-0 right-0 z-40 mt-2 rounded-2xl border border-zinc-800 bg-black p-3 shadow-2xl">
+                <div className="grid grid-cols-6 gap-2 sm:grid-cols-9 md:grid-cols-12">
+                  <Link
+                    href={getDealsHref({ tab, sort })}
+                    className={
+                      letter === 'ALL'
+                        ? 'rounded-lg bg-white px-2 py-2 text-center text-xs font-bold text-black'
+                        : 'rounded-lg border border-zinc-700 px-2 py-2 text-center text-xs font-bold text-zinc-300 transition hover:border-zinc-500 hover:text-white'
+                    }
+                  >
+                    All
+                  </Link>
 
-      {letters.map((item) => {
-        const normalizedLetter = item.toUpperCase()
-        const isActive = letter === normalizedLetter
+                  {letters.map((item) => {
+                    const normalizedLetter = item.toUpperCase()
+                    const isActive = letter === normalizedLetter
 
-        return (
-          <Link
-            key={item}
-            href={getDealsHref({
-              tab,
-              letter: normalizedLetter,
-              sort,
-            })}
-            className={
-              isActive
-                ? 'rounded-lg bg-white px-2 py-2 text-center text-xs font-bold text-black'
-                : 'rounded-lg border border-zinc-700 px-2 py-2 text-center text-xs font-bold text-zinc-300 transition hover:border-zinc-500 hover:text-white'
-            }
-          >
-            {item}
-          </Link>
-        )
-      })}
-    </div>
-  </details>
-</div>
-
-<div className="mt-5 hidden flex-wrap gap-2 lg:flex">
-  {tabs.map((item) => {
-    const isActive = item.key === tab
-
-    return (
-      <Link
-        key={item.key}
-        href={getDealsHref({
-          tab: item.key,
-          letter,
-          sort,
-        })}
-        className={
-          isActive
-            ? 'rounded-full bg-white px-4 py-2 text-sm font-semibold text-black'
-            : 'rounded-full border border-zinc-700 px-4 py-2 text-sm font-semibold text-zinc-300 transition hover:border-zinc-500 hover:text-white'
-        }
-      >
-        {item.label}
-      </Link>
-    )
-  })}
-</div>
-
-<div className="mt-5 hidden flex-wrap gap-2 lg:flex">
-  {sortOptions.map((item) => {
-    const isActive = item.key === sort
-
-    return (
-      <Link
-        key={item.key}
-        href={getDealsHref({
-          tab,
-          letter,
-          sort: item.key,
-        })}
-        className={
-          isActive
-            ? 'rounded-full bg-zinc-200 px-4 py-2 text-sm font-semibold text-black'
-            : 'rounded-full border border-zinc-700 px-4 py-2 text-sm font-semibold text-zinc-300 transition hover:border-zinc-500 hover:text-white'
-        }
-      >
-        {item.label}
-      </Link>
-    )
-  })}
-</div>
-
-<div className="mt-5 hidden flex-wrap gap-1 lg:flex">
-  <Link
-    href={getDealsHref({ tab, sort })}
-    className={
-      letter === 'ALL'
-        ? 'rounded-lg bg-white px-3 py-2 text-xs font-bold text-black'
-        : 'rounded-lg border border-zinc-700 px-3 py-2 text-xs font-bold text-zinc-300 transition hover:border-zinc-500 hover:text-white'
-    }
-  >
-    All
-  </Link>
-
-  {letters.map((item) => {
-    const normalizedLetter = item.toUpperCase()
-    const isActive = letter === normalizedLetter
-
-    return (
-      <Link
-        key={item}
-        href={getDealsHref({
-          tab,
-          letter: normalizedLetter,
-          sort,
-        })}
-        className={
-          isActive
-            ? 'rounded-lg bg-white px-3 py-2 text-xs font-bold text-black'
-            : 'rounded-lg border border-zinc-700 px-3 py-2 text-xs font-bold text-zinc-300 transition hover:border-zinc-500 hover:text-white'
-        }
-      >
-        {item}
-      </Link>
-    )
-  })}
-</div>
+                    return (
+                      <Link
+                        key={item}
+                        href={getDealsHref({
+                          tab,
+                          letter: normalizedLetter,
+                          sort,
+                        })}
+                        className={
+                          isActive
+                            ? 'rounded-lg bg-white px-2 py-2 text-center text-xs font-bold text-black'
+                            : 'rounded-lg border border-zinc-700 px-2 py-2 text-center text-xs font-bold text-zinc-300 transition hover:border-zinc-500 hover:text-white'
+                        }
+                      >
+                        {item}
+                      </Link>
+                    )
+                  })}
+                </div>
+              </div>
+            </details>
+          </div>
         </section>
 
         <div className="mb-6">

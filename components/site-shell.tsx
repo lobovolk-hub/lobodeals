@@ -102,9 +102,9 @@ export async function SiteHeader() {
 
           <Link
             href={isLoggedIn ? '/profile' : '/login'}
-            className="whitespace-nowrap transition hover:text-white"
+            className="shrink-0 whitespace-nowrap transition hover:text-white"
           >
-            {isLoggedIn ? 'Profile' : 'Log in'}
+            {isLoggedIn ? 'Profile' : 'Login'}
           </Link>
         </nav>
       </div>

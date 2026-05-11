@@ -1,6 +1,7 @@
 import type { Metadata } from 'next'
 import { Geist, Geist_Mono } from 'next/font/google'
 import { SiteFooter, SiteHeader } from '@/components/site-shell'
+import { DetailsAutoClose } from '@/components/details-auto-close'
 import './globals.css'
 
 const geistSans = Geist({
@@ -75,6 +76,8 @@ export default function RootLayout({
       className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
     >
       <body className="min-h-full bg-black text-white">
+        <DetailsAutoClose />
+
         <div className="flex min-h-screen flex-col">
           <SiteHeader />
           <div className="flex-1">{children}</div>

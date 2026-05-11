@@ -192,10 +192,6 @@ export default async function HomePage() {
     <main className="min-h-screen bg-black text-white">
       <div className="mx-auto max-w-[1700px] px-6 py-10">
         <div className="mb-8 space-y-4">
-  <h1 className="text-4xl font-black tracking-tight md:text-5xl">
-    LoboDeals' choice
-  </h1>
-
   <HomeSearchBar
     totalLabel={
       count !== null
@@ -203,6 +199,10 @@ export default async function HomePage() {
         : undefined
     }
   />
+
+  <h1 className="text-4xl font-black tracking-tight md:text-5xl">
+    LoboDeals' choice
+  </h1>
 </div>
 
 <HomeFeaturedCarousel items={featuredItems} />

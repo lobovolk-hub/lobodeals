@@ -322,92 +322,208 @@ export default async function CatalogPage({ searchParams }: CatalogPageProps) {
             </div>
           </form>
 
-          <div className="mt-5 flex flex-wrap gap-2">
-            {tabs.map((item) => {
-              const isActive = item.key === tab
+          <div className="mt-5 space-y-3 lg:hidden">
+  <details className="rounded-2xl border border-zinc-800 bg-black">
+    <summary className="flex cursor-pointer list-none items-center justify-between gap-3 px-4 py-3 text-sm font-bold text-white [&::-webkit-details-marker]:hidden">
+      <span>Type</span>
+      <span className="text-zinc-500">
+        {tabs.find((item) => item.key === tab)?.label || 'All'}
+      </span>
+    </summary>
 
-              return (
-                <Link
-                  key={item.key}
-                  href={getCatalogHref({
-                    tab: item.key,
-                    q,
-                    letter,
-                    sort,
-                  })}
-                  className={
-                    isActive
-                      ? 'rounded-full bg-white px-4 py-2 text-sm font-semibold text-black'
-                      : 'rounded-full border border-zinc-700 px-4 py-2 text-sm font-semibold text-zinc-300 transition hover:border-zinc-500 hover:text-white'
-                  }
-                >
-                  {item.label}
-                </Link>
-              )
+    <div className="grid grid-cols-2 gap-2 border-t border-zinc-800 p-3">
+      {tabs.map((item) => {
+        const isActive = item.key === tab
+
+        return (
+          <Link
+            key={item.key}
+            href={getCatalogHref({
+              tab: item.key,
+              q,
+              letter,
+              sort,
             })}
-          </div>
+            className={
+              isActive
+                ? 'rounded-xl bg-white px-3 py-2 text-center text-xs font-bold text-black'
+                : 'rounded-xl border border-zinc-700 px-3 py-2 text-center text-xs font-bold text-zinc-300 transition hover:border-zinc-500 hover:text-white'
+            }
+          >
+            {item.label}
+          </Link>
+        )
+      })}
+    </div>
+  </details>
 
-          <div className="mt-4 flex flex-wrap gap-2">
-            {sortModes.map((sortMode) => {
-              const isActive = sortMode.key === sort
+  <details className="rounded-2xl border border-zinc-800 bg-black">
+    <summary className="flex cursor-pointer list-none items-center justify-between gap-3 px-4 py-3 text-sm font-bold text-white [&::-webkit-details-marker]:hidden">
+      <span>Category</span>
+      <span className="text-zinc-500">
+        {sortModes.find((item) => item.key === sort)?.label || 'Title'}
+      </span>
+    </summary>
 
-              return (
-                <Link
-                  key={sortMode.key}
-                  href={getCatalogHref({
-                    tab,
-                    q,
-                    letter,
-                    sort: sortMode.key,
-                  })}
-                  className={
-                    isActive
-                      ? 'rounded-full bg-white px-4 py-2 text-sm font-bold text-black'
-                      : 'rounded-full border border-zinc-700 px-4 py-2 text-sm font-semibold text-zinc-300 transition hover:border-zinc-500 hover:text-white'
-                  }
-                >
-                  {sortMode.label}
-                </Link>
-              )
+    <div className="grid grid-cols-1 gap-2 border-t border-zinc-800 p-3">
+      {sortModes.map((sortMode) => {
+        const isActive = sortMode.key === sort
+
+        return (
+          <Link
+            key={sortMode.key}
+            href={getCatalogHref({
+              tab,
+              q,
+              letter,
+              sort: sortMode.key,
             })}
-          </div>
+            className={
+              isActive
+                ? 'rounded-xl bg-white px-3 py-2 text-center text-xs font-bold text-black'
+                : 'rounded-xl border border-zinc-700 px-3 py-2 text-center text-xs font-bold text-zinc-300 transition hover:border-zinc-500 hover:text-white'
+            }
+          >
+            {sortMode.label}
+          </Link>
+        )
+      })}
+    </div>
+  </details>
 
-          <div className="mt-5 flex flex-wrap gap-1">
-            <Link
-              href={getCatalogHref({ tab, q, sort })}
-              className={
-                letter === 'ALL'
-                  ? 'rounded-lg bg-white px-3 py-2 text-xs font-bold text-black'
-                  : 'rounded-lg border border-zinc-700 px-3 py-2 text-xs font-bold text-zinc-300 transition hover:border-zinc-500 hover:text-white'
-              }
-            >
-              All
-            </Link>
+  <details className="rounded-2xl border border-zinc-800 bg-black">
+    <summary className="flex cursor-pointer list-none items-center justify-between gap-3 px-4 py-3 text-sm font-bold text-white [&::-webkit-details-marker]:hidden">
+      <span>Letters</span>
+      <span className="text-zinc-500">
+        {letter === 'ALL' ? 'All' : letter}
+      </span>
+    </summary>
 
-            {letters.map((item) => {
-              const normalizedLetter = item.toUpperCase()
-              const isActive = letter === normalizedLetter
+    <div className="grid grid-cols-6 gap-2 border-t border-zinc-800 p-3">
+      <Link
+        href={getCatalogHref({ tab, q, sort })}
+        className={
+          letter === 'ALL'
+            ? 'rounded-lg bg-white px-2 py-2 text-center text-xs font-bold text-black'
+            : 'rounded-lg border border-zinc-700 px-2 py-2 text-center text-xs font-bold text-zinc-300 transition hover:border-zinc-500 hover:text-white'
+        }
+      >
+        All
+      </Link>
 
-              return (
-                <Link
-                  key={item}
-                  href={getCatalogHref({
-                    tab,
-                    q,
-                    letter: normalizedLetter,
-                    sort,
-                  })}
-                  className={
-                    isActive
-                      ? 'rounded-lg bg-white px-3 py-2 text-xs font-bold text-black'
-                      : 'rounded-lg border border-zinc-700 px-3 py-2 text-xs font-bold text-zinc-300 transition hover:border-zinc-500 hover:text-white'
-                  }
-                >
-                  {item}
-                </Link>
-              )
+      {letters.map((item) => {
+        const normalizedLetter = item.toUpperCase()
+        const isActive = letter === normalizedLetter
+
+        return (
+          <Link
+            key={item}
+            href={getCatalogHref({
+              tab,
+              q,
+              letter: normalizedLetter,
+              sort,
             })}
-          </div>
+            className={
+              isActive
+                ? 'rounded-lg bg-white px-2 py-2 text-center text-xs font-bold text-black'
+                : 'rounded-lg border border-zinc-700 px-2 py-2 text-center text-xs font-bold text-zinc-300 transition hover:border-zinc-500 hover:text-white'
+            }
+          >
+            {item}
+          </Link>
+        )
+      })}
+    </div>
+  </details>
+</div>
+
+<div className="mt-5 hidden flex-wrap gap-2 lg:flex">
+  {tabs.map((item) => {
+    const isActive = item.key === tab
+
+    return (
+      <Link
+        key={item.key}
+        href={getCatalogHref({
+          tab: item.key,
+          q,
+          letter,
+          sort,
+        })}
+        className={
+          isActive
+            ? 'rounded-full bg-white px-4 py-2 text-sm font-semibold text-black'
+            : 'rounded-full border border-zinc-700 px-4 py-2 text-sm font-semibold text-zinc-300 transition hover:border-zinc-500 hover:text-white'
+        }
+      >
+        {item.label}
+      </Link>
+    )
+  })}
+</div>
+
+<div className="mt-4 hidden flex-wrap gap-2 lg:flex">
+  {sortModes.map((sortMode) => {
+    const isActive = sortMode.key === sort
+
+    return (
+      <Link
+        key={sortMode.key}
+        href={getCatalogHref({
+          tab,
+          q,
+          letter,
+          sort: sortMode.key,
+        })}
+        className={
+          isActive
+            ? 'rounded-full bg-white px-4 py-2 text-sm font-bold text-black'
+            : 'rounded-full border border-zinc-700 px-4 py-2 text-sm font-semibold text-zinc-300 transition hover:border-zinc-500 hover:text-white'
+        }
+      >
+        {sortMode.label}
+      </Link>
+    )
+  })}
+</div>
+
+<div className="mt-5 hidden flex-wrap gap-1 lg:flex">
+  <Link
+    href={getCatalogHref({ tab, q, sort })}
+    className={
+      letter === 'ALL'
+        ? 'rounded-lg bg-white px-3 py-2 text-xs font-bold text-black'
+        : 'rounded-lg border border-zinc-700 px-3 py-2 text-xs font-bold text-zinc-300 transition hover:border-zinc-500 hover:text-white'
+    }
+  >
+    All
+  </Link>
+
+  {letters.map((item) => {
+    const normalizedLetter = item.toUpperCase()
+    const isActive = letter === normalizedLetter
+
+    return (
+      <Link
+        key={item}
+        href={getCatalogHref({
+          tab,
+          q,
+          letter: normalizedLetter,
+          sort,
+        })}
+        className={
+          isActive
+            ? 'rounded-lg bg-white px-3 py-2 text-xs font-bold text-black'
+            : 'rounded-lg border border-zinc-700 px-3 py-2 text-xs font-bold text-zinc-300 transition hover:border-zinc-500 hover:text-white'
+        }
+      >
+        {item}
+      </Link>
+    )
+  })}
+</div>
         </section>
 
         <div className="mb-6">

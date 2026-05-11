@@ -91,7 +91,7 @@ export async function SiteHeader() {
           <AccountLinks isLoggedIn={isLoggedIn} />
         </div>
 
-        <nav className="flex items-center gap-3 text-sm font-semibold text-zinc-300 md:hidden">
+        <nav className="flex items-center gap-2 text-xs font-semibold text-zinc-300 sm:gap-3 sm:text-sm md:hidden">
           <Link href="/catalog" className="transition hover:text-white">
             Catalog
           </Link>
@@ -102,7 +102,7 @@ export async function SiteHeader() {
 
           <Link
             href={isLoggedIn ? '/profile' : '/login'}
-            className="transition hover:text-white"
+            className="whitespace-nowrap transition hover:text-white"
           >
             {isLoggedIn ? 'Profile' : 'Log in'}
           </Link>

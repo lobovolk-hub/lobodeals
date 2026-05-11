@@ -1,0 +1,46 @@
+# Local browser/session profiles used for scraping
+.browser-profiles/
+.browser-profiles/**
+
+# Local generated/import/export data
+data/
+data/**
+
+# Local archives and handoff packages
+archive/
+archive/**
+
+# Local project documentation not needed at runtime
+docs/
+docs/**
+
+# Local logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# Generated large imports/exports outside data/docs/archive only
+*.zip
+*.rar
+*.7z
+*.csv
+
+# Local build/cache folders
+.next/
+node_modules/
+.vercel/cache/
+
+# OS/editor noise
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# Environment files should never be uploaded by CLI deploy
+.env
+.env.local
+.env.development
+.env.production
+.env*.local

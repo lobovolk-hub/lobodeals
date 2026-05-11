@@ -1,0 +1,57 @@
+# dependencies
+node_modules/
+
+# Next.js
+.next/
+out/
+
+# Vercel
+.vercel/
+
+# environment
+.env
+.env.local
+.env.development
+.env.production
+.env*.local
+
+# local scraping/browser profiles
+.browser-profiles/
+.browser-profiles/**
+
+# local generated data
+data/
+data/**
+archive/
+archive/**
+
+# local docs / handoff files not needed in repo
+docs/
+docs/**
+
+# logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# generated archives / exports
+*.zip
+*.rar
+*.7z
+*.csv
+
+# OS/editor
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# Playwright local CLI/cache
+.playwright-cli/
+.playwright-cli/**
+
+# Local logs folder
+logs/
+logs/**

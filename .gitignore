@@ -55,3 +55,14 @@ Thumbs.db
 # Local logs folder
 logs/
 logs/**
+# LoboDeals 1.9 final documentation
+!docs/
+docs/*
+!docs/STATUS-v1.9.md
+!docs/SYSTEM-MAP-v1.9.md
+!docs/DB-SNAPSHOT-v1.9.md
+!docs/OPERATIONS-v1.9.md
+!docs/ROADMAP-v1.9.md
+!docs/HANDOFF-v1.9.md
+!docs/NEW-CHAT-PROMPT-v1.9.md
+docs/audit-v1.9/

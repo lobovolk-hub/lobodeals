@@ -677,3 +677,33 @@ Operación actual estable:
 - PlayStation Store oficial usado como validación de deals.
 - Worker legacy conservado como referencia.
 - Documentación 1.9 en creación.
+
+## Addendum — Supabase Auth URL Configuration — 2026-05-11
+
+OAuth Google requiere que Supabase Auth tenga producción como Site URL.
+
+Configuración correcta en Supabase Authentication URL Configuration:
+
+Site URL:
+    https://lobodeals.com
+
+Redirect URLs:
+    https://lobodeals.com/auth/callback
+    https://www.lobodeals.com/auth/callback
+    https://lobodeals.vercel.app/auth/callback
+    http://localhost:3000/auth/callback
+    https://lobodeals.com/auth/callback**
+    https://www.lobodeals.com/auth/callback**
+    https://lobodeals.vercel.app/auth/callback**
+    http://localhost:3000/auth/callback**
+
+No dejar Site URL como http://localhost:3000 en producción, porque Google OAuth puede devolver al usuario a localhost.
+
+El código de login usa window.location.origin para construir el callback:
+    /auth/callback?next=...
+
+Por eso el bug era de configuración Supabase, no de código.
+
+Validado:
+- lobodeals.com funciona correctamente con Continue with Google.
+- localhost funciona correctamente con Continue with Google.

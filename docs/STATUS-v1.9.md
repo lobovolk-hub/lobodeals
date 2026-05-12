@@ -379,3 +379,27 @@ LoboDeals 1.9 queda como etapa de:
 Siguiente documento a crear:
 
     SYSTEM-MAP-v1.9.md
+
+## Addendum — OAuth Google production redirect fix — 2026-05-11
+
+Se corrigió un bug crítico de OAuth Google en producción.
+
+Problema:
+Continue with Google desde https://lobodeals.com redirigía a http://localhost:3000 después de seleccionar cuenta Google.
+
+Causa:
+Supabase Auth tenía Site URL configurado como http://localhost:3000.
+
+Corrección aplicada en Supabase Authentication URL Configuration:
+- Site URL cambiado a https://lobodeals.com.
+- Redirect URLs conservadas/agregadas para:
+  - https://lobodeals.com/auth/callback
+  - https://www.lobodeals.com/auth/callback
+  - https://lobodeals.vercel.app/auth/callback
+  - http://localhost:3000/auth/callback
+  - versiones con wildcard para permitir query params.
+
+Validación:
+- Continue with Google funciona correctamente en producción.
+- Continue with Google funciona correctamente en local.
+- No fue necesario tocar código ni redeploy.

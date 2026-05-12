@@ -779,3 +779,33 @@ Este handoff representa LoboDeals 1.9 después de:
 Siguiente archivo a crear:
 
     docs/NEW-CHAT-PROMPT-v1.9.md
+
+## Addendum — OAuth Google production redirect fix — 2026-05-11
+
+Después de crear el handoff 1.9 se detectó y corrigió un bug de OAuth Google.
+
+Síntoma:
+Desde lobodeals.com, Continue with Google mandaba al usuario a http://localhost:3000 después de seleccionar cuenta.
+
+Causa:
+Supabase Auth tenía Site URL = http://localhost:3000.
+
+Corrección:
+Supabase Auth Site URL quedó en:
+    https://lobodeals.com
+
+Redirect URLs configuradas:
+    https://lobodeals.com/auth/callback
+    https://www.lobodeals.com/auth/callback
+    https://lobodeals.vercel.app/auth/callback
+    http://localhost:3000/auth/callback
+    https://lobodeals.com/auth/callback**
+    https://www.lobodeals.com/auth/callback**
+    https://lobodeals.vercel.app/auth/callback**
+    http://localhost:3000/auth/callback**
+
+Validación:
+Producción y local quedaron funcionando correctamente.
+
+Nota:
+No tocar login-client.tsx por este bug. El código estaba correcto; el problema era configuración de Supabase.

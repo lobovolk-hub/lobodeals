@@ -528,3 +528,89 @@ Estado 2026-05-12 mediodía:
 - catalog_public_cache quedó en:
   (32425,0,42,0)
 - Producción validada en lobodeals.com y se ve perfecta.
+
+## Addendum — PS Plus Monthly Games MVP — 2026-05-12
+
+Se implementó la primera versión funcional de PS Plus Monthly Games.
+
+Objetivo:
+- Mostrar juegos mensuales de PS Plus como beneficio de suscripción.
+- No tratarlos como descuentos regulares.
+- No marcarlos como 100% off.
+- No modificar current_price_amount.
+- No activar has_deal.
+- No activar has_ps_plus_deal salvo que exista un PS Plus discount real separado.
+
+Regla de producto:
+Monthly Games = Free with PS Plus.
+Deals = descuentos activos / PS Plus discounts oficiales.
+
+Supabase:
+Se creó la tabla:
+
+    public.ps_plus_monthly_games
+
+Uso:
+- Allowlist mensual oficial de juegos incluidos con PS Plus.
+- Se carga manualmente una vez al mes tras revisar fuente oficial.
+- Se asocia contra item_id / slug existente del catálogo.
+
+Columnas nuevas en catalog_public_cache:
+- is_ps_plus_monthly_game
+- ps_plus_monthly_label
+- ps_plus_monthly_note
+- ps_plus_monthly_month
+- ps_plus_monthly_until
+
+También se agregaron columnas temporales/operativas en ps_plus_monthly_games:
+- active_from_at
+- active_until_at
+
+Motivo:
+PlayStation Plus Monthly Games puede mantenerse canjeable hasta el primer martes del mes siguiente aproximadamente a las 17:00. Por eso no conviene depender solo de active_until date.
+
+Funciones actualizadas:
+- public.refresh_catalog_public_cache_v15()
+- public.search_catalog_public_cache(...)
+
+Mayo 2026 cargado:
+- EA SPORTS FC™ 26
+  slug: ea-sports-fc-26-standard-edition-ps4-ps5
+- Nine Sols
+  slug: nine-sols-ps4-ps5
+- WUCHANG: Fallen Feathers
+  slug: wuchang-fallen-feathers
+
+Fechas usadas:
+- active_from: 2026-05-05
+- active_until: 2026-06-01
+- active_until_at: 2026-06-02 17:00:00+00
+
+Resultado validado:
+- refresh_catalog_public_cache_v15() devolvió:
+  (32425,0,42,0)
+- ps_plus_monthly_games tiene 3 filas activas para 2026-05.
+- Los 3 juegos aparecen en catalog_public_cache con is_ps_plus_monthly_game = true.
+- has_deal = false.
+- has_ps_plus_deal = false.
+- current_price_amount conserva el precio real.
+
+Frontend:
+Commit aplicado:
+
+    1a02314 Show PS Plus monthly games from catalog cache
+
+Archivos modificados:
+- app/us/playstation/[slug]/page.tsx
+- components/item-card.tsx
+
+Validación visual:
+- Slug pages muestran Free with PS Plus.
+- Catalog cards muestran Monthly PS Plus game / Free with PS Plus.
+- La UI quedó aprobada visualmente.
+
+Pendiente futuro:
+- Crear sección Home: This month’s PS Plus games.
+- Crear flujo mensual documentado para actualizar ps_plus_monthly_games.
+- Agregar en perfil/tracked: Did you redeem this month’s games?
+- Guardar claimed/redeemed por usuario en una tabla futura.

@@ -40,7 +40,7 @@ const featuredCarouselSlugs = [
 ]
 
 const baseSelect =
-  'id, slug, title, image_url, platforms, content_type, item_type_label, release_date, current_price_amount, original_price_amount, discount_percent, ps_plus_price_amount, best_price_amount, best_price_type, has_deal, has_ps_plus_deal, metacritic_score'
+  'id, slug, title, image_url, platforms, content_type, item_type_label, release_date, current_price_amount, original_price_amount, discount_percent, ps_plus_price_amount, best_price_amount, best_price_type, has_deal, has_ps_plus_deal, is_ps_plus_monthly_game, ps_plus_monthly_label, ps_plus_monthly_note, ps_plus_monthly_month, ps_plus_monthly_until, metacritic_score'
 
 function Section({
   title,
@@ -100,6 +100,7 @@ export default async function HomePage() {
     featuredResult,
     topRatedDiscounts,
     highestDiscounts,
+    monthlyGames,
     upcomingGames,
     latestReleases,
   ] = await Promise.all([
@@ -148,6 +149,15 @@ export default async function HomePage() {
       .order('title', { ascending: true })
       .limit(6),
 
+    supabase
+      .from('catalog_public_cache')
+      .select(baseSelect)
+      .eq('region_code', 'us')
+      .eq('storefront', 'playstation')
+      .eq('is_ps_plus_monthly_game', true)
+      .order('title', { ascending: true })
+      .limit(6),
+
     supabase.rpc('search_catalog_public_cache', {
       p_q: '',
       p_tab: 'games',
@@ -179,6 +189,8 @@ export default async function HomePage() {
   const highestDiscountItems = (highestDiscounts.data ||
     []) as ItemCardData[]
 
+  const monthlyGameItems = (monthlyGames.data || []) as ItemCardData[]
+
   const upcomingGameItems = stripTotalCount(
     (upcomingGames.data || []) as CatalogSearchRow[]
   )
@@ -207,6 +219,10 @@ export default async function HomePage() {
 
         <Section title="Highest discounts" href="/deals?tab=games">
           <Grid items={highestDiscountItems} />
+        </Section>
+
+        <Section title="This month’s PS Plus games" href="/catalog?tab=games">
+          <Grid items={monthlyGameItems} />
         </Section>
 
         <Section

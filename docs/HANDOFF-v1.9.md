@@ -1,4 +1,4 @@
-﻿# HANDOFF v1.9 — LoboDeals — 2026-05-11
+# HANDOFF v1.9 — LoboDeals — 2026-05-11
 
 ## 1. Instrucción inicial para ADA / nuevo chat
 
@@ -447,7 +447,6 @@ Task Scheduler actual:
 Scripts:
 
 - scripts/run-metacritic-weekly-14d.ps1
-- scripts/backfill-metacritic-local.mjs
 - scripts/backfill-metacritic-score-v2.mjs
 - scripts/metacritic-monthly-reseed.mjs
 

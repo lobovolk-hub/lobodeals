@@ -1,4 +1,4 @@
-﻿# DB SNAPSHOT v1.9 — LoboDeals — 2026-05-11
+# DB SNAPSHOT v1.9 — LoboDeals — 2026-05-11
 
 ## 1. Propósito
 
@@ -235,7 +235,6 @@ Interpretación:
 Script relacionado:
 
     scripts\run-metacritic-weekly-14d.ps1
-    scripts\backfill-metacritic-local.mjs
 
 Regla:
 

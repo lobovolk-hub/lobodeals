@@ -1,4 +1,4 @@
-﻿# OPERATIONS v1.9 — LoboDeals — 2026-05-11
+# OPERATIONS v1.9 — LoboDeals — 2026-05-11
 
 ## 1. Propósito
 
@@ -298,7 +298,6 @@ No priorizar:
 Scripts relevantes:
 
 - scripts/run-metacritic-weekly-14d.ps1
-- scripts/backfill-metacritic-local.mjs
 - scripts/backfill-metacritic-score-v2.mjs
 - scripts/metacritic-monthly-reseed.mjs
 

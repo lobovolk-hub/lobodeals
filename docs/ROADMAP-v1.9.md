@@ -464,3 +464,67 @@ Vinculación GA4/Search Console:
 
 Estado:
 Analytics, GTM, Search Console y sitemap quedan listos para launch soft.
+
+## Addendum — Daily manual refresh operation — 2026-05-12
+
+Se decidió no dejar programada automáticamente la revisión de PSDeals / PlayStation Store por ahora.
+
+Motivos:
+- PSDeals requiere Edge live / CDP.
+- Chrome / Playwright local no se usa para PSDeals.
+- Puede haber captcha/challenge.
+- Los deals públicos deben validarse contra PlayStation Store oficial antes de publicarse.
+- El usuario prefiere revisar manualmente conmigo todos los días a las 12:30 p. m.
+
+Flujo diario manual acordado:
+
+1. PSDeals recently-added
+   - Fuente operativa:
+     https://psdeals.net/us-store/all-games?platforms=ps5%2Cps4&sort=recently-added&contentType%5B%5D=games&contentType%5B%5D=bundles&contentType%5B%5D=dlc
+   - Uso:
+     - nuevos ingresos
+     - latest
+     - upcoming
+     - cambios de catálogo
+   - Runner:
+     scripts/run-psdeals-edge-live-recently-added.ps1
+   - Regla:
+     Este flujo puede importar nuevos items y luego refrescar catalog_public_cache.
+
+2. PlayStation Store official deals
+   - Fuente actual:
+     https://store.playstation.com/en-us/category/b3915b25-f581-43dd-95dd-a4ec50dbabe6/1
+   - Uso:
+     - fuente de verdad / allowlist para PS Plus official deals
+   - Script:
+     scripts/collect-psstore-official-deals-edge-live.mjs
+   - Regla:
+     Aplicar SQL solo después de revisar conteos y contenido recolectado.
+
+3. PSDeals best-new-deals
+   - Fuente:
+     https://psdeals.net/us-store/discounts?platforms=ps5%2Cps4&sort=best-new-deals&contentType%5B%5D=games&contentType%5B%5D=bundles&contentType%5B%5D=dlc
+   - Uso:
+     - candidatos de descuento
+   - Regla:
+     No publicar deals ciegamente desde PSDeals.
+
+4. Validación final
+   - Refrescar catalog_public_cache.
+   - Validar producción:
+     - /home
+     - /catalog
+     - /deals
+     - slugs puntuales.
+
+Estado 2026-05-12 mediodía:
+- recently-added corrió correctamente.
+- 8 páginas revisadas.
+- 288 items recolectados.
+- 13 nuevos detectados.
+- 13 insertados.
+- PlayStation Store official deals recolectó 45 deals.
+- SQL oficial aplicado.
+- catalog_public_cache quedó en:
+  (32425,0,42,0)
+- Producción validada en lobodeals.com y se ve perfecta.

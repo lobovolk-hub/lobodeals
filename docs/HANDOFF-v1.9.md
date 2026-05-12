@@ -809,3 +809,36 @@ Producción y local quedaron funcionando correctamente.
 
 Nota:
 No tocar login-client.tsx por este bug. El código estaba correcto; el problema era configuración de Supabase.
+
+## Addendum — Analytics, GTM, Search Console and sitemap — 2026-05-12
+
+Se completó la configuración de Analytics/Search Console para LoboDeals.
+
+Search Console:
+- Propiedad de dominio: lobodeals.com
+- Sitemap activo: https://lobodeals.com/sitemap.xml
+- Sitemap viejo con www eliminado
+- Sitemap actual leído correctamente con 32,415 páginas descubiertas
+
+Sitemap:
+- app/sitemap.ts fue ajustado para paginar catalog_public_cache y superar el límite práctico de ~1,000 filas por request.
+- El sitemap actual incluye rutas estáticas principales y slugs PlayStation.
+- Search Console confirmó 32,415 páginas descubiertas.
+
+Google Analytics / GA4:
+- Flujo: LoboDeals web - GA4
+- URL del flujo: https://lobodeals.com/
+- Measurement ID: G-HDWK60YXND
+- Realtime validado correctamente.
+
+Google Tag Manager:
+- Contenedor: GTM-NHVH36FP
+- Tag publicado: Google tag - GA4 - LoboDeals
+- Activador: Initialization - All Pages
+- GTM instalado en app/layout.tsx mediante NEXT_PUBLIC_GTM_ID.
+
+Vinculación GA4/Search Console:
+- Vinculación creada entre sc-domain:lobodeals.com y LoboDeals web - GA4.
+
+Estado:
+Analytics, GTM, Search Console y sitemap quedan listos para launch soft.

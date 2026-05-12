@@ -6,9 +6,7 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint",
-    "import:catalog": "node scripts/import-catalog-items.mjs data/import/catalog-items-batch-001-verified.json",
-    "export:catalog": "node scripts/export-catalog-items.mjs data/import/catalog-items-batch-001-verified.json"
+    "lint": "eslint"
   },
   "dependencies": {
     "@supabase/ssr": "^0.10.2",

@@ -19,6 +19,11 @@ export type ItemCardData = {
   best_price_type: 'regular' | 'ps_plus' | 'none'
   has_deal: boolean
   has_ps_plus_deal: boolean
+  is_ps_plus_monthly_game?: boolean | null
+  ps_plus_monthly_label?: string | null
+  ps_plus_monthly_note?: string | null
+  ps_plus_monthly_month?: string | null
+  ps_plus_monthly_until?: string | null
   metacritic_score: number | null
 }
 
@@ -114,6 +119,11 @@ export function ItemCard({
 }: ItemCardProps) {
   const releaseDate = formatDate(item.release_date)
   const savingsLabel = getSavingsLabel(item)
+  const showMonthlyIncluded = item.is_ps_plus_monthly_game === true
+  const monthlyPriceLabel = item.ps_plus_monthly_label || 'Free with PS Plus'
+  const imageBadgeLabel = showMonthlyIncluded
+    ? 'Monthly PS Plus game'
+    : savingsLabel
 
   const showOriginalPrice =
     (item.has_deal || item.has_ps_plus_deal) &&
@@ -126,7 +136,8 @@ export function ItemCard({
   const showPsPlusDealPrice =
     item.has_ps_plus_deal && item.ps_plus_price_amount !== null
 
-  const showBasePrice = !item.has_deal && !item.has_ps_plus_deal
+  const showBasePrice =
+    !item.has_deal && !item.has_ps_plus_deal && !showMonthlyIncluded
 
   return (
     <article className="group flex h-full flex-col overflow-hidden rounded-2xl border border-zinc-800 bg-zinc-900 transition hover:border-zinc-600">
@@ -158,10 +169,10 @@ export function ItemCard({
             </div>
           ) : null}
 
-          {savingsLabel ? (
+          {imageBadgeLabel ? (
             <div className="absolute bottom-2 left-2 right-2">
               <span className="inline-flex rounded-full border border-white/20 bg-black/85 px-2 py-1 text-[10px] font-black text-white shadow-lg backdrop-blur">
-                {savingsLabel}
+                {imageBadgeLabel}
               </span>
             </div>
           ) : null}
@@ -206,6 +217,19 @@ export function ItemCard({
               <p className="text-xs text-zinc-500 line-through">
                 {formatPrice(item.original_price_amount)}
               </p>
+            ) : null}
+
+            {showMonthlyIncluded ? (
+              <div>
+                <p className="text-xl font-black text-yellow-300">
+                  {monthlyPriceLabel}
+                </p>
+                {item.current_price_amount !== null ? (
+                  <p className="text-xs font-semibold text-zinc-500">
+                    Regular {formatPrice(item.current_price_amount)}
+                  </p>
+                ) : null}
+              </div>
             ) : null}
 
             {showBasePrice ? (

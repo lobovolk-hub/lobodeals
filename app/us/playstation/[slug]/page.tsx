@@ -33,6 +33,11 @@ type SlugSeoItem = {
   best_price_type: string | null
   has_deal: boolean | null
   has_ps_plus_deal: boolean | null
+  is_ps_plus_monthly_game: boolean | null
+  ps_plus_monthly_label: string | null
+  ps_plus_monthly_note: string | null
+  ps_plus_monthly_month: string | null
+  ps_plus_monthly_until: string | null
   metacritic_score: number | null
 }
 
@@ -128,7 +133,7 @@ export async function generateMetadata({
   const { data } = await supabase
     .from('catalog_public_cache')
     .select(
-      'slug, title, image_url, platforms, content_type, item_type_label, release_date, publisher, current_price_amount, original_price_amount, discount_percent, ps_plus_price_amount, best_price_amount, best_price_type, has_deal, has_ps_plus_deal, metacritic_score'
+      'slug, title, image_url, platforms, content_type, item_type_label, release_date, publisher, current_price_amount, original_price_amount, discount_percent, ps_plus_price_amount, best_price_amount, best_price_type, has_deal, has_ps_plus_deal, is_ps_plus_monthly_game, ps_plus_monthly_label, ps_plus_monthly_note, ps_plus_monthly_month, ps_plus_monthly_until, metacritic_score'
     )
     .eq('region_code', 'us')
     .eq('storefront', 'playstation')
@@ -209,6 +214,11 @@ type Item = {
   best_price_type: string | null
   has_deal: boolean | null
   has_ps_plus_deal: boolean | null
+  is_ps_plus_monthly_game: boolean | null
+  ps_plus_monthly_label: string | null
+  ps_plus_monthly_note: string | null
+  ps_plus_monthly_month: string | null
+  ps_plus_monthly_until: string | null
   currency_code: string | null
   lowest_price_amount: number | null
   lowest_ps_plus_price_amount: number | null
@@ -446,7 +456,7 @@ export default async function PlayStationItemPage({ params }: PageProps) {
 
     const { data: cacheRow, error: cacheError } = await supabase
   .from('catalog_public_cache')
-  .select('item_id, platforms, content_type, item_type_label, current_price_amount, original_price_amount, discount_percent, ps_plus_price_amount, best_price_amount, best_price_type, has_deal, has_ps_plus_deal, deal_ends_at')
+  .select('item_id, platforms, content_type, item_type_label, current_price_amount, original_price_amount, discount_percent, ps_plus_price_amount, best_price_amount, best_price_type, has_deal, has_ps_plus_deal, is_ps_plus_monthly_game, ps_plus_monthly_label, ps_plus_monthly_note, ps_plus_monthly_month, ps_plus_monthly_until, deal_ends_at')
   .eq('region_code', 'us')
   .eq('storefront', 'playstation')
   .in('slug', slugCandidates)
@@ -477,6 +487,11 @@ const stageItem = data as Omit<
   | 'best_price_type'
   | 'has_deal'
   | 'has_ps_plus_deal'
+  | 'is_ps_plus_monthly_game'
+  | 'ps_plus_monthly_label'
+  | 'ps_plus_monthly_note'
+  | 'ps_plus_monthly_month'
+  | 'ps_plus_monthly_until'
 >
 
 const item = {
@@ -492,8 +507,18 @@ const item = {
   best_price_type: cacheRow.best_price_type,
   has_deal: cacheRow.has_deal,
   has_ps_plus_deal: cacheRow.has_ps_plus_deal,
+  is_ps_plus_monthly_game: cacheRow.is_ps_plus_monthly_game,
+  ps_plus_monthly_label: cacheRow.ps_plus_monthly_label,
+  ps_plus_monthly_note: cacheRow.ps_plus_monthly_note,
+  ps_plus_monthly_month: cacheRow.ps_plus_monthly_month,
+  ps_plus_monthly_until: cacheRow.ps_plus_monthly_until,
   deal_ends_at: cacheRow.deal_ends_at,
 } as Item
+
+const showMonthlyIncluded = item.is_ps_plus_monthly_game === true
+const monthlyPriceLabel = item.ps_plus_monthly_label || 'Free with PS Plus'
+const monthlyNote =
+  item.ps_plus_monthly_note || 'Included with PlayStation Plus this month.'
 
   const twoYearsAgo = new Date()
   twoYearsAgo.setFullYear(twoYearsAgo.getFullYear() - 2)
@@ -756,6 +781,23 @@ const displayCurrentAmount = getDisplayCurrentAmount(item)
   </p>
 
   <div className="mt-4 space-y-3">
+    {showMonthlyIncluded ? (
+      <div className="rounded-2xl border border-yellow-300/30 bg-yellow-300/10 p-4">
+        <p className="text-xs font-bold uppercase tracking-[0.18em] text-yellow-300/80">
+          PlayStation Plus Monthly Game
+        </p>
+        <p className="mt-1 text-5xl font-black text-yellow-300">
+          {monthlyPriceLabel}
+        </p>
+        <p className="mt-2 text-sm font-semibold text-yellow-100/80">
+          {monthlyNote}
+        </p>
+        <p className="mt-3 text-sm font-semibold text-zinc-400">
+          Regular price {displayCurrentPriceLabel}
+        </p>
+      </div>
+    ) : null}
+
         {currentPsPlusOffer && item.ps_plus_price_amount !== null ? (
       <div>
         <p className="text-xs font-bold uppercase tracking-[0.18em] text-yellow-300/80">
@@ -796,7 +838,7 @@ const displayCurrentAmount = getDisplayCurrentAmount(item)
       </div>
     ) : null}
 
-    {!currentRegularOffer && !currentPsPlusOffer ? (
+    {!currentRegularOffer && !currentPsPlusOffer && !showMonthlyIncluded ? (
       <p className="text-5xl font-black text-white">
         {freeLabel || availabilityLabel || displayCurrentPriceLabel}
       </p>

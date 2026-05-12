@@ -1,20 +1,20 @@
-# SYSTEM MAP v1.9 — LoboDeals — 2026-05-11
+# SYSTEM MAP v1.9 â€” LoboDeals â€” 2026-05-11
 
-## 1. Propósito del sistema
+## 1. PropÃ³sito del sistema
 
-LoboDeals es una web de seguimiento de precios, catálogo y ofertas de videojuegos, actualmente enfocada en PlayStation US.
+LoboDeals es una web de seguimiento de precios, catÃ¡logo y ofertas de videojuegos, actualmente enfocada en PlayStation US.
 
 Objetivo principal:
 
 - Crear una experiencia mejor que PSDeals en UX.
-- Permitir búsqueda, catálogo, deals, tracking y slugs públicos.
+- Permitir bÃºsqueda, catÃ¡logo, deals, tracking y slugs pÃºblicos.
 - Preparar una base escalable para futuras regiones/plataformas.
 
-La ruta pública principal de juego es:
+La ruta pÃºblica principal de juego es:
 
     /us/playstation/[slug]
 
-La UI pública debe mantenerse en inglés.
+La UI pÃºblica debe mantenerse en inglÃ©s.
 
 ## 2. Arquitectura general
 
@@ -26,7 +26,7 @@ Componentes principales:
 - GitHub como repositorio fuente
 - Porkbun como registrar/dominio
 - Google Cloud OAuth para login con Google
-- Windows Task Scheduler para automatización local Metacritic
+- Windows Task Scheduler para automatizaciÃ³n local Metacritic
 - Scripts locales Node/PowerShell para PSDeals, PlayStation Store y Metacritic
 - Worker separado legacy en D:\Proyectos\worker-playstation-ingest
 
@@ -43,7 +43,7 @@ Dominios:
 - www.lobodeals.com
 - lobodeals.vercel.app
 
-Configuración deseada:
+ConfiguraciÃ³n deseada:
 
 - lobodeals.com como dominio principal
 - www.lobodeals.com redirige a lobodeals.com
@@ -53,8 +53,8 @@ Deploy:
 
 - GitHub repo: https://github.com/lobovolk-hub/lobodeals
 - Rama activa: main
-- Vercel está conectado al repo GitHub
-- Cada push a main genera deploy automático
+- Vercel estÃ¡ conectado al repo GitHub
+- Cada push a main genera deploy automÃ¡tico
 
 Comando normal de deploy:
 
@@ -77,12 +77,12 @@ Carpetas principales:
 - app: rutas App Router de Next.js
 - components: componentes reutilizables
 - lib: clientes Supabase
-- public: assets públicos, logo, iconos, avatares
-- scripts: scripts de ingesta, refresh, auditoría y Metacritic
+- public: assets pÃºblicos, logo, iconos, avatares
+- scripts: scripts de ingesta, refresh, auditorÃ­a y Metacritic
 - sql: schema/base SQL
-- data/import: outputs estructurados de imports/auditorías
-- logs: logs pequeños recientes conservados
-- docs: documentación y auditoría 1.9
+- data/import: outputs estructurados de imports/auditorÃ­as
+- logs: logs pequeÃ±os recientes conservados
+- docs: documentaciÃ³n y auditorÃ­a 1.9
 
 Carpetas ignoradas o no destinadas a Git/ZIP:
 
@@ -94,9 +94,9 @@ Carpetas ignoradas o no destinadas a Git/ZIP:
 - .env.local
 - .browser-profiles
 - archive
-- docs, salvo que se decida versionar documentación final
+- docs, salvo que se decida versionar documentaciÃ³n final
 
-Nota: en 1.9 se movió .browser-profiles fuera del proyecto.
+Nota: en 1.9 se moviÃ³ .browser-profiles fuera del proyecto.
 
 Backup local:
 
@@ -126,7 +126,7 @@ Todas compilan correctamente con:
 
 ## 6. Frontend y UX
 
-Páginas principales:
+PÃ¡ginas principales:
 
 ### Home
 
@@ -136,11 +136,11 @@ Ruta:
 
 Incluye:
 
-- Header con búsqueda
+- Header con bÃºsqueda
 - Carrusel principal LoboDeals' choice
 - Secciones de juegos/deals
 - Cards con Track/Tracked integrado
-- Redirecciones a catalog/deals según sección
+- Redirecciones a catalog/deals segÃºn secciÃ³n
 
 El buscador en header redirige a:
 
@@ -154,8 +154,8 @@ Ruta:
 
 Incluye:
 
-- Búsqueda
-- Paginación 36 items por página
+- BÃºsqueda
+- PaginaciÃ³n 36 items por pÃ¡gina
 - Grid responsive
 - Filtros desplegables:
   - Type
@@ -179,7 +179,7 @@ Ruta:
 
 Incluye:
 
-- Paginación 36 items por página
+- PaginaciÃ³n 36 items por pÃ¡gina
 - Grid responsive
 - Filtros desplegables:
   - Type
@@ -193,7 +193,7 @@ Incluye:
 Importante:
 
 - Deals se basan en catalog_public_cache.
-- Los deals públicos actuales están filtrados por la lógica de allowlist oficial de PlayStation Store.
+- Los deals pÃºblicos actuales estÃ¡n filtrados por la lÃ³gica de allowlist oficial de PlayStation Store.
 
 ### Slug page
 
@@ -240,7 +240,7 @@ Ruta:
 Incluye:
 
 - Saludo al usuario
-- Avatar seleccionado desde galería local PNG
+- Avatar seleccionado desde galerÃ­a local PNG
 - Cambio de avatar
 - Username
 - Display name
@@ -265,7 +265,7 @@ Incluye:
 Componentes relevantes:
 
 - components/site-shell.tsx
-  Header, footer, navegación, mobile menu, search.
+  Header, footer, navegaciÃ³n, mobile menu, search.
 
 - components/home-featured-carousel.tsx
   Carrusel principal de Home.
@@ -278,13 +278,13 @@ Componentes relevantes:
   Track/Tracked vive dentro de la card.
 
 - components/track-button.tsx
-  Botón Track/Tracked con Supabase Auth/RPC.
+  BotÃ³n Track/Tracked con Supabase Auth/RPC.
 
 - components/price-history-chart.tsx
-  Gráfico de historial de precios.
+  GrÃ¡fico de historial de precios.
 
 - components/fallback-game-image.tsx
-  Fallback visual para imágenes rotas.
+  Fallback visual para imÃ¡genes rotas.
 
 - components/details-auto-close.tsx
   Cierra dropdowns details al hacer clic fuera o presionar Escape.
@@ -297,7 +297,7 @@ Supabase cubre:
 - Auth
 - OAuth Google
 - RLS
-- RPCs de búsqueda, tracking, profile y cache
+- RPCs de bÃºsqueda, tracking, profile y cache
 
 Variables necesarias:
 
@@ -324,9 +324,9 @@ Snapshot 1.9:
 - ps_discovery_progress: 4
 - automation_runs: 1624
 
-## 10. Clasificación de tablas
+## 10. ClasificaciÃ³n de tablas
 
-### Runtime público
+### Runtime pÃºblico
 
 No tocar:
 
@@ -334,7 +334,7 @@ No tocar:
 - profiles
 - user_tracked_items
 
-### Stage PSDeals / catálogo
+### Stage PSDeals / catÃ¡logo
 
 No tocar:
 
@@ -349,7 +349,7 @@ No tocar:
 
 - official_ps_store_deals
 
-Esta tabla es crítica para evitar falsos descuentos.
+Esta tabla es crÃ­tica para evitar falsos descuentos.
 
 ### Metacritic
 
@@ -391,13 +391,13 @@ Funciones/RPCs conocidas:
 - normalize_candidate_login_username
 - handle_new_auth_user
 
-Funciones críticas:
+Funciones crÃ­ticas:
 
 - search_catalog_public_cache:
-  usada por /catalog y búsqueda.
+  usada por /catalog y bÃºsqueda.
 
 - refresh_catalog_public_cache_v15:
-  reconstruye la capa pública desde stage/cache y aplica lógica de deals.
+  reconstruye la capa pÃºblica desde stage/cache y aplica lÃ³gica de deals.
 
 - track/untrack/is_user_tracking:
   soportan Track/Tracked.
@@ -409,7 +409,7 @@ Supabase Auth soporta:
 - Email/password
 - Login por email o username
 - OAuth Google
-- Confirmación de correo
+- ConfirmaciÃ³n de correo
 
 Tabla profile:
 
@@ -421,11 +421,11 @@ Tabla profile:
 
 Reglas de usuario:
 
-- username/login_user máximo 12 caracteres
+- username/login_user mÃ¡ximo 12 caracteres
 - password 8 a 12 caracteres
-- password con al menos 1 número y 1 mayúscula
-- cambio de username limitado cada 30 días
-- avatar desde galería propia PNG en public/avatars
+- password con al menos 1 nÃºmero y 1 mayÃºscula
+- cambio de username limitado cada 30 dÃ­as
+- avatar desde galerÃ­a propia PNG en public/avatars
 
 ## 13. Tracking
 
@@ -450,26 +450,26 @@ Track/Tracked debe estar visible en:
 
 ## 14. Pricing y deals
 
-Situación actual:
+SituaciÃ³n actual:
 
-- PSDeals es fuente principal histórica de catálogo, precios e historial.
+- PSDeals es fuente principal histÃ³rica de catÃ¡logo, precios e historial.
 - PlayStation Store oficial valida deals actuales.
-- official_ps_store_deals actúa como allowlist.
-- catalog_public_cache publica solo deals que pasan la lógica actual.
+- official_ps_store_deals actÃºa como allowlist.
+- catalog_public_cache publica solo deals que pasan la lÃ³gica actual.
 
-Contexto crítico:
+Contexto crÃ­tico:
 
-En mayo 2026 PlayStation cambió precios base y muchos sitios externos mostraron falsos descuentos. LoboDeals corrigió esta situación para no marcar como deals precios que en PlayStation Store ya eran base regular.
+En mayo 2026 PlayStation cambiÃ³ precios base y muchos sitios externos mostraron falsos descuentos. LoboDeals corrigiÃ³ esta situaciÃ³n para no marcar como deals precios que en PlayStation Store ya eran base regular.
 
-No revertir esta lógica sin revisar auditoría crítica.
+No revertir esta lÃ³gica sin revisar auditorÃ­a crÃ­tica.
 
 ## 15. PSDeals
 
 PSDeals se usa para:
 
-- Catálogo
+- CatÃ¡logo
 - Slugs
-- Imágenes
+- ImÃ¡genes
 - Store URLs
 - Precios
 - Historial
@@ -500,7 +500,7 @@ Script clave:
 
 Dato importante:
 
-El collector oficial requiere sesión/login para ver algunos precios originales o descuentos correctamente. Sin login puede recolectar 0 o información incompleta.
+El collector oficial requiere sesiÃ³n/login para ver algunos precios originales o descuentos correctamente. Sin login puede recolectar 0 o informaciÃ³n incompleta.
 
 ## 17. Metacritic
 
@@ -517,14 +517,13 @@ Scripts clave:
 
 - scripts/run-metacritic-weekly-14d.ps1
 - scripts/backfill-metacritic-score-v2.mjs
-- scripts/metacritic-monthly-reseed.mjs
 
-Automatización local activa:
+AutomatizaciÃ³n local activa:
 
 - Windows Task Scheduler
 - LoboDeals - Metacritic Weekly 14d
 - Ejecuta run-metacritic-weekly-14d.ps1
-- Próximo/último horario debe verificarse en Task Scheduler si hace falta
+- PrÃ³ximo/Ãºltimo horario debe verificarse en Task Scheduler si hace falta
 
 ## 18. Worker legacy
 
@@ -536,13 +535,13 @@ Cloudflare Worker:
 
     lobodeals-playstation-ingest
 
-Clasificación:
+ClasificaciÃ³n:
 
     Legacy/reference
 
 No es el flujo principal actual.
 
-Características:
+CaracterÃ­sticas:
 
 - Procesa ps_ingest_queue.
 - Usa automation_runs.
@@ -572,7 +571,7 @@ Eliminadas en limpieza 1.9:
 
 Importante:
 
-PSDeals Recently Added ya no está automatizado por Task Scheduler. El flujo PSDeals debe tratarse como manual/controlado hasta resolver estrategia estable contra challenge/captcha.
+PSDeals Recently Added ya no estÃ¡ automatizado por Task Scheduler. El flujo PSDeals debe tratarse como manual/controlado hasta resolver estrategia estable contra challenge/captcha.
 
 ## 20. SEO
 
@@ -582,13 +581,13 @@ Activos:
 - sitemap.xml
 - metadata base
 - canonical sin www
-- metadata dinámica de slug
+- metadata dinÃ¡mica de slug
 
 Pendiente:
 
 - Search Console
 - Enviar sitemap
-- Solicitar indexación de rutas clave
+- Solicitar indexaciÃ³n de rutas clave
 - Monitorear snippets viejos de Steam si aparecen
 
 ## 21. Dominio / Porkbun
@@ -597,7 +596,7 @@ Dominio comprado en Porkbun:
 
 - lobodeals.com
 
-Vercel maneja la configuración de dominio actual.
+Vercel maneja la configuraciÃ³n de dominio actual.
 
 Estado esperado:
 
@@ -621,7 +620,7 @@ URLs importantes:
 
 No documentar client secret.
 
-## 23. Git y documentación
+## 23. Git y documentaciÃ³n
 
 Repo:
 
@@ -631,13 +630,13 @@ Rama:
 
     main
 
-Backup histórico:
+Backup histÃ³rico:
 
     steam-legacy-backup
 
-Documentación vieja v1/v1.6/v1.7 eliminada.
+DocumentaciÃ³n vieja v1/v1.6/v1.7 eliminada.
 
-Documentación 1.9 esperada:
+DocumentaciÃ³n 1.9 esperada:
 
 - STATUS-v1.9.md
 - SYSTEM-MAP-v1.9.md
@@ -652,27 +651,27 @@ Documentación 1.9 esperada:
 Fuente de verdad actual:
 
 - Proyecto local limpio post 1.9
-- GitHub main después de push final
+- GitHub main despuÃ©s de push final
 - Supabase snapshot post limpieza
-- Vercel producción
+- Vercel producciÃ³n
 - docs/audit-v1.9 para evidencia
 
 No usar:
 
 - ZIP 1.8
-- documentación v1.7
-- documentación v1.6
-- referencias del proyecto Steam antiguo salvo backup histórico
+- documentaciÃ³n v1.7
+- documentaciÃ³n v1.6
+- referencias del proyecto Steam antiguo salvo backup histÃ³rico
 
 ## 25. Estado del system map
 
 Este mapa representa el estado de LoboDeals 1.9 posterior a:
 
-- deploy público
-- revisión visual PC/móvil
+- deploy pÃºblico
+- revisiÃ³n visual PC/mÃ³vil
 - limpieza local
 - limpieza Task Scheduler
-- revisión worker
-- revisión Supabase
-- corrección de Metacritic queue
-- eliminación de documentación vieja
+- revisiÃ³n worker
+- revisiÃ³n Supabase
+- correcciÃ³n de Metacritic queue
+- eliminaciÃ³n de documentaciÃ³n vieja

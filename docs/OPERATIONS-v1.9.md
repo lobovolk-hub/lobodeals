@@ -1,8 +1,8 @@
-# OPERATIONS v1.9 — LoboDeals — 2026-05-11
+# OPERATIONS v1.9 â€” LoboDeals â€” 2026-05-11
 
-## 1. Propósito
+## 1. PropÃ³sito
 
-Este documento describe cómo operar LoboDeals 1.9 después de la limpieza, deploy público inicial y revisión de infraestructura.
+Este documento describe cÃ³mo operar LoboDeals 1.9 despuÃ©s de la limpieza, deploy pÃºblico inicial y revisiÃ³n de infraestructura.
 
 Incluye:
 
@@ -50,7 +50,7 @@ Build local:
 
     npm run build
 
-El build fue validado correctamente después de la limpieza 1.9.
+El build fue validado correctamente despuÃ©s de la limpieza 1.9.
 
 ## 4. Deploy normal
 
@@ -64,7 +64,7 @@ Flujo correcto:
     git commit -m "mensaje descriptivo"
     git push
 
-Vercel despliega automáticamente desde GitHub main.
+Vercel despliega automÃ¡ticamente desde GitHub main.
 
 No usar vercel --prod como flujo normal. Solo usarlo como emergencia.
 
@@ -74,15 +74,15 @@ Repositorio:
 
     https://github.com/lobovolk-hub/lobodeals
 
-Rama de producción:
+Rama de producciÃ³n:
 
     main
 
-Backup histórico de Steam:
+Backup histÃ³rico de Steam:
 
     steam-legacy-backup
 
-Comandos útiles:
+Comandos Ãºtiles:
 
     git status
     git log --oneline -10
@@ -91,7 +91,7 @@ Comandos útiles:
 
 Regla:
 
-Antes de push, correr npm run build salvo cambios puramente documentales donde no toque código. Si el usuario dice que quedó excelente o todo está bien en cambios de código, asumir que corrió npm run build y pasó, salvo que indique lo contrario.
+Antes de push, correr npm run build salvo cambios puramente documentales donde no toque cÃ³digo. Si el usuario dice que quedÃ³ excelente o todo estÃ¡ bien en cambios de cÃ³digo, asumir que corriÃ³ npm run build y pasÃ³, salvo que indique lo contrario.
 
 ## 6. Vercel
 
@@ -110,7 +110,7 @@ Estado deseado:
 - lobodeals.com es el dominio principal.
 - www.lobodeals.com redirige a lobodeals.com.
 - lobodeals.vercel.app queda como dominio Vercel.
-- Deploy automático desde GitHub main.
+- Deploy automÃ¡tico desde GitHub main.
 
 Variables de entorno conocidas:
 
@@ -139,7 +139,7 @@ Vercel maneja dominios activos.
 
 Estado esperado:
 
-- lobodeals.com abre producción.
+- lobodeals.com abre producciÃ³n.
 - www.lobodeals.com redirige a lobodeals.com.
 
 Si se modifica DNS:
@@ -182,16 +182,16 @@ Tablas stage/historial no tocar:
 - psdeals_import_runs.
 - official_ps_store_deals.
 
-Legacy no borrar sin decisión explícita:
+Legacy no borrar sin decisiÃ³n explÃ­cita:
 
 - ps_ingest_queue.
 - price_offer_queue.
 - ps_discovery_progress.
 - automation_runs.
 
-## 9. Refresh de cache pública
+## 9. Refresh de cache pÃºblica
 
-Después de cambios relevantes en stage, pricing o official deals, refrescar:
+DespuÃ©s de cambios relevantes en stage, pricing o official deals, refrescar:
 
     select public.refresh_catalog_public_cache_v15();
 
@@ -199,45 +199,45 @@ Validar counts y nulls si corresponde.
 
 No modificar refresh_catalog_public_cache_v15 sin revisar:
 
-- lógica de official_ps_store_deals.
+- lÃ³gica de official_ps_store_deals.
 - PS Plus deal logic.
 - falsos descuentos corregidos en mayo 2026.
-- slugs públicos.
+- slugs pÃºblicos.
 - image fallback/normalization.
 - current_price_amount.
 - best_price_amount.
 - best_price_type.
 
-## 10. Situación actual de precios/deals
+## 10. SituaciÃ³n actual de precios/deals
 
-PSDeals es fuente principal histórica de:
+PSDeals es fuente principal histÃ³rica de:
 
-- catálogo.
+- catÃ¡logo.
 - precios.
 - historial.
 - relaciones.
 - slugs.
-- imágenes.
+- imÃ¡genes.
 - metadatos base.
 
-Pero los deals públicos actuales no se publican ciegamente desde PSDeals.
+Pero los deals pÃºblicos actuales no se publican ciegamente desde PSDeals.
 
-PlayStation Store oficial funciona como allowlist/validación de deals actuales.
+PlayStation Store oficial funciona como allowlist/validaciÃ³n de deals actuales.
 
 Contexto:
 
-En mayo 2026 PlayStation cambió precios base. PSDeals y PSPrices podían mostrar como descuento lo que PlayStation Store mostraba como precio regular/base. LoboDeals corrigió esto para evitar falsos descuentos.
+En mayo 2026 PlayStation cambiÃ³ precios base. PSDeals y PSPrices podÃ­an mostrar como descuento lo que PlayStation Store mostraba como precio regular/base. LoboDeals corrigiÃ³ esto para evitar falsos descuentos.
 
 Estado actual:
 
 - official_ps_store_deals tiene 44 rows.
 - catalog_public_cache publica 41 deals oficiales matcheados.
 - Algunos official-only no matcheados se ignoran por ahora.
-- La web quedó más precisa que PSDeals/PSPrices en esa situación puntual.
+- La web quedÃ³ mÃ¡s precisa que PSDeals/PSPrices en esa situaciÃ³n puntual.
 
-No revertir esto sin revisar la auditoría crítica.
+No revertir esto sin revisar la auditorÃ­a crÃ­tica.
 
-## 11. PSDeals — operación manual/controlada
+## 11. PSDeals â€” operaciÃ³n manual/controlada
 
 Scripts relevantes:
 
@@ -249,7 +249,7 @@ Scripts relevantes:
 - scripts/analyze-psdeals-discounts-refresh-candidates-v2.mjs
 - scripts/refresh-catalog-public-cache-v15.mjs
 
-PSDeals Recently Added 12h ya no está activo en Task Scheduler.
+PSDeals Recently Added 12h ya no estÃ¡ activo en Task Scheduler.
 
 Regla:
 
@@ -260,14 +260,14 @@ Para future operations:
 - Recently added debe cubrir novedades + upcoming.
 - Discounts/best-new-deals debe correr con cuidado.
 - Validar resultados antes de importar masivo.
-- Detener import si hay señales de HTML incompleto, challenge o captcha.
+- Detener import si hay seÃ±ales de HTML incompleto, challenge o captcha.
 - Guardar outputs estructurados en data/import.
 
 ## 12. PlayStation Store oficial
 
 Uso actual:
 
-- Validación de deals.
+- ValidaciÃ³n de deals.
 - PS Plus official deals.
 - Allowlist contra falsos descuentos.
 
@@ -277,12 +277,12 @@ Script relevante:
 
 Notas:
 
-- El collector oficial puede requerir sesión/login para ver precios originales/descuentos.
-- Sin login puede recolectar 0 o información incompleta.
-- En la auditoría crítica se recolectaron 44 official deals.
-- De esos, 41 quedaron matcheados en cache pública.
+- El collector oficial puede requerir sesiÃ³n/login para ver precios originales/descuentos.
+- Sin login puede recolectar 0 o informaciÃ³n incompleta.
+- En la auditorÃ­a crÃ­tica se recolectaron 44 official deals.
+- De esos, 41 quedaron matcheados en cache pÃºblica.
 
-No usar PlayStation Store como fuente principal de catálogo por ahora porque históricamente causó timeouts y HTML errático.
+No usar PlayStation Store como fuente principal de catÃ¡logo por ahora porque histÃ³ricamente causÃ³ timeouts y HTML errÃ¡tico.
 
 ## 13. Metacritic
 
@@ -299,9 +299,8 @@ Scripts relevantes:
 
 - scripts/run-metacritic-weekly-14d.ps1
 - scripts/backfill-metacritic-score-v2.mjs
-- scripts/metacritic-monthly-reseed.mjs
 
-Automatización activa:
+AutomatizaciÃ³n activa:
 
     LoboDeals - Metacritic Weekly 14d
 
@@ -324,9 +323,9 @@ Estado metacritic_queue post cleanup:
 
 Regla:
 
-Si aparecen filas antiguas en processing por más de 24 horas, revisar locked_by antes de resetear. No borrar manual_review.
+Si aparecen filas antiguas en processing por mÃ¡s de 24 horas, revisar locked_by antes de resetear. No borrar manual_review.
 
-## 14. Comando de revisión Task Scheduler
+## 14. Comando de revisiÃ³n Task Scheduler
 
 Ver tareas relacionadas:
 
@@ -352,7 +351,7 @@ Nombre Cloudflare Worker:
 
     lobodeals-playstation-ingest
 
-Clasificación:
+ClasificaciÃ³n:
 
     Legacy/reference
 
@@ -370,7 +369,7 @@ wrangler.jsonc:
 - main: src/index.ts.
 - observability enabled.
 - INGEST_LIMIT default 5.
-- triggers.crons vacío.
+- triggers.crons vacÃ­o.
 
 Variables .dev.vars:
 
@@ -380,7 +379,7 @@ Variables .dev.vars:
 
 No compartir .dev.vars.
 
-Uso histórico:
+Uso histÃ³rico:
 
 - ps_ingest_queue.
 - automation_runs.
@@ -391,11 +390,11 @@ Posible uso futuro:
 
 - checks de disponibilidad.
 - juegos eliminados de PlayStation Store.
-- validación puntual de store_url.
+- validaciÃ³n puntual de store_url.
 
 ## 16. Limpieza local realizada
 
-Se limpió:
+Se limpiÃ³:
 
 - logs/psdeals-import-html.
 - logs/psdeals-listing-html.
@@ -406,7 +405,7 @@ Se limpió:
 Se mantuvo:
 
 - data/import.
-- logs pequeños.
+- logs pequeÃ±os.
 - scripts.
 - sql.
 - app.
@@ -443,9 +442,9 @@ No es basura cruda como HTML de logs.
 
 Mantener logs restantes.
 
-Después de limpieza quedaron aproximadamente 15.42 MB.
+DespuÃ©s de limpieza quedaron aproximadamente 15.42 MB.
 
-No borrar logs pequeños recientes sin revisión.
+No borrar logs pequeÃ±os recientes sin revisiÃ³n.
 
 ## 19. .next
 
@@ -515,7 +514,7 @@ Pasos futuros:
 - Crear/verificar propiedad.
 - Enviar sitemap:
   https://lobodeals.com/sitemap.xml
-- Solicitar indexación de:
+- Solicitar indexaciÃ³n de:
   /
   /catalog
   /deals
@@ -531,7 +530,7 @@ Activos:
 - sitemap.xml.
 - canonical sin www.
 - metadata base.
-- metadata dinámica de slugs.
+- metadata dinÃ¡mica de slugs.
 
 Validado anteriormente en ejemplos como:
 
@@ -540,13 +539,13 @@ Validado anteriormente en ejemplos como:
 
 ## 24. Auth Google
 
-Supabase Auth + Google OAuth está operativo.
+Supabase Auth + Google OAuth estÃ¡ operativo.
 
 Notas:
 
-- En navegador normal puede entrar directo si ya hay sesión Google.
-- En incógnito muestra consentimiento/login.
-- Botón Create account with Google puede iniciar sesión si la cuenta ya existe.
+- En navegador normal puede entrar directo si ya hay sesiÃ³n Google.
+- En incÃ³gnito muestra consentimiento/login.
+- BotÃ³n Create account with Google puede iniciar sesiÃ³n si la cuenta ya existe.
 - Texto aclaratorio en create debe mantenerse.
 
 No cambiar OAuth sin revisar:
@@ -562,17 +561,17 @@ Reglas obligatorias:
 
 - Indicar apartado exacto del roadmap.
 - Marcar Listo al cerrar apartados.
-- Revisar si la información ya fue entregada antes de pedirla.
-- Validar línea por línea en cambios críticos.
-- No priorizar rapidez sobre verificación.
-- Si hay más de 4 cambios o riesgo de mezcla, entregar archivo completo.
+- Revisar si la informaciÃ³n ya fue entregada antes de pedirla.
+- Validar lÃ­nea por lÃ­nea en cambios crÃ­ticos.
+- No priorizar rapidez sobre verificaciÃ³n.
+- Si hay mÃ¡s de 4 cambios o riesgo de mezcla, entregar archivo completo.
 - No usar ZIP viejo como fuente de verdad si hubo cambios por chat/Git/deploy.
-- ZIP 1.8 está muerto/obsoleto.
+- ZIP 1.8 estÃ¡ muerto/obsoleto.
 - No borrar tablas ni data sin inventario.
-- No automatizar PSDeals sin revisión.
-- Mantener UI pública en inglés.
-- No cambiar títulos Home a PS Plus deals solo porque temporalmente haya deals PS Plus.
-- No ocultar add-ons por título sin confirmar error real en PlayStation Store.
+- No automatizar PSDeals sin revisiÃ³n.
+- Mantener UI pÃºblica en inglÃ©s.
+- No cambiar tÃ­tulos Home a PS Plus deals solo porque temporalmente haya deals PS Plus.
+- No ocultar add-ons por tÃ­tulo sin confirmar error real en PlayStation Store.
 - No volver a manual masivo salvo errores puntuales.
 
 ## 26. Comandos frecuentes
@@ -598,7 +597,7 @@ Git status:
 
     git status
 
-Últimos commits:
+Ãšltimos commits:
 
     git log --oneline -10
 
@@ -606,7 +605,7 @@ Remotes:
 
     git remote -v
 
-## 27. Validación manual pre-launch
+## 27. ValidaciÃ³n manual pre-launch
 
 Revisar:
 
@@ -628,7 +627,7 @@ Validar:
 - search.
 - mobile menu.
 - filters dropdown.
-- cards 2 columnas en móvil.
+- cards 2 columnas en mÃ³vil.
 - login.
 - Google OAuth.
 - track/tracked.
@@ -644,44 +643,44 @@ Revisar:
 - Supabase table growth.
 - Search Console coverage.
 - errores de slugs.
-- errores de imágenes.
+- errores de imÃ¡genes.
 - feedback de usuarios.
 - PSDeals/PS Store pricing changes.
 
-## 29. Qué no hacer
+## 29. QuÃ© no hacer
 
 No hacer:
 
-- DROP de tablas legacy sin decisión explícita.
+- DROP de tablas legacy sin decisiÃ³n explÃ­cita.
 - DELETE masivo en metacritic_queue.
 - borrar data/import.
 - borrar scripts por parecer viejos sin scan de uso.
 - publicar SUPABASE_SECRET_KEY.
 - subir .env.local.
-- cambiar lógica de deals sin comparar PlayStation Store oficial.
+- cambiar lÃ³gica de deals sin comparar PlayStation Store oficial.
 - reactivar PSDeals Recently Added 12h sin resolver challenge/captcha.
 - tratar worker legacy como flujo principal.
-- usar documentación v1.7.
+- usar documentaciÃ³n v1.7.
 - usar ZIP 1.8.
 
 ## 30. Estado final de operaciones
 
-Operación actual estable:
+OperaciÃ³n actual estable:
 
 - Deploy por GitHub main.
 - Vercel conectado.
 - Supabase estable.
 - Metacritic Weekly 14d activo.
 - PSDeals manual/controlado.
-- PlayStation Store oficial usado como validación de deals.
+- PlayStation Store oficial usado como validaciÃ³n de deals.
 - Worker legacy conservado como referencia.
-- Documentación 1.9 en creación.
+- DocumentaciÃ³n 1.9 en creaciÃ³n.
 
-## Addendum — Supabase Auth URL Configuration — 2026-05-11
+## Addendum â€” Supabase Auth URL Configuration â€” 2026-05-11
 
-OAuth Google requiere que Supabase Auth tenga producción como Site URL.
+OAuth Google requiere que Supabase Auth tenga producciÃ³n como Site URL.
 
-Configuración correcta en Supabase Authentication URL Configuration:
+ConfiguraciÃ³n correcta en Supabase Authentication URL Configuration:
 
 Site URL:
     https://lobodeals.com
@@ -696,31 +695,31 @@ Redirect URLs:
     https://lobodeals.vercel.app/auth/callback**
     http://localhost:3000/auth/callback**
 
-No dejar Site URL como http://localhost:3000 en producción, porque Google OAuth puede devolver al usuario a localhost.
+No dejar Site URL como http://localhost:3000 en producciÃ³n, porque Google OAuth puede devolver al usuario a localhost.
 
-El código de login usa window.location.origin para construir el callback:
+El cÃ³digo de login usa window.location.origin para construir el callback:
     /auth/callback?next=...
 
-Por eso el bug era de configuración Supabase, no de código.
+Por eso el bug era de configuraciÃ³n Supabase, no de cÃ³digo.
 
 Validado:
 - lobodeals.com funciona correctamente con Continue with Google.
 - localhost funciona correctamente con Continue with Google.
 
-## Addendum — Analytics, GTM, Search Console and sitemap — 2026-05-12
+## Addendum â€” Analytics, GTM, Search Console and sitemap â€” 2026-05-12
 
-Se completó la configuración de Analytics/Search Console para LoboDeals.
+Se completÃ³ la configuraciÃ³n de Analytics/Search Console para LoboDeals.
 
 Search Console:
 - Propiedad de dominio: lobodeals.com
 - Sitemap activo: https://lobodeals.com/sitemap.xml
 - Sitemap viejo con www eliminado
-- Sitemap actual leído correctamente con 32,415 páginas descubiertas
+- Sitemap actual leÃ­do correctamente con 32,415 pÃ¡ginas descubiertas
 
 Sitemap:
-- app/sitemap.ts fue ajustado para paginar catalog_public_cache y superar el límite práctico de ~1,000 filas por request.
-- El sitemap actual incluye rutas estáticas principales y slugs PlayStation.
-- Search Console confirmó 32,415 páginas descubiertas.
+- app/sitemap.ts fue ajustado para paginar catalog_public_cache y superar el lÃ­mite prÃ¡ctico de ~1,000 filas por request.
+- El sitemap actual incluye rutas estÃ¡ticas principales y slugs PlayStation.
+- Search Console confirmÃ³ 32,415 pÃ¡ginas descubiertas.
 
 Google Analytics / GA4:
 - Flujo: LoboDeals web - GA4
@@ -734,8 +733,8 @@ Google Tag Manager:
 - Activador: Initialization - All Pages
 - GTM instalado en app/layout.tsx mediante NEXT_PUBLIC_GTM_ID.
 
-Vinculación GA4/Search Console:
-- Vinculación creada entre sc-domain:lobodeals.com y LoboDeals web - GA4.
+VinculaciÃ³n GA4/Search Console:
+- VinculaciÃ³n creada entre sc-domain:lobodeals.com y LoboDeals web - GA4.
 
 Estado:
 Analytics, GTM, Search Console y sitemap quedan listos para launch soft.

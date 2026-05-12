@@ -1,12 +1,12 @@
-# HANDOFF v1.9 — LoboDeals — 2026-05-11
+# HANDOFF v1.9 â€” LoboDeals â€” 2026-05-11
 
-## 1. Instrucción inicial para ADA / nuevo chat
+## 1. InstrucciÃ³n inicial para ADA / nuevo chat
 
-Estás continuando el proyecto LoboDeals 1.9.
+EstÃ¡s continuando el proyecto LoboDeals 1.9.
 
-Trabaja en español con el usuario, pero la UI pública de LoboDeals debe mantenerse en inglés.
+Trabaja en espaÃ±ol con el usuario, pero la UI pÃºblica de LoboDeals debe mantenerse en inglÃ©s.
 
-Antes de pedir información, proponer pasos o asumir algo, verifica si ya está documentado en estos archivos:
+Antes de pedir informaciÃ³n, proponer pasos o asumir algo, verifica si ya estÃ¡ documentado en estos archivos:
 
 - docs/STATUS-v1.9.md
 - docs/SYSTEM-MAP-v1.9.md
@@ -16,15 +16,15 @@ Antes de pedir información, proponer pasos o asumir algo, verifica si ya está 
 - docs/HANDOFF-v1.9.md
 - docs/NEW-CHAT-PROMPT-v1.9.md
 
-Regla crítica:
+Regla crÃ­tica:
 
-No usar ZIP 1.8 como fuente de verdad. El ZIP 1.8 está muerto/obsoleto.
+No usar ZIP 1.8 como fuente de verdad. El ZIP 1.8 estÃ¡ muerto/obsoleto.
 
 Fuente de verdad actual:
 
 - Proyecto local limpio post LoboDeals 1.9.
-- GitHub main después del push final.
-- Vercel producción.
+- GitHub main despuÃ©s del push final.
+- Vercel producciÃ³n.
 - Supabase snapshot post limpieza.
 - docs/audit-v1.9 como evidencia.
 - Documentos v1.9.
@@ -36,28 +36,28 @@ LoboDeals es una web tipo JustWatch pero para videojuegos, enfocada actualmente 
 Objetivo:
 
 - Superar la experiencia de PSDeals.
-- Tener catálogo, deals, búsqueda, tracking, slugs públicos y futura inteligencia de precios.
-- Mantener una base escalable para futuras regiones, Xbox, Nintendo y apps móviles.
+- Tener catÃ¡logo, deals, bÃºsqueda, tracking, slugs pÃºblicos y futura inteligencia de precios.
+- Mantener una base escalable para futuras regiones, Xbox, Nintendo y apps mÃ³viles.
 
-Ruta pública principal:
+Ruta pÃºblica principal:
 
     /us/playstation/[slug]
 
-Dominio público:
+Dominio pÃºblico:
 
     https://lobodeals.com
 
-La web ya está viva y revisada visualmente en PC y móvil.
+La web ya estÃ¡ viva y revisada visualmente en PC y mÃ³vil.
 
 ## 3. Estado actual resumido
 
 LoboDeals 1.9 es una etapa de:
 
-    cleanup + documentación + handoff + preparación de Search Console / launch soft
+    cleanup + documentaciÃ³n + handoff + preparaciÃ³n de Search Console / launch soft
 
-Ya está listo:
+Ya estÃ¡ listo:
 
-- Deploy público.
+- Deploy pÃºblico.
 - GitHub main conectado a Vercel.
 - Dominio lobodeals.com activo.
 - www redirige a lobodeals.com.
@@ -69,8 +69,8 @@ Ya está listo:
 - Metacritic queue corregida.
 - Worker clasificado como legacy/reference.
 - Task Scheduler limpiado.
-- Documentación vieja eliminada.
-- Documentación 1.9 en creación.
+- DocumentaciÃ³n vieja eliminada.
+- DocumentaciÃ³n 1.9 en creaciÃ³n.
 
 Pendiente inmediato:
 
@@ -81,7 +81,7 @@ Pendiente inmediato:
 - Search Console.
 - Launch soft.
 
-## 4. Rutas y páginas activas
+## 4. Rutas y pÃ¡ginas activas
 
 Rutas activas:
 
@@ -104,14 +104,14 @@ Comando:
 
 ## 5. Estado UX / visual
 
-El usuario confirmó que móvil y PC están perfectos post-deploy.
+El usuario confirmÃ³ que mÃ³vil y PC estÃ¡n perfectos post-deploy.
 
 Cerrado visualmente:
 
 - Header desktop.
 - Header mobile.
 - Search en header.
-- Menú mobile.
+- MenÃº mobile.
 - Home.
 - Carrusel principal.
 - Catalog.
@@ -123,9 +123,9 @@ Cerrado visualmente:
 - Cards.
 - Filtros desplegables.
 - Cierre de dropdowns al tocar fuera.
-- Grid móvil de 2 columnas.
+- Grid mÃ³vil de 2 columnas.
 
-No proponer más cambios visuales antes del launch salvo que el usuario detecte un bug.
+No proponer mÃ¡s cambios visuales antes del launch salvo que el usuario detecte un bug.
 
 ## 6. Tech stack
 
@@ -134,7 +134,7 @@ Frontend:
 - Next.js App Router.
 - TypeScript.
 - Supabase JS.
-- CSS/Tailwind-style utility classes según proyecto.
+- CSS/Tailwind-style utility classes segÃºn proyecto.
 - Vercel hosting.
 
 Backend/data:
@@ -145,7 +145,7 @@ Backend/data:
 - RLS.
 - Scripts Node/PowerShell locales.
 
-Automatización local:
+AutomatizaciÃ³n local:
 
 - Windows Task Scheduler para Metacritic Weekly 14d.
 
@@ -184,11 +184,11 @@ Repo:
 
     https://github.com/lobovolk-hub/lobodeals
 
-Rama de producción:
+Rama de producciÃ³n:
 
     main
 
-Backup histórico Steam:
+Backup histÃ³rico Steam:
 
     steam-legacy-backup
 
@@ -200,7 +200,7 @@ Flujo normal:
     git commit -m "mensaje descriptivo"
     git push
 
-Vercel despliega automáticamente desde GitHub main.
+Vercel despliega automÃ¡ticamente desde GitHub main.
 
 No usar vercel --prod como flujo normal.
 
@@ -220,7 +220,7 @@ Estado deseado:
 
 - lobodeals.com dominio principal.
 - www redirige a lobodeals.com.
-- deploy automático desde main.
+- deploy automÃ¡tico desde main.
 
 Variables conocidas:
 
@@ -237,25 +237,25 @@ Dominio comprado en Porkbun:
 
     lobodeals.com
 
-Vercel gestiona el dominio en producción.
+Vercel gestiona el dominio en producciÃ³n.
 
 No tocar DNS sin revisar Vercel Domains y documentar.
 
 ## 11. Google OAuth / Supabase Auth
 
-Supabase Auth está activo con:
+Supabase Auth estÃ¡ activo con:
 
 - Email/password.
 - Login por email o username.
 - Google OAuth.
-- Confirmación de email.
+- ConfirmaciÃ³n de email.
 - Callback /auth/callback.
 
-Google OAuth ya funcionó en producción.
+Google OAuth ya funcionÃ³ en producciÃ³n.
 
 Nota UX:
 
-Si el usuario ya tiene sesión Google en el navegador, Google puede iniciar directo sin mostrar consentimiento completo. En incógnito suele pedir login/consentimiento.
+Si el usuario ya tiene sesiÃ³n Google en el navegador, Google puede iniciar directo sin mostrar consentimiento completo. En incÃ³gnito suele pedir login/consentimiento.
 
 En Create account with Google, mantener nota tipo:
 
@@ -280,9 +280,9 @@ Snapshot 1.9:
     ps_discovery_progress       4
     automation_runs             1624
 
-## 13. Clasificación Supabase
+## 13. ClasificaciÃ³n Supabase
 
-Runtime público, no tocar:
+Runtime pÃºblico, no tocar:
 
 - catalog_public_cache.
 - profiles.
@@ -290,7 +290,7 @@ Runtime público, no tocar:
 - search_catalog_public_cache.
 - RPCs de auth/profile/tracking.
 
-Catálogo/pricing/historial, no tocar:
+CatÃ¡logo/pricing/historial, no tocar:
 
 - psdeals_stage_items.
 - psdeals_stage_price_history.
@@ -299,7 +299,7 @@ Catálogo/pricing/historial, no tocar:
 - official_ps_store_deals.
 - refresh_catalog_public_cache_v15.
 
-Operación/auditoría, mantener:
+OperaciÃ³n/auditorÃ­a, mantener:
 
 - metacritic_queue.
 - automation_runs.
@@ -313,27 +313,27 @@ Legacy PlayStation Store, mantener estructura:
 
 No dropear tablas ahora.
 
-## 14. Pricing/deals — contexto crítico
+## 14. Pricing/deals â€” contexto crÃ­tico
 
-Este punto es crítico.
+Este punto es crÃ­tico.
 
-PSDeals sigue siendo fuente principal histórica para:
+PSDeals sigue siendo fuente principal histÃ³rica para:
 
-- catálogo.
+- catÃ¡logo.
 - precios.
 - historial.
 - relaciones.
 - slugs.
-- imágenes.
+- imÃ¡genes.
 - metadata base.
 
-Pero los deals públicos actuales no deben publicarse ciegamente desde PSDeals.
+Pero los deals pÃºblicos actuales no deben publicarse ciegamente desde PSDeals.
 
-PlayStation Store oficial se usa como allowlist/validación para deals actuales.
+PlayStation Store oficial se usa como allowlist/validaciÃ³n para deals actuales.
 
 Motivo:
 
-En mayo 2026 PlayStation Store mostró nuevos precios base y PSDeals/PSPrices podían mostrar esos precios como descuentos. LoboDeals corrigió esto para no mostrar falsos deals.
+En mayo 2026 PlayStation Store mostrÃ³ nuevos precios base y PSDeals/PSPrices podÃ­an mostrar esos precios como descuentos. LoboDeals corrigiÃ³ esto para no mostrar falsos deals.
 
 Estado actual:
 
@@ -341,13 +341,13 @@ Estado actual:
 - catalog_public_cache publica 41 deals oficiales matcheados.
 - official-only no matcheados se ignoran por ahora.
 - TEKKEN 8, Red Dead Redemption 2 y otros casos no deben mostrar falso descuento si PlayStation Store los muestra como precio base.
-- PlanetSide 2 Nanite Systems Starter Bundle quedó corregido como PS+ $9.99, original $19.99, 50%.
+- PlanetSide 2 Nanite Systems Starter Bundle quedÃ³ corregido como PS+ $9.99, original $19.99, 50%.
 
-No revertir esta lógica sin revisar auditoría crítica de mayo 2026.
+No revertir esta lÃ³gica sin revisar auditorÃ­a crÃ­tica de mayo 2026.
 
 ## 15. Refresh cache
 
-Función crítica:
+FunciÃ³n crÃ­tica:
 
     refresh_catalog_public_cache_v15
 
@@ -355,12 +355,12 @@ Comando SQL:
 
     select public.refresh_catalog_public_cache_v15();
 
-Ejecutar después de cambios relevantes en:
+Ejecutar despuÃ©s de cambios relevantes en:
 
 - psdeals_stage_items.
 - psdeals_stage_price_history.
 - official_ps_store_deals.
-- lógica de pricing/deals.
+- lÃ³gica de pricing/deals.
 
 No modificar sin revisar:
 
@@ -387,7 +387,7 @@ Scripts relevantes:
 
 Estado:
 
-PSDeals Recently Added 12h fue eliminado del Task Scheduler. No está activo.
+PSDeals Recently Added 12h fue eliminado del Task Scheduler. No estÃ¡ activo.
 
 Regla:
 
@@ -405,7 +405,7 @@ Future operations:
 
 Uso actual:
 
-- Validación de deals.
+- ValidaciÃ³n de deals.
 - PS Plus official deals.
 - Allowlist contra falsos descuentos.
 
@@ -415,9 +415,9 @@ Script:
 
 Nota importante:
 
-El collector oficial puede requerir sesión/login para ver precios originales/descuentos correctamente. Sin login puede capturar 0 o información incompleta.
+El collector oficial puede requerir sesiÃ³n/login para ver precios originales/descuentos correctamente. Sin login puede capturar 0 o informaciÃ³n incompleta.
 
-No usar PlayStation Store como fuente principal de catálogo ahora, porque la etapa original tuvo timeouts y HTML errático.
+No usar PlayStation Store como fuente principal de catÃ¡logo ahora, porque la etapa original tuvo timeouts y HTML errÃ¡tico.
 
 ## 18. Metacritic
 
@@ -430,7 +430,7 @@ No priorizar:
 - metacritic_user_score.
 - metacritic_reviews_count.
 
-Automatización activa:
+AutomatizaciÃ³n activa:
 
     LoboDeals - Metacritic Weekly 14d
 
@@ -448,7 +448,6 @@ Scripts:
 
 - scripts/run-metacritic-weekly-14d.ps1
 - scripts/backfill-metacritic-score-v2.mjs
-- scripts/metacritic-monthly-reseed.mjs
 
 Metacritic queue post cleanup:
 
@@ -457,7 +456,7 @@ Metacritic queue post cleanup:
     pending attempts 1 = 211
     processing = 0
 
-Corrección realizada:
+CorrecciÃ³n realizada:
 
 - 211 stale locks en processing.
 - locked_by node_local_metacritic_browse.
@@ -475,7 +474,7 @@ Cloudflare Worker:
 
     lobodeals-playstation-ingest
 
-Clasificación:
+ClasificaciÃ³n:
 
     Legacy/reference
 
@@ -490,7 +489,7 @@ Tiene:
 
 wrangler.jsonc:
 
-- triggers.crons vacío.
+- triggers.crons vacÃ­o.
 - no cron activo.
 
 Variables .dev.vars:
@@ -501,7 +500,7 @@ Variables .dev.vars:
 
 No compartir .dev.vars.
 
-Uso histórico:
+Uso histÃ³rico:
 
 - ps_ingest_queue.
 - automation_runs.
@@ -516,19 +515,19 @@ Posible utilidad futura:
 
 ## 20. Limpieza local realizada
 
-Se limpió:
+Se limpiÃ³:
 
 - logs/psdeals-import-html.
 - logs/psdeals-listing-html.
 - .next.
 - .browser-profiles movido fuera del proyecto.
 - Task Scheduler desactivados eliminados.
-- documentación vieja v1/v1.6/v1.7 eliminada.
+- documentaciÃ³n vieja v1/v1.6/v1.7 eliminada.
 
 Se mantuvo:
 
 - data/import.
-- logs pequeños.
+- logs pequeÃ±os.
 - scripts.
 - sql.
 - app.
@@ -539,7 +538,7 @@ Se mantuvo:
 - docs/audit-v1.9.
 - worker-playstation-ingest.
 
-Tamaño post-cleanup antes de regenerar .next:
+TamaÃ±o post-cleanup antes de regenerar .next:
 
     node_modules      432.84 MB
     data              192.53 MB
@@ -556,9 +555,9 @@ Tamaño post-cleanup antes de regenerar .next:
     lib                 0 MB
     .vercel             0 MB
 
-## 21. Documentación vieja
+## 21. DocumentaciÃ³n vieja
 
-Se borró:
+Se borrÃ³:
 
 - docs/DB-SNAPSHOT-v1.7.md.
 - docs/HANDOFF-v1.7.md.
@@ -569,7 +568,7 @@ Se borró:
 - docs/SYSTEM-MAP-v1.7.md.
 - docs/archive/pre-v1.7/.
 
-Se extrajeron referencias útiles antes de borrar:
+Se extrajeron referencias Ãºtiles antes de borrar:
 
     docs/audit-v1.9/legacy-docs-useful-references-before-delete.csv
 
@@ -577,7 +576,7 @@ Se mantiene:
 
     docs/audit-v1.9
 
-## 22. Documentación 1.9
+## 22. DocumentaciÃ³n 1.9
 
 Documentos esperados:
 
@@ -666,35 +665,35 @@ Tracked:
 
 Reglas:
 
-- login_username máximo 12 caracteres.
-- password 8 a 12 caracteres con 1 número y 1 mayúscula.
-- cambio de username cada 30 días.
+- login_username mÃ¡ximo 12 caracteres.
+- password 8 a 12 caracteres con 1 nÃºmero y 1 mayÃºscula.
+- cambio de username cada 30 dÃ­as.
 - avatar desde public/avatars con PNG.
 
 ## 26. SEO/Search Console
 
-SEO básico listo:
+SEO bÃ¡sico listo:
 
 - robots.txt.
 - sitemap.xml.
 - canonical sin www.
 - metadata base.
-- metadata dinámica de slugs.
+- metadata dinÃ¡mica de slugs.
 
 Pendiente:
 
 - Google Search Console.
 - Enviar sitemap.
-- Solicitar indexación de:
+- Solicitar indexaciÃ³n de:
   - /
   - /catalog
   - /deals
   - slugs clave.
 - Revisar snippets viejos de Steam si aparecen.
 
-## 27. Próximo camino recomendado
+## 27. PrÃ³ximo camino recomendado
 
-Después de cerrar documentación:
+DespuÃ©s de cerrar documentaciÃ³n:
 
 1. Crear NEW-CHAT-PROMPT-v1.9.md.
 2. Validar lista final de docs.
@@ -714,14 +713,14 @@ Pendientes futuros:
 - /tracked dividido en Currently on deal y Regular prices.
 - PS Plus Monthly Games.
 - Google Ads layout.
-- Automatización estable de PSDeals.
+- AutomatizaciÃ³n estable de PSDeals.
 - Checks de disponibilidad/store_url.
 - Juegos removidos de PlayStation Store.
 - Historical low / price intelligence.
 - Multi-region.
 - Xbox.
 - Nintendo.
-- Apps móviles.
+- Apps mÃ³viles.
 
 No abrir mejoras grandes antes de Search Console + launch soft.
 
@@ -731,66 +730,66 @@ Reglas obligatorias:
 
 - Indicar apartado exacto del roadmap.
 - Marcar Listo al cerrar apartados.
-- Validar línea por línea en cambios críticos.
-- No priorizar rapidez sobre verificación.
-- No pedir información ya entregada.
+- Validar lÃ­nea por lÃ­nea en cambios crÃ­ticos.
+- No priorizar rapidez sobre verificaciÃ³n.
+- No pedir informaciÃ³n ya entregada.
 - No usar ZIP viejo si hubo cambios por chat/Git/deploy.
 - ZIP 1.8 muerto/obsoleto.
 - Fuente de verdad: local/Git/deploy post limpieza 1.9.
 - No borrar data/scripts/tablas sin inventario.
 - No automatizar PSDeals a ciegas.
-- UI pública en inglés.
-- Conversación con usuario en español.
-- Entregar archivo completo si hay más de 4 cambios o riesgo de mezcla.
-- No cambiar lógica de deals sin comparar PlayStation Store oficial.
-- No ocultar add-ons por título sin confirmar error real en PlayStation Store.
+- UI pÃºblica en inglÃ©s.
+- ConversaciÃ³n con usuario en espaÃ±ol.
+- Entregar archivo completo si hay mÃ¡s de 4 cambios o riesgo de mezcla.
+- No cambiar lÃ³gica de deals sin comparar PlayStation Store oficial.
+- No ocultar add-ons por tÃ­tulo sin confirmar error real en PlayStation Store.
 
-## 30. Qué no hacer
+## 30. QuÃ© no hacer
 
 No hacer:
 
-- No usar documentación v1.7.
+- No usar documentaciÃ³n v1.7.
 - No usar ZIP 1.8.
 - No tratar worker como flujo principal.
-- No reactivar PSDeals Recently Added 12h sin revisión.
+- No reactivar PSDeals Recently Added 12h sin revisiÃ³n.
 - No borrar metacritic_queue manual_review.
 - No borrar data/import.
 - No publicar secrets.
 - No hacer deploy manual vercel --prod como rutina.
 - No cambiar Home a PS Plus branding solo porque actualmente haya deals PS Plus.
-- No ocultar add-ons por términos genéricos.
+- No ocultar add-ons por tÃ©rminos genÃ©ricos.
 - No revertir official_ps_store_deals allowlist.
 
 ## 31. Estado final del handoff
 
-Este handoff representa LoboDeals 1.9 después de:
+Este handoff representa LoboDeals 1.9 despuÃ©s de:
 
-- deploy público.
-- revisión visual PC/móvil.
+- deploy pÃºblico.
+- revisiÃ³n visual PC/mÃ³vil.
 - limpieza local.
-- revisión worker.
+- revisiÃ³n worker.
 - limpieza Task Scheduler.
-- revisión Supabase.
-- corrección Metacritic queue.
-- eliminación docs viejos.
-- creación docs 1.9.
+- revisiÃ³n Supabase.
+- correcciÃ³n Metacritic queue.
+- eliminaciÃ³n docs viejos.
+- creaciÃ³n docs 1.9.
 
 Siguiente archivo a crear:
 
     docs/NEW-CHAT-PROMPT-v1.9.md
 
-## Addendum — OAuth Google production redirect fix — 2026-05-11
+## Addendum â€” OAuth Google production redirect fix â€” 2026-05-11
 
-Después de crear el handoff 1.9 se detectó y corrigió un bug de OAuth Google.
+DespuÃ©s de crear el handoff 1.9 se detectÃ³ y corrigiÃ³ un bug de OAuth Google.
 
-Síntoma:
-Desde lobodeals.com, Continue with Google mandaba al usuario a http://localhost:3000 después de seleccionar cuenta.
+SÃ­ntoma:
+Desde lobodeals.com, Continue with Google mandaba al usuario a http://localhost:3000 despuÃ©s de seleccionar cuenta.
 
 Causa:
-Supabase Auth tenía Site URL = http://localhost:3000.
+Supabase Auth tenÃ­a Site URL = http://localhost:3000.
 
-Corrección:
-Supabase Auth Site URL quedó en:
+CorrecciÃ³n:
+Supabase Auth Site URL quedÃ³ en:
     https://lobodeals.com
 
 Redirect URLs configuradas:
@@ -803,26 +802,26 @@ Redirect URLs configuradas:
     https://lobodeals.vercel.app/auth/callback**
     http://localhost:3000/auth/callback**
 
-Validación:
-Producción y local quedaron funcionando correctamente.
+ValidaciÃ³n:
+ProducciÃ³n y local quedaron funcionando correctamente.
 
 Nota:
-No tocar login-client.tsx por este bug. El código estaba correcto; el problema era configuración de Supabase.
+No tocar login-client.tsx por este bug. El cÃ³digo estaba correcto; el problema era configuraciÃ³n de Supabase.
 
-## Addendum — Analytics, GTM, Search Console and sitemap — 2026-05-12
+## Addendum â€” Analytics, GTM, Search Console and sitemap â€” 2026-05-12
 
-Se completó la configuración de Analytics/Search Console para LoboDeals.
+Se completÃ³ la configuraciÃ³n de Analytics/Search Console para LoboDeals.
 
 Search Console:
 - Propiedad de dominio: lobodeals.com
 - Sitemap activo: https://lobodeals.com/sitemap.xml
 - Sitemap viejo con www eliminado
-- Sitemap actual leído correctamente con 32,415 páginas descubiertas
+- Sitemap actual leÃ­do correctamente con 32,415 pÃ¡ginas descubiertas
 
 Sitemap:
-- app/sitemap.ts fue ajustado para paginar catalog_public_cache y superar el límite práctico de ~1,000 filas por request.
-- El sitemap actual incluye rutas estáticas principales y slugs PlayStation.
-- Search Console confirmó 32,415 páginas descubiertas.
+- app/sitemap.ts fue ajustado para paginar catalog_public_cache y superar el lÃ­mite prÃ¡ctico de ~1,000 filas por request.
+- El sitemap actual incluye rutas estÃ¡ticas principales y slugs PlayStation.
+- Search Console confirmÃ³ 32,415 pÃ¡ginas descubiertas.
 
 Google Analytics / GA4:
 - Flujo: LoboDeals web - GA4
@@ -836,8 +835,8 @@ Google Tag Manager:
 - Activador: Initialization - All Pages
 - GTM instalado en app/layout.tsx mediante NEXT_PUBLIC_GTM_ID.
 
-Vinculación GA4/Search Console:
-- Vinculación creada entre sc-domain:lobodeals.com y LoboDeals web - GA4.
+VinculaciÃ³n GA4/Search Console:
+- VinculaciÃ³n creada entre sc-domain:lobodeals.com y LoboDeals web - GA4.
 
 Estado:
 Analytics, GTM, Search Console y sitemap quedan listos para launch soft.

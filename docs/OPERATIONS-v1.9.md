@@ -911,3 +911,58 @@ Mayo 2026:
 - EA SPORTS FC™ 26 Standard Edition PS4 & PS5
 - Nine Sols PS4 & PS5
 - WUCHANG: Fallen Feathers
+
+## Addendum — Supabase Auth SMTP with Resend — 2026-05-12
+
+Se configuró custom SMTP para Supabase Auth usando Resend.
+
+Motivo:
+- El servicio built-in de Supabase tiene límites bajos y no está pensado para producción.
+- LoboDeals necesita enviar correos de confirmación, recuperación y autenticación sin depender del límite interno de Supabase.
+
+Proveedor:
+- Resend
+
+Dominio:
+- lobodeals.com
+
+Estado DNS:
+- Domain Verification configurado.
+- DKIM configurado.
+- SPF configurado.
+- Enable Sending activado.
+- Enable Receiving no se activó porque LoboDeals solo necesita enviar correos de Auth por ahora.
+
+Sender configurado:
+- no-reply@lobodeals.com
+- Sender name: LoboDeals
+
+Supabase:
+- Authentication → Emails → SMTP Settings
+- Enable custom SMTP: activo
+- Host: smtp.resend.com
+- Port: 465
+- Username: resend
+- Password: Resend API key
+
+Templates revisados/configurados:
+- Confirm sign up
+- Invite user
+- Magic link
+- Change email address
+- Reset password
+- Reauthentication
+
+Validación:
+- Resend mostró eventos POST /emails correctos.
+- El usuario confirmó que la configuración quedó funcionando sin problemas.
+
+Nota:
+Custom SMTP no cambia el texto de Google OAuth que muestra el dominio de Supabase. Eso queda para un bloque futuro separado: Custom Auth Domain.
+
+Pendiente futuro:
+- Evaluar activar emails de seguridad:
+  - Password changed
+  - Email address changed
+  - Identity linked
+- Revisar Custom Auth Domain para evitar mostrar el subdominio Supabase en OAuth.

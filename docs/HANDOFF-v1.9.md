@@ -990,3 +990,26 @@ Pendiente futuro:
 - Crear flujo mensual documentado para actualizar ps_plus_monthly_games.
 - Agregar en perfil/tracked: Did you redeem this month’s games?
 - Guardar claimed/redeemed por usuario en una tabla futura.
+
+## Addendum — PS Plus Monthly Games Home section — 2026-05-12
+
+Se implementó la sección de Home:
+
+    This month’s PS Plus games
+
+La sección usa datos reales desde catalog_public_cache y muestra los juegos activos en ps_plus_monthly_games.
+
+Estado:
+- Implementado en app/page.tsx.
+- Usa ItemCard.
+- Muestra Monthly PS Plus game / Free with PS Plus.
+- Visual validado por el usuario.
+- No se mezcla con /deals.
+- No altera current_price_amount.
+- No activa has_deal.
+- No activa has_ps_plus_deal.
+
+Mayo 2026:
+- EA SPORTS FC™ 26 Standard Edition PS4 & PS5
+- Nine Sols PS4 & PS5
+- WUCHANG: Fallen Feathers

@@ -1,4 +1,4 @@
-﻿import type { Metadata } from 'next'
+import type { Metadata } from 'next'
 import Script from 'next/script'
 import { Geist, Geist_Mono } from 'next/font/google'
 import { SiteFooter, SiteHeader } from '@/components/site-shell'
@@ -50,12 +50,21 @@ export const metadata: Metadata = {
     description:
       'Track PlayStation games, compare prices, discover current deals, and follow upcoming PS4 and PS5 releases in one catalog.',
     locale: 'en_US',
+    images: [
+      {
+        url: '/og/lobodeals-og.png',
+        width: 1200,
+        height: 630,
+        alt: 'LoboDeals — PlayStation deals, prices, and game tracking',
+      },
+    ],
   },
   twitter: {
     card: 'summary_large_image',
     title: 'LoboDeals — PlayStation deals, prices, and game tracking',
     description:
       'Track PlayStation games, compare prices, discover current deals, and follow upcoming PS4 and PS5 releases in one catalog.',
+    images: ['/og/lobodeals-og.png'],
   },
   robots: {
     index: true,

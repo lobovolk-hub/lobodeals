@@ -692,3 +692,84 @@ Pendiente futuro:
   - Email address changed
   - Identity linked
 - Revisar Custom Auth Domain para evitar mostrar el subdominio Supabase en OAuth.
+
+## Addendum — Emergency PSDeals-only deals refresh — 2026-05-13
+
+Se realizó una actualización crítica de deals el 2026-05-13 tras el inicio de una nueva ronda grande de ofertas.
+
+Decisión operativa:
+- PlayStation Store official mixed deals quedó descartado por ahora para deals masivos.
+- PSDeals vuelve a ser la fuente principal de pricing/deals.
+- La auditoría con PlayStation Store se pospone porque el flujo mixto regular/PS Plus tomó demasiado tiempo y bloqueaba la actualización pública.
+
+Flujo ejecutado:
+1. PSDeals recently-added:
+   - 8 páginas revisadas.
+   - 12 nuevos items insertados.
+   - Cache refrescada manualmente en Supabase.
+
+2. PSDeals best-new-deals:
+   - 215 páginas procesadas.
+   - 7528 unique items collected.
+   - 0 failed pages.
+   - Auto-stop por five_consecutive_duplicate_pages.
+
+3. Analyzer inicial:
+   - 6511 refresh candidates.
+   - 1017 same price fields omitidos inicialmente.
+
+4. Import detail URL por URL:
+   - Primer pase:
+     - Seen: 6511
+     - Updated: 6502
+     - Failed: 9
+   - Segundo pase de omitidos:
+     - Seen: 1017
+     - Updated: 1013
+     - Failed: 4
+
+Total aproximado actualizado desde PSDeals detail:
+- 7515 de 7528 URLs.
+- 13 fallos totales.
+
+Problema detectado:
+- El analyzer fue demasiado agresivo.
+- Omitió URLs con discount_percent > 0 si los campos básicos parecían iguales.
+- Caso visible: Mixtape.
+- Mixtape no fue abierto en el primer pase porque quedó dentro de los 1017 omitidos.
+- Al importar los omitidos, Mixtape quedó corregido.
+
+Regla nueva:
+- En ofertas grandes, no omitir URLs con discount_percent > 0 solo porque current/original parecen iguales.
+- PS Plus puede requerir abrir detail page para detectar current_ps_plus_price_amount.
+- El analyzer debe corregirse antes del siguiente flujo grande.
+
+Publicación:
+- Se aplicó emergency cache update directo sobre catalog_public_cache desde psdeals_stage_items.
+- No se ejecutó refresh_catalog_public_cache_v15() después.
+- IMPORTANTE: No ejecutar refresh_catalog_public_cache_v15() hasta convertirlo a PSDeals-only, porque puede revertir la lógica actual.
+
+Estado final validado:
+- total_rows: 32437
+- active_regular_deals: 7227
+- active_ps_plus_deals: 3053
+- active_monthly_games: 3
+- expired_deals_still_marked_active: 0
+- deals_with_100_percent_or_more: 0
+- null_best_price_amount: 0
+
+Validación visual:
+- /deals correcto.
+- /home correcto.
+- Mixtape correcto.
+- Like a Dragon Gaiden correcto.
+- Producción validada por el usuario.
+
+Pendientes obligatorios:
+1. Convertir refresh_catalog_public_cache_v15 a PSDeals-only.
+2. Corregir analyzer para no omitir PS Plus/discounted items.
+3. Reintentar las 13 URLs fallidas.
+4. Diseñar flujo rápido para no abrir miles de URLs cada vez.
+5. Documentar estrategia futura de refresh:
+   - listing como fuente rápida.
+   - detail solo para nuevos, cambios, PS Plus, faltantes o casos dudosos.

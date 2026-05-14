@@ -745,3 +745,116 @@ Pendientes obligatorios:
 5. Documentar estrategia futura de refresh:
    - listing como fuente rápida.
    - detail solo para nuevos, cambios, PS Plus, faltantes o casos dudosos.
+
+## Addendum — Emergency PSDeals-only refresh + Metacritic protection — 2026-05-13
+
+Se cerró la operación crítica de actualización de deals del 2026-05-13.
+
+Contexto:
+- El 2026-05-13 salió una ronda grande de ofertas.
+- PlayStation Store official mixed deals mezclaba descuentos regulares y PS Plus, lo que hizo el flujo demasiado lento y complejo para operación diaria.
+- Se decidió descartar PlayStation Store official mixed deals por ahora para deals masivos.
+- PSDeals vuelve a ser la fuente principal operativa para pricing/deals.
+
+Resultado final de cache:
+- total_rows: 32437
+- active_regular_deals: 7227
+- active_ps_plus_deals: 3053
+- active_monthly_games: 3
+- expired_deals_still_marked_active: 0
+- deals_with_100_percent_or_more: 0
+- null_best_price_amount: 0
+
+Casos clave validados:
+- Mixtape:
+  - current_price_amount: 19.99
+  - original_price_amount: 19.99
+  - ps_plus_price_amount: 17.99
+  - best_price_amount: 17.99
+  - best_price_type: ps_plus
+  - discount_percent: 10
+  - has_ps_plus_deal: true
+- Like a Dragon Gaiden: The Man Who Erased His Name PS4 & PS5:
+  - current_price_amount: 14.99
+  - original_price_amount: 49.99
+  - best_price_type: regular
+  - discount_percent: 70
+  - has_deal: true
+
+Flujo ejecutado:
+1. PSDeals recently-added:
+   - 8 páginas revisadas.
+   - 12 nuevos items insertados.
+   - Cache refrescada manualmente.
+
+2. PSDeals best-new-deals:
+   - 215 páginas procesadas.
+   - 7528 unique items collected.
+   - 0 failed pages.
+   - Auto-stop por five_consecutive_duplicate_pages.
+
+3. Primer analyzer:
+   - 6511 refresh candidates.
+   - 1017 omitidos por same price fields.
+   - Problema detectado: el analyzer omitió casos como Mixtape aunque tenían PS Plus deal.
+
+4. Import detail URL por URL:
+   - Primer pase:
+     - Seen: 6511
+     - Updated: 6502
+     - Failed: 9
+   - Segundo pase de omitidos:
+     - Seen: 1017
+     - Updated: 1013
+     - Failed: 4
+
+Total:
+- 7515 de 7528 URLs actualizadas desde PSDeals detail.
+- 13 URLs fallidas totales.
+
+Problema Metacritic detectado:
+- Metacritic jamás se recoge desde PSDeals.
+- Metacritic pertenece a su propio collector/backfill.
+- El importador de detalles de PSDeals estaba escribiendo:
+  - metacritic_score: null
+  - metacritic_user_score: null
+  - metacritic_reviews_count: null
+- Eso pudo pisar scores ya existentes durante imports masivos.
+- Se restauraron scores desde backup previo:
+  - recoverable_metacritic_scores: 1286
+  - active_deals_with_metacritic después de restaurar: 1270
+
+Corrección aplicada:
+- Commit:
+  12bf932 Preserve Metacritic scores during PSDeals imports
+- Archivo:
+  scripts/import-psdeals-detail-local.mjs
+- Cambio:
+  El importador PSDeals ya no escribe campos Metacritic.
+- Regla:
+  PSDeals importer puede actualizar pricing, PS Plus, deal_ends_at, history, store data y relaciones, pero no debe tocar campos Metacritic.
+
+refresh_catalog_public_cache_v15:
+- Se convirtió a lógica PSDeals-only.
+- Ya no depende de official_ps_store_deals para publicar deals.
+- Resultado validado:
+  select public.refresh_catalog_public_cache_v15();
+  devolvió:
+  (32437,7227,3053,0)
+- La función vuelve a ser segura de ejecutar.
+
+Protecciones vigentes:
+- No publicar deals expirados.
+- No publicar descuentos >= 100%.
+- No publicar original_price_amount absurdamente alto:
+  original_price_amount <= current_price_amount * 20
+- best_price_amount siempre no-null.
+- Monthly PS Plus games se mantienen separados de deals.
+
+Pendientes:
+1. Corregir analyzer para no omitir URLs con discount_percent > 0.
+2. Reintentar las 13 URLs fallidas.
+3. Diseñar flujo rápido para no abrir miles de URLs en cada refresh.
+4. Documentar estrategia futura:
+   - listing como fuente rápida.
+   - detail solo para nuevos, cambios, PS Plus, faltantes o casos dudosos.

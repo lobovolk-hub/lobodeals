@@ -576,9 +576,8 @@ const isPsPlusDiscount = Boolean(
     lowest_price_amount: lowestPriceAmount,
     lowest_ps_plus_price_amount: lowestPsPlusPriceAmount,
     is_ps_plus_discount: isPsPlusDiscount,
-    metacritic_score: null,
-    metacritic_user_score: null,
-    metacritic_reviews_count: null,
+    // Metacritic fields are intentionally not written by the PSDeals importer.
+    // They are owned by the dedicated Metacritic collector/backfill flow.
     playstation_rating: playstationScore,
     playstation_ratings_count: playstationRatingsCount,
     all_add_ons_url: allAddOnsUrl,

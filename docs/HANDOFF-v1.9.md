@@ -1371,3 +1371,44 @@ Estado:
 - Fast refresh operativo.
 - Runner listo.
 - Producción validada.
+
+## Addendum — Recently-added runner hardened — 2026-05-14
+
+Se endureció el runner operativo:
+
+scripts/run-psdeals-edge-live-recently-added.ps1
+
+Cambios:
+- Get-EdgeEndpoint ahora intenta leer primero:
+  http://127.0.0.1:9222/json/version
+- Si falla, usa fallback:
+  Microsoft\Edge\User Data\DevToolsActivePort
+- El runner ya no ejecuta refresh_catalog_public_cache_v15 desde PowerShell/Node.
+- Al final imprime el SQL manual para Supabase:
+  set statement_timeout = '10min';
+  select public.refresh_catalog_public_cache_v15();
+
+Motivo:
+- El refresh desde PowerShell/Node suele fallar por timeout/crash.
+- En Supabase SQL Editor el refresh funciona correctamente.
+- El fallback de Edge evita errores cuando /json/version responde 404 pero DevToolsActivePort sigue disponible.
+
+Estado:
+- Runner recently-added alineado con el runner discounts fast refresh.
+- Ambos runners dejan el refresh de cache como paso manual en Supabase.
+- Ambos forman parte del flujo operativo diario.
+
+Comandos diarios actuales:
+
+1. Recently-added:
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File "D:\Proyectos\lobodeals\scripts\run-psdeals-edge-live-recently-added.ps1" -Pages 8
+
+2. Discounts fast refresh:
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File "D:\Proyectos\lobodeals\scripts\run-psdeals-edge-live-discounts-fast-refresh.ps1" -Pages 1000 -StaleHours 24 -StaleLimit 500
+
+3. Supabase manual refresh:
+set statement_timeout = '10min';
+select public.refresh_catalog_public_cache_v15();
+
+4. Supabase validation:
+validar total_rows, active_regular_deals, active_ps_plus_deals, active_monthly_games, expired_deals_still_marked_active, deals_with_100_percent_or_more y null_best_price_amount.

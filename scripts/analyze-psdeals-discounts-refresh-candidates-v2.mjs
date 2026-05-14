@@ -177,6 +177,11 @@ function classifyItem(listingItem, dbItem) {
   const listingOriginalPrice = normalizeMoney(listingItem.original_price_amount)
   const listingDiscountPercent = normalizeInteger(listingItem.discount_percent)
 
+  // This analyzer is used for PSDeals /discounts best-new-deals.
+  // Every URL in that listing must be refreshed through the detail page,
+  // because PS Plus prices can be missed by listing-level parsed fields.
+  reasons.push('discounts_listing_requires_detail_refresh')
+
   if (
     listingCurrentPrice !== null &&
     !moneyEqual(listingCurrentPrice, dbItem.current_price_amount)
@@ -275,6 +280,9 @@ async function main() {
   const discountMismatch = analyzed.filter((row) =>
     row.reasons.includes('discount_percent_mismatch')
   )
+  const discountedListingRequiresDetail = analyzed.filter((row) =>
+    row.reasons.includes('discounts_listing_requires_detail_refresh')
+  )
   const refreshCandidates = analyzed.filter((row) => row.shouldRefresh)
   const sameItems = analyzed.filter((row) => !row.shouldRefresh)
 
@@ -289,6 +297,7 @@ async function main() {
   console.log(`- current_price_mismatch: ${priceMismatch.length}`)
   console.log(`- original_price_mismatch: ${originalMismatch.length}`)
   console.log(`- discount_percent_mismatch: ${discountMismatch.length}`)
+  console.log(`- discounts_listing_requires_detail_refresh: ${discountedListingRequiresDetail.length}`)
 
   console.log('=== REFRESH CANDIDATES ===')
   for (const row of refreshCandidates) {

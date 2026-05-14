@@ -28,8 +28,49 @@ function Get-EdgeEndpoint {
 
     return $version.webSocketDebuggerUrl
   } catch {
-    throw "Could not read active Edge endpoint from http://127.0.0.1:9222/json/version. Open Edge with remote debugging enabled and load PSDeals first. Details: $($_.Exception.Message)"
+    $devToolsFile = Join-Path $env:LOCALAPPDATA "Microsoft\Edge\User Data\DevToolsActivePort"
+
+    if (-not (Test-Path $devToolsFile)) {
+      throw "Could not read Edge endpoint from /json/version or DevToolsActivePort. Open Edge with remote debugging enabled and load PSDeals first. Details: $($_.Exception.Message)"
+    }
+
+    $lines = @(Get-Content $devToolsFile | Where-Object { $_.Trim() -ne "" })
+
+    if ($lines.Count -lt 2) {
+      throw "Invalid DevToolsActivePort file: $devToolsFile"
+    }
+
+    return "ws://127.0.0.1:$($lines[0])$($lines[1])"
   }
+}
+
+function Write-ManualRefreshInstructions {
+  Write-Host ""
+  Write-Host "Run this in Supabase SQL Editor:"
+  Write-Host ""
+  Write-Host "set statement_timeout = '10min';"
+  Write-Host "select public.refresh_catalog_public_cache_v15();"
+  Write-Host ""
+  Write-Host "Then validate:"
+  Write-Host ""
+  Write-Host "select"
+  Write-Host "  count(*) as total_rows,"
+  Write-Host "  count(*) filter (where has_deal = true) as active_regular_deals,"
+  Write-Host "  count(*) filter (where has_ps_plus_deal = true) as active_ps_plus_deals,"
+  Write-Host "  count(*) filter (where is_ps_plus_monthly_game = true) as active_monthly_games,"
+  Write-Host "  count(*) filter ("
+  Write-Host "    where deal_ends_at is not null"
+  Write-Host "      and deal_ends_at <= now()"
+  Write-Host "      and (has_deal = true or has_ps_plus_deal = true)"
+  Write-Host "  ) as expired_deals_still_marked_active,"
+  Write-Host "  count(*) filter ("
+  Write-Host "    where discount_percent >= 100"
+  Write-Host "      and (has_deal = true or has_ps_plus_deal = true)"
+  Write-Host "  ) as deals_with_100_percent_or_more,"
+  Write-Host "  count(*) filter ("
+  Write-Host "    where best_price_amount is null"
+  Write-Host "  ) as null_best_price_amount"
+  Write-Host "from public.catalog_public_cache;"
 }
 
 Write-Host "[$stamp] Starting Edge live recently-added operational refresh."
@@ -99,13 +140,9 @@ Write-Host "New URLs count: $missingCount"
 if ($missingCount -eq 0) {
   Write-Host "No new PSDeals items found. Finished without detail import."
   Write-Host ""
-  Write-Host "STEP 3/3 - Refresh catalog_public_cache."
+  Write-Host "STEP 3/3 - Manual Supabase refresh required."
 
-  node scripts\refresh-catalog-public-cache-v15.mjs
-
-  if ($LASTEXITCODE -ne 0) {
-    throw "Cache refresh failed with exit code $LASTEXITCODE"
-  }
+  Write-ManualRefreshInstructions
 
   Write-Host ""
   Write-Host "Recently-added Edge live operational refresh finished."
@@ -136,13 +173,9 @@ if ($LASTEXITCODE -ne 0) {
 }
 
 Write-Host ""
-Write-Host "STEP 4/4 - Refresh catalog_public_cache."
+Write-Host "STEP 4/4 - Manual Supabase refresh required."
 
-node scripts\refresh-catalog-public-cache-v15.mjs
-
-if ($LASTEXITCODE -ne 0) {
-  throw "Cache refresh failed with exit code $LASTEXITCODE"
-}
+Write-ManualRefreshInstructions
 
 Write-Host ""
 Write-Host "Recently-added Edge live operational refresh finished."

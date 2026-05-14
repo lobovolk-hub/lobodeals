@@ -976,3 +976,76 @@ Estado:
 
 Pendiente siguiente:
 - Diseñar flujo rápido para no abrir miles de URLs en cada refresh.
+
+## Addendum — PSDeals discounts fast refresh runner — 2026-05-14
+
+Se creó el runner operativo para discounts fast refresh:
+
+scripts/run-psdeals-edge-live-discounts-fast-refresh.ps1
+
+Objetivo:
+- Evitar abrir miles de URLs de PSDeals en cada refresh.
+- Mantener cobertura segura de deals sin repetir el proceso completo de 7528 URLs.
+- Usar listing completo + analyzer fast + detail selectivo + retry automático.
+
+Flujo del runner:
+1. Recolecta PSDeals discounts best-new-deals.
+2. Ejecuta analyze-psdeals-discounts-fast-refresh-v1.mjs.
+3. Genera:
+   - combined refresh TXT
+   - must refresh TXT
+   - stale refresh TXT
+   - skipped safe TXT
+4. Importa los selected detail URLs vía Edge live.
+5. Reintenta fallos una vez.
+6. NO ejecuta refresh_catalog_public_cache_v15 desde PowerShell.
+7. Imprime el SQL manual de Supabase para refrescar cache y validar counts.
+
+Motivo del refresh manual:
+- refresh_catalog_public_cache_v15 suele fallar desde PowerShell/Node por statement timeout/crash.
+- En Supabase SQL Editor funciona correctamente con:
+  set statement_timeout = '10min';
+  select public.refresh_catalog_public_cache_v15();
+
+Prueba real del 2026-05-14:
+- PSDeals discounts listing:
+  - 215 páginas procesadas.
+  - 7497 unique items collected.
+  - 0 failed pages.
+- Fast analyzer:
+  - Must refresh: 9
+  - Stale selected: 500
+  - Combined refresh total: 509
+  - Skipped safe: 6988
+- Import:
+  - Seen: 509
+  - Updated: 505
+  - Failed: 4
+- Retry:
+  - Seen: 4
+  - Updated: 4
+  - Failed: 0
+- Cache final:
+  - refresh_catalog_public_cache_v15:
+    (32456,7244,3054,0)
+  - total_rows: 32456
+  - active_regular_deals: 7244
+  - active_ps_plus_deals: 3054
+  - active_monthly_games: 3
+  - expired_deals_still_marked_active: 0
+  - deals_with_100_percent_or_more: 0
+  - null_best_price_amount: 0
+
+Comando operativo diario para discounts fast refresh:
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File "D:\Proyectos\lobodeals\scripts\run-psdeals-edge-live-discounts-fast-refresh.ps1" -Pages 1000 -StaleHours 24 -StaleLimit 500
+
+Regla:
+- El analyzer seguro que refresca todo se mantiene como fallback:
+  scripts/analyze-psdeals-discounts-refresh-candidates-v2.mjs
+- El analyzer fast será el flujo operativo normal:
+  scripts/analyze-psdeals-discounts-fast-refresh-v1.mjs
+
+Estado:
+- Fast refresh operativo.
+- Runner listo.
+- Producción validada.

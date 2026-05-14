@@ -940,3 +940,39 @@ Pendientes:
 4. Documentar estrategia futura:
    - listing como fuente rápida.
    - detail solo para nuevos, cambios, PS Plus, faltantes o casos dudosos.
+
+## Addendum — Retry failed PSDeals detail URLs — 2026-05-14
+
+Se reintentaron las 13 URLs fallidas del refresh masivo de PSDeals discounts.
+
+Resultado:
+- Seen: 13
+- Inserted: 0
+- Updated: 13
+- Failed: 0
+
+Log:
+- data\import\psdeals-discounts-failed-retry-2026-05-14-00-05-00.log
+
+Después del retry se ejecutó refresh_catalog_public_cache_v15().
+
+Resultado:
+- refresh_catalog_public_cache_v15:
+  (32437,7236,3049,0)
+
+Validación final:
+- total_rows: 32437
+- active_regular_deals: 7236
+- active_ps_plus_deals: 3049
+- active_monthly_games: 3
+- expired_deals_still_marked_active: 0
+- deals_with_100_percent_or_more: 0
+- null_best_price_amount: 0
+
+Estado:
+- Las 7528 URLs de PSDeals discounts recolectadas el 2026-05-13 quedaron cubiertas.
+- Los 13 fallos iniciales fueron recuperados.
+- refresh_catalog_public_cache_v15() sigue seguro y estable en modo PSDeals-only.
+
+Pendiente siguiente:
+- Diseñar flujo rápido para no abrir miles de URLs en cada refresh.

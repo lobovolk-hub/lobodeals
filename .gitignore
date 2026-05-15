@@ -1,4 +1,4 @@
-# dependencies
+﻿# dependencies
 node_modules/
 
 # Next.js
@@ -65,4 +65,6 @@ docs/*
 !docs/ROADMAP-v1.9.md
 !docs/HANDOFF-v1.9.md
 !docs/NEW-CHAT-PROMPT-v1.9.md
+!docs/DAILY-REFRESH-v1.9.md
 docs/audit-v1.9/
+

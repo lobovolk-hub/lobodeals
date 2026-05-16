@@ -1036,3 +1036,65 @@ select public.refresh_catalog_public_cache_v15();
 
 4. Supabase validation:
 validar total_rows, active_regular_deals, active_ps_plus_deals, active_monthly_games, expired_deals_still_marked_active, deals_with_100_percent_or_more y null_best_price_amount.
+
+## Addendum — Daily PSDeals refresh operation consolidated — 2026-05-14
+
+Se consolidó la operación diaria de refresh de LoboDeals en:
+
+docs/DAILY-REFRESH-v1.9.md
+
+Este documento pasa a ser la referencia principal para el refresh diario manual.
+
+Flujo operativo actual:
+1. Abrir Edge con remote debugging.
+2. Correr recently-added:
+   scripts/run-psdeals-edge-live-recently-added.ps1
+3. Ejecutar refresh manual en Supabase:
+   set statement_timeout = '10min';
+   select public.refresh_catalog_public_cache_v15();
+4. Validar counts.
+5. Correr discounts fast refresh:
+   scripts/run-psdeals-edge-live-discounts-fast-refresh.ps1
+6. Ejecutar refresh manual en Supabase.
+7. Validar counts.
+8. Revisar producción.
+
+Estado de runners:
+- recently-added quedó endurecido:
+  - usa fallback DevToolsActivePort si /json/version falla.
+  - ya no ejecuta refresh_catalog_public_cache_v15 desde PowerShell/Node.
+  - imprime SQL manual para Supabase.
+- discounts fast refresh quedó operativo:
+  - recolecta listing completo.
+  - usa analyzer fast.
+  - abre detail selectivo.
+  - reintenta fallos una vez.
+  - imprime SQL manual para Supabase.
+
+Estado de pricing/deals:
+- refresh_catalog_public_cache_v15 está en modo PSDeals-only.
+- PSDeals es la fuente principal operativa para pricing/deals.
+- PlayStation Store official mixed deals queda descartado por ahora para deals masivos.
+- Metacritic no viene de PSDeals y está protegido contra sobrescritura por imports de PSDeals.
+- Full refresh queda como fallback.
+- Fast refresh queda como flujo normal diario.
+
+Validaciones mínimas obligatorias:
+- expired_deals_still_marked_active = 0
+- deals_with_100_percent_or_more = 0
+- null_best_price_amount = 0
+- revisar casos clave:
+  - Mixtape
+  - Like a Dragon Gaiden
+  - Red Dead Redemption 2
+  - /deals?tab=games&sort=metacritic
+
+Estado:
+- Operación diaria consolidada.
+- Guía diaria creada y versionada.
+- Flujo listo para repetirse sin reconstruir comandos cada día.
+
+Siguiente bloque:
+- Launch soft limitado.
+- Monitoreo post-launch.
+- Search Console en observación hasta que Google termine validación de canonical/indexación.

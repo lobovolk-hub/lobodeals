@@ -182,13 +182,20 @@ if ($combinedCount -eq 0) {
   Write-Host ""
   Write-Host "STEP 3/5 - Import selected detail URLs via Edge live."
 
-  node scripts\import-psdeals-detail-local.mjs `
-    --file="$combinedTxt" `
-    --delay-ms=$ImportDelayMs `
-    --timeout-ms=$TimeoutMs `
-    --fetch-mode=edge-live `
-    --edge-endpoint="$edgeEndpoint" `
-    --debug-html-dir="$debugHtmlDir" *> $importLog
+  $previousErrorActionPreference = $ErrorActionPreference
+  try {
+    $ErrorActionPreference = "Continue"
+
+    node scripts\import-psdeals-detail-local.mjs `
+      --file="$combinedTxt" `
+      --delay-ms=$ImportDelayMs `
+      --timeout-ms=$TimeoutMs `
+      --fetch-mode=edge-live `
+      --edge-endpoint="$edgeEndpoint" `
+      --debug-html-dir="$debugHtmlDir" *> $importLog
+  } finally {
+    $ErrorActionPreference = $previousErrorActionPreference
+  }
 
   Write-Host ""
   Write-Host "Import summary:"
@@ -215,13 +222,20 @@ if ($combinedCount -eq 0) {
   Write-Host "Retry TXT: $retryTxt"
 
   if ($failedUrls.Count -gt 0) {
-    node scripts\import-psdeals-detail-local.mjs `
-      --file="$retryTxt" `
-      --delay-ms=$RetryDelayMs `
-      --timeout-ms=240000 `
-      --fetch-mode=edge-live `
-      --edge-endpoint="$edgeEndpoint" `
-      --debug-html-dir="$retryDebugHtmlDir" *> $retryLog
+    $previousErrorActionPreference = $ErrorActionPreference
+    try {
+      $ErrorActionPreference = "Continue"
+
+      node scripts\import-psdeals-detail-local.mjs `
+        --file="$retryTxt" `
+        --delay-ms=$RetryDelayMs `
+        --timeout-ms=240000 `
+        --fetch-mode=edge-live `
+        --edge-endpoint="$edgeEndpoint" `
+        --debug-html-dir="$retryDebugHtmlDir" *> $retryLog
+    } finally {
+      $ErrorActionPreference = $previousErrorActionPreference
+    }
 
     Write-Host ""
     Write-Host "Retry summary:"

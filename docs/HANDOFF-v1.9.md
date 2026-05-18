@@ -1474,3 +1474,123 @@ Siguiente bloque:
 - Launch soft limitado.
 - Monitoreo post-launch.
 - Search Console en observación hasta que Google termine validación de canonical/indexación.
+## Addendum — Cierre operativo y roadmap para nuevo chat — 2026-05-17
+
+Estado general:
+- LoboDeals está vivo en https://lobodeals.com.
+- La web pública ya está en fase de operación diaria y launch soft.
+- La experiencia visual PC/móvil quedó validada previamente.
+- Search Console está mejorando: todavía aparecen resultados viejos de Steam, pero ya aparecen /catalog y /deals con contenido PlayStation.
+- No tocar SEO técnico por ahora si canonical, sitemap y redirects siguen correctos.
+
+Estado actual de pricing/deals:
+- El flujo operativo actual es PSDeals-only para pricing/deals.
+- PlayStation Store official mixed deals queda descartado por ahora para deals masivos.
+- refresh_catalog_public_cache_v15 está en modo PSDeals-only y se considera seguro.
+- PSDeals importer no debe tocar campos Metacritic.
+- Metacritic viene de su propio collector/backfill.
+- Monthly PS Plus Games se mantiene separado de deals.
+
+Estado actual de refresh diario:
+- recently-added runner operativo:
+  scripts/run-psdeals-edge-live-recently-added.ps1
+- discounts fast refresh runner operativo:
+  scripts/run-psdeals-edge-live-discounts-fast-refresh.ps1
+- DAILY-REFRESH-v1.9.md es la guía principal de operación diaria.
+- El runner de discounts ya fue endurecido para no cortarse por FAILED en stderr y llegar al retry automático.
+- El retry automático fue validado el 2026-05-16 con 11 fallos recuperados correctamente.
+
+Último chequeo diario completo validado:
+- Fecha: 2026-05-16
+- recently-added:
+  - 4 nuevos insertados
+  - Failed: 0
+- discounts fast refresh:
+  - 7497 unique items collected
+  - Must refresh: 0
+  - Stale selected: 500
+  - Import: Seen 500 / Updated 489 / Failed 11
+  - Retry: Seen 11 / Updated 11 / Failed 0
+- Cache final:
+  - refresh_catalog_public_cache_v15: (32502,7290,3060,0)
+  - total_rows: 32502
+  - active_regular_deals: 7290
+  - active_ps_plus_deals: 3060
+  - active_monthly_games: 3
+  - expired_deals_still_marked_active: 0
+  - deals_with_100_percent_or_more: 0
+  - null_best_price_amount: 0
+- Casos clave validados:
+  - Mixtape: PS Plus deal correcto y Metacritic 85
+  - Like a Dragon Gaiden: regular deal correcto y Metacritic 78
+  - Red Dead Redemption 2: regular deal correcto y Metacritic 97
+
+Estado actual Supabase Free:
+- current_database_size después de eliminar backup viejo: aproximadamente 415 MB.
+- Margen estimado antes del límite Free de 500 MB: aproximadamente 85 MB.
+- Tabla más pesada:
+  - psdeals_stage_price_history
+  - 817955 rows
+  - 258 MB total
+  - 101 MB tabla
+  - 157 MB índices
+- Se eliminó:
+  - catalog_public_cache_backup_20260513_before_psdeals_only
+- Se creó por error y luego se eliminó:
+  - psdeals_price_history_archive_summary
+- No se borró price_history.
+- No se perdió información.
+- Crecimiento normal reciente de price_history parece bajo, salvo pico fuerte del 2026-05-13.
+- Decisión pendiente: mantener price_history completo, conservar 2 años, conservar 1 año + resumen histórico, o reducir feature visible.
+
+Pendientes principales para nuevo chat:
+1. Automatización del chequeo diario:
+   - dejar de depender de ejecución manual de Johan.
+   - automatizar refresh_catalog_public_cache_v15 sin Supabase SQL manual.
+   - crear validación automática.
+   - crear alertas si falla.
+   - programar runners con Task Scheduler.
+   - manejar Edge live/CDP, retries, captcha/challenge y evitar publicar datos malos.
+
+2. Filtro de plataforma en /catalog y /deals:
+   - agregar selector PS4 / PS5.
+   - por defecto ambos marcados.
+   - usuario puede elegir solo PS4, solo PS5 o ambos.
+   - debe convivir con search, sort, tab/type filters, Metacritic y paginación.
+
+3. Resumen semanal de alcance:
+   - revisar GA4, Search Console, Vercel logs.
+   - países de visitas.
+   - páginas más vistas.
+   - queries, clicks, impresiones, CTR.
+   - errores 404.
+   - evolución de indexación.
+
+4. Price history:
+   - evaluar si se conserva completo.
+   - evaluar mantener solo últimos 2 años.
+   - evaluar mantener solo último año + resumen histórico.
+   - no borrar sin preservar dato mínimo para historical low.
+
+5. Monetización:
+   - no priorizar antes de automatización y alcance mínimo.
+   - revisar Partnerize/PlayStation.
+   - definir links afiliados.
+   - agregar tracking de clicks salientes.
+   - agregar disclosure.
+   - activar de forma gradual.
+
+6. Proyecto de compatibilidad:
+   - hay trabajo paralelo tipo backwards-compatible.com.
+   - puede tardar semanas.
+   - futura integración posible en slugs de LoboDeals.
+   - datos esperados: resolución, framerate, modos, 120Hz, HDR, Ray Tracing, PSSR.
+   - no implementar todavía.
+
+Orden recomendado para nuevo chat:
+1. Automatización local supervisada del refresh diario.
+2. Filtro PS4/PS5 en /catalog y /deals.
+3. Resumen semanal de alcance.
+4. Decisión price_history.
+5. Monetización Partnerize.
+6. Integración futura de compatibilidad.

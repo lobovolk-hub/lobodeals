@@ -1,4 +1,4 @@
-import Link from 'next/link'
+﻿import Link from 'next/link'
 import type { Metadata } from 'next'
 import { notFound } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
@@ -8,7 +8,7 @@ import { TrackButton } from '@/components/track-button'
 
 export const dynamic = 'force-static'
 export const dynamicParams = true
-export const revalidate = 3600
+export const revalidate = 86400
 export const fetchCache = 'force-cache'
 const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || 'https://lobodeals.com'
 
@@ -662,7 +662,7 @@ const displayCurrentAmount = getDisplayCurrentAmount(item)
             href="/catalog"
             className="text-sm font-semibold text-zinc-400 transition hover:text-white"
           >
-            ← Back to catalog
+            â† Back to catalog
           </Link>
         </div>
 
@@ -875,7 +875,7 @@ const displayCurrentAmount = getDisplayCurrentAmount(item)
                 </p>
                 <p className="mt-2 text-2xl font-bold text-emerald-300">
                   {item.lowest_price_amount === null
-                    ? '—'
+                    ? 'â€”'
                     : lowestRegularPriceLabel}
                 </p>
               </div>
@@ -886,7 +886,7 @@ const displayCurrentAmount = getDisplayCurrentAmount(item)
                 </p>
                 <p className="mt-2 text-2xl font-bold text-yellow-300">
                   {item.lowest_ps_plus_price_amount === null
-                    ? '—'
+                    ? 'â€”'
                     : lowestPsPlusPriceLabel}
                 </p>
               </div>
@@ -921,4 +921,5 @@ const displayCurrentAmount = getDisplayCurrentAmount(item)
     </main>
   )
 }
+
 

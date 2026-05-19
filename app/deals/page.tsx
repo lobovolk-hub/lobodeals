@@ -3,9 +3,9 @@ import type { Metadata } from 'next'
 import { supabase } from '@/lib/supabase'
 import { ItemCard, type ItemCardData } from '@/components/item-card'
 
-export const dynamic = 'force-dynamic'
-export const revalidate = 0
 
+export const revalidate = 900
+export const fetchCache = 'force-cache'
 export const metadata: Metadata = {
   title: 'PlayStation deals',
   description:
@@ -454,3 +454,4 @@ export default async function DealsPage({ searchParams }: DealsPageProps) {
     </main>
   )
 }
+

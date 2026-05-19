@@ -1,7 +1,21 @@
 import { createServerClient } from '@supabase/ssr'
 import { NextResponse, type NextRequest } from 'next/server'
 
+const authRoutePrefixes = ['/auth/callback', '/profile', '/tracked']
+
+function shouldRefreshAuth(pathname: string) {
+  return authRoutePrefixes.some(
+    (prefix) => pathname === prefix || pathname.startsWith(`${prefix}/`)
+  )
+}
+
 export async function proxy(request: NextRequest) {
+  if (!shouldRefreshAuth(request.nextUrl.pathname)) {
+    return NextResponse.next({
+      request,
+    })
+  }
+
   let response = NextResponse.next({
     request,
   })
@@ -41,7 +55,5 @@ export async function proxy(request: NextRequest) {
 }
 
 export const config = {
-  matcher: [
-    '/((?!_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)',
-  ],
+  matcher: ['/auth/callback/:path*', '/profile/:path*', '/tracked/:path*'],
 }

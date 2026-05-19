@@ -6,8 +6,10 @@ import { PriceHistoryChart } from '@/components/price-history-chart'
 import { FallbackGameImage } from '@/components/fallback-game-image'
 import { TrackButton } from '@/components/track-button'
 
-export const dynamic = 'force-dynamic'
-export const revalidate = 0
+export const dynamic = 'force-static'
+export const dynamicParams = true
+export const revalidate = 3600
+export const fetchCache = 'force-cache'
 const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || 'https://lobodeals.com'
 
 type SlugMetadataProps = {
@@ -919,3 +921,4 @@ const displayCurrentAmount = getDisplayCurrentAmount(item)
     </main>
   )
 }
+

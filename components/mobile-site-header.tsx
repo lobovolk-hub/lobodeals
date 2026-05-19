@@ -1,12 +1,9 @@
 'use client'
 
 import Link from 'next/link'
+import { AccountLinks } from './account-links'
 import { useRouter } from 'next/navigation'
 import { FormEvent, useState } from 'react'
-
-type MobileSiteHeaderProps = {
-  isLoggedIn: boolean
-}
 
 const menuLinks = [
   { href: '/', label: 'Home' },
@@ -14,7 +11,7 @@ const menuLinks = [
   { href: '/deals', label: 'Deals' },
 ]
 
-export function MobileSiteHeader({ isLoggedIn }: MobileSiteHeaderProps) {
+export function MobileSiteHeader() {
   const router = useRouter()
   const [isMenuOpen, setIsMenuOpen] = useState(false)
   const [isSearchOpen, setIsSearchOpen] = useState(false)
@@ -147,21 +144,7 @@ export function MobileSiteHeader({ isLoggedIn }: MobileSiteHeaderProps) {
                 </Link>
               ))}
 
-              <Link
-                href="/tracked"
-                onClick={closeMenu}
-                className="px-4 py-3 text-sm font-black text-zinc-200 transition hover:bg-zinc-900 hover:text-white"
-              >
-                Tracked
-              </Link>
-
-              <Link
-                href={isLoggedIn ? '/profile' : '/login'}
-                onClick={closeMenu}
-                className="px-4 py-3 text-sm font-black text-zinc-200 transition hover:bg-zinc-900 hover:text-white"
-              >
-                {isLoggedIn ? 'Profile' : 'Login'}
-              </Link>
+              <AccountLinks variant="mobile" onNavigate={closeMenu} />
             </div>
           </div>
         </div>

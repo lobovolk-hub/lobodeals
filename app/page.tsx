@@ -5,8 +5,7 @@ import { supabase } from '@/lib/supabase'
 import { HomeFeaturedCarousel } from '@/components/home-featured-carousel'
 import { ItemCard, type ItemCardData } from '@/components/item-card'
 
-export const dynamic = 'force-dynamic'
-export const revalidate = 0
+export const revalidate = 3600
 export const metadata: Metadata = {
   title: 'PlayStation deals and game tracking',
   description:

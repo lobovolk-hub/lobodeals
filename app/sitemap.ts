@@ -1,50 +1,167 @@
-﻿import type { MetadataRoute } from 'next'
+import type { MetadataRoute } from 'next'
 import { supabase } from '@/lib/supabase'
 
 const siteUrl = (process.env.NEXT_PUBLIC_SITE_URL || 'https://lobodeals.com').replace(/\/$/, '')
 
 type SitemapItem = {
-  slug: string
+  slug: string | null
+  updated_at: string | null
 }
 
-const MAX_SITEMAP_URLS = 50000
-const STATIC_ROUTE_COUNT = 3
-const MAX_ITEM_ROUTES = MAX_SITEMAP_URLS - STATIC_ROUTE_COUNT
-const PAGE_SIZE = 1000
+const MAX_ITEM_ROUTES = 750
 
 export const revalidate = 86400
 
+function itemRoute(
+  item: SitemapItem,
+  priority: number,
+  changeFrequency: MetadataRoute.Sitemap[number]['changeFrequency'] = 'weekly'
+): MetadataRoute.Sitemap[number] | null {
+  if (!item.slug) {
+    return null
+  }
+
+  const route: MetadataRoute.Sitemap[number] = {
+    url: `${siteUrl}/us/playstation/${encodeURIComponent(item.slug)}`,
+    changeFrequency,
+    priority,
+  }
+
+  if (item.updated_at) {
+    route.lastModified = new Date(item.updated_at)
+  }
+
+  return route
+}
+
+async function fetchRows(
+  label: string,
+  query: PromiseLike<{ data: unknown; error: unknown }>
+): Promise<SitemapItem[]> {
+  const { data, error } = await query
+
+  if (error) {
+    console.error(`Sitemap bucket failed: ${label}`, error)
+    return []
+  }
+
+  return Array.isArray(data) ? (data as SitemapItem[]) : []
+}
+
+function baseQuery() {
+  return supabase
+    .from('catalog_public_cache')
+    .select('slug, updated_at')
+    .eq('region_code', 'us')
+    .eq('storefront', 'playstation')
+    .not('slug', 'is', null)
+}
+
 async function fetchSitemapItems() {
-  const items: SitemapItem[] = []
+  const today = new Date().toISOString().slice(0, 10)
 
-  for (let from = 0; from < MAX_ITEM_ROUTES; from += PAGE_SIZE) {
-    const to = Math.min(from + PAGE_SIZE - 1, MAX_ITEM_ROUTES - 1)
+  const [
+    activeDeals,
+    monthlyGames,
+    topMetacritic,
+    latestReleases,
+    upcomingReleases,
+  ] = await Promise.all([
+    fetchRows(
+      'active-deals',
+      baseQuery()
+        .or('has_deal.eq.true,has_ps_plus_deal.eq.true')
+        .order('updated_at', { ascending: false })
+        .limit(250)
+    ),
 
-    const { data, error } = await supabase
-      .from('catalog_public_cache')
-      .select('slug')
-      .eq('region_code', 'us')
-      .eq('storefront', 'playstation')
-      .not('slug', 'is', null)
-      .order('slug', { ascending: true })
-      .range(from, to)
+    fetchRows(
+      'monthly-games',
+      baseQuery()
+        .eq('is_ps_plus_monthly_game', true)
+        .order('updated_at', { ascending: false })
+        .limit(25)
+    ),
 
-    if (error) {
-      throw error
-    }
+    fetchRows(
+      'top-metacritic',
+      supabase
+        .from('catalog_public_cache')
+        .select('slug, updated_at, metacritic_score')
+        .eq('region_code', 'us')
+        .eq('storefront', 'playstation')
+        .eq('content_type', 'game')
+        .eq('item_type_label', 'game')
+        .not('slug', 'is', null)
+        .not('metacritic_score', 'is', null)
+        .order('metacritic_score', { ascending: false })
+        .limit(200)
+    ),
 
-    if (!data || data.length === 0) {
-      break
-    }
+    fetchRows(
+      'latest-releases',
+      supabase
+        .from('catalog_public_cache')
+        .select('slug, updated_at, release_date')
+        .eq('region_code', 'us')
+        .eq('storefront', 'playstation')
+        .eq('content_type', 'game')
+        .eq('item_type_label', 'game')
+        .not('slug', 'is', null)
+        .not('release_date', 'is', null)
+        .lte('release_date', today)
+        .order('release_date', { ascending: false })
+        .limit(150)
+    ),
 
-    items.push(...(data as SitemapItem[]))
+    fetchRows(
+      'upcoming-releases',
+      supabase
+        .from('catalog_public_cache')
+        .select('slug, updated_at, release_date')
+        .eq('region_code', 'us')
+        .eq('storefront', 'playstation')
+        .eq('content_type', 'game')
+        .eq('item_type_label', 'game')
+        .not('slug', 'is', null)
+        .not('release_date', 'is', null)
+        .gt('release_date', today)
+        .order('release_date', { ascending: true })
+        .limit(150)
+    ),
+  ])
 
-    if (data.length < PAGE_SIZE) {
-      break
+  const seen = new Set<string>()
+  const routes: MetadataRoute.Sitemap = []
+
+  function add(items: SitemapItem[], priority: number) {
+    for (const item of items) {
+      if (!item.slug || seen.has(item.slug)) {
+        continue
+      }
+
+      const route = itemRoute(item, priority)
+
+      if (!route) {
+        continue
+      }
+
+      seen.add(item.slug)
+      routes.push(route)
+
+      if (routes.length >= MAX_ITEM_ROUTES) {
+        return
+      }
     }
   }
 
-  return items
+  add(activeDeals, 0.8)
+  add(monthlyGames, 0.8)
+  add(topMetacritic, 0.7)
+  add(latestReleases, 0.7)
+  add(upcomingReleases, 0.7)
+
+  return routes.slice(0, MAX_ITEM_ROUTES)
 }
 
 export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
@@ -72,26 +189,7 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   ]
 
   try {
-    const data = await fetchSitemapItems()
-    const seen = new Set<string>()
-
-    const itemRoutes: MetadataRoute.Sitemap = data
-      .filter((item) => {
-        if (!item.slug || seen.has(item.slug)) {
-          return false
-        }
-
-        seen.add(item.slug)
-        return true
-      })
-      .slice(0, MAX_ITEM_ROUTES)
-      .map((item) => ({
-        url: `${siteUrl}/us/playstation/${encodeURIComponent(item.slug)}`,
-        lastModified: now,
-        changeFrequency: 'weekly',
-        priority: 0.7,
-      }))
-
+    const itemRoutes = await fetchSitemapItems()
     return [...staticRoutes, ...itemRoutes]
   } catch {
     return staticRoutes

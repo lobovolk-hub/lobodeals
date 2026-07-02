@@ -1,5 +1,7 @@
 param(
-  [int]$Pages = 5,
+  [Alias("Pages")]
+  [int]$SafetyCap = 100,
+  [int]$StopAfterConsecutiveNoNewPages = 3,
   [int]$DelayMs = 1500,
   [int]$TimeoutMs = 180000
 )
@@ -75,7 +77,8 @@ function Write-ManualRefreshInstructions {
 
 Write-Host "[$stamp] Starting Edge live recently-added operational refresh."
 Write-Host "Project root: $projectRoot"
-Write-Host "Pages: $Pages"
+Write-Host "Safety cap pages: $SafetyCap"
+Write-Host "Stop after consecutive no-new pages: $StopAfterConsecutiveNoNewPages"
 Write-Host "Delay ms: $DelayMs"
 Write-Host "Timeout ms: $TimeoutMs"
 Write-Host "Output prefix: $outputPrefix"
@@ -92,7 +95,8 @@ Write-Host "STEP 1/4 - Collect recently-added listing via Edge live."
 node scripts\collect-psdeals-listing-edge-live-cdp.mjs `
   --endpoint="$edgeEndpoint" `
   --url="$url" `
-  --pages=$Pages `
+  --pages=$SafetyCap `
+  --stop-after-consecutive-no-new-pages=$StopAfterConsecutiveNoNewPages `
   --delay-ms=$DelayMs `
   --timeout-ms=$TimeoutMs `
   --output-prefix="$outputPrefix"

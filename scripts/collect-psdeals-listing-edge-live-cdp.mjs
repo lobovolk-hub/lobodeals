@@ -507,6 +507,7 @@ async function main() {
   const timeoutValue = getArgValue('timeout-ms')
   const outputDirValue = getArgValue('output-dir')
   const outputPrefixValue = getArgValue('output-prefix')
+  const stopAfterConsecutiveNoNewPagesValue = getArgValue('stop-after-consecutive-no-new-pages')
 
   if (!urlValue) {
     throw new Error('Missing --url argument.')
@@ -520,9 +521,19 @@ async function main() {
   const timeoutMs = timeoutValue ? Number(timeoutValue) : 90000
   const outputDir = path.resolve(process.cwd(), outputDirValue || 'data/import')
   const outputPrefix = outputPrefixValue || 'psdeals-edge-live-listing'
+  const stopAfterConsecutiveNoNewPages = stopAfterConsecutiveNoNewPagesValue
+    ? Number(stopAfterConsecutiveNoNewPagesValue)
+    : 5
 
   if (!Number.isFinite(maxPages) || maxPages <= 0) {
     throw new Error('Invalid --pages value.')
+  }
+
+  if (
+    !Number.isFinite(stopAfterConsecutiveNoNewPages) ||
+    stopAfterConsecutiveNoNewPages <= 0
+  ) {
+    throw new Error('Invalid --stop-after-consecutive-no-new-pages value.')
   }
 
   if (!Number.isFinite(startPage) || startPage < 1) {
@@ -560,7 +571,7 @@ async function main() {
   const pageSummaries = []
   const failedPages = []
   let firstDetectedTotalResults = null
-  let consecutiveDuplicatePages = 0
+  let consecutiveNoNewPages = 0
   let autoStopReason = null
 
   for (
@@ -613,9 +624,9 @@ async function main() {
       )
 
       if (pageSummary.raw_item_count > 0 && pageSummary.new_unique_count === 0) {
-        consecutiveDuplicatePages += 1
+        consecutiveNoNewPages += 1
       } else {
-        consecutiveDuplicatePages = 0
+        consecutiveNoNewPages = 0
       }
 
       const stopTotalResults = firstDetectedTotalResults ?? pageSummary.total_results_detected
@@ -631,9 +642,9 @@ async function main() {
         break
       }
 
-      if (consecutiveDuplicatePages >= 5) {
+      if (consecutiveNoNewPages >= stopAfterConsecutiveNoNewPages) {
         autoStopReason =
-          `five_consecutive_duplicate_pages: count=${consecutiveDuplicatePages} last_page=${pageNumber}`
+          `consecutive_no_new_pages: count=${consecutiveNoNewPages} threshold=${stopAfterConsecutiveNoNewPages} last_page=${pageNumber}`
         console.log(`[AUTO STOP] ${autoStopReason}`)
         break
       }
@@ -668,13 +679,25 @@ async function main() {
     collection_mode: 'edge_live_authorized_direct_cdp',
     base_url: baseUrl,
     pages_requested: maxPages,
+    safety_cap: maxPages,
     start_page: startPage,
     pages_processed: pageSummaries.length,
-        failed_pages: failedPages,
+    pages_failed: failedPages.length,
+    failed_pages: failedPages,
+    consecutive_no_new_pages_at_stop: consecutiveNoNewPages,
+    stop_reason:
+      autoStopReason ||
+      (failedPages.length > 0
+        ? `failed_page: page=${failedPages[failedPages.length - 1].page_number}`
+        : pageSummaries.length >= maxPages
+          ? `safety_cap_reached: safety_cap=${maxPages}`
+          : 'completed'),
     auto_stop_reason: autoStopReason,
     auto_stop_rules: {
       stop_when_unique_items_reach_total_results: true,
-      stop_after_consecutive_duplicate_pages: 5,
+      stop_after_consecutive_duplicate_pages: stopAfterConsecutiveNoNewPages,
+      stop_after_consecutive_no_new_pages: stopAfterConsecutiveNoNewPages,
+      no_new_page_rule: 'raw_item_count > 0 && new_unique_count === 0',
     },
     total_results_detected: firstDetectedTotalResults,
     unique_items_collected: items.length,

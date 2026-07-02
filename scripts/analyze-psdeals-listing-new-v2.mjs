@@ -125,11 +125,18 @@ async function fetchExistingIds(admin, psdealsIds) {
 }
 
 function pageGroups(items, pageSize) {
-  return items.map((item, index) => ({
-    ...item,
-    inferred_page: Math.floor(index / pageSize) + 1,
-    inferred_position: (index % pageSize) + 1,
-  }))
+  return items.map((item, index) => {
+    const firstSeenPage = Number(item.first_seen_page)
+    const hasFirstSeenPage = Number.isFinite(firstSeenPage) && firstSeenPage >= 1
+    const page = hasFirstSeenPage ? Math.trunc(firstSeenPage) : Math.floor(index / pageSize) + 1
+
+    return {
+      ...item,
+      inferred_page: page,
+      inferred_position: hasFirstSeenPage ? null : (index % pageSize) + 1,
+      page_source: hasFirstSeenPage ? 'first_seen_page' : 'page_size_fallback',
+    }
+  })
 }
 
 function toTxt(items) {
@@ -228,7 +235,7 @@ async function main() {
   console.log(`Unique psdeals ids: ${uniqueItems.length}`)
   console.log(`Existing in DB: ${existingItems.length}`)
   console.log(`New in DB: ${newItems.length}`)
-  console.log(`Page size used: ${pageSize}`)
+  console.log(`Page size fallback used when first_seen_page is missing: ${pageSize}`)
 
   console.log('=== PAGE SUMMARY ===')
   for (const page of pageSummaries) {
@@ -248,7 +255,7 @@ async function main() {
   console.log('=== NEW ITEMS ===')
   for (const item of newItems) {
     console.log(
-      `${item.psdeals_id} | page=${item.inferred_page} | ${item.title} | ${item.type_label} | ${item.platform_label} | ${item.psdeals_url}`
+      `${item.psdeals_id} | page=${item.inferred_page} | page_source=${item.page_source} | ${item.title} | ${item.type_label} | ${item.platform_label} | ${item.psdeals_url}`
     )
   }
 

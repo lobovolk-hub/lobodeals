@@ -131,6 +131,19 @@ export async function generateMetadata({
 }: SlugMetadataProps): Promise<Metadata> {
   const { slug } = await params
 
+  let decodedSlug = slug
+  try {
+    decodedSlug = decodeURIComponent(slug)
+  } catch {
+    decodedSlug = slug
+  }
+
+  const encodedSlug = encodeURIComponent(decodedSlug)
+
+  const slugCandidates = Array.from(
+    new Set([slug, decodedSlug, encodedSlug])
+  )
+
   const { data } = await supabase
     .from('catalog_public_cache')
     .select(
@@ -138,7 +151,7 @@ export async function generateMetadata({
     )
     .eq('region_code', 'us')
     .eq('storefront', 'playstation')
-    .eq('slug', slug)
+    .in('slug', slugCandidates)
     .maybeSingle()
 
   if (!data) {

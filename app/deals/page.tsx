@@ -92,30 +92,6 @@ function getDealsHref({
   return query ? `/deals?${query}` : '/deals'
 }
 
-function applyLetterFilter(query: any, letter: string) {
-  if (letter === 'ALL') return query
-
-  if (letter === '#') {
-    return query.or(
-      'title.ilike.0%,title.ilike.1%,title.ilike.2%,title.ilike.3%,title.ilike.4%,title.ilike.5%,title.ilike.6%,title.ilike.7%,title.ilike.8%,title.ilike.9%'
-    )
-  }
-
-  if (letter === 'OTHER') {
-    for (const l of 'ABCDEFGHIJKLMNOPQRSTUVWXYZ') {
-      query = query.not('title', 'ilike', `${l}%`)
-    }
-
-    for (let i = 0; i <= 9; i += 1) {
-      query = query.not('title', 'ilike', `${i}%`)
-    }
-
-    return query
-  }
-
-  return query.ilike('title', `${letter}%`)
-}
-
 function getPaginationPages(currentPage: number, totalPages: number) {
   const pages = new Set<number>()
 
@@ -261,7 +237,21 @@ export default async function DealsPage({ searchParams }: DealsPageProps) {
     )
   }
 
-  query = applyLetterFilter(query, letter)
+  if (letter === '#') {
+    query = query.or(
+      'title.ilike.0%,title.ilike.1%,title.ilike.2%,title.ilike.3%,title.ilike.4%,title.ilike.5%,title.ilike.6%,title.ilike.7%,title.ilike.8%,title.ilike.9%'
+    )
+  } else if (letter === 'OTHER') {
+    for (const l of 'ABCDEFGHIJKLMNOPQRSTUVWXYZ') {
+      query = query.not('title', 'ilike', `${l}%`)
+    }
+
+    for (let i = 0; i <= 9; i += 1) {
+      query = query.not('title', 'ilike', `${i}%`)
+    }
+  } else if (letter !== 'ALL') {
+    query = query.ilike('title', `${letter}%`)
+  }
 
   if (sort === 'az') {
     query = query.order('title', { ascending: true })

@@ -203,7 +203,7 @@ export default async function HomePage() {
       <div className="mx-auto max-w-[1700px] px-6 py-10">
         <div className="mb-8">
   <h1 className="text-4xl font-black tracking-tight md:text-5xl">
-    LoboDeals' choice
+    LoboDeals&apos; choice
   </h1>
 </div>
 

@@ -1,7 +1,6 @@
 'use client'
 
-import Link from 'next/link'
-import { useEffect, useMemo, useState } from 'react'
+import { useMemo, useState } from 'react'
 import { createBrowserSupabaseClient } from '@/lib/supabase/browser'
 
 type LoginClientProps = {
@@ -50,20 +49,6 @@ export function LoginClient({ nextPath, authError }: LoginClientProps) {
   const [signUpPasswordConfirm, setSignUpPasswordConfirm] = useState('')
 
   const [forgotPasswordEmail, setForgotPasswordEmail] = useState('')
-
-  useEffect(() => {
-    const hashParams = new URLSearchParams(window.location.hash.replace(/^#/, ''))
-    const hashError = hashParams.get('error')
-    const hashErrorCode = hashParams.get('error_code')
-    const hashErrorDescription = hashParams.get('error_description')
-
-    if (hashError || hashErrorCode || hashErrorDescription) {
-      setErrorMessage(
-        hashErrorDescription ||
-          'The email link is invalid or has expired. Please request a new link later.'
-      )
-    }
-  }, [])
 
   function resetStatus() {
     setMessage(null)

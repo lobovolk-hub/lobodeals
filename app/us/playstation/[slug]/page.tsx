@@ -2,7 +2,6 @@
 import type { Metadata } from 'next'
 import { notFound } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
-import { PriceHistoryChart } from '@/components/price-history-chart'
 import { FallbackGameImage } from '@/components/fallback-game-image'
 import { TrackButton } from '@/components/track-button'
 
@@ -232,11 +231,6 @@ type Item = {
   metacritic_score: number | null
 }
 
-type PriceHistoryRow = {
-  observed_at: string
-  price_kind: string
-  price_amount: number
-}
 
 type RelationRow = {
   relation_kind: string
@@ -522,27 +516,13 @@ const monthlyPriceLabel = item.ps_plus_monthly_label || 'Free with PS Plus'
 const monthlyNote =
   item.ps_plus_monthly_note || 'Included with PlayStation Plus this month.'
 
-  const twoYearsAgo = new Date()
-  twoYearsAgo.setFullYear(twoYearsAgo.getFullYear() - 2)
-
-  const [historyResult, relationsResult] = await Promise.all([
-    supabase
-      .from('psdeals_stage_price_history')
-      .select('observed_at, price_kind, price_amount')
-      .eq('item_id', item.id)
-      .gte('observed_at', twoYearsAgo.toISOString())
-      .order('observed_at', { ascending: true }),
-
-    supabase
-      .from('psdeals_stage_relations')
-      .select(
-        'relation_kind, related_psdeals_id, related_title, related_platform_label, sort_order'
-      )
-      .eq('item_id', item.id)
-      .order('sort_order', { ascending: true }),
-  ])
-
-  const priceHistoryRows = (historyResult.data || []) as PriceHistoryRow[]
+  const relationsResult = await supabase
+    .from('psdeals_stage_relations')
+    .select(
+      'relation_kind, related_psdeals_id, related_title, related_platform_label, sort_order'
+    )
+    .eq('item_id', item.id)
+    .order('sort_order', { ascending: true })
 
   const relationRows = ((relationsResult.data || []) as RelationRow[]).filter(
     (relation) =>
@@ -909,14 +889,7 @@ const displayCurrentAmount = getDisplayCurrentAmount(item)
           </div>
         </section>
 
-        <section className="mt-10">
-          <PriceHistoryChart
-            rows={priceHistoryRows}
-            basePriceAmount={item.original_price_amount}
-            currencyCode={item.currency_code}
-            dealEndsAt={item.deal_ends_at}
-          />
-        </section>
+
       </div>
     </main>
   )

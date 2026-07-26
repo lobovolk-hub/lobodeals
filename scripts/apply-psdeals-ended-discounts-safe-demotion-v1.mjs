@@ -338,36 +338,12 @@ async function main() {
     }
   })
 
-  const historyRows = safeRows.map((row) => ({
-    item_id: row.id,
-    price_kind: 'regular',
-    observed_at: demotionAt,
-    price_amount: normalizeMoney(row.original_price_amount),
-    currency_code: row.currency_code || 'USD',
-    source_name: 'psdeals-ended-discount-reconcile',
-  }))
-
-  let historyInserted = 0
-
-  for (const chunk of chunkArray(historyRows, 500)) {
-    const { error } = await admin
-      .from('psdeals_stage_price_history')
-      .insert(chunk)
-
-    if (error) {
-      throw error
-    }
-
-    historyInserted += chunk.length
-  }
-
   console.log('=== APPLY RESULT ===')
   console.log(
     JSON.stringify(
       {
         updated_stage_rows: updated,
         failed_stage_rows: failed,
-        history_rows_attempted: historyInserted,
         demotion_observed_at: demotionAt,
         failures: failures.slice(0, 20),
       },

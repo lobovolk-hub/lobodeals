@@ -130,13 +130,6 @@ function parseChartJsonString(rawLiteral) {
   }
 }
 
-function parseObservedAt(value) {
-  if (!value) return null
-  const normalized = value.replace(' ', 'T') + 'Z'
-  const parsed = new Date(normalized)
-  return Number.isNaN(parsed.getTime()) ? null : parsed.toISOString()
-}
-
 function parseDateOnly(value) {
   if (!value) return null
   const parsed = new Date(value)
@@ -495,30 +488,10 @@ function parsePage(html, url) {
       : new URL(allAddOnsHref, 'https://psdeals.net').toString()
     : null
 
-  const chartPricesRaw = extractFirst(html, /var chart_prices="([\s\S]*?)";var /i)
   const chartBonusPricesRaw = extractFirst(html, /var chart_bonus_prices="([\s\S]*?)";var /i)
   const chartBonusActive = /var chart_bonus_active=true;/i.test(html)
 
-  const chartPrices = parseChartJsonString(chartPricesRaw)
   const chartBonusPrices = parseChartJsonString(chartBonusPricesRaw)
-
-  const priceHistoryRegular = chartPrices
-    .map((entry) => ({
-      price_kind: 'regular',
-      observed_at: parseObservedAt(entry?.date),
-      price_amount: parseMoney(entry?.price),
-      currency_code: currencyCode,
-    }))
-    .filter((entry) => entry.observed_at && entry.price_amount !== null)
-
-  const priceHistoryPsPlus = chartBonusPrices
-    .map((entry) => ({
-      price_kind: 'ps_plus',
-      observed_at: parseObservedAt(entry?.date),
-      price_amount: parseMoney(entry?.price),
-      currency_code: currencyCode,
-    }))
-    .filter((entry) => entry.observed_at && entry.price_amount !== null)
 
   const currentPsPlusBuyBoxPriceAmount = parseCurrentPsPlusPriceFromBuyBox(html)
 
@@ -590,8 +563,7 @@ const isPsPlusDiscount = Boolean(
     raw_detail_json: {
   fetched_url: url,
   imported_at: nowIso(),
-  chart_prices_count: priceHistoryRegular.length,
-  chart_bonus_prices_count: priceHistoryPsPlus.length,
+  chart_bonus_prices_count: chartBonusPrices.length,
   chart_bonus_active: chartBonusActive,
   current_ps_plus_price_amount: currentPsPlusPriceAmount,
   current_ps_plus_buy_box_price_amount: currentPsPlusBuyBoxPriceAmount,
@@ -599,8 +571,6 @@ const isPsPlusDiscount = Boolean(
   fetch_mode: 'playwright',
 },
     source_note: 'psdeals_detail_import_local',
-    price_history_regular: priceHistoryRegular,
-    price_history_ps_plus: priceHistoryPsPlus,
     relations,
   }
 }
@@ -1033,7 +1003,6 @@ const delayArg = process.argv.find((arg) => arg.startsWith('--delay-ms='))
 const timeoutArg = process.argv.find((arg) => arg.startsWith('--timeout-ms='))
 const headlessArg = process.argv.find((arg) => arg.startsWith('--headless='))
 const debugHtmlDirArg = process.argv.find((arg) => arg.startsWith('--debug-html-dir='))
-const priceHistoryModeArg = process.argv.find((arg) => arg.startsWith('--price-history-mode='))
 const relationsModeArg = process.argv.find((arg) => arg.startsWith('--relations-mode='))
 const fetchModeArg = process.argv.find((arg) => arg.startsWith('--fetch-mode='))
 const edgeEndpointArg = process.argv.find((arg) => arg.startsWith('--edge-endpoint='))
@@ -1042,18 +1011,12 @@ const delayMs = delayArg ? Number(delayArg.split('=')[1]) : 5000
 const timeoutMs = timeoutArg ? Number(timeoutArg.split('=')[1]) : 45000
 const headless = headlessArg ? headlessArg.split('=')[1] !== 'false' : true
 const debugHtmlDir = debugHtmlDirArg ? debugHtmlDirArg.split('=')[1] : 'logs/psdeals-import-html'
-const priceHistoryMode = priceHistoryModeArg ? priceHistoryModeArg.split('=')[1] : 'replace'
 const relationsMode = relationsModeArg ? relationsModeArg.split('=')[1] : 'replace'
 const fetchMode = fetchModeArg ? fetchModeArg.split('=')[1] : 'playwright'
 const edgeEndpoint = edgeEndpointArg ? edgeEndpointArg.split('=')[1] : null
 
 if (!['playwright', 'edge-live'].includes(fetchMode)) {
   console.error('Invalid --fetch-mode value. Use playwright or edge-live.')
-  process.exit(1)
-}
-
-if (!['replace', 'append', 'skip'].includes(priceHistoryMode)) {
-  console.error('Invalid --price-history-mode value. Use replace, append, or skip.')
   process.exit(1)
 }
 
@@ -1206,62 +1169,6 @@ try {
         itemsUpdated += 1
       } else {
         itemsInserted += 1
-      }
-
-            const historyRowsRaw = [
-        ...parsed.price_history_regular,
-        ...parsed.price_history_ps_plus,
-      ].map((entry) => ({
-        item_id: stagedItem.id,
-        price_kind: entry.price_kind,
-        observed_at: entry.observed_at,
-        price_amount: entry.price_amount,
-        currency_code: entry.currency_code,
-        source_name: 'psdeals',
-      }))
-
-      const historyRowsByKey = new Map()
-
-      for (const row of historyRowsRaw) {
-        const key = [
-          row.item_id,
-          row.price_kind,
-          row.observed_at,
-          row.price_amount,
-        ].join('|')
-
-        if (!historyRowsByKey.has(key)) {
-          historyRowsByKey.set(key, row)
-        }
-      }
-
-      const historyRows = [...historyRowsByKey.values()]
-
-      if (priceHistoryMode === 'replace') {
-        const { error: deleteHistoryError } = await admin
-          .from('psdeals_stage_price_history')
-          .delete()
-          .eq('item_id', stagedItem.id)
-
-        if (deleteHistoryError) {
-          throw deleteHistoryError
-        }
-      }
-
-      if (priceHistoryMode !== 'skip' && historyRows.length > 0) {
-        const historyQuery = admin.from('psdeals_stage_price_history')
-
-        const { error: historyError } =
-          priceHistoryMode === 'append'
-            ? await historyQuery.upsert(historyRows, {
-                onConflict: 'item_id,price_kind,observed_at,price_amount',
-                ignoreDuplicates: true,
-              })
-            : await historyQuery.insert(historyRows)
-
-        if (historyError) {
-          throw historyError
-        }
       }
 
       if (relationsMode === 'replace') {

@@ -1,6 +1,13 @@
 import fs from 'node:fs/promises'
 import path from 'node:path'
 import { createClient } from '@supabase/supabase-js'
+import {
+  classifyFastRefreshItem,
+  normalizeComparableDiscount,
+  normalizeComparableMoney,
+  selectFastRefreshQueues,
+  summarizeCommercialClassifications,
+} from './lib/psdeals-fast-refresh.mjs'
 
 function parseArgs(argv) {
   const args = new Map()
@@ -30,44 +37,6 @@ function normalizePsdealsId(value) {
   if (!Number.isFinite(numberValue)) return null
 
   return numberValue
-}
-
-function normalizeMoney(value) {
-  if (value === null || value === undefined || value === '') return null
-
-  const numberValue = Number(value)
-  if (!Number.isFinite(numberValue)) return null
-
-  return Number(numberValue.toFixed(2))
-}
-
-function normalizeInteger(value) {
-  if (value === null || value === undefined || value === '') return null
-
-  const numberValue = Number(value)
-  if (!Number.isFinite(numberValue)) return null
-
-  return Math.abs(Math.trunc(numberValue))
-}
-
-function moneyEqual(left, right) {
-  const a = normalizeMoney(left)
-  const b = normalizeMoney(right)
-
-  if (a === null && b === null) return true
-  if (a === null || b === null) return false
-
-  return Math.abs(a - b) < 0.01
-}
-
-function integerEqual(left, right) {
-  const a = normalizeInteger(left)
-  const b = normalizeInteger(right)
-
-  if (a === null && b === null) return true
-  if (a === null || b === null) return false
-
-  return a === b
 }
 
 function chunkArray(items, size) {
@@ -167,100 +136,16 @@ async function fetchDbItems(admin, psdealsIds) {
   return rowsById
 }
 
-function getRawCurrentPsPlusPrice(dbItem) {
-  const rawValue = dbItem?.raw_detail_json?.current_ps_plus_price_amount
-  return normalizeMoney(rawValue)
-}
-
-function getAgeHours(value) {
-  if (!value) return null
-
-  const parsed = new Date(value)
-  if (Number.isNaN(parsed.getTime())) return null
-
-  return (Date.now() - parsed.getTime()) / 1000 / 60 / 60
-}
-
-function classifyItem(listingItem, dbItem) {
-  if (!dbItem) {
-    return {
-      shouldRefresh: true,
-      reasons: ['new_item'],
-    }
-  }
-
-  const reasons = []
-
-  const listingCurrentPrice = normalizeMoney(listingItem.current_price_amount)
-  const listingOriginalPrice = normalizeMoney(listingItem.original_price_amount)
-  const listingDiscountPercent = normalizeInteger(listingItem.discount_percent)
-
-  if (
-    listingCurrentPrice !== null &&
-    !moneyEqual(listingCurrentPrice, dbItem.current_price_amount)
-  ) {
-    reasons.push('current_price_mismatch')
-  }
-
-  if (
-    listingOriginalPrice !== null &&
-    !moneyEqual(listingOriginalPrice, dbItem.original_price_amount)
-  ) {
-    reasons.push('original_price_mismatch')
-  }
-
-  if (
-    listingDiscountPercent !== null &&
-    !integerEqual(listingDiscountPercent, dbItem.discount_percent)
-  ) {
-    reasons.push('discount_percent_mismatch')
-  }
-
-  if (!dbItem.detail_last_synced_at) {
-    reasons.push('detail_never_synced')
-  }
-
-  const hasDiscountSignal =
-    listingDiscountPercent !== null &&
-    listingDiscountPercent > 0 &&
-    listingDiscountPercent < 100
-
-  const listingLooksLikePsPlusOnly =
-    hasDiscountSignal &&
-    (
-      listingOriginalPrice === null ||
-      (
-        listingCurrentPrice !== null &&
-        listingOriginalPrice !== null &&
-        moneyEqual(listingCurrentPrice, listingOriginalPrice)
-      )
-    )
-
-  const rawCurrentPsPlusPrice = getRawCurrentPsPlusPrice(dbItem)
-
-  const dbLooksPsPlusButRawMissing =
-    dbItem.is_ps_plus_discount === true &&
-    rawCurrentPsPlusPrice === null
-
-  if (listingLooksLikePsPlusOnly) {
-    reasons.push('ps_plus_risk_listing_discount_without_regular_sale')
-  }
-
-  if (dbLooksPsPlusButRawMissing) {
-    reasons.push('ps_plus_risk_missing_raw_price')
-  }
-
-  return {
-    shouldRefresh: reasons.length > 0,
-    reasons,
-  }
-}
-
 function toTxt(items) {
-  return items
-    .map((item) => item.psdeals_url)
-    .filter(Boolean)
-    .join('\n') + '\n'
+  const urls = [
+    ...new Set(
+      (Array.isArray(items) ? items : [])
+        .map((item) => item.psdeals_url)
+        .filter(Boolean)
+    ),
+  ]
+
+  return urls.length > 0 ? `${urls.join('\n')}\n` : ''
 }
 
 function toReportRow(row) {
@@ -271,14 +156,15 @@ function toReportRow(row) {
     listing.psdeals_id,
     row.reasons.join(','),
     listing.title,
-    `listing_price=${normalizeMoney(listing.current_price_amount)}`,
-    `db_price=${normalizeMoney(db?.current_price_amount)}`,
-    `listing_original=${normalizeMoney(listing.original_price_amount)}`,
-    `db_original=${normalizeMoney(db?.original_price_amount)}`,
-    `listing_discount=${normalizeInteger(listing.discount_percent)}`,
-    `db_discount=${normalizeInteger(db?.discount_percent)}`,
+    `listing_price=${normalizeComparableMoney(listing.current_price_amount)}`,
+    `db_price=${normalizeComparableMoney(db?.current_price_amount)}`,
+    `listing_original=${normalizeComparableMoney(listing.original_price_amount)}`,
+    `db_original=${normalizeComparableMoney(db?.original_price_amount)}`,
+    `listing_discount=${normalizeComparableDiscount(listing.discount_percent)}`,
+    `db_discount=${normalizeComparableDiscount(db?.discount_percent)}`,
     `db_ps_plus=${db?.is_ps_plus_discount ?? null}`,
-    `db_raw_ps_plus=${getRawCurrentPsPlusPrice(db)}`,
+    `db_raw_ps_plus=${normalizeComparableMoney(db?.raw_detail_json?.current_ps_plus_price_amount)}`,
+    `commercial_state=${row.commercialState?.classification ?? 'unknown'}`,
     `detail_last_synced_at=${db?.detail_last_synced_at ?? null}`,
     listing.psdeals_url,
   ].join(' | ')
@@ -353,7 +239,7 @@ async function main() {
 
   const analyzed = uniqueItems.map((item) => {
     const dbItem = dbItemsById.get(item.psdeals_id) || null
-    const classification = classifyItem(item, dbItem)
+    const classification = classifyFastRefreshItem(item, dbItem)
 
     return {
       listing: item,
@@ -362,74 +248,21 @@ async function main() {
     }
   })
 
-  const mustRefresh = analyzed.filter((row) => row.shouldRefresh)
-
-  const boundedStaleLimit = Math.max(0, Math.trunc(staleLimit))
-  const boundedPsPlusRecheckLimit = Math.min(
+  const {
+    mustRefresh,
+    psPlusRecheckCandidates,
+    staleCandidates,
+    combined,
+    skippedSafe,
     boundedStaleLimit,
-    Math.max(0, Math.trunc(psPlusRecheckLimit))
-  )
-
-  const rotationCandidates = analyzed
-    .filter((row) => !row.shouldRefresh)
-    .map((row) => ({
-      ...row,
-      detailAgeHours: getAgeHours(row.db?.detail_last_synced_at),
-    }))
-    .filter(
-      (row) =>
-        row.detailAgeHours === null ||
-        row.detailAgeHours >= staleHours
-    )
-    .sort((a, b) => {
-      const aTime = a.db?.detail_last_synced_at
-        ? new Date(a.db.detail_last_synced_at).getTime()
-        : 0
-      const bTime = b.db?.detail_last_synced_at
-        ? new Date(b.db.detail_last_synced_at).getTime()
-        : 0
-
-      return aTime - bTime
-    })
-
-  const psPlusRecheckCandidates = rotationCandidates
-    .filter((row) => row.db?.is_ps_plus_discount === true)
-    .slice(0, boundedPsPlusRecheckLimit)
-    .map((row) => ({
-      ...row,
-      reasons: [...row.reasons, 'ps_plus_revalidation'],
-    }))
-
-  const remainingStaleLimit = Math.max(
-    0,
-    boundedStaleLimit - psPlusRecheckCandidates.length
-  )
-
-  const staleCandidates = rotationCandidates
-    .filter((row) => row.db?.is_ps_plus_discount !== true)
-    .slice(0, remainingStaleLimit)
-    .map((row) => ({
-      ...row,
-      reasons: [...row.reasons, 'stale_rotation'],
-    }))
-
-  const selectedRotationIds = new Set(
-    [...psPlusRecheckCandidates, ...staleCandidates].map(
-      (row) => row.listing.psdeals_id
-    )
-  )
-
-  const combined = [
-    ...mustRefresh,
-    ...psPlusRecheckCandidates,
-    ...staleCandidates,
-  ]
-
-  const skippedSafe = analyzed.filter((row) => {
-    if (row.shouldRefresh) return false
-
-    return !selectedRotationIds.has(row.listing.psdeals_id)
+    boundedPsPlusRecheckLimit,
+  } = selectFastRefreshQueues(analyzed, {
+    staleLimit,
+    staleHours,
+    psPlusRecheckLimit,
   })
+  const commercialClassificationCounts =
+    summarizeCommercialClassifications(analyzed)
 
   const newItems = analyzed.filter((row) => row.reasons.includes('new_item'))
   const priceMismatch = analyzed.filter((row) =>
@@ -466,6 +299,11 @@ async function main() {
   console.log(`- ps_plus_risk_listing_discount_without_regular_sale: ${psPlusListingRisk.length}`)
   console.log(`- ps_plus_risk_missing_raw_price: ${psPlusRawMissingRisk.length}`)
   console.log(`- ps_plus_revalidation: ${psPlusRevalidation.length}`)
+  for (const [classification, count] of Object.entries(
+    commercialClassificationCounts
+  )) {
+    console.log(`- commercial_state_${classification}: ${count}`)
+  }
   console.log(`- stale_hours: ${staleHours}`)
   console.log(`- stale_limit: ${boundedStaleLimit}`)
   console.log(`- ps_plus_recheck_limit: ${boundedPsPlusRecheckLimit}`)

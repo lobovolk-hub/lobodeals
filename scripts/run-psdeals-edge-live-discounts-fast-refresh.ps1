@@ -110,10 +110,6 @@ if ($PsPlusRecheckLimit -lt 0) {
   throw "PsPlusRecheckLimit must be greater than or equal to zero."
 }
 
-if ($PsPlusRecheckLimit -gt $StaleLimit) {
-  throw "PsPlusRecheckLimit cannot be greater than StaleLimit."
-}
-
 Write-Host "[$stamp] Starting PSDeals discounts fast refresh."
 Write-Host "Project root: $projectRoot"
 Write-Host "Pages: $Pages"

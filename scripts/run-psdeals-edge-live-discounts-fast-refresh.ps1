@@ -5,7 +5,8 @@ param(
   [int]$ImportDelayMs = 1200,
   [int]$RetryDelayMs = 3000,
   [int]$StaleHours = 24,
-  [int]$StaleLimit = 500
+  [int]$StaleLimit = 500,
+  [int]$PsPlusRecheckLimit = 500
 )
 
 Set-StrictMode -Version Latest
@@ -22,6 +23,7 @@ $outputPrefix = "psdeals-edge-live-discounts-fast-refresh-$stamp"
 
 $combinedTxt = "data\import\psdeals-discounts-fast-refresh-combined-$stamp.txt"
 $mustTxt = "data\import\psdeals-discounts-fast-refresh-must-$stamp.txt"
+$psPlusTxt = "data\import\psdeals-discounts-fast-refresh-ps-plus-$stamp.txt"
 $staleTxt = "data\import\psdeals-discounts-fast-refresh-stale-$stamp.txt"
 $skippedTxt = "data\import\psdeals-discounts-fast-refresh-skipped-$stamp.txt"
 $analyzerLog = "data\import\psdeals-discounts-fast-refresh-$stamp.log"
@@ -75,6 +77,7 @@ function Show-LogSummary {
     "Existing in DB:",
     "New in DB:",
     "Must refresh:",
+    "PS Plus recheck selected:",
     "Stale selected:",
     "Combined refresh total:",
     "Skipped safe:",
@@ -83,14 +86,32 @@ function Show-LogSummary {
     "discount_percent_mismatch:",
     "ps_plus_risk_listing_discount_without_regular_sale:",
     "ps_plus_risk_missing_raw_price:",
+    "ps_plus_revalidation:",
     "stale_hours:",
     "stale_limit:",
+    "ps_plus_recheck_limit:",
     "Import finished.",
     "Seen:",
     "Inserted:",
     "Updated:",
     "Failed:" |
     ForEach-Object { $_.Line }
+}
+
+if ($StaleHours -lt 0) {
+  throw "StaleHours must be greater than or equal to zero."
+}
+
+if ($StaleLimit -lt 0) {
+  throw "StaleLimit must be greater than or equal to zero."
+}
+
+if ($PsPlusRecheckLimit -lt 0) {
+  throw "PsPlusRecheckLimit must be greater than or equal to zero."
+}
+
+if ($PsPlusRecheckLimit -gt $StaleLimit) {
+  throw "PsPlusRecheckLimit cannot be greater than StaleLimit."
 }
 
 Write-Host "[$stamp] Starting PSDeals discounts fast refresh."
@@ -102,6 +123,7 @@ Write-Host "Import delay ms: $ImportDelayMs"
 Write-Host "Retry delay ms: $RetryDelayMs"
 Write-Host "Stale hours: $StaleHours"
 Write-Host "Stale limit: $StaleLimit"
+Write-Host "PS Plus recheck limit: $PsPlusRecheckLimit"
 Write-Host "Output prefix: $outputPrefix"
 
 $edgeEndpoint = Get-EdgeEndpoint
@@ -147,10 +169,12 @@ node scripts\analyze-psdeals-discounts-fast-refresh-v1.mjs `
   --file="$jsonPath" `
   --output-txt="$combinedTxt" `
   --must-output-txt="$mustTxt" `
+  --ps-plus-output-txt="$psPlusTxt" `
   --stale-output-txt="$staleTxt" `
   --skipped-output-txt="$skippedTxt" `
   --stale-hours=$StaleHours `
-  --stale-limit=$StaleLimit *> $analyzerLog
+  --stale-limit=$StaleLimit `
+  --ps-plus-recheck-limit=$PsPlusRecheckLimit *> $analyzerLog
 
 if ($LASTEXITCODE -ne 0) {
   throw "Fast analyzer failed with exit code $LASTEXITCODE. Check log: $analyzerLog"
@@ -171,6 +195,7 @@ Write-Host ""
 Write-Host "Combined refresh URLs: $combinedCount"
 Write-Host "Combined TXT: $combinedTxt"
 Write-Host "Must TXT: $mustTxt"
+Write-Host "PS Plus recheck TXT: $psPlusTxt"
 Write-Host "Stale TXT: $staleTxt"
 Write-Host "Skipped TXT: $skippedTxt"
 Write-Host "Analyzer log: $analyzerLog"

@@ -290,13 +290,32 @@ async function main() {
   const filePath = getArg(args, 'file')
   const outputTxt = getArg(args, 'output-txt')
   const mustOutputTxt = getArg(args, 'must-output-txt')
+  const psPlusOutputTxt = getArg(args, 'ps-plus-output-txt')
   const staleOutputTxt = getArg(args, 'stale-output-txt')
   const skippedOutputTxt = getArg(args, 'skipped-output-txt')
   const staleLimit = Number(getArg(args, 'stale-limit', '500'))
   const staleHours = Number(getArg(args, 'stale-hours', '24'))
+  const psPlusRecheckLimit = Number(
+    getArg(args, 'ps-plus-recheck-limit', '500')
+  )
 
   if (!filePath) {
     throw new Error('Missing --file argument.')
+  }
+
+  if (!Number.isFinite(staleLimit) || staleLimit < 0) {
+    throw new Error('Invalid --stale-limit argument.')
+  }
+
+  if (!Number.isFinite(staleHours) || staleHours < 0) {
+    throw new Error('Invalid --stale-hours argument.')
+  }
+
+  if (
+    !Number.isFinite(psPlusRecheckLimit) ||
+    psPlusRecheckLimit < 0
+  ) {
+    throw new Error('Invalid --ps-plus-recheck-limit argument.')
   }
 
   await loadKeyValueFile(path.resolve(process.cwd(), '.env.local'))
@@ -344,13 +363,24 @@ async function main() {
   })
 
   const mustRefresh = analyzed.filter((row) => row.shouldRefresh)
-  const staleCandidates = analyzed
+
+  const boundedStaleLimit = Math.max(0, Math.trunc(staleLimit))
+  const boundedPsPlusRecheckLimit = Math.min(
+    boundedStaleLimit,
+    Math.max(0, Math.trunc(psPlusRecheckLimit))
+  )
+
+  const rotationCandidates = analyzed
     .filter((row) => !row.shouldRefresh)
     .map((row) => ({
       ...row,
       detailAgeHours: getAgeHours(row.db?.detail_last_synced_at),
     }))
-    .filter((row) => row.detailAgeHours === null || row.detailAgeHours >= staleHours)
+    .filter(
+      (row) =>
+        row.detailAgeHours === null ||
+        row.detailAgeHours >= staleHours
+    )
     .sort((a, b) => {
       const aTime = a.db?.detail_last_synced_at
         ? new Date(a.db.detail_last_synced_at).getTime()
@@ -361,20 +391,44 @@ async function main() {
 
       return aTime - bTime
     })
-    .slice(0, Math.max(0, staleLimit))
+
+  const psPlusRecheckCandidates = rotationCandidates
+    .filter((row) => row.db?.is_ps_plus_discount === true)
+    .slice(0, boundedPsPlusRecheckLimit)
+    .map((row) => ({
+      ...row,
+      reasons: [...row.reasons, 'ps_plus_revalidation'],
+    }))
+
+  const remainingStaleLimit = Math.max(
+    0,
+    boundedStaleLimit - psPlusRecheckCandidates.length
+  )
+
+  const staleCandidates = rotationCandidates
+    .filter((row) => row.db?.is_ps_plus_discount !== true)
+    .slice(0, remainingStaleLimit)
     .map((row) => ({
       ...row,
       reasons: [...row.reasons, 'stale_rotation'],
     }))
 
-  const combined = [...mustRefresh, ...staleCandidates]
+  const selectedRotationIds = new Set(
+    [...psPlusRecheckCandidates, ...staleCandidates].map(
+      (row) => row.listing.psdeals_id
+    )
+  )
+
+  const combined = [
+    ...mustRefresh,
+    ...psPlusRecheckCandidates,
+    ...staleCandidates,
+  ]
 
   const skippedSafe = analyzed.filter((row) => {
     if (row.shouldRefresh) return false
 
-    return !staleCandidates.some(
-      (stale) => stale.listing.psdeals_id === row.listing.psdeals_id
-    )
+    return !selectedRotationIds.has(row.listing.psdeals_id)
   })
 
   const newItems = analyzed.filter((row) => row.reasons.includes('new_item'))
@@ -393,6 +447,7 @@ async function main() {
   const psPlusRawMissingRisk = analyzed.filter((row) =>
     row.reasons.includes('ps_plus_risk_missing_raw_price')
   )
+  const psPlusRevalidation = psPlusRecheckCandidates
 
   console.log('=== PSDeals discounts fast refresh analyzer v1 ===')
   console.log(`File: ${filePath}`)
@@ -401,6 +456,7 @@ async function main() {
   console.log(`Existing in DB: ${uniqueItems.length - newItems.length}`)
   console.log(`New in DB: ${newItems.length}`)
   console.log(`Must refresh: ${mustRefresh.length}`)
+  console.log(`PS Plus recheck selected: ${psPlusRevalidation.length}`)
   console.log(`Stale selected: ${staleCandidates.length}`)
   console.log(`Combined refresh total: ${combined.length}`)
   console.log(`Skipped safe: ${skippedSafe.length}`)
@@ -409,8 +465,10 @@ async function main() {
   console.log(`- discount_percent_mismatch: ${discountMismatch.length}`)
   console.log(`- ps_plus_risk_listing_discount_without_regular_sale: ${psPlusListingRisk.length}`)
   console.log(`- ps_plus_risk_missing_raw_price: ${psPlusRawMissingRisk.length}`)
+  console.log(`- ps_plus_revalidation: ${psPlusRevalidation.length}`)
   console.log(`- stale_hours: ${staleHours}`)
-  console.log(`- stale_limit: ${staleLimit}`)
+  console.log(`- stale_limit: ${boundedStaleLimit}`)
+  console.log(`- ps_plus_recheck_limit: ${boundedPsPlusRecheckLimit}`)
 
   console.log('=== COMBINED REFRESH SAMPLE ===')
   for (const row of combined.slice(0, 80)) {
@@ -433,6 +491,15 @@ async function main() {
       'utf8'
     )
     console.log(`MUST_REFRESH_TXT: ${mustOutputTxt}`)
+  }
+
+  if (psPlusOutputTxt) {
+    await fs.writeFile(
+      path.resolve(process.cwd(), psPlusOutputTxt),
+      toTxt(psPlusRecheckCandidates.map((row) => row.listing)),
+      'utf8'
+    )
+    console.log(`PS_PLUS_RECHECK_TXT: ${psPlusOutputTxt}`)
   }
 
   if (staleOutputTxt) {

@@ -1,6 +1,6 @@
 # LoboDeals 3.0 — Documento canónico de continuidad
 
-Actualizado: 2026-07-26
+Actualizado: 2026-07-28
 Proyecto local: D:\Proyectos\lobodeals
 Repositorio: lobovolk-hub/lobodeals
 Rama principal: main
@@ -9,18 +9,7 @@ Rama principal: main
 
 Este es el documento canónico para continuar LoboDeals 3.0 en un chat nuevo.
 
-Los documentos con sufijo v1.9 están obsoletos y deben retirarse después de revisar este archivo.
-
-No utilizar como fuente actual:
-
-- docs/DAILY-REFRESH-v1.9.md
-- docs/DB-SNAPSHOT-v1.9.md
-- docs/HANDOFF-v1.9.md
-- docs/NEW-CHAT-PROMPT-v1.9.md
-- docs/OPERATIONS-v1.9.md
-- docs/ROADMAP-v1.9.md
-- docs/STATUS-v1.9.md
-- docs/SYSTEM-MAP-v1.9.md
+Los documentos con sufijo v1.9 están obsoletos y fueron retirados del repositorio en el commit 4f826ac873850d3e61ceb68721512099625f1515.
 
 La prueba operativa de 30 días no ha comenzado.
 
@@ -114,7 +103,7 @@ Bloque 3 — Retirar consumo del historial y crear mínimos compactos:
 infraestructura aplicada; eliminación física del historial pendiente.
 
 Bloque 4 — Actualizador diario de precios:
-auditoría avanzada, implementación todavía no iniciada.
+auditoría avanzada; existen correcciones locales del parser PS Plus y priorización acotada de su revalidación, pero el runner diario certificado todavía no está implementado.
 
 Bloque 5 — Automatización de Windows: pendiente.
 
@@ -134,6 +123,18 @@ La reactivación inicial de catálogo y ofertas no necesita esperar comunidad, r
 
 Commits principales:
 
+- ce10408011213627ac9287b97299c0a6bcdfd267
+  Prioritize capped PS Plus revalidation
+
+- 05b23fb1f8f9abe06357d70a9e1b8f94d68429f1
+  Fix current PS Plus price detection
+
+- 4f826ac873850d3e61ceb68721512099625f1515
+  Remove obsolete LoboDeals 1.9 documentation
+
+- e3bb9578ba0242655d77e4c20b9cbbc7a19ea0f2
+  Add LoboDeals 3.0 continuity checkpoint
+
 - 51cd55df3268401fd7c56ae6ff007f6485532072
   Improve recently added listing auto-stop
 
@@ -146,11 +147,17 @@ Commits principales:
 - d81418b35c41a8950a3d3d639ba43a73090d78c7
   Fix Unicode slug metadata
 
-HEAD confirmado antes de crear este documento:
+HEAD técnico local confirmado antes de esta actualización documental:
 
-d81418b35c41a8950a3d3d639ba43a73090d78c7
+ce10408011213627ac9287b97299c0a6bcdfd267
 
-Ese commit está enviado a origin/main.
+origin/main confirmado:
+
+4f826ac873850d3e61ceb68721512099625f1515
+
+La rama local main está dos commits por delante y cero por detrás de origin/main.
+
+Los commits 05b23fb1f8f9abe06357d70a9e1b8f94d68429f1 y ce10408011213627ac9287b97299c0a6bcdfd267 todavía no se han enviado.
 
 ## 6. Producción
 
@@ -357,7 +364,11 @@ Un candidato PS Plus requiere:
 - oferta activa;
 - ausencia como juego mensual activo.
 
-El parser PS Plus todavía no se considera suficientemente confiable.
+En el HEAD técnico local, el parser toma el precio PS Plus actual del buy box, conserva el dato del gráfico solo como referencia histórica y exige que el precio PS Plus sea positivo y menor al precio actual para marcar el descuento.
+
+El analizador fast refresh también prioriza, dentro del límite de rotación, una cantidad acotada y configurable de filas ya marcadas con descuento PS Plus para revalidarlas.
+
+Estas correcciones todavía no convierten el parser PS Plus en suficientemente confiable: falta validación operativa y el runner certificado no está integrado.
 
 ## 15. listing_last_seen_at
 
@@ -603,6 +614,8 @@ Problemas pendientes:
 
 En HEAD ya no escribe historial detallado.
 
+El commit local 05b23fb1f8f9abe06357d70a9e1b8f94d68429f1 corrigió la detección del precio PS Plus actual, pero no resolvió los demás problemas de este importador.
+
 No debe reutilizarse sin adaptaciones como runner diario definitivo.
 
 ## 24. Ofertas terminadas
@@ -701,6 +714,8 @@ Faltan principalmente:
 13. automatización y alertas.
 
 La auditoría del Bloque 4 está aproximadamente en 70–80%.
+
+Los commits locales 05b23fb1f8f9abe06357d70a9e1b8f94d68429f1 y ce10408011213627ac9287b97299c0a6bcdfd267 avanzan la detección y revalidación de PS Plus, sin cerrar ninguno de los pasos operativos 6 a 13 de esta lista.
 
 ## 29. Siguiente punto exacto
 

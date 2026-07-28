@@ -76,11 +76,20 @@ function stripTags(html) {
     .trim()
 }
 
-function parseMoney(text) {
+function parseMoney(value) {
+  if (value === null || value === undefined) return null
+
+  const text = String(value).trim()
   if (!text) return null
-  const cleaned = String(text).replace(/[^0-9.,-]/g, '').replace(/,/g, '')
+  if (/^FREE$/i.test(text)) return 0
+
+  const cleaned = text.replace(/[^0-9.,-]/g, '').replace(/,/g, '')
+  if (!/[0-9]/.test(cleaned)) return null
+
   const parsed = Number(cleaned)
-  return Number.isFinite(parsed) ? Number(parsed.toFixed(2)) : null
+  if (!Number.isFinite(parsed) || parsed < 0) return null
+
+  return Number(parsed.toFixed(2))
 }
 
 function parseInteger(text) {
@@ -371,12 +380,15 @@ function parseCurrentPriceFromBuyBox(html) {
 }
 
 function parseCurrentPsPlusPriceFromBuyBox(html) {
-  const psPlusPrice = extractFirst(
+  const psPlusPriceInnerHtml = extractFirst(
     html,
-    /<span[^>]*class="[^"]*\bgame-buy-button-price-bonus\b[^"]*"[^>]*>\s*([^<]+)\s*<\/span>/i
+    /<span[^>]*class="[^"]*\bgame-buy-button-price-bonus\b[^"]*"[^>]*>([\s\S]*?)<\/span>/i
   )
 
-  return parseMoney(psPlusPrice)
+  const psPlusPriceText =
+    psPlusPriceInnerHtml === null ? null : stripTags(psPlusPriceInnerHtml)
+
+  return parseMoney(psPlusPriceText)
 }
 
 function getLatestChartPriceAmount(entries) {
@@ -495,32 +507,19 @@ function parsePage(html, url) {
 
   const currentPsPlusBuyBoxPriceAmount = parseCurrentPsPlusPriceFromBuyBox(html)
 
-const latestChartBonusPriceAmount = chartBonusActive
-  ? getLatestChartPriceAmount(chartBonusPrices)
-  : null
+  const latestChartBonusPriceAmount = chartBonusActive
+    ? getLatestChartPriceAmount(chartBonusPrices)
+    : null
 
-const currentPsPlusPriceAmount =
-  latestChartBonusPriceAmount ?? currentPsPlusBuyBoxPriceAmount
+  const currentPsPlusPriceAmount = currentPsPlusBuyBoxPriceAmount
 
-const explicitCurrentPlus = /PS\+/i.test(
-  extractFirst(html, /<div class="game-buy-button-right">([\s\S]*?)<\/div>/i) || ''
-)
-
-const isPsPlusDiscount = Boolean(
-  (
+  const isPsPlusDiscount = Boolean(
     currentPsPlusPriceAmount !== null &&
     current !== null &&
     currentPsPlusPriceAmount > 0 &&
+    current > 0 &&
     currentPsPlusPriceAmount < current
-  ) ||
-    explicitCurrentPlus ||
-    (
-      chartBonusActive &&
-      lowestPsPlusPriceAmount !== null &&
-      current !== null &&
-      current === lowestPsPlusPriceAmount
-    )
-)
+  )
 
   const whatsInsideLines = parseWhatsInsideLines(html)
   const relations = parseRelatedItems(html)

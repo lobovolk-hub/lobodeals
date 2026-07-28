@@ -1,5 +1,7 @@
 import fs from 'node:fs/promises'
 import path from 'node:path'
+import { pathToFileURL } from 'node:url'
+import { normalizePsdealsCommercialState } from './lib/psdeals-commercial-state.mjs'
 
 function getArgValue(name) {
   const prefix = `--${name}=`
@@ -45,14 +47,6 @@ function parseInteger(value) {
   if (!cleaned) return null
   const parsed = Number(cleaned)
   return Number.isInteger(parsed) ? parsed : null
-}
-
-function parseMoney(value) {
-  if (value == null) return null
-  const cleaned = String(value).replace(/[^0-9.,-]/g, '').replace(/,/g, '')
-  if (!cleaned) return null
-  const parsed = Number(cleaned)
-  return Number.isFinite(parsed) ? Number(parsed.toFixed(2)) : null
 }
 
 function toUrlString(input, base) {
@@ -463,30 +457,9 @@ async function collectPage(client, sessionId, pageUrl, timeoutMs) {
 
   const totalResults = detectTotalResults(payload.resultTextCandidates, payload.html)
 
-  const items = payload.items.map((item) => {
-    const psdealsUrl = toUrlString(item.href, pageUrl)
-    const platformLabel = cleanText(item.platformLabel) || null
-    const typeLabel = cleanText(item.typeLabel) || null
-
-    return {
-      psdeals_id: derivePsdealsIdFromUrl(psdealsUrl),
-      psdeals_slug: deriveSlugFromUrl(psdealsUrl),
-      psdeals_url: psdealsUrl,
-      title: cleanText(item.title),
-      platform_label: platformLabel,
-      platform_tokens: splitPlatformTokens(platformLabel),
-      type_label: typeLabel,
-      canonical_content_family: deriveCanonicalContentFamily(typeLabel),
-      platform_scope_status: derivePlatformScopeStatus(platformLabel),
-      listed_in_psdeals_scope: true,
-      is_ancillary_dlc_subtype: isAncillaryDlcSubtype(typeLabel),
-      current_price_amount: parseMoney(item.discountPriceText || item.regularPriceText),
-      original_price_amount: parseMoney(item.originalPriceText),
-      discount_percent: parseInteger(item.discountText),
-      image_url: item.imageUrl ? toUrlString(item.imageUrl, pageUrl) : null,
-      source_page_url: pageUrl,
-    }
-  })
+  const items = payload.items.map((item) =>
+    buildCollectedListingItem(item, pageUrl)
+  )
 
   return {
     pageTitle: payload.title || state.title,
@@ -495,6 +468,44 @@ async function collectPage(client, sessionId, pageUrl, timeoutMs) {
     activePage: parseInteger(payload.activePageText) || null,
     items,
     htmlLength: payload.html?.length || null,
+  }
+}
+
+export function buildCollectedListingItem(item, pageUrl) {
+  const psdealsUrl = toUrlString(item.href, pageUrl)
+  const platformLabel = cleanText(item.platformLabel) || null
+  const typeLabel = cleanText(item.typeLabel) || null
+  const currentPriceSource =
+    item.discountPriceText || item.regularPriceText || null
+  const commercialState = normalizePsdealsCommercialState({
+    currentPrice: currentPriceSource,
+    originalPrice: item.originalPriceText,
+    discountPercent: item.discountText,
+    sourceContext: pageUrl.includes('/discounts')
+      ? 'discount_listing'
+      : 'listing',
+  })
+
+  return {
+    psdeals_id: derivePsdealsIdFromUrl(psdealsUrl),
+    psdeals_slug: deriveSlugFromUrl(psdealsUrl),
+    psdeals_url: psdealsUrl,
+    title: cleanText(item.title),
+    platform_label: platformLabel,
+    platform_tokens: splitPlatformTokens(platformLabel),
+    type_label: typeLabel,
+    canonical_content_family: deriveCanonicalContentFamily(typeLabel),
+    platform_scope_status: derivePlatformScopeStatus(platformLabel),
+    listed_in_psdeals_scope: true,
+    is_ancillary_dlc_subtype: isAncillaryDlcSubtype(typeLabel),
+    current_price_amount: commercialState.current_price_amount,
+    original_price_amount: commercialState.original_price_amount,
+    discount_percent: commercialState.discount_percent_source,
+    discount_percent_normalized:
+      commercialState.discount_percent_normalized,
+    commercial_state: commercialState,
+    image_url: item.imageUrl ? toUrlString(item.imageUrl, pageUrl) : null,
+    source_page_url: pageUrl,
   }
 }
 
@@ -740,7 +751,18 @@ async function main() {
   await client.close()
 }
 
-main().catch((error) => {
-  console.error(error instanceof Error ? error.stack || error.message : String(error))
-  process.exit(1)
-})
+function isMainModule() {
+  return Boolean(
+    process.argv[1] &&
+    import.meta.url === pathToFileURL(path.resolve(process.argv[1])).href
+  )
+}
+
+if (isMainModule()) {
+  main().catch((error) => {
+    console.error(
+      error instanceof Error ? error.stack || error.message : String(error)
+    )
+    process.exit(1)
+  })
+}

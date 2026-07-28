@@ -1,7 +1,12 @@
 import fs from 'node:fs/promises'
 import path from 'node:path'
+import { pathToFileURL } from 'node:url'
 import { createClient } from '@supabase/supabase-js'
 import { chromium } from 'playwright'
+import {
+  normalizePsdealsCommercialState,
+  parsePsdealsPriceSignal,
+} from './lib/psdeals-commercial-state.mjs'
 
 function nowIso() {
   return new Date().toISOString()
@@ -77,19 +82,7 @@ function stripTags(html) {
 }
 
 function parseMoney(value) {
-  if (value === null || value === undefined) return null
-
-  const text = String(value).trim()
-  if (!text) return null
-  if (/^FREE$/i.test(text)) return 0
-
-  const cleaned = text.replace(/[^0-9.,-]/g, '').replace(/,/g, '')
-  if (!/[0-9]/.test(cleaned)) return null
-
-  const parsed = Number(cleaned)
-  if (!Number.isFinite(parsed) || parsed < 0) return null
-
-  return Number(parsed.toFixed(2))
+  return parsePsdealsPriceSignal(value).amount
 }
 
 function parseInteger(text) {
@@ -168,8 +161,15 @@ function derivePsStorePrimaryId(url) {
   return null
 }
 
-function deriveAvailabilityState(currentPriceAmount, title) {
-  if (currentPriceAmount === 0) return 'free_to_play'
+function deriveAvailabilityState(currentPriceAmount, title, commercialState) {
+  if (
+    commercialState?.classification ===
+    'temporary_free_promotion_candidate'
+  ) {
+    return 'priced'
+  }
+
+  if (currentPriceAmount === 0) return null
   if (/demo|trial/i.test(title || '')) return 'demo'
   if (currentPriceAmount == null) return 'tba'
   return 'priced'
@@ -367,15 +367,23 @@ function parseCurrentPriceFromBuyBox(html) {
   )
 
   if (discountPrice) {
+    const originalPriceSource = originalPrice || regularPrice || metaPrice
+
     return {
       current: parseMoney(discountPrice),
-      original: parseMoney(originalPrice || regularPrice || metaPrice),
+      original: parseMoney(originalPriceSource),
+      currentSource: discountPrice,
+      originalSource: originalPriceSource,
     }
   }
 
+  const currentPriceSource = regularPrice || metaPrice
+
   return {
-    current: parseMoney(regularPrice || metaPrice),
+    current: parseMoney(currentPriceSource),
     original: parseMoney(originalPrice),
+    currentSource: currentPriceSource,
+    originalSource: originalPrice,
   }
 }
 
@@ -405,7 +413,7 @@ function getLatestChartPriceAmount(entries) {
   return latestPrice
 }
 
-function parsePage(html, url) {
+export function parsePage(html, url) {
   const psdealsId = parseInteger(extractFirst(html, /var item_id=(\d+);/i))
   const title =
     extractFirst(html, /<div itemprop="name" class="game-title-info-name">([\s\S]*?)<\/div>/i) ||
@@ -423,10 +431,22 @@ function parsePage(html, url) {
     extractFirst(html, /<div class="game-title-info-type[^"]*"><span>([\s\S]*?)<\/span><\/div>/i)
 
   const storeUrl = extractFirst(html, /<a class="game-buy-button-href"[^>]*href="([^"]+)"/i)
-  const { current, original } = parseCurrentPriceFromBuyBox(html)
-  const discountPercent =
-    parseInteger(extractFirst(html, /SAVE:\s*<span[^>]*>\s*([^<]+)\s*<\/span>/i)) ||
-    parseInteger(extractFirst(html, /Now on sale with\s+(\d+)%\s+discount/i))
+  const priceSignals = parseCurrentPriceFromBuyBox(html)
+  const discountPercentSource =
+    extractFirst(
+      html,
+      /SAVE:\s*<span[^>]*>\s*([^<]+)\s*<\/span>/i
+    ) ||
+    extractFirst(html, /Now on sale with\s+(\d+)%\s+discount/i)
+  const commercialState = normalizePsdealsCommercialState({
+    currentPrice: priceSignals.currentSource,
+    originalPrice: priceSignals.originalSource,
+    discountPercent: discountPercentSource,
+    sourceContext: 'detail',
+  })
+  const current = commercialState.current_price_amount
+  const original = commercialState.original_price_amount
+  const discountPercent = commercialState.discount_percent_normalized
 
   const releaseDate =
     parseDateOnly(extractFirst(html, /itemprop="releaseDate" content="([^"]+)"/i)) ||
@@ -521,6 +541,21 @@ function parsePage(html, url) {
     currentPsPlusPriceAmount < current
   )
 
+  const isTemporaryFreePromotion =
+    commercialState.classification ===
+    'temporary_free_promotion_candidate'
+  const isFreeToPlay =
+    current === 0
+      ? isTemporaryFreePromotion
+        ? false
+        : null
+      : false
+  const availabilityState = deriveAvailabilityState(
+    current,
+    title,
+    commercialState
+  )
+
   const whatsInsideLines = parseWhatsInsideLines(html)
   const relations = parseRelatedItems(html)
 
@@ -554,8 +589,8 @@ function parsePage(html, url) {
     playstation_ratings_count: playstationRatingsCount,
     all_add_ons_url: allAddOnsUrl,
     whats_inside_lines: whatsInsideLines,
-    is_free_to_play: current === 0,
-    availability_state: deriveAvailabilityState(current, title),
+    is_free_to_play: isFreeToPlay,
+    availability_state: availabilityState,
     listing_last_seen_at: null,
     detail_last_synced_at: nowIso(),
     raw_listing_json: null,
@@ -567,11 +602,35 @@ function parsePage(html, url) {
   current_ps_plus_price_amount: currentPsPlusPriceAmount,
   current_ps_plus_buy_box_price_amount: currentPsPlusBuyBoxPriceAmount,
   latest_chart_bonus_price_amount: latestChartBonusPriceAmount,
+  commercial_state: commercialState,
   fetch_mode: 'playwright',
 },
     source_note: 'psdeals_detail_import_local',
+    commercial_state: commercialState,
     relations,
   }
+}
+
+export function buildCommercialUpsertPayload(parsed) {
+  if (!parsed?.commercial_state?.is_safe_for_price_update) return {}
+
+  const payload = {
+    current_price_amount: parsed.current_price_amount,
+    original_price_amount: parsed.original_price_amount,
+    discount_percent: parsed.discount_percent,
+    deal_ends_at: parsed.deal_ends_at,
+    is_ps_plus_discount: parsed.is_ps_plus_discount,
+  }
+
+  if (typeof parsed.is_free_to_play === 'boolean') {
+    payload.is_free_to_play = parsed.is_free_to_play
+  }
+
+  if (parsed.availability_state) {
+    payload.availability_state = parsed.availability_state
+  }
+
+  return payload
 }
 
 function ensureLikelyPsDealsDetailPage(html, status, url, title) {
@@ -971,6 +1030,7 @@ async function fetchHtmlWithEdgeLive(edgeLiveSession, url, timeoutMs, debugHtmlD
   }
 }
 
+async function main() {
 await loadKeyValueFile(path.resolve(process.cwd(), '.env.local'))
 await loadKeyValueFile(
   path.resolve(process.cwd(), '..', 'worker-playstation-ingest', '.dev.vars')
@@ -1092,6 +1152,7 @@ try {
           ? await fetchHtmlWithEdgeLive(edgeLiveSession, url, timeoutMs, debugHtmlDir)
           : await fetchHtmlWithPlaywright(context, url, timeoutMs, debugHtmlDir)
       const parsed = parsePage(fetched.html, url)
+      const commercialUpsertPayload = buildCommercialUpsertPayload(parsed)
 
       const upsertPayload = {
         region_code: 'us',
@@ -1111,14 +1172,10 @@ try {
         publisher: parsed.publisher,
         genres: parsed.genres,
         release_date: parsed.release_date,
-        current_price_amount: parsed.current_price_amount,
-        original_price_amount: parsed.original_price_amount,
-        discount_percent: parsed.discount_percent,
+        ...commercialUpsertPayload,
         currency_code: parsed.currency_code,
-        deal_ends_at: parsed.deal_ends_at,
         lowest_price_amount: parsed.lowest_price_amount,
         lowest_ps_plus_price_amount: parsed.lowest_ps_plus_price_amount,
-        is_ps_plus_discount: parsed.is_ps_plus_discount,
         metacritic_score: parsed.metacritic_score,
         metacritic_user_score: parsed.metacritic_user_score,
         metacritic_reviews_count: parsed.metacritic_reviews_count,
@@ -1126,8 +1183,6 @@ try {
         playstation_ratings_count: parsed.playstation_ratings_count,
         all_add_ons_url: parsed.all_add_ons_url,
         whats_inside_lines: parsed.whats_inside_lines,
-        is_free_to_play: parsed.is_free_to_play,
-        availability_state: parsed.availability_state,
         detail_last_synced_at: parsed.detail_last_synced_at,
         raw_detail_json: {
           ...parsed.raw_detail_json,
@@ -1270,4 +1325,21 @@ try {
   if (browser) {
     await browser.close().catch(() => {})
   }
+}
+}
+
+function isMainModule() {
+  return Boolean(
+    process.argv[1] &&
+    import.meta.url === pathToFileURL(path.resolve(process.argv[1])).href
+  )
+}
+
+if (isMainModule()) {
+  main().catch((error) => {
+    console.error(
+      error instanceof Error ? error.stack || error.message : String(error)
+    )
+    process.exit(1)
+  })
 }

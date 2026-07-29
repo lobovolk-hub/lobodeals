@@ -18,6 +18,7 @@ import {
   initializePsdealsCycleWorkspace,
   openPsdealsCycleWorkspace,
 } from './lib/psdeals-cycle-workspace.mjs'
+import { runPsdealsRemotePreflightCli } from './preflight-psdeals-remote-readonly.mjs'
 
 const DEFAULT_CONTEXT = {
   requested_url: 'https://psdeals.net/us-store/discounts?platforms=ps5%2Cps4&contentType%5B%5D=games&contentType%5B%5D=bundles&contentType%5B%5D=dlc',
@@ -52,6 +53,7 @@ Commands:
   assemble --workspace=<path> [--now=<iso>]
   resume --workspace=<path>
   explain-blockers --workspace=<path>
+  preflight --facts=<redacted-json> [--output=<json>] [--now=<iso>]
 
 Exit codes:
   0 success; 1 usage/I-O; 2 invalid evidence; 3 indeterminate; 4 blocked;
@@ -110,6 +112,12 @@ export async function runPsdealsCycleCli(argv, io = {}) {
     return 0
   }
   try {
+    if (command === 'preflight') {
+      const forwarded = [...options.entries()].map(([key, value]) =>
+        value === true ? `--${key}` : `--${key}=${value}`
+      )
+      return runPsdealsRemotePreflightCli(forwarded, { stdout, stderr })
+    }
     if (command === 'init') {
       const cyclesRoot = options.get('cycles-root')
       const codeRevision = options.get('code-revision')

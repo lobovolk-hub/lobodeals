@@ -123,6 +123,18 @@ La reactivación inicial de catálogo y ofertas no necesita esperar comunidad, r
 
 Commits principales:
 
+- cf5e4bed398e5f9a6d2db6dd20655cfbf820b3c9
+  Plan certified PSDeals cycle transitions
+
+- 557871c31f6f93b2c43753519af212f41d000c11
+  Validate PSDeals cycle manifests offline
+
+- cb65456748997f6bc274dce9f8208eb9d4514d31
+  Fail closed on ambiguous PSDeals types
+
+- ac4fced045f97136225a867f97781a71a0eaa54e
+  Document PSDeals classification and monthly contracts
+
 - afd773d36b2f4896ff54a8678d0520b5e513aab0
   Build safe partial PSDeals stage payloads
 
@@ -167,13 +179,13 @@ Commits principales:
 
 HEAD técnico local confirmado inmediatamente antes del commit documental de esta actualización:
 
-afd773d36b2f4896ff54a8678d0520b5e513aab0
+cf5e4bed398e5f9a6d2db6dd20655cfbf820b3c9
 
 origin/main confirmado:
 
 4f826ac873850d3e61ceb68721512099625f1515
 
-La rama local main estaba ocho commits por delante y cero por detrás de origin/main antes del commit documental que contiene esta actualización.
+La rama local main estaba doce commits por delante y cero por detrás de origin/main antes del commit documental que contiene esta actualización.
 
 Ningún commit local posterior a origin/main se ha enviado.
 
@@ -758,7 +770,7 @@ Los pasos 1 a 6 no se han ejecutado contra datos reales ni desplegado. Los pasos
 
 ## 29. Siguiente punto exacto
 
-Implementar el validador offline de manifiesto y completitud del ciclo diario. Debe demostrar, sin conexiones ni escrituras, que un ciclo incompleto nunca puede avanzar a certificación o caché y que conserva evidencia separada de listado, detalle, demociones y revisión mensual.
+Añadir a los productores locales un sobre común de evidencia con `local_cycle_id`/`run_token`, alcance, filtros, timestamps, resultado estructurado y hash SHA-256. Debe poder probarse con fixtures sin ejecutar collector, importer, runner ni servicios externos. El validador offline y el planificador puro ya existen; todavía no están conectados a un runner operativo.
 
 ## 30. Gap audit del runner diario certificado
 
@@ -892,9 +904,9 @@ Las 5,531 filas del snapshot de descuentos de 2026-06-06 pudieron emparejarse co
 | Music Track | addon | dlc | addon | bucket público existente de add-ons |
 | Extra Episode | addon | dlc | addon | bucket público existente de add-ons |
 | VR Add-On | addon | dlc | addon | bucket público existente de add-ons |
-| Catalog | addon | dlc | addon | confianza media; requiere detalle y no sustituye valor existente |
-| Combo | addon | dlc | addon | confianza media; requiere detalle y no sustituye valor existente |
-| Subscription | addon | dlc | addon | confianza media; requiere detalle y no sustituye valor existente |
+| Catalog | addon | propuesta dlc | propuesta addon | confianza media; no escribible, requiere detalle y no sustituye valor existente |
+| Combo | addon | propuesta dlc | propuesta addon | confianza media; no escribible, requiere detalle y no sustituye valor existente |
+| Subscription | addon | propuesta dlc | propuesta addon | confianza media; no escribible, requiere detalle y no sustituye valor existente |
 | null, vacío o desconocido | no demostrable | omitido | omitido | conserva evidencia y requiere detalle |
 
 Los valores permitidos por el contrato de aplicación siguen limitados a game, bundle, dlc, add_on, season_pass, currency, demo y other. El clasificador no emite add_on, currency u other porque no existe evidencia local que justifique una semántica pública separada. No convierte coincidencias parciales ni etiquetas desconocidas en dlc.
@@ -920,9 +932,10 @@ Comando local de solo lectura:
 
 node scripts/audit-psdeals-listing-classification-local.mjs --snapshot=data/import/psdeals-edge-live-recently-added-readonly-2026-07-03-13-04-15-2026-07-03T18-09-51-857Z.json
 
-Resultado sobre 3,600 filas:
+Resultado corregido sobre 3,600 filas:
 
-- tipos normalizados: game 2,522; bundle 631; dlc 446; omitido 1;
+- tipos escribibles normalizados: game 2,522; bundle 631; dlc 441; omitido 6;
+- distribución propuesta, incluida evidencia no escribible: game 2,522; bundle 631; dlc 446; omitido 1;
 - tipos de confianza alta: 3,594;
 - tipos ambiguos de confianza media: 5 Catalog;
 - tipos desconocidos: 1;
@@ -1003,4 +1016,105 @@ Puede probarse offline un manifiesto mensual con identidad, ventanas, solapamien
 
 Quedaron cerrados localmente los contratos de normalización comercial, tipos, plataformas y payload parcial. El contrato mensual quedó auditado, pero su operación sigue manual y bloqueada por DDL/procedimiento no versionados y por la futura autorización de una fuente oficial.
 
-El Bloque 4 no está cerrado. El siguiente cambio local seguro es el validador offline de manifiesto/completitud del ciclo certificado. No debe ejecutarse aún ningún collector, importer, runner, SQL, certificación, caché ni prueba operativa.
+El Bloque 4 no está cerrado. El validador offline de manifiesto/completitud y el planificador puro ya están implementados en el checkpoint siguiente; no constituyen un runner. No debe ejecutarse aún ningún collector, importer, runner, SQL, certificación, caché ni prueba operativa.
+
+## 33. Checkpoint de revisión adversarial y gates offline — 2026-07-29
+
+### Estado de entrada y commits técnicos
+
+La sesión comenzó en `main`, HEAD `ac4fced045f97136225a867f97781a71a0eaa54e`, worktree limpio y divergencia de cero commits detrás y nueve delante de `origin/main`. La baseline fue de 55/55 pruebas aprobadas.
+
+Se crearon tres commits técnicos locales:
+
+1. `cb65456748997f6bc274dce9f8208eb9d4514d31` — Fail closed on ambiguous PSDeals types;
+2. `557871c31f6f93b2c43753519af212f41d000c11` — Validate PSDeals cycle manifests offline;
+3. `cf5e4bed398e5f9a6d2db6dd20655cfbf820b3c9` — Plan certified PSDeals cycle transitions.
+
+No se hizo push.
+
+### Revisión adversarial de tipos y plataformas
+
+El cruce de las 5,531 filas de descuentos con 19,136 HTML locales confirmó:
+
+- `Game Content`: 12 muestras, 12 detalles `game`; ejemplo `2402875`, AI: THE SOMNIUM FILES - nirvanA Initiative;
+- `Season Pass`: 18 muestras, 18 detalles `addon`; ejemplo `1297809`, DOA5LR Season Pass 7;
+- `Catalog`: una muestra en ese snapshot, detalle `addon`; ejemplo `3088728`, THE FINALS - TEAM SECRET TGM25;
+- `Combo`: una muestra, detalle `addon`; ejemplo `649506`, HELLDIVERS™ - Support Pack;
+- `Subscription`: una muestra, detalle `addon`; ejemplo `645296`, PlanetSide 2 1-Month Membership;
+- `Avatar`: 127/127 detalles `addon`;
+- `Theme`: 8/8 detalles `addon`;
+- `Soundtrack`: 9/9 detalles `addon`.
+
+La interfaz no demuestra semánticas públicas distintas para `dlc`, `add_on` o `season_pass`: las páginas de ofertas consumen `content_type=dlc` y compatibilidad histórica `content_type=game` + `item_type_label=addon`; las tarjetas y el detalle muestran `dlc` como Add-on. `item_type_label` observado por la interfaz usa `game`, `bundle` y `addon`. Por eso Season Pass conserva la familia interna `season_pass`, pero escribe el bucket público existente `dlc/addon`.
+
+La revisión sí encontró una política insegura: `Catalog`, `Combo` y `Subscription` tenían una propuesta de confianza media que podía escribirse en una fila nueva pese a requerir detalle. Desde `cb65456`, mantienen la propuesta `dlc/addon` como evidencia, pero quedan `ambiguous`, `can_write=false`, `requires_detail=true` y `can_replace_existing=false`. En el snapshot de 3,600 filas existen cinco `Catalog`; solo `3088728` tiene detalle local, por lo que la evidencia de una única muestra no se extrapola a las otras cuatro.
+
+Las 66 mezclas con plataformas antiguas del snapshot de 5,531 conservan coincidencia exacta entre etiqueta de listing y detalle. Continúa la política PS5, PS4: conservar solo la intersección objetivo para una fila nueva, retener evidencia PS3/Vita/PSP, requerir detalle y no reemplazar plataformas existentes. Ningún artículo exclusivamente antiguo se publica como PS4/PS5.
+
+### Por qué 3,600 y 5,531 no son baselines equivalentes
+
+El archivo de 5,531 filas es un listing de descuentos del 2026-06-06. Declaró 5,552 elementos detectados, recogió 5,531 y se detuvo por heurística de página duplicada; su formato anterior no demuestra última página ni completitud fuerte.
+
+El archivo de 3,600 filas es un listing de `all-games` ordenado por recientemente añadido del 2026-07-03. Declaró 33,041 elementos detectados, procesó exactamente 100 páginas de 36 filas y se detuvo por límite de seguridad. Su alcance, filtros, orden y criterio de parada son distintos.
+
+Por tanto, ninguno prueba por sí solo un listing diario completo y no deben compararse como una serie homogénea. Después de la corrección adversarial:
+
+- 3,600: tipos escribibles `game` 2,522, `bundle` 631, `dlc` 441, omitidos 6; cinco ambiguos y uno desconocido; 3,598 plataformas objetivo puras y dos mezclas con Vita;
+- 5,531: tipos escribibles `game` 3,388, `bundle` 924, `dlc` 1,212, `demo` 2, omitidos 5; tres ambiguos y dos desconocidos; 5,465 plataformas objetivo puras y 66 mezclas antiguas.
+
+No se añadió ninguna cola ilimitada de tipos al fast refresh.
+
+### Contrato versionado del manifiesto
+
+`scripts/lib/psdeals-cycle-manifest.mjs` define la versión 1 y separa:
+
+- identidad: `local_cycle_id`, posible `remote_cycle_id`, región, storefront, inicio, generación, modo y revisión de código;
+- listing: alcance, filtros, páginas, totales, duplicados, resultado, terminación de paginación, timestamp único, artefacto, SHA-256 y baseline opcional comparable;
+- fast refresh: colas must-refresh, PS Plus y stale, límites independientes, solapamientos, razones y artefactos;
+- detalle: intentados, éxitos, fallos, omitidos, resultado declarado, exit code, URLs fallidas, retry, fallos pendientes y posible `psdeals_import_run_id` evidenciado;
+- mensual: comprobación semántica, instante, fuente o procedimiento, evidencia, resultado y cambios propuestos;
+- ofertas terminadas: comprobación, vínculo al listing completo, candidatos, modo, aplicación y bloqueos;
+- lifecycle y acciones registradas;
+- gates y razones estructuradas.
+
+Un ciclo offline usa un `local_cycle_id`; no inventa un UUID remoto. Todos los artefactos obligatorios deben compartir el `run_token`, región y storefront, y presentar ruta y SHA-256. El CLI también verifica los archivos y sus hashes reales.
+
+### Completitud fuerte y gates fail-closed
+
+El listing se clasifica como `complete`, `incomplete`, `indeterminate` o `incompatible_baseline`. Solo `complete` permite democión. Exige todas las páginas solicitadas terminadas, cero páginas fallidas, paginación final observada o terminación fuerte equivalente, JSON final no `.partial`, totales consistentes, IDs únicos, filtros exactos US/PlayStation/PS5+PS4 y evidencia ligada a una sola ejecución.
+
+No existe un número mágico de 5,531 o 3,600. Una baseline es opcional, debe declarar filtros comparables, timestamp, umbral de caída y antigüedad; una baseline incompatible, antigua o una caída anormal no se convierte silenciosamente en éxito.
+
+Los gates quedan cerrados cuando falta evidencia o existe contradicción:
+
+- `can_demote`: exige listing fuertemente completo y comprobación de ofertas terminadas vinculada a ese listing;
+- `can_mark_succeeded`: además exige fast refresh, detalle sin fallos pendientes, revisión mensual válida y validación temporal coherente;
+- `can_certify`: exige estado `succeeded`, `finished_at`, un `remote_cycle_id` UUID evidenciado y todas las gates anteriores;
+- `can_refresh_cache`: exige certificación registrada; nunca se habilita por intención ni antes de certificar.
+
+Un exit code 0 del importer no vence un resultado interno `partial` o `failed`; un retry solo cierra detalle cuando deja cero URLs pendientes. Un timestamp mensual sin fuente, procedimiento o evidencia no satisface la revisión. Las páginas fallidas, arrays solapados, límites excedidos, timestamps invertidos/futuros o artefactos de distintas ejecuciones bloquean el ciclo.
+
+### CLI y planificador puros
+
+`scripts/validate-psdeals-cycle-offline.mjs` solo lee archivos locales y muestra `OFFLINE_VALIDATION`. Acepta `--manifest` o `--listing-artifact`, salida humana o `--json`, y nunca aplica acciones. Códigos de salida:
+
+- 0: manifiesto válido;
+- 1: uso, lectura, parseo o error local de archivo;
+- 2: evidencia inválida o contradictoria;
+- 3: resultado indeterminado por evidencia obligatoria ausente.
+
+`scripts/lib/psdeals-cycle-plan.mjs` representa sin ejecutar el orden futuro de 16 pasos: crear ciclo, recoger y validar listing, construir payload, upsert, analizar/importar/reintentar detalle, revisar mensual, analizar ofertas terminadas, validar, marcar succeeded, certificar, refrescar caché, validar público y registrar métricas. Cada paso declara alcance y autorización futura; una gate cerrada bloquea los pasos dependientes. Este módulo no es el runner diario.
+
+### Auditoría de artefactos históricos
+
+El CLI clasificó individualmente como inválidos e incompletos los listings de 5,531 y 3,600 filas. Ambos bloquean `CAN_DEMOTE`, `CAN_CERTIFY` y `CAN_REFRESH_CACHE` porque no demuestran última página, completitud ni un `run_token` común; además sus totales detectados no coinciden con lo recogido.
+
+Para el grupo temporal del 2026-06-06 existen un analyzer de 5,531 IDs únicos, 31 must-refresh, 500 stale y 531 combinados; un import inicial parcial con 531 vistos, 441 actualizados y 90 fallidos; y un retry separado con 90 vistos, 90 actualizados y cero fallos. También existen 23 candidatos de ofertas terminadas construidos sobre el listing incompleto. No existe evidencia local de revisión mensual, price_refresh_cycle, certificación, hash/run token compartido ni enlace inequívoco entre todos los archivos. La proximidad temporal no basta: el conjunto histórico permanece indeterminado y no certificado.
+
+### Validación y bloqueos restantes
+
+La validación local cerró con 96/96 pruebas, `node --check` aprobado, lint con cero errores y seis advertencias preexistentes, `git diff --check` aprobado, CLI válido con exit 0 e inválido con exit 2. No se ejecutó build.
+
+Falta que los productores emitan evidencia estructurada compatible. El collector actual no aporta un `run_token` común, hash, resultado fuerte o inicio de ciclo; el analyzer histórico no emite un resumen versionado completo; el importer puede devolver exit 0 con estado partial y no deja un artefacto final común; la revisión mensual no tiene productor local; el analyzer de ofertas terminadas no exige la gate; y no están implementados el ciclo remoto, upsert diario, certificación, caché ni validación pública. La definición de `refresh_catalog_public_cache_v15()` tampoco está versionada localmente.
+
+El Bloque 4 no está cerrado y ningún ciclo histórico quedó certificado. El siguiente cambio local seguro es crear un sobre de evidencia puro y compartido y adaptar, sin ejecutarlos, collector, analyzer e importer para emitir metadatos versionados compatibles con el manifiesto. No se debe conectar aún ninguna escritura ni acción operativa.

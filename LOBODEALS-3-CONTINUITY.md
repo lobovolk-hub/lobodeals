@@ -123,6 +123,15 @@ La reactivación inicial de catálogo y ofertas no necesita esperar comunidad, r
 
 Commits principales:
 
+- afd773d36b2f4896ff54a8678d0520b5e513aab0
+  Build safe partial PSDeals stage payloads
+
+- a01db70a10336f87553a5800330db990cea3b117
+  Classify PSDeals item types and platforms
+
+- 91861ae0ab77b30e303fcd1c8f27b8068ad77807
+  Document price normalization and runner gaps
+
 - 44b63f595ac14341525d9e90b3cc2c0ef138269a
   Harden fast refresh queue selection
 
@@ -156,17 +165,17 @@ Commits principales:
 - d81418b35c41a8950a3d3d639ba43a73090d78c7
   Fix Unicode slug metadata
 
-HEAD técnico local confirmado antes de esta actualización documental:
+HEAD técnico local confirmado inmediatamente antes del commit documental de esta actualización:
 
-44b63f595ac14341525d9e90b3cc2c0ef138269a
+afd773d36b2f4896ff54a8678d0520b5e513aab0
 
 origin/main confirmado:
 
 4f826ac873850d3e61ceb68721512099625f1515
 
-La rama local main está cinco commits por delante y cero por detrás de origin/main.
+La rama local main estaba ocho commits por delante y cero por detrás de origin/main antes del commit documental que contiene esta actualización.
 
-Los cinco commits locales posteriores a origin/main todavía no se han enviado.
+Ningún commit local posterior a origin/main se ha enviado.
 
 ## 6. Producción
 
@@ -733,10 +742,10 @@ Estado de los hitos principales:
 
 1. normalización del descuento negativo: cerrada localmente y validada offline;
 2. tratamiento de -100%: cerrado localmente y validado offline;
-3. mapeo de tipos;
-4. reglas de plataformas;
-5. PS Plus mensual;
-6. diseño final del payload parcial;
+3. mapeo de tipos: cerrado localmente con política explícita de omisión;
+4. reglas de plataformas: cerradas localmente para el alcance PS4/PS5;
+5. PS Plus mensual: contrato local auditado; actualización operativa todavía manual y sin fuente conectada;
+6. diseño final del payload parcial: cerrado localmente y no conectado a un runner diario;
 7. implementación del runner;
 8. simulación sin escrituras;
 9. primer ciclo real;
@@ -745,11 +754,11 @@ Estado de los hitos principales:
 12. validación de /catalog y /deals;
 13. automatización y alertas.
 
-Los pasos 1 y 2 no se han ejecutado contra datos reales ni desplegado. Los pasos 3 a 13 siguen abiertos.
+Los pasos 1 a 6 no se han ejecutado contra datos reales ni desplegado. Los pasos 7 a 13 siguen abiertos. El paso 5 solo está cerrado como auditoría de contrato, no como operación mensual automatizada.
 
 ## 29. Siguiente punto exacto
 
-Cerrar el mapeo explícito de tipos reales de PSDeals hacia los valores aceptados por la tabla, con función pura y pruebas offline. Después deben cerrarse las reglas de plataformas y el payload parcial del listado antes de implementar el runner certificado.
+Implementar el validador offline de manifiesto y completitud del ciclo diario. Debe demostrar, sin conexiones ni escrituras, que un ciclo incompleto nunca puede avanzar a certificación o caché y que conserva evidencia separada de listado, detalle, demociones y revisión mensual.
 
 ## 30. Gap audit del runner diario certificado
 
@@ -788,14 +797,12 @@ No existe ningún script que lea o actualice ps_plus_monthly_games durante el ci
 
 Puede implementarse localmente sin SQL ni escrituras remotas:
 
-- mapeo explícito de tipos y plataformas;
-- builder puro del payload parcial de listado;
 - validador offline de completitud y manifiesto de ciclo;
 - planificador dry-run del orden de etapas;
 - contrato de exit code no cero ante fallos remanentes;
 - pruebas de que un ciclo incompleto nunca alcanza certificación o caché.
 
-El siguiente cambio local concreto sigue siendo el mapeo de tipos. El primer cambio específico del runner, después de cerrar tipos, plataformas y payload, debe ser el validador offline de manifiesto/completitud.
+El siguiente cambio local concreto es el validador offline de manifiesto/completitud. Los clasificadores y builders ya existen, pero todavía no hay un escritor diario de listado ni debe conectarse hasta que ese validador y el contrato del ciclo estén cerrados.
 
 ## 31. Acciones prohibidas sin nueva autorización
 
@@ -821,3 +828,179 @@ No ejecutar:
 No comenzar la prueba hasta que Johan diga exactamente:
 
 Día 1 de la prueba
+
+## 32. Checkpoint local de tipos, plataformas, payload y PS Plus mensual — 2026-07-29
+
+### Estado de entrada y commits
+
+La sesión comenzó en:
+
+- rama main;
+- HEAD 91861ae0ab77b30e303fcd1c8f27b8068ad77807;
+- worktree limpio;
+- cero commits detrás y seis commits delante de origin/main;
+- 29 pruebas offline aprobadas.
+
+Se crearon dos commits de código locales:
+
+1. a01db70a10336f87553a5800330db990cea3b117 — Classify PSDeals item types and platforms
+   - scripts/audit-psdeals-listing-classification-local.mjs
+   - scripts/collect-psdeals-listing-edge-live-cdp.mjs
+   - scripts/import-psdeals-detail-local.mjs
+   - scripts/lib/psdeals-item-classification.mjs
+   - tests/psdeals-item-classification.test.mjs
+2. afd773d36b2f4896ff54a8678d0520b5e513aab0 — Build safe partial PSDeals stage payloads
+   - scripts/import-psdeals-detail-local.mjs
+   - scripts/lib/psdeals-stage-payload.mjs
+   - tests/psdeals-item-classification.test.mjs
+   - tests/psdeals-stage-payload.test.mjs
+
+No se hizo push.
+
+### Evidencia de tipos
+
+Se inspeccionaron 19,136 HTML locales de detalle. La etiqueta de detalle solo tomó estos valores:
+
+- game: 12,972;
+- addon: 3,234;
+- bundle: 2,930.
+
+Las 5,531 filas del snapshot de descuentos de 2026-06-06 pudieron emparejarse con un HTML local de detalle. Ese cruce demostró el siguiente contrato:
+
+| Etiqueta listing | Etiqueta detalle observada | content_type | item_type_label | Política |
+| --- | --- | --- | --- | --- |
+| Full Game | game | game | game | escritura segura |
+| VR Game | game | game | game | escritura segura |
+| PSN Game | game | game | game | escritura segura |
+| Game Content | game | game | game | escritura segura |
+| Bundle | bundle | bundle | bundle | escritura segura |
+| Demo | game | demo | demo | listing específico prevalece; detail game no lo sustituye |
+| Add-On | addon | dlc | addon | bucket público existente de add-ons |
+| Avatar / Avatars | addon | dlc | addon | bucket público existente de add-ons |
+| Costume | addon | dlc | addon | bucket público existente de add-ons |
+| Character | addon | dlc | addon | bucket público existente de add-ons |
+| Vehicle | addon | dlc | addon | bucket público existente de add-ons |
+| Item | addon | dlc | addon | bucket público existente de add-ons |
+| Weapons | addon | dlc | addon | bucket público existente de add-ons |
+| Level | addon | dlc | addon | bucket público existente de add-ons |
+| Map | addon | dlc | addon | bucket público existente de add-ons |
+| Season Pass | addon | dlc | addon | familia preservada como season_pass; sin semántica pública separada |
+| Dynamic Theme | addon | dlc | addon | bucket público existente de add-ons |
+| Static Theme | addon | dlc | addon | bucket público existente de add-ons |
+| Theme | addon | dlc | addon | bucket público existente de add-ons |
+| Soundtrack | addon | dlc | addon | bucket público existente de add-ons |
+| Music Track | addon | dlc | addon | bucket público existente de add-ons |
+| Extra Episode | addon | dlc | addon | bucket público existente de add-ons |
+| VR Add-On | addon | dlc | addon | bucket público existente de add-ons |
+| Catalog | addon | dlc | addon | confianza media; requiere detalle y no sustituye valor existente |
+| Combo | addon | dlc | addon | confianza media; requiere detalle y no sustituye valor existente |
+| Subscription | addon | dlc | addon | confianza media; requiere detalle y no sustituye valor existente |
+| null, vacío o desconocido | no demostrable | omitido | omitido | conserva evidencia y requiere detalle |
+
+Los valores permitidos por el contrato de aplicación siguen limitados a game, bundle, dlc, add_on, season_pass, currency, demo y other. El clasificador no emite add_on, currency u other porque no existe evidencia local que justifique una semántica pública separada. No convierte coincidencias parciales ni etiquetas desconocidas en dlc.
+
+La etiqueta detail game es deliberadamente no reemplazante: los HTML demuestran que colapsa Full Game, VR Game, PSN Game, Game Content y Demo.
+
+No se añadió una cola de tipos al fast refresh. Las revalidaciones de tipo quedan como métricas observables y no consumen la cola obligatoria de precios.
+
+### Contrato de plataformas
+
+El alcance público permanece limitado a PS4 y PS5, con orden canónico PS5, PS4.
+
+- PS4, PS5 y combinaciones puras de ambas son escribibles y reemplazantes;
+- duplicados, espacios y mayúsculas se normalizan y deduplican;
+- PS3, PS Vita y PSP se conservan como evidencia antigua y nunca se publican como plataformas objetivo;
+- una mezcla PS4/PS5 con una plataforma antigua permite conservar la intersección objetivo para una fila nueva, pero requiere detalle y no sustituye plataformas existentes;
+- una mezcla con token desconocido, un valor exclusivamente antiguo, null, vacío o malformado omite la actualización;
+- ninguna regla amplía el catálogo público a PS3, Vita o PSP.
+
+### Medición reproducible del snapshot más reciente
+
+Comando local de solo lectura:
+
+node scripts/audit-psdeals-listing-classification-local.mjs --snapshot=data/import/psdeals-edge-live-recently-added-readonly-2026-07-03-13-04-15-2026-07-03T18-09-51-857Z.json
+
+Resultado sobre 3,600 filas:
+
+- tipos normalizados: game 2,522; bundle 631; dlc 446; omitido 1;
+- tipos de confianza alta: 3,594;
+- tipos ambiguos de confianza media: 5 Catalog;
+- tipos desconocidos: 1;
+- filas de tipo que requieren detalle y conservan valor anterior: 6;
+- plataformas puras de objetivo: 3,598;
+- mezclas objetivo + PS Vita: 2;
+- plataformas desconocidas o exclusivamente antiguas: 0;
+- filas de plataforma que requieren detalle y conservan valor anterior: 2;
+- candidatos distintos de revisión por tipo o plataforma: 8;
+- integración con fast refresh: ninguna, solo métricas.
+
+### Contrato del payload parcial
+
+scripts/lib/psdeals-stage-payload.mjs exporta constructores puros para:
+
+1. fila mínima nueva desde listing;
+2. actualización parcial desde listing;
+3. upsert parcial seguro desde detalle.
+
+Reglas cerradas:
+
+- una fila nueva exige identidad PSDeals válida, slug, URL, título, timestamp de listado y raw_listing_json;
+- una actualización existente solo incluye claves presentes y validadas;
+- undefined y null se omiten en el nivel superior;
+- el listing solo escribe precios cuando el descuento regular 1–99 es coherente y certificable;
+- -100%, FREE temporal, precios ambiguos e incoherencias conservan evidencia, pero no escriben precios ni free_to_play;
+- tipo o plataformas desconocidos no sustituyen valores existentes;
+- raw_listing_json y raw_detail_json permanecen bajo su productor;
+- el detalle de una fila existente no sustituye slug, URL PSDeals, título, imagen, tipo o plataformas del listing;
+- campos ausentes de detalle, arrays vacíos y URLs oficiales inválidas se omiten;
+- los campos Metacritic no vuelven al importer;
+- ningún constructor incluye los cuatro mínimos compactos lobodeals_lowest_*.
+
+No existe DDL local completo de psdeals_stage_items. Por eso los builders no están conectados a un upsert diario y no afirman conocer todas las restricciones remotas. Conservar un valor anterior se implementa omitiendo su clave; no se inventó una lectura remota ni se cambió SQL.
+
+### Validación offline
+
+Después de los dos commits de código:
+
+- npm test: 55/55 pruebas aprobadas;
+- node --check: todos los MJS creados o modificados aprobados;
+- npm run lint: cero errores y seis advertencias preexistentes;
+- git diff --check: aprobado;
+- no reaparecieron latestChartBonusPriceAmount ?? currentPsPlusBuyBoxPriceAmount, explicitCurrentPlus ni current === lowestPsPlusPriceAmount;
+- no se ejecutó build.
+
+### Auditoría local de PS Plus mensual
+
+Contrato demostrado:
+
+1. ps_plus_monthly_games es una allowlist manual separada de precios y descuentos;
+2. SQL local exige la existencia de item_id, is_active, active_from, active_until, active_from_at y active_until_at;
+3. la actividad relevante para certificación requiere is_active=true y que detail_last_synced_at caiga dentro de la ventana efectiva;
+4. active_from_at prevalece sobre active_from convertido a timestamptz;
+5. active_until_at prevalece sobre el final exclusivo active_until + 1 día;
+6. catalog_public_cache expone is_ps_plus_monthly_game, ps_plus_monthly_label, ps_plus_monthly_note, ps_plus_monthly_month y ps_plus_monthly_until;
+7. Home filtra is_ps_plus_monthly_game=true y la tarjeta/detalle muestran un beneficio mensual separado;
+8. el beneficio mensual no debe modificar current_price_amount, no debe implicar has_deal ni has_ps_plus_deal y no prueba free_to_play;
+9. certify_price_refresh_cycle excluye una fila mensual activa de candidatos al mínimo PS Plus;
+10. monthly_games_checked_at debe existir dentro del ciclo y antes de validation_completed_at, pero SQL no demuestra por sí solo qué fuente se revisó ni qué filas cambiaron.
+
+La documentación histórica recuperada desde Git confirma que el MVP se cargaba manualmente una vez al mes después de revisar una fuente oficial. Esa historia es evidencia del procedimiento anterior, no una definición vigente del esquema.
+
+No está versionado localmente:
+
+- el DDL completo de ps_plus_monthly_games;
+- la nulabilidad, defaults, restricciones o columnas descriptivas adicionales de una fila mensual;
+- la definición actual de refresh_catalog_public_cache_v15();
+- un script que lea, active, desactive o valide la allowlist mensual;
+- un fixture mensual rastreado;
+- una referencia de fuente oficial dentro de price_refresh_cycles.
+
+Por tanto, activar y desactivar sigue siendo manual. Antes de marcar monthly_games_checked_at, un futuro paso autorizado deberá revisar una fuente oficial de PlayStation, resolver cada juego contra item_id, validar ventanas, reconciliar activaciones y desactivaciones, refrescar la caché y verificar que los campos de precio y deal no se contaminaron. Ninguno de esos pasos se ejecutó.
+
+Puede probarse offline un manifiesto mensual con identidad, ventanas, solapamientos, duplicados, evidencia de fuente y separación de precios. La siguiente implementación mensual segura sería un validador puro de ese manifiesto, sin fuente externa ni escritura.
+
+### Posición exacta del Bloque 4
+
+Quedaron cerrados localmente los contratos de normalización comercial, tipos, plataformas y payload parcial. El contrato mensual quedó auditado, pero su operación sigue manual y bloqueada por DDL/procedimiento no versionados y por la futura autorización de una fuente oficial.
+
+El Bloque 4 no está cerrado. El siguiente cambio local seguro es el validador offline de manifiesto/completitud del ciclo certificado. No debe ejecutarse aún ningún collector, importer, runner, SQL, certificación, caché ni prueba operativa.

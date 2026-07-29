@@ -130,6 +130,105 @@ test('upsert timeout is reconciled from exact owned fields without automatic ret
   assert.equal(calls, 1)
 })
 
+test('certifiable listing batches begin and finish cycle-bound remote receipts', async () => {
+  const rows = new Map()
+  let beginCalls = 0
+  let finishCalls = 0
+  const cycleId = '11111111-1111-4111-8111-111111111111'
+  const parentId = '22222222-2222-4222-8222-222222222222'
+  const result = await executeReconciledPsdealsListingUpsert({
+    listing_items: [item(1)],
+    listing_observed_at: '2026-07-29T21:30:00.000Z',
+    authorization_id: 'auth-stage-upsert-fixture',
+    receipt_context: {
+      required: true,
+      remote_cycle_id: cycleId,
+      parent_receipt_id: parentId,
+      listing_artifact_hash: 'a'.repeat(64),
+      idempotency_key_prefix: 'listing-upsert:fixture-batch',
+      started_at: '2026-07-29T21:31:00.000Z',
+      finished_at: '2026-07-29T21:32:00.000Z',
+    },
+  }, {
+    select_existing_rows: async () => [],
+    upsert_batch: async (batch) => {
+      for (const row of batch.rows) rows.set(row.psdeals_id, { ...row })
+    },
+    select_rows_for_verification: async (ids) => ids.map((id) => rows.get(id)),
+    begin_remote_action: async (args) => {
+      beginCalls += 1
+      return {
+        id: '33333333-3333-4333-8333-333333333333',
+        cycle_id: cycleId,
+        parent_receipt_id: parentId,
+        action_kind: 'listing_upsert_batch',
+        idempotency_key: args.p_idempotency_key,
+        request_hash: args.p_request_hash,
+        input_artifact_hash: args.p_input_artifact_hash,
+        status: 'running',
+      }
+    },
+    finish_remote_action: async (args) => {
+      finishCalls += 1
+      return {
+        id: args.p_receipt_id,
+        cycle_id: cycleId,
+        parent_receipt_id: parentId,
+        action_kind: 'listing_upsert_batch',
+        idempotency_key: args.p_idempotency_key,
+        request_hash: args.p_request_hash,
+        input_artifact_hash: 'a'.repeat(64),
+        status: args.p_status,
+        result: args.p_result,
+      }
+    },
+    write_receipt: async (receipt) => receipt,
+  })
+  assert.equal(result.status, 'succeeded')
+  assert.equal(beginCalls, 1)
+  assert.equal(finishCalls, 1)
+  assert.equal(result.remote_receipts[0].status, 'committed')
+})
+
+test('a committed batch receipt with a changed row blocks replay instead of writing again', async () => {
+  let upserts = 0
+  const cycleId = '11111111-1111-4111-8111-111111111111'
+  const parentId = '22222222-2222-4222-8222-222222222222'
+  const result = await executeReconciledPsdealsListingUpsert({
+    listing_items: [item(1)],
+    listing_observed_at: '2026-07-29T21:30:00.000Z',
+    authorization_id: 'auth-stage-upsert-fixture',
+    receipt_context: {
+      required: true,
+      remote_cycle_id: cycleId,
+      parent_receipt_id: parentId,
+      listing_artifact_hash: 'a'.repeat(64),
+      idempotency_key_prefix: 'listing-upsert:committed-batch',
+      started_at: '2026-07-29T21:31:00.000Z',
+      finished_at: '2026-07-29T21:32:00.000Z',
+    },
+  }, {
+    select_existing_rows: async () => [],
+    upsert_batch: async () => { upserts += 1 },
+    select_rows_for_verification: async () => [{ psdeals_id: 1, title: 'changed after receipt' }],
+    begin_remote_action: async (args) => ({
+      id: '33333333-3333-4333-8333-333333333333',
+      cycle_id: cycleId,
+      parent_receipt_id: parentId,
+      action_kind: 'listing_upsert_batch',
+      idempotency_key: args.p_idempotency_key,
+      request_hash: args.p_request_hash,
+      input_artifact_hash: args.p_input_artifact_hash,
+      status: 'committed',
+    }),
+    finish_remote_action: async () => { throw new Error('must not finish') },
+    write_receipt: async (receipt) => receipt,
+  })
+  assert.equal(result.status, 'failed')
+  assert.equal(upserts, 0)
+  assert.equal(result.batches[0].transport, 'blocked_by_committed_receipt_postcondition_mismatch')
+})
+
 test('partial and concurrent postcondition mismatches remain observable', async () => {
   const result = await executeReconciledPsdealsListingUpsert({
     listing_items: [item(1), item(2)],

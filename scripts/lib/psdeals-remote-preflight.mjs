@@ -1,4 +1,6 @@
-export const PSDEALS_REMOTE_PREFLIGHT_VERSION = 1
+import { evaluatePsdealsCycleMigrationFacts } from './psdeals-cycle-migration-contract.mjs'
+
+export const PSDEALS_REMOTE_PREFLIGHT_VERSION = 2
 
 export const PSDEALS_REMOTE_REQUIRED_CONTRACTS = Object.freeze({
   psdeals_stage_items: [
@@ -41,6 +43,13 @@ export const PSDEALS_REMOTE_REQUIRED_CONTRACTS = Object.freeze({
 const REQUIRED_FUNCTIONS = Object.freeze({
   certify_price_refresh_cycle: 'p_cycle_id uuid',
   refresh_catalog_public_cache_v15: '',
+})
+
+const LEGACY_FUNCTION_SHA256 = Object.freeze({
+  certify_price_refresh_cycle:
+    '3dfa2232903c014039f070f48d4044ffe0b329e38cb86615b9bdbc20c4f9aa88',
+  refresh_catalog_public_cache_v15:
+    '1c6e71d26e6554e6f8fdf2e6ed0388db959419db4ee64132d8ddd5761b3996dc',
 })
 
 function nonEmpty(value) {
@@ -142,7 +151,11 @@ export function evaluatePsdealsRemotePreflight(factsInput, { now } = {}) {
       missingObjects.push(`function:${name}`)
       continue
     }
-    if (fn.identity_arguments !== argumentsValue || fn.definition_verified !== true) {
+    if (
+      fn.identity_arguments !== argumentsValue ||
+      fn.definition_verified !== true ||
+      fn.definition_sha256 !== LEGACY_FUNCTION_SHA256[name]
+    ) {
       blockers.push(issue('PREFLIGHT_FUNCTION_CONTRACT_MISMATCH', `functions.${name}`))
       incompatibleContracts.push(`function:${name}`)
     } else {
@@ -155,25 +168,12 @@ export function evaluatePsdealsRemotePreflight(factsInput, { now } = {}) {
     blockers.push(issue('PREFLIGHT_STAGE_CONFLICT_INDEX_MISSING', 'objects.psdeals_stage_items.indexes'))
   }
 
-  const cycles = facts.objects?.price_refresh_cycles
-  const cycleColumns = objectColumns(cycles)
-  const cycleIndexes = new Set(Array.isArray(cycles?.indexes) ? cycles.indexes : [])
-  const localIdentityColumnsPresent =
-    cycleColumns.has('local_cycle_id') && cycleColumns.has('run_token_sha256')
-  const localIdentityUnique = cycleIndexes.has('price_refresh_cycles_local_identity_unique_idx')
-  if (!localIdentityColumnsPresent || !localIdentityUnique) {
+  const migration = evaluatePsdealsCycleMigrationFacts(facts)
+  if (!migration.ready) {
     blockers.push(issue(
-      'PREFLIGHT_CREATE_CYCLE_RECONCILIATION_CONTRACT_MISSING',
-      'objects.price_refresh_cycles',
-      'No unique remote identity exists for local_cycle_id/run_token reconciliation.'
-    ))
-  }
-
-  if (facts.functions?.refresh_catalog_public_cache_v15?.independent_receipt_supported !== true) {
-    blockers.push(issue(
-      'PREFLIGHT_CACHE_RECONCILIATION_CONTRACT_MISSING',
-      'functions.refresh_catalog_public_cache_v15',
-      'A lost response cannot be reconciled to one cycle from current remote state.'
+      `PREFLIGHT_${migration.migration_status}`,
+      'migration',
+      migration.missing
     ))
   }
   if (facts.objects?.item_price_snapshots?.exists !== true) {
@@ -190,14 +190,22 @@ export function evaluatePsdealsRemotePreflight(factsInput, { now } = {}) {
     warnings.push(issue('PREFLIGHT_CERTIFIED_LOWS_ALREADY_EXIST', 'measurements'))
   }
 
-  const allBlockers = [...blockers, ...permissionsMissing]
+  const allBlockers = [...blockers, ...permissionsMissing, ...migration.blockers]
   const valid = errors.length === 0
   const ready = valid && allBlockers.length === 0
   return {
     preflight_version: PSDEALS_REMOTE_PREFLIGHT_VERSION,
     valid,
     ready,
-    classification: !valid ? 'INDETERMINATE' : ready ? 'READY_FOR_CONTROLLED_LIVE_CYCLE' : 'NOT_READY',
+    classification: !valid
+      ? 'NOT_READY'
+      : ready
+        ? migration.migration_status
+        : migration.migration_status === 'MIGRATION_READY'
+          ? 'NOT_READY'
+          : migration.migration_status,
+    migration_status: migration.migration_status,
+    migration,
     read_only_verified:
       facts.collection_mode === 'supabase_mcp_readonly' &&
       facts.mutations_executed === 0 && facts.rpcs_executed === 0,

@@ -12,16 +12,17 @@ async function facts() {
   return JSON.parse(await fs.readFile(factsPath, 'utf8'))
 }
 
-test('verified remote facts remain NOT_READY for missing reconciliation contracts', async () => {
-  const result = evaluatePsdealsRemotePreflight(await facts(), {
-    now: '2026-07-29T21:24:00.000Z',
+test('verified remote facts remain MIGRATION_NOT_APPLIED after read-only revalidation', async () => {
+  const value = await facts()
+  const result = evaluatePsdealsRemotePreflight(value, {
+    now: value.checked_at,
   })
   assert.equal(result.valid, true)
   assert.equal(result.read_only_verified, true)
   assert.equal(result.ready, false)
-  assert.equal(result.classification, 'NOT_READY')
-  assert.ok(result.reason_codes.includes('PREFLIGHT_CREATE_CYCLE_RECONCILIATION_CONTRACT_MISSING'))
-  assert.ok(result.reason_codes.includes('PREFLIGHT_CACHE_RECONCILIATION_CONTRACT_MISSING'))
+  assert.equal(result.classification, 'MIGRATION_NOT_APPLIED')
+  assert.equal(result.migration_status, 'MIGRATION_NOT_APPLIED')
+  assert.ok(result.reason_codes.includes('PREFLIGHT_MIGRATION_NOT_APPLIED'))
   assert.ok(result.warnings.some((entry) => entry.code === 'PREFLIGHT_LEGACY_ITEM_PRICE_SNAPSHOTS_ABSENT'))
 })
 
@@ -32,10 +33,10 @@ test('preflight fails closed on project, function, mutation, and credential drif
   value.mutations_executed = 1
   value.credentials.values_redacted = false
   const result = evaluatePsdealsRemotePreflight(value, {
-    now: '2026-07-29T21:24:00.000Z',
+    now: value.checked_at,
   })
   assert.equal(result.valid, false)
-  assert.equal(result.classification, 'INDETERMINATE')
+  assert.equal(result.classification, 'NOT_READY')
   assert.ok(result.reason_codes.includes('PREFLIGHT_COLLECTION_MODE_NOT_READ_ONLY') === false)
   assert.ok(result.errors.some((entry) => entry.code === 'PREFLIGHT_MUTATION_REPORTED'))
   assert.ok(result.blockers.some((entry) => entry.code === 'PREFLIGHT_PROJECT_MISMATCH'))
@@ -46,12 +47,12 @@ test('offline preflight CLI evaluates the redacted real facts without opening co
   let errors = ''
   const exitCode = await runPsdealsRemotePreflightCli([
     `--facts=${factsPath}`,
-    '--now=2026-07-29T21:24:00.000Z',
+    '--now=2026-07-29T22:37:06.267Z',
   ], {
     stdout: (value) => { output += value },
     stderr: (value) => { errors += value },
   })
-  assert.equal(exitCode, 4, errors)
-  assert.match(output, /"classification": "NOT_READY"/)
+  assert.equal(exitCode, 3, errors)
+  assert.match(output, /"classification": "MIGRATION_NOT_APPLIED"/)
   assert.equal(output.includes('SUPABASE_SECRET_KEY'), false)
 })

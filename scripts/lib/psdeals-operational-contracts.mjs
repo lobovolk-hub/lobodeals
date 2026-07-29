@@ -1,23 +1,23 @@
 export const PSDEALS_CRITICAL_ACTIONS = Object.freeze({
   create_cycle: {
-    target: 'public.price_refresh_cycles',
-    operation: 'insert',
-    idempotency: 'unique certified date does not protect running inserts; reconcile before retry',
+    target: 'public.create_or_reconcile_price_refresh_cycle_v1',
+    operation: 'rpc',
+    idempotency: 'exact local identity and request hash return the existing cycle and committed receipt',
   },
   mark_succeeded: {
-    target: 'public.price_refresh_cycles',
-    operation: 'update_by_id',
-    idempotency: 'read current row before retry; never overwrite certified',
+    target: 'public.mark_psdeals_price_refresh_cycle_succeeded_v1',
+    operation: 'rpc',
+    idempotency: 'exact receipt replay returns the existing committed transition',
   },
   certify: {
-    target: 'public.certify_price_refresh_cycle(uuid)',
+    target: 'public.certify_price_refresh_cycle_v2',
     operation: 'rpc',
-    idempotency: 'function rejects an already certified cycle; verify row before retry',
+    idempotency: 'cycle-bound receipt reconciles a lost response without invoking certification twice',
   },
   refresh_cache: {
-    target: 'public.refresh_catalog_public_cache_v15()',
+    target: 'public.refresh_catalog_public_cache_v16',
     operation: 'rpc',
-    idempotency: 'repeat only after independently verifying certification and cache result',
+    idempotency: 'cycle-bound receipt reconciles a lost response and prevents a second refresh',
   },
 })
 

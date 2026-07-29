@@ -42,7 +42,9 @@ test('Supabase port construction opens no connection and keeps read/write surfac
   assert.equal(client.calls.length, 0)
   assert.equal(port.opens_connection_on_construction, false)
   assert.equal(typeof port.read.readCycleById, 'function')
-  assert.equal(typeof port.write.insertCycle, 'function')
+  assert.equal(typeof port.read.readActionReceiptById, 'function')
+  assert.equal(port.write.insertCycle, undefined)
+  assert.equal(port.write.updateCycle, undefined)
 })
 
 test('stage lookup is bounded into batches of 500', async () => {
@@ -55,15 +57,17 @@ test('stage lookup is bounded into batches of 500', async () => {
   assert.deepEqual(client.calls.map((call) => call.methods.find((entry) => entry[0] === 'in')[2].length), [500, 500, 1])
 })
 
-test('write port rejects arbitrary conflict targets, cycle fields, and RPC names', async () => {
+test('write port rejects arbitrary conflict targets and direct legacy lifecycle RPC names', async () => {
   const port = createPsdealsSupabaseJsPort({ client: fakeClient() })
   await assert.rejects(
     port.write.upsertStageBatch({ conflict_target: 'id', rows: [{ id: 1 }] }),
     /UPSERT_BATCH_INVALID/
   )
-  await assert.rejects(
-    port.write.updateCycle('11111111-1111-4111-8111-111111111111', { certified_at: 'now' }),
-    /CYCLE_UPDATE_FIELDS_INVALID/
-  )
   await assert.rejects(port.write.invokeAllowedRpc('arbitrary_rpc'), /RPC_NOT_ALLOWLISTED/)
+  await assert.rejects(port.write.invokeAllowedRpc('certify_price_refresh_cycle'), /RPC_NOT_ALLOWLISTED/)
+  await assert.rejects(port.write.invokeAllowedRpc('refresh_catalog_public_cache_v15'), /RPC_NOT_ALLOWLISTED/)
+  assert.deepEqual(
+    await port.write.invokeAllowedRpc('refresh_catalog_public_cache_v16', { p_cycle_id: 'fixture' }),
+    [{ ok: true }]
+  )
 })

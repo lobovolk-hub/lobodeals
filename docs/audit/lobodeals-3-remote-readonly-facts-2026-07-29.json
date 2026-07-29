@@ -1,8 +1,8 @@
 {
-  "preflight_version": 1,
+  "preflight_version": 2,
   "collection_mode": "supabase_mcp_readonly",
-  "checked_at": "2026-07-29T21:24:00.000Z",
-  "code_revision": "c043e2876db89ad3552c8fbec2d12c14dbb9f9f5",
+  "checked_at": "2026-07-29T22:37:06.267Z",
+  "code_revision": "70fb31bab2b3ab655766820a45f0042cd7d8761e",
   "mutations_executed": 0,
   "rpcs_executed": 0,
   "project": {
@@ -44,6 +44,17 @@
       "total_bytes": 49152,
       "columns": ["id","region_code","storefront","cycle_date","status","started_at","finished_at","listing_completed_at","details_completed_at","ended_discounts_completed_at","monthly_games_checked_at","validation_completed_at","validation_passed","items_seen","items_updated","items_failed","new_items_detected","ended_discounts_applied","failure_reason","metrics","certified_at"],
       "indexes": ["price_refresh_cycles_pkey","price_refresh_cycles_status_idx","price_refresh_cycles_storefront_date_idx","price_refresh_cycles_certified_at_idx","price_refresh_cycles_certified_date_unique_idx"]
+    },
+    "psdeals_cycle_action_receipts": {
+      "exists": false,
+      "object_type": null,
+      "can_select": false,
+      "exact_rows": null,
+      "columns": [],
+      "indexes": [],
+      "rls_enabled": false,
+      "anon_write": false,
+      "authenticated_write": false
     },
     "ps_plus_monthly_games": {
       "exists": true,
@@ -90,8 +101,13 @@
       "volatility": "volatile",
       "security_definer": false,
       "definition_verified": true,
+      "definition_sha256": "3dfa2232903c014039f070f48d4044ffe0b329e38cb86615b9bdbc20c4f9aa88",
       "can_execute_metadata": true,
-      "independent_receipt_supported": true
+      "independent_receipt_supported": false,
+      "anon_execute": false,
+      "authenticated_execute": false,
+      "service_role_execute": true,
+      "search_path_empty": false
     },
     "refresh_catalog_public_cache_v15": {
       "exists": true,
@@ -99,10 +115,25 @@
       "volatility": "volatile",
       "security_definer": false,
       "definition_verified": true,
+      "definition_sha256": "1c6e71d26e6554e6f8fdf2e6ed0388db959419db4ee64132d8ddd5761b3996dc",
       "can_execute_metadata": true,
-      "independent_receipt_supported": false
-    }
+      "independent_receipt_supported": false,
+      "anon_execute": true,
+      "authenticated_execute": true,
+      "service_role_execute": true,
+      "search_path_empty": false
+    },
+    "begin_psdeals_cycle_action_v1": { "exists": false },
+    "finish_psdeals_cycle_action_v1": { "exists": false },
+    "create_or_reconcile_price_refresh_cycle_v1": { "exists": false },
+    "record_psdeals_listing_completion_v1": { "exists": false },
+    "record_psdeals_monthly_check_v1": { "exists": false },
+    "apply_psdeals_ended_deals_v1": { "exists": false },
+    "mark_psdeals_price_refresh_cycle_succeeded_v1": { "exists": false },
+    "certify_price_refresh_cycle_v2": { "exists": false },
+    "refresh_catalog_public_cache_v16": { "exists": false }
   },
+  "live_cycle_prerequisites_verified": false,
   "measurements": {
     "price_refresh_cycles": 0,
     "latest_listing_seen_at": "2026-05-13T22:20:58.293505Z",

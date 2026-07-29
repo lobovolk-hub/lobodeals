@@ -42,23 +42,23 @@ export const PSDEALS_CYCLE_RUNNER_EXIT_CODES = Object.freeze({
 })
 
 export const PSDEALS_OPERATIONAL_ADAPTER_READINESS = Object.freeze({
-  create_cycle: 'contract_known_authorization_and_remote_adapter_missing',
+  create_cycle: 'migration_v4_rpc_adapter_implemented_connection_requires_future_authorization',
   collect_listing: 'producer_exists_authorization_and_process_adapter_missing',
   validate_listing: 'implemented_locally',
   build_partial_payload: 'implemented_locally',
-  upsert_listing: 'prepared_fake_only_remote_adapter_missing',
+  upsert_listing: 'reconciled_batches_support_remote_receipts_connection_requires_future_authorization',
   analyze_detail_candidates: 'producer_exists_authorization_and_remote_adapter_missing',
   import_details: 'producer_exists_authorization_and_process_adapter_missing',
   retry_details: 'producer_exists_authorization_and_process_adapter_missing',
-  check_monthly_games: 'manual_evidence_cli_implemented_real_source_review_required',
+  check_monthly_games: 'remote_receipt_rpc_defined_real_source_review_and_authorization_required',
   analyze_ended_deals: 'analysis_exists_authorization_and_remote_adapter_missing',
-  apply_ended_deals: 'awaiting_contract_exact_cycle_linked_application_receipt_missing',
+  apply_ended_deals: 'exact_bounded_receipt_rpc_defined_connection_requires_future_authorization',
   validate_cycle: 'implemented_locally_remote_state_verification_missing',
-  mark_succeeded: 'contract_known_authorization_and_remote_adapter_missing',
-  certify: 'contract_known_authorization_and_remote_adapter_missing',
-  refresh_cache: 'contract_known_authorization_and_remote_adapter_missing',
-  validate_public: 'contract_incomplete_authorization_required',
-  record_metrics: 'contract_incomplete_remote_adapter_missing',
+  mark_succeeded: 'receipt_bound_rpc_defined_connection_requires_future_authorization',
+  certify: 'receipt_bound_v2_rpc_defined_connection_requires_future_authorization',
+  refresh_cache: 'receipt_bound_v16_rpc_defined_connection_requires_future_authorization',
+  validate_public: 'bounded_remote_receipt_contract_defined_http_authorization_required',
+  record_metrics: 'bounded_remote_receipt_contract_defined_connection_requires_future_authorization',
 })
 
 function iso(now) {

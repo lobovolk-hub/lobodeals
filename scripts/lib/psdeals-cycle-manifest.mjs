@@ -1,3 +1,5 @@
+import { validatePsdealsRemoteActionReceipt } from './psdeals-cycle-migration-contract.mjs'
+
 export const PSDEALS_CYCLE_MANIFEST_VERSION = 1
 
 export const PSDEALS_CYCLE_REASON_CODES = Object.freeze({
@@ -102,6 +104,114 @@ function issue(code, path, message, kind = 'invalid') {
 
 function warning(code, path, message) {
   return { code, path, message }
+}
+
+function evaluateRemoteReceiptContract(actionsInput, identity, cycleStatus, errors) {
+  const actions = isObject(actionsInput) ? actionsInput : {}
+  if (actions.receipt_contract_version == null) {
+    return {
+      enforced: false,
+      valid: true,
+      kinds: new Set(),
+      can_demote: true,
+      can_mark_succeeded: true,
+      can_certify: true,
+      can_refresh_cache: true,
+    }
+  }
+  if (actions.receipt_contract_version !== 1 || !Array.isArray(actions.remote_receipts)) {
+    errors.push(issue('REMOTE_RECEIPT_CONTRACT_INVALID', 'actions.remote_receipts', 'Receipt contract version 1 requires an array.'))
+    return {
+      enforced: true,
+      valid: false,
+      kinds: new Set(),
+      can_demote: false,
+      can_mark_succeeded: false,
+      can_certify: false,
+      can_refresh_cache: false,
+    }
+  }
+  if (actions.remote_receipts.length > 500) {
+    errors.push(issue('REMOTE_RECEIPT_SET_TOO_LARGE', 'actions.remote_receipts', 'At most 500 bounded receipt references are accepted.'))
+  }
+  const ids = new Set()
+  const keys = new Set()
+  const kinds = new Set()
+  let valid = true
+  for (const [index, receipt] of actions.remote_receipts.entries()) {
+    const validation = validatePsdealsRemoteActionReceipt(receipt, {
+      cycle_id: identity.remote_cycle_id,
+    })
+    if (!validation.valid || receipt.status !== 'committed') {
+      valid = false
+      errors.push(issue('REMOTE_RECEIPT_REFERENCE_INVALID', `actions.remote_receipts[${index}]`, validation.errors))
+    }
+    if (ids.has(receipt.id) || keys.has(receipt.idempotency_key)) {
+      valid = false
+      errors.push(issue('REMOTE_RECEIPT_REFERENCE_DUPLICATE', `actions.remote_receipts[${index}]`, 'Receipt IDs and idempotency keys must be unique.'))
+    }
+    ids.add(receipt.id)
+    keys.add(receipt.idempotency_key)
+    kinds.add(receipt.action_kind)
+  }
+  for (const [index, receipt] of actions.remote_receipts.entries()) {
+    if (receipt.parent_receipt_id != null && !ids.has(receipt.parent_receipt_id)) {
+      valid = false
+      errors.push(issue('REMOTE_RECEIPT_PARENT_MISSING', `actions.remote_receipts[${index}].parent_receipt_id`, 'The parent receipt must be included in the manifest receipt set.'))
+    }
+  }
+  const has = (kind) => kinds.has(kind)
+  const canDemote = valid && has('listing_validation') && has('ended_deals_analysis')
+  const canMarkSucceeded = canDemote &&
+    has('listing_upsert_batch') &&
+    has('fast_refresh_analysis') &&
+    (has('detail_import') || has('detail_retry')) &&
+    has('monthly_check_record') &&
+    has('demotion_apply')
+  const canCertify = canMarkSucceeded && has('mark_succeeded')
+  const canRefreshCache = canCertify && has('certify')
+  if (['succeeded', 'certified'].includes(cycleStatus) && !canMarkSucceeded) {
+    errors.push(issue('REMOTE_RECEIPTS_INCOMPLETE_FOR_SUCCEEDED_CYCLE', 'actions.remote_receipts', 'A succeeded cycle requires the complete upstream receipt chain.'))
+  }
+  if (cycleStatus === 'certified' && !has('certify')) {
+    errors.push(issue('REMOTE_CERTIFICATION_RECEIPT_MISSING', 'actions.remote_receipts', 'A certified cycle requires its committed certification receipt.'))
+  }
+  return {
+    enforced: true,
+    valid,
+    kinds,
+    can_demote: canDemote,
+    can_mark_succeeded: canMarkSucceeded,
+    can_certify: canCertify,
+    can_refresh_cache: canRefreshCache,
+  }
+}
+
+export function attachPsdealsRemoteActionReceipt(manifestInput, receipt) {
+  const manifest = cloneValue(manifestInput)
+  const validation = validatePsdealsRemoteActionReceipt(receipt, {
+    cycle_id: manifest?.identity?.remote_cycle_id,
+  })
+  if (!validation.committed) {
+    throw new Error(`REMOTE_RECEIPT_INVALID: ${validation.errors.join(',')}`)
+  }
+  if (!isObject(manifest.actions)) manifest.actions = {}
+  const existing = Array.isArray(manifest.actions.remote_receipts)
+    ? manifest.actions.remote_receipts
+    : []
+  const contradiction = existing.find((entry) =>
+    entry.id === receipt.id || entry.idempotency_key === receipt.idempotency_key
+  )
+  if (contradiction) {
+    if (JSON.stringify(contradiction) !== JSON.stringify(receipt)) {
+      throw new Error('REMOTE_RECEIPT_CONTRADICTION')
+    }
+    return manifest
+  }
+  manifest.actions.receipt_contract_version = 1
+  manifest.actions.remote_receipts = [...existing, cloneValue(receipt)]
+    .sort((left, right) => String(left.started_at).localeCompare(String(right.started_at)) || left.id.localeCompare(right.id))
+  return manifest
 }
 
 function pushMissing(errors, path, label) {
@@ -1217,11 +1327,18 @@ export function validatePsdealsCycleManifest(manifestInput, options = {}) {
 
   const actions = isObject(normalized.actions) ? normalized.actions : {}
   const demotion = isObject(actions.demotion) ? actions.demotion : {}
+  const remoteReceipts = evaluateRemoteReceiptContract(
+    actions,
+    identity,
+    normalized.cycle_state?.status,
+    errors
+  )
   const listingBlockingErrors = errors.some(
     (entry) => entry.path.startsWith('listing')
   )
   const canDemote =
-    listingComplete && endedDealsValidation.eligible && !listingBlockingErrors
+    listingComplete && endedDealsValidation.eligible && !listingBlockingErrors &&
+    remoteReceipts.can_demote
   if ((demotion.requested === true || demotion.performed === true) && !canDemote) {
     errors.push(issue('DEMOTION_GATE_BLOCKED', 'actions.demotion', 'Demotion gate is closed.'))
   }
@@ -1242,9 +1359,11 @@ export function validatePsdealsCycleManifest(manifestInput, options = {}) {
     monthly_complete: monthlyComplete,
     ended_deals_complete: endedDealsComplete,
     can_demote: canDemote,
-    can_mark_succeeded: criticalEvidenceValid && cycleGates.canMarkSucceeded,
-    can_certify: criticalEvidenceValid && cycleGates.canCertify,
-    can_refresh_cache: criticalEvidenceValid && cycleGates.canRefreshCache,
+    remote_receipt_contract_enforced: remoteReceipts.enforced,
+    remote_receipt_kinds: [...remoteReceipts.kinds].sort(),
+    can_mark_succeeded: criticalEvidenceValid && cycleGates.canMarkSucceeded && remoteReceipts.can_mark_succeeded,
+    can_certify: criticalEvidenceValid && cycleGates.canCertify && remoteReceipts.can_certify,
+    can_refresh_cache: criticalEvidenceValid && cycleGates.canRefreshCache && remoteReceipts.can_refresh_cache,
     reason_codes: [...new Set([...errors, ...warnings].map((entry) => entry.code))],
   }
 }

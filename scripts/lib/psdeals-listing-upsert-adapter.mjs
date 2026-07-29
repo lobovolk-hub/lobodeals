@@ -2,6 +2,10 @@ import {
   buildPsdealsListingInsertPayload,
   buildPsdealsListingUpdatePayload,
 } from './psdeals-stage-payload.mjs'
+import {
+  hashPsdealsOperationalRequest,
+  validatePsdealsRemoteActionReceipt,
+} from './psdeals-cycle-migration-contract.mjs'
 
 export const PSDEALS_STAGE_UPSERT_CONFLICT_TARGET =
   'region_code,storefront,psdeals_id'
@@ -168,7 +172,11 @@ function sameValue(expected, actual) {
 }
 
 function verifyBatchRows(batch, rows) {
-  const byId = new Map((Array.isArray(rows) ? rows : []).map((row) => [Number(row.psdeals_id), row]))
+  const byId = new Map(
+    (Array.isArray(rows) ? rows : [])
+      .filter((row) => row && typeof row === 'object')
+      .map((row) => [Number(row.psdeals_id), row])
+  )
   const matched = []
   const failed = []
   for (const expected of batch.rows) {
@@ -191,11 +199,14 @@ export async function executeReconciledPsdealsListingUpsert({
   listing_observed_at,
   batch_size,
   authorization_id,
+  receipt_context = null,
 } = {}, {
   select_existing_rows,
   upsert_batch,
   select_rows_for_verification,
   write_receipt,
+  begin_remote_action,
+  finish_remote_action,
 } = {}) {
   if (typeof select_existing_rows !== 'function' ||
       typeof upsert_batch !== 'function' ||
@@ -205,6 +216,19 @@ export async function executeReconciledPsdealsListingUpsert({
   }
   if (typeof authorization_id !== 'string' || !authorization_id.trim()) {
     return { status: 'awaiting_authorization', blockers: ['stage_upsert_authorization_missing'] }
+  }
+  const remoteReceiptsRequired = receipt_context?.required === true
+  if (remoteReceiptsRequired && (
+    typeof begin_remote_action !== 'function' ||
+    typeof finish_remote_action !== 'function' ||
+    typeof receipt_context?.remote_cycle_id !== 'string' ||
+    typeof receipt_context?.parent_receipt_id !== 'string' ||
+    typeof receipt_context?.listing_artifact_hash !== 'string' ||
+    typeof receipt_context?.idempotency_key_prefix !== 'string' ||
+    typeof receipt_context?.started_at !== 'string' ||
+    typeof receipt_context?.finished_at !== 'string'
+  )) {
+    return { status: 'awaiting_contract', blockers: ['listing_upsert_remote_receipt_contract_missing'] }
   }
   const ids = [...new Set((listing_items || []).map((item) => positiveInteger(item?.psdeals_id)).filter(Boolean))]
   const existingRows = await select_existing_rows(ids)
@@ -219,19 +243,114 @@ export async function executeReconciledPsdealsListingUpsert({
   })
   const batchResults = []
   for (const batch of prepared.batches) {
+    const idempotencyKey = remoteReceiptsRequired
+      ? `${receipt_context.idempotency_key_prefix}:${batch.batch_index}`
+      : null
+    const requestHash = remoteReceiptsRequired
+      ? hashPsdealsOperationalRequest({
+          cycle_id: receipt_context.remote_cycle_id,
+          parent_receipt_id: receipt_context.parent_receipt_id,
+          listing_artifact_hash: receipt_context.listing_artifact_hash,
+          batch_index: batch.batch_index,
+          operation: batch.operation,
+          columns: batch.columns,
+          rows: batch.rows,
+        })
+      : null
+    let remoteReceipt = null
+    if (remoteReceiptsRequired) {
+      remoteReceipt = await begin_remote_action({
+        p_cycle_id: receipt_context.remote_cycle_id,
+        p_parent_receipt_id: receipt_context.parent_receipt_id,
+        p_action_kind: 'listing_upsert_batch',
+        p_idempotency_key: idempotencyKey,
+        p_attempt: 1,
+        p_request_hash: requestHash,
+        p_input_artifact_hash: receipt_context.listing_artifact_hash,
+        p_started_at: receipt_context.started_at,
+      })
+      const validation = validatePsdealsRemoteActionReceipt(remoteReceipt, {
+        cycle_id: receipt_context.remote_cycle_id,
+        parent_receipt_id: receipt_context.parent_receipt_id,
+        action_kind: 'listing_upsert_batch',
+        idempotency_key: idempotencyKey,
+        request_hash: requestHash,
+        input_artifact_hash: receipt_context.listing_artifact_hash,
+      })
+      if (!validation.valid || ['failed', 'indeterminate'].includes(remoteReceipt?.status)) {
+        batchResults.push({
+          batch_index: batch.batch_index,
+          operation: batch.operation,
+          transport: 'blocked_by_remote_receipt',
+          transport_error: validation.errors.join(',') || remoteReceipt?.error_code || 'remote_receipt_not_replayable',
+          matched_ids: [],
+          failed_rows: batch.rows.map((row) => ({ psdeals_id: row.psdeals_id, reason: 'remote_receipt_blocked' })),
+          remote_receipt: remoteReceipt,
+          reconciled_after_ambiguous_transport: false,
+        })
+        continue
+      }
+    }
     let transport = 'succeeded'
     let transportError = null
-    try {
-      await upsert_batch(batch)
-    } catch (error) {
-      transport = 'ambiguous'
-      transportError = error instanceof Error ? error.message : String(error)
+    let rows = []
+    let verification = { matched: [], failed: batch.rows.map((row) => ({ psdeals_id: row.psdeals_id, reason: 'not_checked' })) }
+    if (remoteReceiptsRequired) {
+      rows = await select_rows_for_verification(
+        batch.rows.map((row) => row.psdeals_id),
+        batch.columns
+      )
+      verification = verifyBatchRows(batch, rows)
     }
-    const rows = await select_rows_for_verification(
-      batch.rows.map((row) => row.psdeals_id),
-      batch.columns
-    )
-    const verification = verifyBatchRows(batch, rows)
+    const alreadyApplied = remoteReceiptsRequired && verification.failed.length === 0
+    if (remoteReceiptsRequired && remoteReceipt.status === 'committed' && !alreadyApplied) {
+      batchResults.push({
+        batch_index: batch.batch_index,
+        operation: batch.operation,
+        transport: 'blocked_by_committed_receipt_postcondition_mismatch',
+        transport_error: 'committed_remote_receipt_no_longer_matches_stage_rows',
+        matched_ids: verification.matched,
+        failed_rows: verification.failed,
+        remote_receipt: remoteReceipt,
+        reconciled_after_ambiguous_transport: false,
+      })
+      continue
+    }
+    if (!alreadyApplied) {
+      try {
+        await upsert_batch(batch)
+      } catch (error) {
+        transport = 'ambiguous'
+        transportError = error instanceof Error ? error.message : String(error)
+      }
+      rows = await select_rows_for_verification(
+        batch.rows.map((row) => row.psdeals_id),
+        batch.columns
+      )
+      verification = verifyBatchRows(batch, rows)
+    } else {
+      transport = remoteReceipt?.status === 'committed'
+        ? 'reconciled_from_committed_receipt'
+        : 'reconciled_before_retry'
+    }
+    if (remoteReceiptsRequired && remoteReceipt.status !== 'committed') {
+      remoteReceipt = await finish_remote_action({
+        p_receipt_id: remoteReceipt.id,
+        p_cycle_id: receipt_context.remote_cycle_id,
+        p_idempotency_key: idempotencyKey,
+        p_request_hash: requestHash,
+        p_status: verification.failed.length === 0 ? 'committed' : 'failed',
+        p_finished_at: receipt_context.finished_at,
+        p_affected_rows: verification.matched.length,
+        p_result: {
+          batch_index: batch.batch_index,
+          attempted: batch.rows.length,
+          failed: verification.failed.length,
+          skipped: 0,
+        },
+        p_error_code: verification.failed.length === 0 ? null : 'LISTING_UPSERT_POSTCONDITION_FAILED',
+      })
+    }
     batchResults.push({
       batch_index: batch.batch_index,
       operation: batch.operation,
@@ -239,6 +358,7 @@ export async function executeReconciledPsdealsListingUpsert({
       transport_error: transportError,
       matched_ids: verification.matched,
       failed_rows: verification.failed,
+      remote_receipt: remoteReceipt,
       reconciled_after_ambiguous_transport:
         transport === 'ambiguous' && verification.failed.length === 0,
     })
@@ -277,5 +397,6 @@ export async function executeReconciledPsdealsListingUpsert({
     omitted: prepared.omitted,
     batches: batchResults,
     receipt,
+    remote_receipts: batchResults.map((batch) => batch.remote_receipt).filter(Boolean),
   }
 }

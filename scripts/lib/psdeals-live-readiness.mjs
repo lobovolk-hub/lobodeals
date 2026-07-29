@@ -11,6 +11,9 @@ export function evaluatePsdealsControlledLiveReadiness({
 } = {}) {
   const blockers = []
   if (!preflight?.valid || !preflight?.read_only_verified) blockers.push('remote_preflight_invalid_or_not_read_only')
+  if (!['MIGRATION_READY', 'LIVE_CYCLE_READY'].includes(preflight?.migration_status)) {
+    blockers.push('cycle_migration_not_ready')
+  }
   blockers.push(...(preflight?.blockers || []).map((entry) => entry.code))
   if (!lifecycle_contracts?.mark_succeeded?.ready) blockers.push('mark_succeeded_contract_not_ready')
   if (!lifecycle_contracts?.certify?.ready) blockers.push('certification_contract_not_ready')
@@ -25,7 +28,7 @@ export function evaluatePsdealsControlledLiveReadiness({
   return {
     readiness_version: 1,
     classification: uniqueBlockers.length === 0
-      ? 'READY_FOR_CONTROLLED_LIVE_CYCLE'
+      ? 'LIVE_CYCLE_READY'
       : preflight?.valid
         ? 'NOT_READY'
         : 'INDETERMINATE',
@@ -33,15 +36,15 @@ export function evaluatePsdealsControlledLiveReadiness({
     blockers: uniqueBlockers,
     required_future_authorizations: Object.values(PSDEALS_OPERATIONAL_STAGE_PERMISSIONS),
     future_external_effects: [
-      'create one remote price_refresh_cycles row',
+      'create or reconcile one remote price_refresh_cycles row through create_or_reconcile_price_refresh_cycle_v1',
       'open Edge and read PSDeals listing pages',
       'upsert safe listing-owned fields in psdeals_stage_items',
       'read and update selected detail rows and psdeals_import_runs',
-      'record an authorized monthly-games review',
-      'apply exact ended-deal demotions only if separately authorized',
-      'mark one cycle succeeded',
-      'invoke certify_price_refresh_cycle(uuid) once',
-      'invoke refresh_catalog_public_cache_v15() once',
+      'record an authorized monthly-games review receipt without changing monthly rows',
+      'apply one exact bounded ended-deal set through apply_psdeals_ended_deals_v1',
+      'mark one cycle succeeded through the receipt-bound v1 transition',
+      'invoke certify_price_refresh_cycle_v2 once',
+      'invoke refresh_catalog_public_cache_v16 once',
       'read public LoboDeals pages for validation',
     ],
     stop_conditions: [

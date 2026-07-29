@@ -103,7 +103,7 @@ Bloque 3 — Retirar consumo del historial y crear mínimos compactos:
 infraestructura aplicada; eliminación física del historial pendiente.
 
 Bloque 4 — Actualizador diario de precios:
-auditoría avanzada; existen correcciones locales del parser PS Plus y priorización acotada de su revalidación, pero el runner diario certificado todavía no está implementado.
+auditoría avanzada; existen correcciones locales del parser PS Plus, normalización comercial compartida y colas fast refresh endurecidas, pero el runner diario certificado todavía no está implementado.
 
 Bloque 5 — Automatización de Windows: pendiente.
 
@@ -122,6 +122,15 @@ La reactivación inicial de catálogo y ofertas no necesita esperar comunidad, r
 ## 5. Estado Git
 
 Commits principales:
+
+- 44b63f595ac14341525d9e90b3cc2c0ef138269a
+  Harden fast refresh queue selection
+
+- 29bea5ff0ccd7481f9fccd35966cb0326544d40c
+  Normalize PSDeals commercial price state
+
+- e3a5565e69ed69e8c939db06a99aa5ddf97feaf0
+  Update LoboDeals operational continuity
 
 - ce10408011213627ac9287b97299c0a6bcdfd267
   Prioritize capped PS Plus revalidation
@@ -149,15 +158,15 @@ Commits principales:
 
 HEAD técnico local confirmado antes de esta actualización documental:
 
-ce10408011213627ac9287b97299c0a6bcdfd267
+44b63f595ac14341525d9e90b3cc2c0ef138269a
 
 origin/main confirmado:
 
 4f826ac873850d3e61ceb68721512099625f1515
 
-La rama local main está dos commits por delante y cero por detrás de origin/main.
+La rama local main está cinco commits por delante y cero por detrás de origin/main.
 
-Los commits 05b23fb1f8f9abe06357d70a9e1b8f94d68429f1 y ce10408011213627ac9287b97299c0a6bcdfd267 todavía no se han enviado.
+Los cinco commits locales posteriores a origin/main todavía no se han enviado.
 
 ## 6. Producción
 
@@ -366,7 +375,7 @@ Un candidato PS Plus requiere:
 
 En el HEAD técnico local, el parser toma el precio PS Plus actual del buy box, conserva el dato del gráfico solo como referencia histórica y exige que el precio PS Plus sea positivo y menor al precio actual para marcar el descuento.
 
-El analizador fast refresh también prioriza, dentro del límite de rotación, una cantidad acotada y configurable de filas ya marcadas con descuento PS Plus para revalidarlas.
+El analizador fast refresh también prioriza una cola acotada y configurable de filas ya marcadas con descuento PS Plus. Su límite es independiente del límite de rotación stale.
 
 Estas correcciones todavía no convierten el parser PS Plus en suficientemente confiable: falta validación operativa y el runner certificado no está integrado.
 
@@ -418,6 +427,8 @@ Campos recopilados:
 - current_price_amount
 - original_price_amount
 - discount_percent
+- discount_percent_normalized
+- commercial_state
 - image_url
 - source_page_url
 
@@ -465,11 +476,15 @@ PSDeals representa el porcentaje visualmente con signo negativo.
 
 La tabla solo admite valores entre 0 y 100.
 
-Regla propuesta todavía no implementada:
+Regla implementada localmente en el commit 29bea5ff0ccd7481f9fccd35966cb0326544d40c:
 
 discount_percent_normalized = abs(discount_percent_source)
 
-Antes de aceptar un descuento también debe comprobarse:
+El porcentaje fuente con signo se conserva y los descuentos regulares de 1 a 99 solo se aceptan cuando coinciden exactamente con:
+
+round(100 × (original - actual) / original)
+
+También se comprueba:
 
 - entero;
 - rango válido;
@@ -478,11 +493,26 @@ Antes de aceptar un descuento también debe comprobarse:
 - original mayor al actual;
 - coherencia entre porcentaje y precios.
 
-Los descuentos -100 requieren tratamiento especial.
+Los descuentos -100 se clasifican aparte. Nunca son descuentos regulares certificables:
+
+- actual igual a cero y original positivo: candidato a promoción gratuita temporal;
+- actual ausente: ambiguo y requiere detalle;
+- actual positivo: extremo;
+- ratio superior a 20: no certificable.
 
 Nunca deben crear automáticamente un mínimo de cero.
 
-Este es el siguiente punto técnico pendiente.
+La repetición offline sobre el JSON local de junio produjo:
+
+- 5,310 descuentos regulares coherentes;
+- 5,174 elegibles para certificación por ratio;
+- 136 regulares coherentes que superan el ratio 20 y requieren revalidación;
+- 162 descuentos completos ambiguos por precio actual ausente;
+- 16 descuentos completos extremos con precio actual positivo;
+- 43 tuplas ambiguas sin porcentaje;
+- 357 filas seleccionables para revalidación de detalle por seguridad comercial.
+
+El harness offline importa las funciones usadas por producción y pasa 29 de 29 pruebas. También pasan node --check, el análisis sintáctico PowerShell, ESLint sin errores y git diff --check. El build se omitió porque el prerender actual consulta Supabase.
 
 ## 19. Plataformas reales observadas
 
@@ -604,17 +634,19 @@ No es un updater de precios aislado.
 Problemas pendientes:
 
 - upsert amplio;
-- puede escribir null;
+- todavía puede escribir null en campos amplios de detalle ajenos al estado comercial;
 - puede reemplazar relaciones;
 - continúa después de fallos individuales;
 - partial o failed puede no producir exit code no cero;
 - no integra price_refresh_cycles;
 - no certifica;
-- PS Plus puede ser ambiguo.
+- PS Plus requiere validación operativa.
 
 En HEAD ya no escribe historial detallado.
 
-El commit local 05b23fb1f8f9abe06357d70a9e1b8f94d68429f1 corrigió la detección del precio PS Plus actual, pero no resolvió los demás problemas de este importador.
+El commit local 05b23fb1f8f9abe06357d70a9e1b8f94d68429f1 corrigió la detección del precio PS Plus actual.
+
+El commit local 29bea5ff0ccd7481f9fccd35966cb0326544d40c añadió un payload comercial parcial: una tupla insegura omite precios, porcentaje, fin de oferta, señal PS Plus y disponibilidad, preservando los valores existentes en vez de escribir null. También dejó de inferir free-to-play permanente solamente porque el precio actual sea cero.
 
 No debe reutilizarse sin adaptaciones como runner diario definitivo.
 
@@ -697,10 +729,10 @@ La reactivación operativa puede refrescar catálogo y ofertas sin desbloquear e
 
 ## 28. Qué falta para reactivar catálogo y ofertas
 
-Faltan principalmente:
+Estado de los hitos principales:
 
-1. normalización del descuento negativo;
-2. tratamiento de -100%;
+1. normalización del descuento negativo: cerrada localmente y validada offline;
+2. tratamiento de -100%: cerrado localmente y validado offline;
 3. mapeo de tipos;
 4. reglas de plataformas;
 5. PS Plus mensual;
@@ -713,34 +745,59 @@ Faltan principalmente:
 12. validación de /catalog y /deals;
 13. automatización y alertas.
 
-La auditoría del Bloque 4 está aproximadamente en 70–80%.
-
-Los commits locales 05b23fb1f8f9abe06357d70a9e1b8f94d68429f1 y ce10408011213627ac9287b97299c0a6bcdfd267 avanzan la detección y revalidación de PS Plus, sin cerrar ninguno de los pasos operativos 6 a 13 de esta lista.
+Los pasos 1 y 2 no se han ejecutado contra datos reales ni desplegado. Los pasos 3 a 13 siguen abiertos.
 
 ## 29. Siguiente punto exacto
 
-Continuar en modo de solo lectura.
+Cerrar el mapeo explícito de tipos reales de PSDeals hacia los valores aceptados por la tabla, con función pura y pruebas offline. Después deben cerrarse las reglas de plataformas y el payload parcial del listado antes de implementar el runner certificado.
 
-Auditar la coherencia real entre:
+## 30. Gap audit del runner diario certificado
 
-- discount_percent negativo;
-- current_price_amount;
-- original_price_amount;
-- ofertas -100%;
-- precios actuales iguales a cero;
-- precios originales nulos;
-- porcentaje calculado desde precios;
-- comportamiento del analizador fast refresh.
+El runner actual conecta únicamente:
 
-Después:
+1. listado de descuentos por Edge live;
+2. analyzer fast refresh;
+3. colas obligatoria, PS Plus y stale;
+4. importación amplia de detalles;
+5. un retry extraído del log;
+6. impresión de instrucciones manuales para caché y validación.
 
-1. cerrar normalización;
-2. cerrar mapeo de tipos;
-3. definir payload parcial;
-4. diseñar runner;
-5. pedir autorización antes de escribir código.
+No están conectados:
 
-## 30. Acciones prohibidas sin nueva autorización
+- detección diaria y procesamiento semanal completo de nuevos productos;
+- validación fuerte de completitud del JSON antes de usarlo;
+- upsert parcial del listado con un timestamp único;
+- creación o actualización de price_refresh_cycles;
+- democión segura de ofertas terminadas;
+- comprobación de juegos mensuales PS Plus;
+- validación final del ciclo;
+- cambio controlado a succeeded o failed;
+- certify_price_refresh_cycle(uuid);
+- refresh_catalog_public_cache_v15();
+- validación posterior de catálogo, ofertas y métricas.
+
+Solo existen en SQL local price_refresh_cycles y certify_price_refresh_cycle(uuid). La función exige succeeded, finished_at, validación aprobada, cero fallos, failure_reason nulo, cuatro timestamps de etapa dentro del ciclo y coincidencia exacta entre items_seen y las filas marcadas con listing_last_seen_at. Usa advisory lock y actualiza mínimos de forma atómica.
+
+La definición de refresh_catalog_public_cache_v15() no está versionada en sql/. Solo existen invocadores y las instrucciones manuales del runner.
+
+El importer registra psdeals_import_runs, no price_refresh_cycles. Un resultado partial puede terminar con exit code cero; el runner intenta un retry, pero no verifica fallos remanentes ni bloquea el paso manual de caché.
+
+Los scripts de ofertas terminadas existen separados. El analyzer no valida por sí mismo la completitud fuerte del listado y el demoter requiere --apply=YES_I_UNDERSTAND para escribir.
+
+No existe ningún script que lea o actualice ps_plus_monthly_games durante el ciclo. La certificación solo excluye juegos mensuales ya presentes y activos.
+
+Puede implementarse localmente sin SQL ni escrituras remotas:
+
+- mapeo explícito de tipos y plataformas;
+- builder puro del payload parcial de listado;
+- validador offline de completitud y manifiesto de ciclo;
+- planificador dry-run del orden de etapas;
+- contrato de exit code no cero ante fallos remanentes;
+- pruebas de que un ciclo incompleto nunca alcanza certificación o caché.
+
+El siguiente cambio local concreto sigue siendo el mapeo de tipos. El primer cambio específico del runner, después de cerrar tipos, plataformas y payload, debe ser el validador offline de manifiesto/completitud.
+
+## 31. Acciones prohibidas sin nueva autorización
 
 No ejecutar:
 

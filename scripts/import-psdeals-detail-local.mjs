@@ -11,6 +11,7 @@ import {
   classifyPsdealsItemType,
   normalizePsdealsPlatforms,
 } from './lib/psdeals-item-classification.mjs'
+import { buildPsdealsDetailUpsertPayload } from './lib/psdeals-stage-payload.mjs'
 
 function nowIso() {
   return new Date().toISOString()
@@ -573,9 +574,7 @@ export function parsePage(html, url) {
     whats_inside_lines: whatsInsideLines,
     is_free_to_play: isFreeToPlay,
     availability_state: availabilityState,
-    listing_last_seen_at: null,
     detail_last_synced_at: nowIso(),
-    raw_listing_json: null,
     raw_detail_json: {
   fetched_url: url,
   imported_at: nowIso(),
@@ -612,30 +611,6 @@ export function buildCommercialUpsertPayload(parsed) {
 
   if (parsed.availability_state) {
     payload.availability_state = parsed.availability_state
-  }
-
-  return payload
-}
-
-export function buildClassificationUpsertPayload(parsed, options = {}) {
-  const isExisting = options.isExisting === true
-  const payload = {}
-  const typeClassification = parsed?.type_classification
-  const platformClassification = parsed?.platform_classification
-
-  if (
-    typeClassification?.can_write &&
-    (!isExisting || typeClassification.can_replace_existing)
-  ) {
-    payload.content_type = typeClassification.content_type
-    payload.item_type_label = typeClassification.item_type_label
-  }
-
-  if (
-    platformClassification?.can_write &&
-    (!isExisting || platformClassification.can_replace_existing)
-  ) {
-    payload.platforms = [...platformClassification.target_platforms]
   }
 
   return payload
@@ -1160,8 +1135,6 @@ try {
           ? await fetchHtmlWithEdgeLive(edgeLiveSession, url, timeoutMs, debugHtmlDir)
           : await fetchHtmlWithPlaywright(context, url, timeoutMs, debugHtmlDir)
       const parsed = parsePage(fetched.html, url)
-      const commercialUpsertPayload = buildCommercialUpsertPayload(parsed)
-
       const { data: existing, error: existingError } = await admin
         .from('psdeals_stage_items')
         .select('id')
@@ -1174,47 +1147,23 @@ try {
         throw existingError
       }
 
-      const classificationUpsertPayload = buildClassificationUpsertPayload(
-        parsed,
-        { isExisting: Boolean(existing?.id) }
-      )
-      const upsertPayload = {
-        region_code: 'us',
-        storefront: 'playstation',
-        psdeals_id: parsed.psdeals_id,
-        psdeals_slug: parsed.psdeals_slug,
-        psdeals_url: parsed.psdeals_url,
-        title: parsed.title,
-        ...classificationUpsertPayload,
-        store_url: parsed.store_url,
-        store_url_kind: parsed.store_url_kind,
-        ps_store_primary_id: parsed.ps_store_primary_id,
-        image_url: parsed.image_url,
-        description: parsed.description,
-        publisher: parsed.publisher,
-        genres: parsed.genres,
-        release_date: parsed.release_date,
-        ...commercialUpsertPayload,
-        currency_code: parsed.currency_code,
-        lowest_price_amount: parsed.lowest_price_amount,
-        lowest_ps_plus_price_amount: parsed.lowest_ps_plus_price_amount,
-        metacritic_score: parsed.metacritic_score,
-        metacritic_user_score: parsed.metacritic_user_score,
-        metacritic_reviews_count: parsed.metacritic_reviews_count,
-        playstation_rating: parsed.playstation_rating,
-        playstation_ratings_count: parsed.playstation_ratings_count,
-        all_add_ons_url: parsed.all_add_ons_url,
-        whats_inside_lines: parsed.whats_inside_lines,
-        detail_last_synced_at: parsed.detail_last_synced_at,
-        raw_detail_json: {
-          ...parsed.raw_detail_json,
+      const detailPayloadResult = buildPsdealsDetailUpsertPayload(parsed, {
+        isExisting: Boolean(existing?.id),
+        rawDetailMetadata: {
           http_status: fetched.status,
           page_title: fetched.title,
           final_url: fetched.finalUrl,
           debug_html_path: fetched.debugHtmlPath,
         },
-        source_note: parsed.source_note,
+      })
+
+      if (!detailPayloadResult.is_valid) {
+        throw new Error(
+          `Unsafe detail payload: ${detailPayloadResult.reason_codes.join(', ')}`
+        )
       }
+
+      const upsertPayload = detailPayloadResult.payload
 
       const { data: stagedItem, error: upsertError } = await admin
         .from('psdeals_stage_items')

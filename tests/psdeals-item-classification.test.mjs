@@ -3,15 +3,13 @@ import assert from 'node:assert/strict'
 
 import { summarizePsdealsListingSnapshot } from '../scripts/audit-psdeals-listing-classification-local.mjs'
 import { buildCollectedListingItem } from '../scripts/collect-psdeals-listing-edge-live-cdp.mjs'
-import {
-  buildClassificationUpsertPayload,
-  parsePage,
-} from '../scripts/import-psdeals-detail-local.mjs'
+import { parsePage } from '../scripts/import-psdeals-detail-local.mjs'
 import {
   classifyPsdealsItemType,
   normalizePsdealsPlatforms,
 } from '../scripts/lib/psdeals-item-classification.mjs'
 import { classifyFastRefreshItem } from '../scripts/lib/psdeals-fast-refresh.mjs'
+import { buildPsdealsDetailUpsertPayload } from '../scripts/lib/psdeals-stage-payload.mjs'
 
 const GAME_LABELS = ['Full Game', 'VR Game', 'PSN Game', 'Game Content']
 const ADDON_LABELS = [
@@ -206,7 +204,7 @@ test('collector preserves raw labels and attaches both classifications', () => {
   assert.deepEqual(item.platform_classification.legacy_platforms, ['PS Vita'])
 })
 
-test('importer uses shared classifications and omits unsafe replacements', () => {
+test('importer uses shared classifications while detail preserves listing ownership', () => {
   const parsedGame = parsePage(
     detailHtml({ type: 'game', platform: 'PS5 / PS4 / PS Vita' }),
     'https://psdeals.net/us-store/game/12345/classification-fixture'
@@ -217,17 +215,24 @@ test('importer uses shared classifications and omits unsafe replacements', () =>
   )
 
   assert.equal(parsedGame.raw_detail_json.type_classification.source_label, 'game')
-  assert.deepEqual(buildClassificationUpsertPayload(parsedGame, { isExisting: true }), {})
-  assert.deepEqual(buildClassificationUpsertPayload(parsedGame, { isExisting: false }), {
-    content_type: 'game',
-    item_type_label: 'game',
-    platforms: ['PS5', 'PS4'],
-  })
-  assert.deepEqual(buildClassificationUpsertPayload(parsedAddon, { isExisting: true }), {
-    content_type: 'dlc',
-    item_type_label: 'addon',
-    platforms: ['PS5', 'PS4'],
-  })
+  const existingGame = buildPsdealsDetailUpsertPayload(parsedGame, {
+    isExisting: true,
+  }).payload
+  const newGame = buildPsdealsDetailUpsertPayload(parsedGame, {
+    isExisting: false,
+  }).payload
+  const existingAddon = buildPsdealsDetailUpsertPayload(parsedAddon, {
+    isExisting: true,
+  }).payload
+
+  for (const payload of [existingGame, existingAddon]) {
+    assert.equal('content_type' in payload, false)
+    assert.equal('item_type_label' in payload, false)
+    assert.equal('platforms' in payload, false)
+  }
+  assert.equal(newGame.content_type, 'game')
+  assert.equal(newGame.item_type_label, 'game')
+  assert.deepEqual(newGame.platforms, ['PS5', 'PS4'])
 })
 
 test('local snapshot summary preserves unknowns and legacy evidence as metrics', () => {

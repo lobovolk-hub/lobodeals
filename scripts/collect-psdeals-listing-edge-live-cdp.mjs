@@ -2,6 +2,10 @@ import fs from 'node:fs/promises'
 import path from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { normalizePsdealsCommercialState } from './lib/psdeals-commercial-state.mjs'
+import {
+  classifyPsdealsItemType,
+  normalizePsdealsPlatforms,
+} from './lib/psdeals-item-classification.mjs'
 
 function getArgValue(name) {
   const prefix = `--${name}=`
@@ -72,41 +76,6 @@ function deriveSlugFromUrl(url) {
 
 function derivePsdealsIdFromUrl(url) {
   return parseInteger(url.match(/\/game\/(\d+)(?:\/|$)/i)?.[1] || null)
-}
-
-function splitPlatformTokens(platformLabel) {
-  const normalized = String(platformLabel || '')
-    .toUpperCase()
-    .replace(/\s+/g, ' ')
-    .trim()
-
-  if (!normalized) return []
-
-  return normalized
-    .split('/')
-    .map((token) => token.trim())
-    .filter(Boolean)
-}
-
-function derivePlatformScopeStatus(platformLabel) {
-  const tokens = splitPlatformTokens(platformLabel)
-  if (tokens.length === 0) return 'unknown_platform_label'
-
-  const allowed = new Set(['PS4', 'PS5'])
-  return tokens.some((token) => !allowed.has(token))
-    ? 'listed_with_non_target_platform_tokens'
-    : 'listed_only_ps4_ps5_tokens'
-}
-
-function deriveCanonicalContentFamily(typeLabel) {
-  const normalized = String(typeLabel || '').toLowerCase().trim()
-
-  if (!normalized) return 'unknown'
-  if (normalized === 'full game') return 'game'
-  if (normalized === 'bundle') return 'bundle'
-  if (normalized === 'demo') return 'other'
-
-  return 'dlc'
 }
 
 function isAncillaryDlcSubtype(typeLabel) {
@@ -475,6 +444,12 @@ export function buildCollectedListingItem(item, pageUrl) {
   const psdealsUrl = toUrlString(item.href, pageUrl)
   const platformLabel = cleanText(item.platformLabel) || null
   const typeLabel = cleanText(item.typeLabel) || null
+  const typeClassification = classifyPsdealsItemType(typeLabel, {
+    sourceContext: 'listing',
+  })
+  const platformClassification = normalizePsdealsPlatforms(platformLabel, {
+    sourceContext: 'listing',
+  })
   const currentPriceSource =
     item.discountPriceText || item.regularPriceText || null
   const commercialState = normalizePsdealsCommercialState({
@@ -492,10 +467,17 @@ export function buildCollectedListingItem(item, pageUrl) {
     psdeals_url: psdealsUrl,
     title: cleanText(item.title),
     platform_label: platformLabel,
-    platform_tokens: splitPlatformTokens(platformLabel),
+    platform_tokens: platformClassification.source_tokens,
     type_label: typeLabel,
-    canonical_content_family: deriveCanonicalContentFamily(typeLabel),
-    platform_scope_status: derivePlatformScopeStatus(platformLabel),
+    canonical_content_family: typeClassification.content_type || 'unknown',
+    platform_scope_status:
+      platformClassification.classification === 'target_only'
+        ? 'listed_only_ps4_ps5_tokens'
+        : platformClassification.classification === 'missing'
+          ? 'unknown_platform_label'
+          : 'listed_with_non_target_platform_tokens',
+    type_classification: typeClassification,
+    platform_classification: platformClassification,
     listed_in_psdeals_scope: true,
     is_ancillary_dlc_subtype: isAncillaryDlcSubtype(typeLabel),
     current_price_amount: commercialState.current_price_amount,

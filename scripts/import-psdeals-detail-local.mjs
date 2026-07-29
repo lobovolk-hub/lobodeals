@@ -7,6 +7,10 @@ import {
   normalizePsdealsCommercialState,
   parsePsdealsPriceSignal,
 } from './lib/psdeals-commercial-state.mjs'
+import {
+  classifyPsdealsItemType,
+  normalizePsdealsPlatforms,
+} from './lib/psdeals-item-classification.mjs'
 
 function nowIso() {
   return new Date().toISOString()
@@ -173,36 +177,6 @@ function deriveAvailabilityState(currentPriceAmount, title, commercialState) {
   if (/demo|trial/i.test(title || '')) return 'demo'
   if (currentPriceAmount == null) return 'tba'
   return 'priced'
-}
-
-function derivePlatforms(platformLabel) {
-  const value = String(platformLabel || '').toUpperCase()
-  const platforms = []
-
-  if (value.includes('PS4')) platforms.push('PS4')
-  if (value.includes('PS5')) platforms.push('PS5')
-
-  return platforms
-}
-
-function deriveContentType(itemType, title, pageHtml) {
-  const normalized = String(itemType || '').toLowerCase()
-  const titleText = String(title || '').toLowerCase()
-
-  if (normalized.includes('bundle')) return 'bundle'
-  if (normalized.includes('season')) return 'season_pass'
-  if (normalized.includes('currency')) return 'currency'
-  if (normalized.includes('demo')) return 'demo'
-  if (normalized.includes('add-on') || normalized.includes('add on')) return 'add_on'
-  if (normalized.includes('dlc')) return 'dlc'
-
-  if (/add-ons \(dlc\)/i.test(pageHtml)) {
-    if (/dlc|add-on|add on|season pass/.test(titleText)) {
-      return 'dlc'
-    }
-  }
-
-  return 'game'
 }
 
 function parseDescription(html) {
@@ -429,6 +403,12 @@ export function parsePage(html, url) {
   const itemType =
     extractFirst(html, /var item_type="([^"]*)";/i) ||
     extractFirst(html, /<div class="game-title-info-type[^"]*"><span>([\s\S]*?)<\/span><\/div>/i)
+  const typeClassification = classifyPsdealsItemType(itemType, {
+    sourceContext: 'detail',
+  })
+  const platformClassification = normalizePsdealsPlatforms(platformLabel, {
+    sourceContext: 'detail',
+  })
 
   const storeUrl = extractFirst(html, /<a class="game-buy-button-href"[^>]*href="([^"]+)"/i)
   const priceSignals = parseCurrentPriceFromBuyBox(html)
@@ -564,9 +544,11 @@ export function parsePage(html, url) {
     psdeals_slug: psdealsSlug,
     psdeals_url: url,
     title: stripTags(title),
-    platforms: derivePlatforms(platformLabel),
-    content_type: deriveContentType(itemType, title, html),
-    item_type_label: itemType ? stripTags(itemType) : null,
+    platforms: platformClassification.target_platforms,
+    content_type: typeClassification.content_type,
+    item_type_label: typeClassification.item_type_label,
+    type_classification: typeClassification,
+    platform_classification: platformClassification,
     store_url: storeUrl,
     store_url_kind: deriveStoreUrlKind(storeUrl),
     ps_store_primary_id: derivePsStorePrimaryId(storeUrl),
@@ -603,6 +585,8 @@ export function parsePage(html, url) {
   current_ps_plus_buy_box_price_amount: currentPsPlusBuyBoxPriceAmount,
   latest_chart_bonus_price_amount: latestChartBonusPriceAmount,
   commercial_state: commercialState,
+  type_classification: typeClassification,
+  platform_classification: platformClassification,
   fetch_mode: 'playwright',
 },
     source_note: 'psdeals_detail_import_local',
@@ -628,6 +612,30 @@ export function buildCommercialUpsertPayload(parsed) {
 
   if (parsed.availability_state) {
     payload.availability_state = parsed.availability_state
+  }
+
+  return payload
+}
+
+export function buildClassificationUpsertPayload(parsed, options = {}) {
+  const isExisting = options.isExisting === true
+  const payload = {}
+  const typeClassification = parsed?.type_classification
+  const platformClassification = parsed?.platform_classification
+
+  if (
+    typeClassification?.can_write &&
+    (!isExisting || typeClassification.can_replace_existing)
+  ) {
+    payload.content_type = typeClassification.content_type
+    payload.item_type_label = typeClassification.item_type_label
+  }
+
+  if (
+    platformClassification?.can_write &&
+    (!isExisting || platformClassification.can_replace_existing)
+  ) {
+    payload.platforms = [...platformClassification.target_platforms]
   }
 
   return payload
@@ -1154,6 +1162,22 @@ try {
       const parsed = parsePage(fetched.html, url)
       const commercialUpsertPayload = buildCommercialUpsertPayload(parsed)
 
+      const { data: existing, error: existingError } = await admin
+        .from('psdeals_stage_items')
+        .select('id')
+        .eq('region_code', 'us')
+        .eq('storefront', 'playstation')
+        .eq('psdeals_id', parsed.psdeals_id)
+        .maybeSingle()
+
+      if (existingError) {
+        throw existingError
+      }
+
+      const classificationUpsertPayload = buildClassificationUpsertPayload(
+        parsed,
+        { isExisting: Boolean(existing?.id) }
+      )
       const upsertPayload = {
         region_code: 'us',
         storefront: 'playstation',
@@ -1161,9 +1185,7 @@ try {
         psdeals_slug: parsed.psdeals_slug,
         psdeals_url: parsed.psdeals_url,
         title: parsed.title,
-        platforms: parsed.platforms,
-        content_type: parsed.content_type,
-        item_type_label: parsed.item_type_label,
+        ...classificationUpsertPayload,
         store_url: parsed.store_url,
         store_url_kind: parsed.store_url_kind,
         ps_store_primary_id: parsed.ps_store_primary_id,
@@ -1192,18 +1214,6 @@ try {
           debug_html_path: fetched.debugHtmlPath,
         },
         source_note: parsed.source_note,
-      }
-
-      const { data: existing, error: existingError } = await admin
-        .from('psdeals_stage_items')
-        .select('id')
-        .eq('region_code', 'us')
-        .eq('storefront', 'playstation')
-        .eq('psdeals_id', parsed.psdeals_id)
-        .maybeSingle()
-
-      if (existingError) {
-        throw existingError
       }
 
       const { data: stagedItem, error: upsertError } = await admin

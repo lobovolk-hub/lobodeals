@@ -115,6 +115,12 @@ function pushMissing(errors, path, label) {
   )
 }
 
+function expectedRunToken(identity) {
+  return isNonEmptyString(identity?.run_token)
+    ? identity.run_token
+    : identity?.local_cycle_id
+}
+
 function validateScope(section, path, identity, errors) {
   if (!isObject(section)) return
 
@@ -147,7 +153,7 @@ function validateScope(section, path, identity, errors) {
         'indeterminate'
       )
     )
-  } else if (section.run_token !== identity.local_cycle_id) {
+  } else if (section.run_token !== expectedRunToken(identity)) {
     errors.push(
       issue(
         'ARTIFACT_RUN_TOKEN_MISMATCH',
@@ -195,7 +201,7 @@ function validateArtifact(artifact, path, identity, errors) {
       )
     )
     valid = false
-  } else if (artifact.run_token !== identity.local_cycle_id) {
+  } else if (artifact.run_token !== expectedRunToken(identity)) {
     errors.push(
       issue(
         'ARTIFACT_RUN_TOKEN_MISMATCH',
@@ -494,7 +500,11 @@ export function evaluatePsdealsListingCompleteness(listingInput, identityInput, 
     validateArtifact(
       baseline.artifact,
       'listing.baseline.artifact',
-      { ...identity, local_cycle_id: baseline.run_token },
+      {
+        ...identity,
+        local_cycle_id: baseline.run_token,
+        run_token: baseline.run_token,
+      },
       errors
     )
     const baselinePlatforms = canonicalPlatforms(baseline.filters?.platforms)
@@ -1126,6 +1136,9 @@ export function validatePsdealsCycleManifest(manifestInput, options = {}) {
   if (!isNonEmptyString(identity.local_cycle_id)) {
     errors.push(issue('LOCAL_CYCLE_ID_MISSING', 'identity.local_cycle_id', 'Local cycle identifier is required.'))
   }
+  if (identity.run_token != null && !isNonEmptyString(identity.run_token)) {
+    errors.push(issue('RUN_TOKEN_INVALID', 'identity.run_token', 'Run token must be a non-empty opaque identifier.'))
+  }
   if (identity.region_code !== EXPECTED_REGION) {
     errors.push(issue('CYCLE_REGION_INVALID', 'identity.region_code', 'Only US cycles are supported.'))
   }
@@ -1295,6 +1308,7 @@ export function buildPsdealsCycleManifestFromListingArtifact(
         metadata.localCycleId ||
         `historical-${String(metadata.artifactName || 'listing').replace(/[^a-z0-9]+/gi, '-').replace(/^-|-$/g, '')}`,
       remote_cycle_id: null,
+      run_token: runToken,
       region_code: artifact.base_url?.includes('/us-store/') ? 'us' : null,
       storefront: artifact.base_url?.includes('psdeals.net') ? 'playstation' : null,
       started_at: null,

@@ -1,8 +1,8 @@
-import fs from 'node:fs/promises'
 import path from 'node:path'
 
 import {
   inspectPsdealsArtifact,
+  readPsdealsArtifact,
   verifyPsdealsArtifactReference,
   writePsdealsEvidenceJsonAtomic,
 } from './psdeals-evidence-io.mjs'
@@ -58,11 +58,26 @@ export function buildPsdealsRuntimeProducer(name, options) {
   }
 }
 
-export async function loadPsdealsEvidenceFile(filePath, { now } = {}) {
+export async function loadPsdealsEvidenceFile(
+  filePath,
+  { now, root_dir = process.cwd() } = {}
+) {
   const absolutePath = path.resolve(filePath)
-  const envelope = JSON.parse(await fs.readFile(absolutePath, 'utf8'))
+  const loadedArtifact = await readPsdealsArtifact({
+    root_dir,
+    file_path: absolutePath,
+    role: 'loaded_evidence',
+    artifact_kind: 'evidence_envelope',
+    final_state: 'final',
+  })
+  const envelope = JSON.parse(loadedArtifact.bytes.toString('utf8'))
   const validation = validatePsdealsProducerEvidence(envelope, { now })
-  return { absolute_path: absolutePath, envelope, validation }
+  return {
+    absolute_path: loadedArtifact.real_path,
+    source_artifact: loadedArtifact.reference,
+    envelope,
+    validation,
+  }
 }
 
 export async function requireLinkedPsdealsEvidence({
@@ -71,9 +86,10 @@ export async function requireLinkedPsdealsEvidence({
   local_cycle_id,
   run_token,
   now,
+  root_dir = process.cwd(),
 } = {}) {
   if (!evidence_path) throw new Error('PARENT_EVIDENCE_PATH_REQUIRED')
-  const loaded = await loadPsdealsEvidenceFile(evidence_path, { now })
+  const loaded = await loadPsdealsEvidenceFile(evidence_path, { now, root_dir })
   if (!loaded.validation.valid) throw new Error('PARENT_EVIDENCE_INVALID')
   if (loaded.envelope.evidence_kind !== expected_kind) {
     throw new Error('PARENT_EVIDENCE_KIND_MISMATCH')

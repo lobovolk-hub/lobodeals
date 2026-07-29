@@ -690,3 +690,67 @@ test('atomic evidence writer verifies bytes and refuses overwrite', async () => 
   )
   assert.deepEqual(temporaryFiles, [])
 })
+
+test('bounded writer rejects lexical traversal outside its root', async () => {
+  const root = await fs.mkdtemp(path.join(temporaryDirectory, 'bounded-root-'))
+  const outside = path.join(temporaryDirectory, 'outside.json')
+  await assert.rejects(
+    writePsdealsEvidenceJsonAtomic({
+      output_path: outside,
+      root_dir: root,
+      envelope: validListing(),
+    }),
+    /ARTIFACT_OUTPUT_OUTSIDE_ROOT/
+  )
+})
+
+test('realpath verification rejects an external junction or symlink', async (t) => {
+  const root = await fs.mkdtemp(path.join(temporaryDirectory, 'real-root-'))
+  const outside = await fs.mkdtemp(path.join(temporaryDirectory, 'real-outside-'))
+  const outsideFile = path.join(outside, 'outside.txt')
+  const link = path.join(root, 'linked-outside')
+  await fs.writeFile(outsideFile, 'external bytes', 'utf8')
+
+  try {
+    await fs.symlink(outside, link, process.platform === 'win32' ? 'junction' : 'dir')
+  } catch (error) {
+    if (error?.code === 'EPERM' || error?.code === 'EACCES') {
+      t.skip('Creating a symlink or junction is not permitted on this host.')
+      return
+    }
+    throw error
+  }
+
+  await assert.rejects(
+    inspectPsdealsArtifact({
+      root_dir: root,
+      file_path: path.join(link, 'outside.txt'),
+      role: 'external',
+      artifact_kind: 'text',
+    }),
+    /ARTIFACT_REALPATH_OUTSIDE_ROOT/
+  )
+
+  const verification = await verifyPsdealsArtifactReference(
+    buildPsdealsArtifactReference({
+      role: 'external',
+      path: 'linked-outside/outside.txt',
+      sha256: 'a'.repeat(64),
+      size_bytes: 14,
+      artifact_kind: 'text',
+      final_state: 'final',
+    }),
+    { root_dir: root }
+  )
+  assert.equal(verification.valid, false)
+  assert.equal(verification.code, 'ARTIFACT_REALPATH_OUTSIDE_ROOT')
+
+  await assert.rejects(
+    writePsdealsEvidenceJsonAtomic({
+      output_path: path.join(link, 'should-not-exist.json'),
+      root_dir: root,
+      envelope: validListing(),
+    }),
+    /ARTIFACT_OUTPUT_REALPATH_OUTSIDE_ROOT/
+  )
+})

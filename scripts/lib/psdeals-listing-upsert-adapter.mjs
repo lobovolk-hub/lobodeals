@@ -42,9 +42,20 @@ export function preparePsdealsListingUpsertBatches({
   const existing = new Set(existing_psdeals_ids.map(positiveInteger).filter(Boolean))
   const accepted = []
   const omitted = []
+  const seenIds = new Set()
 
   for (const [index, item] of listing_items.entries()) {
     const id = positiveInteger(item?.psdeals_id)
+    if (id && seenIds.has(id)) {
+      omitted.push({
+        index,
+        psdeals_id: id,
+        operation: existing.has(id) ? 'update' : 'insert',
+        reason_codes: ['duplicate_psdeals_id_in_listing'],
+      })
+      continue
+    }
+    if (id) seenIds.add(id)
     const operation = id && existing.has(id) ? 'update' : 'insert'
     const built = operation === 'update'
       ? buildPsdealsListingUpdatePayload(item, { listingObservedAt: listing_observed_at })
@@ -140,5 +151,131 @@ export async function executePreparedPsdealsListingBatches(
     failed,
     status: failed === 0 ? 'succeeded' : succeeded > 0 ? 'partial' : 'failed',
     batches: results,
+  }
+}
+
+function sameValue(expected, actual) {
+  if (typeof expected === 'number') return Number(actual) === expected
+  if (Array.isArray(expected)) {
+    return Array.isArray(actual) && expected.length === actual.length &&
+      expected.every((value, index) => sameValue(value, actual[index]))
+  }
+  if (expected && typeof expected === 'object') {
+    return actual && typeof actual === 'object' &&
+      JSON.stringify(expected) === JSON.stringify(actual)
+  }
+  return actual === expected
+}
+
+function verifyBatchRows(batch, rows) {
+  const byId = new Map((Array.isArray(rows) ? rows : []).map((row) => [Number(row.psdeals_id), row]))
+  const matched = []
+  const failed = []
+  for (const expected of batch.rows) {
+    const id = Number(expected.psdeals_id)
+    const actual = byId.get(id)
+    const mismatched = Object.entries(expected)
+      .filter(([column, value]) => !sameValue(value, actual?.[column]))
+      .map(([column]) => column)
+    if (!actual || mismatched.length > 0) {
+      failed.push({ psdeals_id: id, reason: actual ? 'postcondition_mismatch' : 'row_missing', columns: mismatched })
+    } else {
+      matched.push(id)
+    }
+  }
+  return { matched, failed }
+}
+
+export async function executeReconciledPsdealsListingUpsert({
+  listing_items,
+  listing_observed_at,
+  batch_size,
+  authorization_id,
+} = {}, {
+  select_existing_rows,
+  upsert_batch,
+  select_rows_for_verification,
+  write_receipt,
+} = {}) {
+  if (typeof select_existing_rows !== 'function' ||
+      typeof upsert_batch !== 'function' ||
+      typeof select_rows_for_verification !== 'function' ||
+      typeof write_receipt !== 'function') {
+    throw new Error('RECONCILED_UPSERT_PORT_INCOMPLETE')
+  }
+  if (typeof authorization_id !== 'string' || !authorization_id.trim()) {
+    return { status: 'awaiting_authorization', blockers: ['stage_upsert_authorization_missing'] }
+  }
+  const ids = [...new Set((listing_items || []).map((item) => positiveInteger(item?.psdeals_id)).filter(Boolean))]
+  const existingRows = await select_existing_rows(ids)
+  const existingIds = (Array.isArray(existingRows) ? existingRows : [])
+    .map((row) => positiveInteger(row?.psdeals_id))
+    .filter(Boolean)
+  const prepared = preparePsdealsListingUpsertBatches({
+    listing_items,
+    existing_psdeals_ids: existingIds,
+    listing_observed_at,
+    batch_size,
+  })
+  const batchResults = []
+  for (const batch of prepared.batches) {
+    let transport = 'succeeded'
+    let transportError = null
+    try {
+      await upsert_batch(batch)
+    } catch (error) {
+      transport = 'ambiguous'
+      transportError = error instanceof Error ? error.message : String(error)
+    }
+    const rows = await select_rows_for_verification(
+      batch.rows.map((row) => row.psdeals_id),
+      batch.columns
+    )
+    const verification = verifyBatchRows(batch, rows)
+    batchResults.push({
+      batch_index: batch.batch_index,
+      operation: batch.operation,
+      transport,
+      transport_error: transportError,
+      matched_ids: verification.matched,
+      failed_rows: verification.failed,
+      reconciled_after_ambiguous_transport:
+        transport === 'ambiguous' && verification.failed.length === 0,
+    })
+  }
+  const succeeded = batchResults.reduce((total, batch) => total + batch.matched_ids.length, 0)
+  const failed = batchResults.reduce((total, batch) => total + batch.failed_rows.length, 0)
+  const inserted = batchResults
+    .filter((batch) => batch.operation === 'insert')
+    .reduce((total, batch) => total + batch.matched_ids.length, 0)
+  const updated = batchResults
+    .filter((batch) => batch.operation === 'update')
+    .reduce((total, batch) => total + batch.matched_ids.length, 0)
+  const status = failed === 0 && prepared.omitted_count === 0
+    ? 'succeeded'
+    : succeeded > 0
+      ? 'partial'
+      : 'failed'
+  const receipt = await write_receipt({
+    action: 'upsert_listing',
+    authorization_id,
+    listing_observed_at,
+    attempted: prepared.attempted,
+    inserted,
+    updated,
+    skipped: prepared.omitted_count,
+    failed,
+    status,
+  })
+  return {
+    status,
+    attempted: prepared.attempted,
+    inserted,
+    updated,
+    skipped: prepared.omitted_count,
+    failed,
+    omitted: prepared.omitted,
+    batches: batchResults,
+    receipt,
   }
 }

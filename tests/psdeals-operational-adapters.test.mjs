@@ -3,6 +3,7 @@ import test from 'node:test'
 
 import {
   executePreparedPsdealsListingBatches,
+  executeReconciledPsdealsListingUpsert,
   preparePsdealsListingUpsertBatches,
   PSDEALS_STAGE_UPSERT_CONFLICT_TARGET,
 } from '../scripts/lib/psdeals-listing-upsert-adapter.mjs'
@@ -84,6 +85,93 @@ test('fake upsert port reports succeeded, partial, and failed batches structural
   assert.equal(result.status, 'partial')
   assert.equal(result.succeeded, 1)
   assert.equal(result.failed, 1)
+})
+
+test('reconciled listing upsert distinguishes inserts, updates, and exact postconditions', async () => {
+  const rows = new Map()
+  const result = await executeReconciledPsdealsListingUpsert({
+    listing_items: [item(1), item(2)],
+    listing_observed_at: '2026-07-29T21:30:00.000Z',
+    authorization_id: 'auth-stage-upsert-fixture',
+  }, {
+    select_existing_rows: async () => [{ psdeals_id: 2 }],
+    upsert_batch: async (batch) => {
+      for (const row of batch.rows) rows.set(row.psdeals_id, { ...row })
+      return batch.rows
+    },
+    select_rows_for_verification: async (ids) => ids.map((id) => rows.get(id)),
+    write_receipt: async (receipt) => receipt,
+  })
+  assert.equal(result.status, 'succeeded')
+  assert.equal(result.inserted, 1)
+  assert.equal(result.updated, 1)
+  assert.equal(result.failed, 0)
+})
+
+test('upsert timeout is reconciled from exact owned fields without automatic retry', async () => {
+  const rows = new Map()
+  let calls = 0
+  const result = await executeReconciledPsdealsListingUpsert({
+    listing_items: [item(1)],
+    listing_observed_at: '2026-07-29T21:30:00.000Z',
+    authorization_id: 'auth-stage-upsert-fixture',
+  }, {
+    select_existing_rows: async () => [],
+    upsert_batch: async (batch) => {
+      calls += 1
+      for (const row of batch.rows) rows.set(row.psdeals_id, { ...row })
+      throw new Error('SIMULATED_TIMEOUT_AFTER_COMMIT')
+    },
+    select_rows_for_verification: async (ids) => ids.map((id) => rows.get(id)),
+    write_receipt: async (receipt) => receipt,
+  })
+  assert.equal(result.status, 'succeeded')
+  assert.equal(result.batches[0].reconciled_after_ambiguous_transport, true)
+  assert.equal(calls, 1)
+})
+
+test('partial and concurrent postcondition mismatches remain observable', async () => {
+  const result = await executeReconciledPsdealsListingUpsert({
+    listing_items: [item(1), item(2)],
+    listing_observed_at: '2026-07-29T21:30:00.000Z',
+    authorization_id: 'auth-stage-upsert-fixture',
+    batch_size: 1,
+  }, {
+    select_existing_rows: async () => [],
+    upsert_batch: async () => [],
+    select_rows_for_verification: async (ids, columns) => ids.map((id) => {
+      const built = preparePsdealsListingUpsertBatches({
+        listing_items: [item(id)],
+        existing_psdeals_ids: [],
+        listing_observed_at: '2026-07-29T21:30:00.000Z',
+      }).batches[0].rows[0]
+      return id === 1 ? built : { ...built, title: 'Concurrent change' }
+    }),
+    write_receipt: async (receipt) => receipt,
+  })
+  assert.equal(result.status, 'partial')
+  assert.equal(result.failed, 1)
+  assert.equal(result.batches[1].failed_rows[0].reason, 'postcondition_mismatch')
+})
+
+test('duplicate IDs and missing authorization never become a clean upsert', async () => {
+  const prepared = preparePsdealsListingUpsertBatches({
+    listing_items: [item(1), item(1)],
+    existing_psdeals_ids: [],
+    listing_observed_at: '2026-07-29T21:30:00.000Z',
+  })
+  assert.equal(prepared.valid, false)
+  assert.ok(prepared.omitted[0].reason_codes.includes('duplicate_psdeals_id_in_listing'))
+
+  const blocked = await executeReconciledPsdealsListingUpsert({
+    listing_items: [item(1)],
+  }, {
+    select_existing_rows: async () => [],
+    upsert_batch: async () => [],
+    select_rows_for_verification: async () => [],
+    write_receipt: async (receipt) => receipt,
+  })
+  assert.equal(blocked.status, 'awaiting_authorization')
 })
 
 test('critical lifecycle requests fail closed without remote UUID, gate, or authorization', () => {

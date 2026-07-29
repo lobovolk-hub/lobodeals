@@ -76,14 +76,36 @@ test('maps every demonstrated add-on subtype to the existing public DLC bucket',
   }
 })
 
-test('marks limited-sample add-on labels for detail without allowing replacement', () => {
+test('keeps limited-sample add-on proposals unwritable until detail confirms them', () => {
   for (const label of ['Catalog', 'Combo', 'Subscription']) {
     const result = classifyPsdealsItemType(label, { sourceContext: 'listing' })
     assert.equal(result.content_type, 'dlc', label)
+    assert.equal(result.item_type_label, 'addon', label)
+    assert.equal(result.classification, 'ambiguous', label)
     assert.equal(result.confidence, 'medium', label)
+    assert.equal(result.can_write, false, label)
     assert.equal(result.requires_detail_revalidation, true, label)
     assert.equal(result.can_replace_existing, false, label)
   }
+})
+
+test('collector preserves an unwritable limited-sample type proposal as evidence', () => {
+  const item = buildCollectedListingItem(
+    {
+      href: 'https://psdeals.net/us-store/game/123/catalog-fixture',
+      title: 'Catalog Fixture',
+      platformLabel: 'PS4',
+      typeLabel: 'Catalog',
+      currentPriceText: '$9.99',
+      originalPriceText: null,
+      discountText: null,
+      imageUrl: 'https://example.com/image.jpg',
+    },
+    'https://psdeals.net/us-store/all-games'
+  )
+
+  assert.equal(item.type_classification.can_write, false)
+  assert.equal(item.type_classification.content_type, 'dlc')
 })
 
 test('normalizes whitespace and case only for exact known type labels', () => {

@@ -66,6 +66,7 @@ function buildTypeResult({
   itemTypeLabel = null,
   family = 'unknown',
   confidence = 'none',
+  classification = null,
   reasons,
   canWrite = false,
   requiresDetail = true,
@@ -78,7 +79,9 @@ function buildTypeResult({
     content_type: contentType,
     item_type_label: itemTypeLabel,
     family,
-    classification: canWrite ? 'mapped' : normalizedLabel ? 'unknown' : 'missing',
+    classification:
+      classification ||
+      (canWrite ? 'mapped' : normalizedLabel ? 'unknown' : 'missing'),
     confidence,
     reason_codes: reasons,
     can_write: canWrite,
@@ -195,11 +198,13 @@ export function classifyPsdealsItemType(rawLabel, options = {}) {
       itemTypeLabel: 'addon',
       family: 'addon',
       confidence: 'medium',
+      classification: 'ambiguous',
       reasons: [
-        'listing_type_mapped_to_public_addon_bucket',
+        'listing_type_proposed_for_public_addon_bucket',
         'mapping_supported_by_limited_local_detail_samples',
+        'detail_required_before_type_write',
       ],
-      canWrite: true,
+      canWrite: false,
       requiresDetail: true,
       canReplaceExisting: false,
     })

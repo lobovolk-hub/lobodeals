@@ -69,7 +69,11 @@ export function summarizePsdealsListingSnapshot(snapshot) {
       raw_distribution: summarizeBy(rows, (row) => row.item.type_label),
       normalized_distribution: summarizeBy(
         rows,
-        (row) => row.type.content_type || '<omitted>'
+        (row) => row.type.can_write ? row.type.content_type : '<omitted>'
+      ),
+      proposed_distribution: summarizeBy(
+        rows,
+        (row) => row.type.content_type || '<no_proposal>'
       ),
       confidence_distribution: summarizeBy(
         rows,
@@ -79,9 +83,11 @@ export function summarizePsdealsListingSnapshot(snapshot) {
         (row) => row.type.can_write && row.type.confidence === 'high'
       ).length,
       ambiguous_rows: rows.filter(
-        (row) => row.type.can_write && row.type.confidence !== 'high'
+        (row) => row.type.classification === 'ambiguous'
       ).length,
-      unknown_rows: rows.filter((row) => !row.type.can_write).length,
+      unknown_rows: rows.filter(
+        (row) => ['unknown', 'missing'].includes(row.type.classification)
+      ).length,
       requires_detail_rows: rows.filter(
         (row) => row.type.requires_detail_revalidation
       ).length,

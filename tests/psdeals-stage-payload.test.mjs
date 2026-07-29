@@ -158,6 +158,22 @@ test('omits unknown type and platform classifications on update', () => {
   assert.ok(result.reason_codes.includes('platform_update_omitted'))
 })
 
+test('omits a medium-confidence type proposal even for a new listing row', () => {
+  const source = listing({ typeLabel: 'Catalog' })
+  const result = buildPsdealsListingInsertPayload(source, {
+    listingObservedAt: '2026-07-29T12:00:00.000Z',
+  })
+
+  assert.equal(result.is_valid, true)
+  assert.equal('content_type' in result.payload, false)
+  assert.equal('item_type_label' in result.payload, false)
+  assert.ok(result.reason_codes.includes('type_update_omitted'))
+  assert.equal(
+    result.payload.raw_listing_json.type_classification.classification,
+    'ambiguous'
+  )
+})
+
 test('does not infer permanent free-to-play from a temporary FREE promotion', () => {
   const source = listing({
     discountText: '-100%',

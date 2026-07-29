@@ -285,6 +285,7 @@ export async function finishPsdealsCycleStage({
   stage,
   status,
   finished_at,
+  input_hashes = null,
   output_hashes = [],
   evidence_path = null,
   exit_code = null,
@@ -313,7 +314,9 @@ export async function finishPsdealsCycleStage({
       finished_at,
       recorded_at: finished_at,
       status,
-      input_hashes: runningEntry.input_hashes,
+      input_hashes: Array.isArray(input_hashes)
+        ? input_hashes
+        : runningEntry.input_hashes,
       output_hashes,
       evidence_path,
       exit_code,

@@ -19,7 +19,7 @@ test('pure planner preserves the exact future step order and scopes', () => {
   assert.equal(result.plan[1].status, 'blocked')
 })
 
-test('pure planner blocks later steps after a closed listing gate', () => {
+test('listing validation may run to determine the gate while later steps remain blocked', () => {
   const result = buildPsdealsDailyCyclePlan({
     completed_steps: ['create_cycle', 'collect_listing'],
     gates: { listing_complete: false },
@@ -29,9 +29,19 @@ test('pure planner blocks later steps after a closed listing gate', () => {
     (step) => step.name === 'validate_listing'
   )
   const certify = result.plan.find((step) => step.name === 'certify')
-  assert.equal(validateListing.status, 'blocked')
-  assert.equal(validateListing.reason_code, 'gate_listing_complete_closed')
+  assert.equal(validateListing.status, 'ready')
+  assert.equal(validateListing.reason_code, 'awaiting_execution')
   assert.equal(certify.status, 'blocked')
+})
+
+test('a completed listing validation with a closed gate blocks payload construction', () => {
+  const result = buildPsdealsDailyCyclePlan({
+    completed_steps: ['create_cycle', 'collect_listing', 'validate_listing'],
+    gates: { listing_complete: false },
+  })
+  const payload = result.plan.find((step) => step.name === 'build_partial_payload')
+  assert.equal(payload.status, 'blocked')
+  assert.equal(payload.reason_code, 'gate_listing_complete_closed')
 })
 
 test('pure planner blocks certification and cache when their gates are closed', () => {

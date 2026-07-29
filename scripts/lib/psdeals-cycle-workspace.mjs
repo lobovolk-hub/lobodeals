@@ -57,8 +57,8 @@ function defaultLocalCycleId(createdAt) {
   const compact = createdAt
     .replaceAll('-', '')
     .replaceAll(':', '')
-    .replace('.000', '')
-    .replace('Z', 'z')
+    .replace(/\.\d{3}Z$/, 'z')
+    .toLowerCase()
   return `local-cycle-${compact}-${randomOpaqueToken(6).toLowerCase()}`
 }
 

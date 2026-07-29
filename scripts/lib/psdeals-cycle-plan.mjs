@@ -15,7 +15,7 @@ export const PSDEALS_DAILY_CYCLE_STEPS = Object.freeze([
     name: 'validate_listing',
     scope: 'local',
     requires_future_authorization: false,
-    critical_gate: 'listing_complete',
+    critical_gate: null,
   },
   {
     name: 'build_partial_payload',
@@ -57,13 +57,13 @@ export const PSDEALS_DAILY_CYCLE_STEPS = Object.freeze([
     name: 'analyze_ended_deals',
     scope: 'local_and_supabase',
     requires_future_authorization: true,
-    critical_gate: 'can_demote',
+    critical_gate: 'listing_complete',
   },
   {
     name: 'validate_cycle',
     scope: 'local_and_supabase',
     requires_future_authorization: true,
-    critical_gate: 'can_mark_succeeded',
+    critical_gate: null,
   },
   {
     name: 'mark_succeeded',

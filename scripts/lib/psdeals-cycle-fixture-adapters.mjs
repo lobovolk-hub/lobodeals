@@ -542,7 +542,7 @@ export function createPsdealsFixtureAdapters() {
         output_hashes: [value.reference.sha256],
         evidence_path: value.portablePath,
         action_receipt_path: value.portablePath,
-        external_action_requested: 'certify_price_refresh_cycle',
+        external_action_requested: 'certify_price_refresh_cycle_v2',
         simulation_performed: true,
         gate_updates: { certified: true, can_refresh_cache: true },
       })
@@ -557,7 +557,7 @@ export function createPsdealsFixtureAdapters() {
         output_hashes: [value.reference.sha256],
         evidence_path: value.portablePath,
         action_receipt_path: value.portablePath,
-        external_action_requested: 'refresh_catalog_public_cache_v15',
+        external_action_requested: 'refresh_catalog_public_cache_v16',
         simulation_performed: true,
         gate_updates: { cache_refreshed: true },
       })

@@ -770,7 +770,7 @@ Los pasos 1 a 6 no se han ejecutado contra datos reales ni desplegado. Los pasos
 
 ## 29. Siguiente punto exacto
 
-Añadir a los productores locales un sobre común de evidencia con `local_cycle_id`/`run_token`, alcance, filtros, timestamps, resultado estructurado y hash SHA-256. Debe poder probarse con fixtures sin ejecutar collector, importer, runner ni servicios externos. El validador offline y el planificador puro ya existen; todavía no están conectados a un runner operativo.
+Crear un inicializador y verificador exclusivamente local del workspace de ciclo que genere una sola vez `local_cycle_id` y `run_token`, los entregue explícitamente a las etapas futuras y cargue/verifique los sobres antes de invocar el ensamblador puro. Debe seguir sin ejecutar productores, Supabase ni acciones operativas. La cadena de evidencia, el validador offline, el ensamblador y el planificador puro ya existen; todavía no están conectados a un runner operativo.
 
 ## 30. Gap audit del runner diario certificado
 
@@ -814,7 +814,7 @@ Puede implementarse localmente sin SQL ni escrituras remotas:
 - contrato de exit code no cero ante fallos remanentes;
 - pruebas de que un ciclo incompleto nunca alcanza certificación o caché.
 
-El siguiente cambio local concreto es el validador offline de manifiesto/completitud. Los clasificadores y builders ya existen, pero todavía no hay un escritor diario de listado ni debe conectarse hasta que ese validador y el contrato del ciclo estén cerrados.
+El validador offline de manifiesto/completitud, los clasificadores, los payloads parciales y la cadena local de evidencia ya existen. Todavía no hay un escritor diario de listado ni deben conectarse operaciones hasta que exista un creador único de identidad del ciclo, se cierre el productor de evidencia mensual y se demuestre el lifecycle remoto sin inventar contratos.
 
 ## 31. Acciones prohibidas sin nueva autorización
 
@@ -1118,3 +1118,126 @@ La validación local cerró con 96/96 pruebas, `node --check` aprobado, lint con
 Falta que los productores emitan evidencia estructurada compatible. El collector actual no aporta un `run_token` común, hash, resultado fuerte o inicio de ciclo; el analyzer histórico no emite un resumen versionado completo; el importer puede devolver exit 0 con estado partial y no deja un artefacto final común; la revisión mensual no tiene productor local; el analyzer de ofertas terminadas no exige la gate; y no están implementados el ciclo remoto, upsert diario, certificación, caché ni validación pública. La definición de `refresh_catalog_public_cache_v15()` tampoco está versionada localmente.
 
 El Bloque 4 no está cerrado y ningún ciclo histórico quedó certificado. El siguiente cambio local seguro es crear un sobre de evidencia puro y compartido y adaptar, sin ejecutarlos, collector, analyzer e importer para emitir metadatos versionados compatibles con el manifiesto. No se debe conectar aún ninguna escritura ni acción operativa.
+
+## 34. Checkpoint de cadena local de evidencia — 2026-07-29
+
+### Estado y commits
+
+La sesión comenzó en `main`, HEAD `75bc916b48a10e1fdcd5c425dfcda40df8d233f8`, worktree limpio y divergencia de cero commits detrás y trece delante de `origin/main`. La baseline fue de 96/96 pruebas aprobadas.
+
+Se crearon tres commits técnicos locales:
+
+1. `fcd2215146a4bfda64215286e999b7c4df8361e5` — Define and validate PSDeals evidence envelopes;
+2. `da7938b63506a240374c4f2ad3cfac1b8fca13d0` — Emit linked PSDeals producer evidence;
+3. `f1539ed1b446ddc1b8ede425025bd91accefcbbf` — Assemble PSDeals manifests from evidence.
+
+No se hizo push.
+
+### Contrato del sobre de evidencia versión 1
+
+`scripts/lib/psdeals-evidence-envelope.mjs` define un sobre genérico con payload tipado. Exige:
+
+- `evidence_version=1` y un `evidence_kind` cerrado;
+- `local_cycle_id` y `run_token` explícitos;
+- productor, versión o revisión Git, región `us`, storefront `playstation`, modo y tres timestamps;
+- contexto canónico con URL solicitada, plataformas, tipos, orden, límites y fingerprint estable de los filtros;
+- referencias portables a entradas y salidas con rol, tipo, estado final, tamaño y SHA-256;
+- status estructurado, métricas, errores, advertencias y reason codes.
+
+Los builders son deterministas: no crean fechas, UUID ni tokens. El I/O está separado, calcula SHA-256 sobre los bytes reales y dispone de escritura atómica mediante temporal específico más rename; se niega a sobrescribir una salida existente. No existe self-hash circular del sobre.
+
+Semántica cerrada:
+
+- `local_cycle_id` identifica todo el ciclo local;
+- `run_token` es un identificador opaco de correlación compartido por todas sus etapas;
+- ambos los debe crear una sola vez el futuro creador del ciclo y pasarlos explícitamente;
+- no se infieren desde timestamps, directorios, nombres ni proximidad temporal;
+- no son credenciales y no contienen secretos;
+- ninguno equivale al UUID remoto de `price_refresh_cycles`;
+- `remote_cycle_id` solo se admite como UUID en evidencia real y nunca se inventa.
+
+El manifiesto versión 1 conserva compatibilidad con fixtures antiguos que no tenían `identity.run_token`: usa el comportamiento legacy solamente cuando ese campo no existe. Los manifiestos nuevos guardan el token opaco en `identity.run_token`, secciones y referencias; ya no necesitan confundirlo con `local_cycle_id`.
+
+### Evidence kinds y cadena de hashes
+
+Quedaron implementados y validados:
+
+1. `listing_collection`;
+2. `fast_refresh_analysis`;
+3. `detail_import`;
+4. `detail_retry`;
+5. `ended_deals_analysis`.
+
+La cadena verificable es:
+
+1. el listing produce `listing_json` final y su SHA-256;
+2. fast refresh registra como entrada exactamente ese hash y produce resumen, must-refresh, PS Plus recheck, stale, skipped y combined, todos con hash;
+3. detail import registra exactamente el hash de combined y produce resumen más lista de fallos;
+4. detail retry registra el hash de la lista original y el hash del sobre exacto del import inicial; produce resumen y fallos pendientes;
+5. ended deals registra el hash exacto del listing y siempre conserva `application_performed=false`.
+
+Un status `partial` o `failed` es evidencia válida del fallo, no evidencia de completitud. Un exit code cero no convierte un import parcial en exitoso y un retry solo cierra detalle cuando demuestra cero fallos pendientes.
+
+### Adaptación de productores
+
+- collector: acepta identidad y salida de evidencia explícitas, hashea JSON/TXT después de finalizarlos y distingue terminación fuerte, límite/heurística y página fallida;
+- analyzer fast refresh: quedó import-safe, puede emitir un resumen JSON estructurado y sobres con todas las colas, razones, límites, solapamientos y hashes;
+- importer: acepta `detail_import` o `detail_retry`, valida el sobre padre y el hash de la cola antes de operar, y puede producir resumen/lista de fallos y evidencia aun cuando el resultado sea partial o failed;
+- retry: usa el mismo entrypoint del importer, pero exige el sobre del import inicial y la lista exacta de fallos;
+- analyzer de ofertas terminadas: quedó import-safe, exige listing y evidencia enlazados en la ruta trazable y nunca representa democión aplicada.
+
+La compatibilidad manual legacy permanece cuando no se entregan las tres opciones de identidad; esa ejecución no emite un sobre certificable. Si se proporciona parte de la identidad, el script falla antes de continuar. No se modificó el PS1 y ningún productor fue ejecutado durante esta sesión.
+
+### Ensamblador puro y gates
+
+`scripts/lib/psdeals-evidence-assembly.mjs` recibe sobres ya cargados y referencias verificadas. Valida cada sobre y rechaza:
+
+- etapa obligatoria ausente;
+- dos sobres para la misma etapa;
+- ciclos, run tokens, región, storefront o fingerprints mezclados;
+- timestamps invertidos o generación anterior a las evidencias;
+- listing/analyzer, analyzer/importer, importer/retry o listing/ended-deals con hashes distintos;
+- retry que no apunte al sobre exacto del import inicial;
+- listing o fast refresh incompletos;
+- retry con fallos pendientes;
+- evidencia legacy o untracked.
+
+Cuando la cadena local es compatible, genera un `psdeals-cycle-manifest` versión 1 y lo pasa al validador existente. No crea un segundo sistema de gates, no crea `remote_cycle_id`, mantiene `cycle_state=running`, no marca validación, succeeded, certificación ni caché y no solicita acciones.
+
+La revisión mensual no tiene productor de evidencia y permanece ausente. Ended deals es opcional en el ensamblaje, pero sin su sobre `can_demote=false`. Sin mensual y lifecycle remoto `can_certify=false`; sin certificación registrada `can_refresh_cache=false`.
+
+### Artefactos históricos
+
+Los bytes actuales de los listings históricos pueden hashearse localmente:
+
+- listing de 5,531 filas: SHA-256 `dbd5279cea8bf49793cfb573bac56af7a80ac3b0a296641799ef34f13b7e12b9`;
+- listing de 3,600 filas: SHA-256 `30e2ff9df24732e5437f651de6893dc9388423b696a8303a6a2a6bfef28910cd`.
+
+También pueden calcularse hoy hashes del combined, must, stale, skipped, logs de import/retry, lista de fallos y candidatos ended-deals de 2026-06-06. Eso solo identifica sus bytes presentes. Ningún archivo contiene `local_cycle_id`, `run_token`, fingerprint compartido, referencias padre/hijo ni el hash que el consumidor declaró haber leído en el momento original. Además no existe cola PS Plus separada ni resumen estructurado completo para ese grupo.
+
+Por tanto, pueden reconstruirse métricas parciales y sobres `legacy_untracked` o `indeterminate`, pero no una cadena demostrada. No es válido asignarles retrospectivamente un token ni unirlos por fecha. Los listings de 5,531 y 3,600 mantienen scopes, filtros y terminaciones incompatibles. Los 19,136 HTML locales siguen siendo evidencia de clasificación, no evidencia de pertenencia a un único ciclo certificado.
+
+### Validación y posición del Bloque 4
+
+La validación técnica cerró con:
+
+- `npm test`: 168/168 aprobadas;
+- suites específicas de sobres, productores y ensamblaje: aprobadas;
+- `node --check`: todos los MJS nuevos o modificados aprobados;
+- `npm run lint`: cero errores y las mismas seis advertencias preexistentes;
+- `git diff --check`: aprobado;
+- búsqueda estática de red, Supabase y procesos hijos en módulos puros: sin coincidencias;
+- manifiesto ensamblado reconocido por el validador v1, con democión, certificación y caché bloqueadas cuando falta su evidencia.
+
+Siguen abiertos:
+
+- creador único de identidad y workspace del ciclo;
+- carga/verificación offline conjunta de todos los sobres antes del ensamblaje;
+- productor de evidencia mensual con fuente/procedimiento autorizado;
+- lifecycle real de `price_refresh_cycles`;
+- upsert diario parcial del listing;
+- aplicación controlada de democión;
+- certificación, caché, validación pública y métricas;
+- conexión con un runner y tarea de Windows.
+
+El Bloque 4 no está cerrado. No se ejecutó un ciclo real ni histórico, no se certificó nada y no se conectó el runner. El siguiente cambio local seguro es implementar un inicializador/verificador offline del workspace del ciclo que cree una sola identidad compartida, verifique bytes y cargue sobres para el ensamblador sin ejecutar productores ni servicios externos.

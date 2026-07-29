@@ -139,7 +139,7 @@ test('partial and concurrent postcondition mismatches remain observable', async 
   }, {
     select_existing_rows: async () => [],
     upsert_batch: async () => [],
-    select_rows_for_verification: async (ids, columns) => ids.map((id) => {
+    select_rows_for_verification: async (ids) => ids.map((id) => {
       const built = preparePsdealsListingUpsertBatches({
         listing_items: [item(id)],
         existing_psdeals_ids: [],

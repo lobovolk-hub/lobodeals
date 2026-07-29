@@ -188,6 +188,22 @@ test('tampered artifact and duplicate evidence fail closed', async () => {
   assert.ok(store.errors.some((entry) => entry.code === 'EVIDENCE_STORE_DUPLICATE_KIND'))
 })
 
+test('tampered action receipt is detected independently of the ledger hash chain', async () => {
+  const value = await workspace()
+  await runLocked(value)
+  await fs.appendFile(
+    path.join(value.root_dir, 'receipts', 'create-cycle-fixture.json'),
+    '\nTAMPERED\n'
+  )
+  const verified = await verifyPsdealsCycleWorkspaceEvidence({
+    workspace: value,
+    now: '2026-07-29T18:05:00.000Z',
+  })
+  assert.equal(verified.valid, false)
+  assert.equal(verified.classification, 'workspace_corrupt')
+  assert.ok(verified.errors.some((entry) => entry.code === 'ACTION_RECEIPT_HASH_MISSING'))
+})
+
 test('CLI exposes all safe commands against a fixture workspace', async () => {
   const value = await workspace()
   let output = ''

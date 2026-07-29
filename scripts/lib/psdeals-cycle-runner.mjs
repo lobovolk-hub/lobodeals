@@ -17,6 +17,10 @@ import {
   finalizePsdealsCycleWorkspace,
   resolvePsdealsCycleWorkspacePath,
 } from './psdeals-cycle-workspace.mjs'
+import {
+  findPsdealsStageAuthorization,
+  PSDEALS_OPERATIONAL_STAGE_PERMISSIONS,
+} from './psdeals-operational-authorization.mjs'
 
 export const PSDEALS_CYCLE_RUNNER_MODES = Object.freeze([
   'plan',
@@ -113,6 +117,42 @@ export async function verifyPsdealsCycleWorkspaceEvidence({ workspace, now } = {
   if (!ledger.valid) {
     return { valid: false, classification: 'workspace_corrupt', ledger, errors: ledger.errors }
   }
+  const receiptErrors = []
+  for (const entry of ledger.entries.filter((value) => value.action_receipt_path)) {
+    let loadedReceipt
+    try {
+      const receiptPath = await resolvePsdealsCycleWorkspacePath(
+        workspace,
+        entry.action_receipt_path,
+        { must_exist: true }
+      )
+      loadedReceipt = await readPsdealsArtifact({
+        root_dir: workspace.root_dir,
+        file_path: receiptPath,
+        portable_path: entry.action_receipt_path,
+        role: 'action_receipt',
+        artifact_kind: 'cycle_receipt',
+      })
+    } catch (error) {
+      receiptErrors.push({
+        code: 'ACTION_RECEIPT_INVALID',
+        path: entry.action_receipt_path,
+        reason: error?.code || 'read_failed',
+      })
+      continue
+    }
+    if (!entry.output_hashes?.includes(loadedReceipt.reference.sha256)) {
+      receiptErrors.push({ code: 'ACTION_RECEIPT_HASH_MISSING', path: entry.action_receipt_path })
+    }
+  }
+  if (receiptErrors.length > 0) {
+    return {
+      valid: false,
+      classification: 'workspace_corrupt',
+      ledger,
+      errors: receiptErrors,
+    }
+  }
   const store = await loadVerifiedPsdealsCycleEvidence({ workspace, now })
   if (!store.valid) {
     return { valid: false, classification: 'evidence_invalid', ledger, store, errors: store.errors }
@@ -207,6 +247,7 @@ export async function runPsdealsCycle({
   owner_token,
   mode = workspace?.identity?.mode || 'plan',
   adapters = {},
+  authorizations = [],
   now = () => new Date(),
   stop_after_stage = null,
 } = {}) {
@@ -233,13 +274,25 @@ export async function runPsdealsCycle({
     return { ...statusResult({ workspace, ledger, mode, blockers: verified.errors?.map((value) => value.code) || [], exitCode }), verification: verified }
   }
   if (mode === 'operational') {
-    return statusResult({
-      workspace,
-      ledger,
-      mode,
-      blockers: ['operational_mode_requires_stage_specific_authorization_and_adapters'],
-      exitCode: PSDEALS_CYCLE_RUNNER_EXIT_CODES.awaiting_authorization,
-    })
+    const nextDefinition = PSDEALS_DAILY_CYCLE_STEPS.find(
+      (definition) => !['succeeded', 'skipped'].includes(ledger.stages[definition.name].status)
+    )
+    if (nextDefinition?.requires_future_authorization === true) {
+      const authorizationCheck = findPsdealsStageAuthorization(authorizations, {
+        workspace,
+        stage: nextDefinition.name,
+        now: iso(now),
+      })
+      if (!authorizationCheck.valid) {
+        return statusResult({
+          workspace,
+          ledger,
+          mode,
+          blockers: authorizationCheck.errors,
+          exitCode: PSDEALS_CYCLE_RUNNER_EXIT_CODES.awaiting_authorization,
+        })
+      }
+    }
   }
   if (!owner_token) throw new Error('RUNNER_LOCK_OWNER_REQUIRED')
 
@@ -259,12 +312,32 @@ export async function runPsdealsCycle({
     const startedAt = iso(now)
     const finishedAt = iso(now)
     const authorizationRequired = definition.requires_future_authorization === true
+    const authorizationCheck = mode === 'operational' && authorizationRequired
+      ? findPsdealsStageAuthorization(authorizations, {
+          workspace,
+          stage: definition.name,
+          now: startedAt,
+        })
+      : { valid: mode !== 'operational' || !authorizationRequired, authorization: null, errors: [] }
+    if (mode === 'operational' && authorizationRequired && !authorizationCheck.valid) {
+      return statusResult({
+        workspace,
+        ledger,
+        mode,
+        blockers: authorizationCheck.errors,
+        exitCode: PSDEALS_CYCLE_RUNNER_EXIT_CODES.awaiting_authorization,
+      })
+    }
+    const authorization = authorizationCheck.authorization
     await beginPsdealsCycleStage({
       workspace,
       owner_token,
       stage: definition.name,
       started_at: startedAt,
       authorization_required: authorizationRequired,
+      authorization_id: authorization?.authorization_id || null,
+      authorization_permission:
+        authorization?.permission || PSDEALS_OPERATIONAL_STAGE_PERMISSIONS[definition.name] || null,
       external_action_requested: authorizationRequired ? definition.name : null,
     })
 
@@ -345,7 +418,16 @@ export async function runPsdealsCycle({
         started_at: startedAt,
         finished_at: finishedAt,
         mode,
+        authorization,
       })
+      if (mode === 'operational' && result.external_action_performed === true) {
+        if (!authorization || result.authorization_id !== authorization.authorization_id) {
+          throw new Error('OPERATIONAL_ACTION_AUTHORIZATION_RECEIPT_MISMATCH')
+        }
+        if (!result.action_receipt_path) {
+          throw new Error('OPERATIONAL_ACTION_RECEIPT_REQUIRED')
+        }
+      }
       await finishPsdealsCycleStage({
         workspace,
         owner_token,
@@ -360,8 +442,11 @@ export async function runPsdealsCycle({
         errors: result.errors,
         warnings: result.warnings,
         authorization_required: authorizationRequired,
+        authorization_id: authorization?.authorization_id || null,
+        authorization_permission: authorization?.permission || null,
         external_action_requested: result.external_action_requested || (authorizationRequired ? definition.name : null),
-        external_action_performed: false,
+        external_action_performed:
+          mode === 'operational' && result.external_action_performed === true,
         simulation_performed: result.simulation_performed === true,
         action_receipt_path: result.action_receipt_path,
       })
@@ -375,6 +460,8 @@ export async function runPsdealsCycle({
         reason_codes: ['adapter_failed'],
         errors: [error],
         authorization_required: authorizationRequired,
+        authorization_id: authorization?.authorization_id || null,
+        authorization_permission: authorization?.permission || null,
         external_action_requested: authorizationRequired ? definition.name : null,
       })
     }

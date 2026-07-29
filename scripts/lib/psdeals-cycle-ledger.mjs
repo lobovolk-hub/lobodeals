@@ -93,6 +93,8 @@ function entryBody(input, { sequence, previousHash, workspace }) {
       redactPsdealsCycleDiagnostic(value, input.redact_values)
     ),
     authorization_required: input.authorization_required === true,
+    authorization_id: input.authorization_id ?? null,
+    authorization_permission: input.authorization_permission ?? null,
     external_action_requested: input.external_action_requested ?? null,
     external_action_performed: input.external_action_performed === true,
     simulation_performed: input.simulation_performed === true,
@@ -118,6 +120,8 @@ function validateEntryShape(entry, workspace) {
   if ((entry?.output_hashes || []).some((value) => !HASH_PATTERN.test(value))) errors.push('LEDGER_OUTPUT_HASH_INVALID')
   if (entry?.status === 'skipped' && !SKIP_REASONS[entry.stage]?.has(entry.reason_codes?.[0])) errors.push('LEDGER_SKIP_REASON_INVALID')
   if (entry?.external_action_performed === true && entry?.authorization_required !== true) errors.push('LEDGER_EXTERNAL_ACTION_WITHOUT_AUTHORIZATION_CONTRACT')
+  if (entry?.external_action_performed === true && !entry?.authorization_id) errors.push('LEDGER_EXTERNAL_ACTION_WITHOUT_AUTHORIZATION_ID')
+  if (entry?.external_action_performed === true && !entry?.action_receipt_path) errors.push('LEDGER_EXTERNAL_ACTION_WITHOUT_RECEIPT')
   return errors
 }
 
@@ -258,6 +262,8 @@ export async function beginPsdealsCycleStage({
   started_at,
   input_hashes = [],
   authorization_required = false,
+  authorization_id = null,
+  authorization_permission = null,
   external_action_requested = null,
 } = {}) {
   const ledger = await readPsdealsCycleLedger({ workspace })
@@ -274,6 +280,8 @@ export async function beginPsdealsCycleStage({
       status: 'running',
       input_hashes,
       authorization_required,
+      authorization_id,
+      authorization_permission,
       external_action_requested,
     },
   })
@@ -294,6 +302,8 @@ export async function finishPsdealsCycleStage({
   warnings = [],
   redact_values = [],
   authorization_required = false,
+  authorization_id = null,
+  authorization_permission = null,
   external_action_requested = null,
   external_action_performed = false,
   simulation_performed = false,
@@ -325,6 +335,8 @@ export async function finishPsdealsCycleStage({
       warnings,
       redact_values,
       authorization_required,
+      authorization_id,
+      authorization_permission,
       external_action_requested,
       external_action_performed,
       simulation_performed,

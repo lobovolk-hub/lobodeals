@@ -1,27 +1,27 @@
-# LoboDeals 3.0 — Auditoría local de retención de historial de precios
+# LoboDeals 3.0 — Auditoría local y remota read-only de retención de historial de precios
 
 Fecha: 2026-07-29
 
-Alcance: repositorio local, sin consultar ni modificar Supabase
+Alcance: repositorio local y metadatos/conteos remotos consultados en modo estrictamente read-only; ninguna mutación ni RPC fue ejecutada
 
 Comando reproducible: `node scripts/audit-price-history-dependencies-local.mjs`
 
 ## Conclusión
 
-La eliminación de históricos permanece bloqueada. El repositorio demuestra cuatro contratos diferentes que no deben eliminarse como si fueran el mismo objeto:
+La eliminación de históricos permanece bloqueada. La evidencia local y la inspección remota read-only demuestran cuatro contratos diferentes que no deben eliminarse como si fueran el mismo objeto:
 
-1. `public.psdeals_stage_price_history`: histórico detallado legacy. Solo aparece en documentación y en el comentario de `sql/003-lobodeals-3-certified-price-lows.sql`; su DDL, columnas, índices, claves y dependencias no están versionados localmente.
-2. `public.item_price_snapshots`: tabla del esquema v1, distinta del histórico PSDeals. Su DDL local sí existe.
+1. `public.psdeals_stage_price_history`: histórico detallado legacy. Su DDL no está versionado localmente, pero el objeto remoto, sus columnas, índices, FK, tamaño y rango temporal ya fueron verificados read-only.
+2. `public.item_price_snapshots`: tabla del esquema v1, distinta del histórico PSDeals. Su DDL local existe, pero el objeto no existe en el esquema remoto inspeccionado.
 3. `lowest_price_amount` y `lowest_ps_plus_price_amount`: resúmenes legacy de PSDeals que el importer todavía escribe y la página pública de detalle todavía muestra.
 4. Los cuatro campos `lobodeals_lowest_*`: mínimos compactos certificados de LoboDeals 3.0, propiedad exclusiva de `certify_price_refresh_cycle(uuid)`.
 
-El auditor local recorrió 143 archivos de texto y clasificó 135 referencias: 15 al histórico detallado, 18 a snapshots v1, 51 a mínimos certificados, 18 a resúmenes legacy y 33 referencias genéricas. La medición incluye documentación y el propio reporte para hacer visibles los contratos escritos; son métricas de referencias locales, no filas de base de datos.
+El auditor local final recorrió 162 archivos de texto y clasificó 156 referencias: 20 al histórico detallado, 23 a snapshots v1, 56 a mínimos certificados, 18 a resúmenes legacy y 39 referencias genéricas. La medición incluye documentación y el propio reporte para hacer visibles los contratos escritos; son métricas de referencias locales, no filas de base de datos.
 
 ## Objetos y dependencias demostrados localmente
 
 ### `public.psdeals_stage_price_history`
 
-- La continuidad conserva una medición histórica de 841,549 filas, pero no es una medición actual.
+- La continuidad conservaba una medición histórica de 841,549 filas; la inspección remota read-only de esta sesión confirmó el mismo conteo exacto.
 - `sql/003-lobodeals-3-certified-price-lows.sql` declara expresamente que no borra esta tabla.
 - No existe DDL local que demuestre columnas, primary key, foreign keys, índices, triggers, RLS, productores o consumidores remotos.
 - No existe una referencia ejecutable actual en `app/` o `scripts/` que lea o escriba directamente esa tabla.
@@ -37,7 +37,7 @@ El auditor local recorrió 143 archivos de texto y clasificó 135 referencias: 1
 - checks de disponibilidad, fuente y moneda;
 - índice `item_price_snapshots_item_captured_idx (item_id, captured_at desc)`.
 
-`sql/002-manual-sample-10-template.sql` contiene un productor manual de una fila inicial. No se encontró un consumidor actual en la UI ni un productor operativo. Aun así, no puede asumirse que el objeto exista, esté vacío o carezca de dependencias remotas.
+`sql/002-manual-sample-10-template.sql` contiene un productor manual de una fila inicial. No se encontró un consumidor actual en la UI ni un productor operativo. La inspección remota confirmó que el objeto no existe en el esquema desplegado actual.
 
 ### Resúmenes legacy `lowest_*`
 
@@ -54,9 +54,41 @@ Estos campos son un resumen, no la tabla de historial detallado, pero hoy son de
 
 La UI local no selecciona directamente esos cuatro campos. La definición de `refresh_catalog_public_cache_v15()` no está versionada, por lo que no puede demostrarse localmente si la caché los consume.
 
-## Consultas read-only propuestas para una futura sesión autorizada
+## Hechos remotos verificados el 2026-07-29
 
-Estas consultas se proponen, pero no fueron ejecutadas.
+La inspección se realizó contra el proyecto configurado mediante metadatos y `SELECT`. El reporte seguro y redactado está en `docs/audit/lobodeals-3-remote-readonly-facts-2026-07-29.json`. Se registraron cero mutaciones y cero RPC.
+
+### `public.psdeals_stage_price_history`
+
+- existe como tabla y permite lectura;
+- 841,549 filas exactas;
+- 273,907,712 bytes totales (aproximadamente 261.22 MiB): 107,372,544 bytes de tabla y 166,469,632 bytes de índices;
+- columnas: `id`, `item_id`, `price_kind`, `observed_at`, `price_amount`, `currency_code`;
+- rango observado: 2015-07-10T00:00:00Z a 2026-06-06T19:21:00Z;
+- índices: primary key, `psdeals_stage_price_history_unique_point`, `psdeals_stage_price_history_item_idx` y `psdeals_stage_price_history_kind_idx`;
+- FK `item_id` hacia `psdeals_stage_items(id)` con `ON DELETE CASCADE`;
+- no se encontraron triggers, vistas, vistas materializadas ni funciones con referencia directa en las definiciones accesibles;
+- `pg_cron` no está instalado en el proyecto inspeccionado.
+
+La ausencia de consumidores encontrados reduce el riesgo conocido, pero no autoriza la eliminación. La FK con `ON DELETE CASCADE` es una propiedad histórica ya existente; no debe usarse como mecanismo de limpieza.
+
+### Objetos relacionados
+
+- `public.item_price_snapshots`: ausente remotamente; el DDL local v1 no describe el estado desplegado actual.
+- `public.psdeals_stage_items`: 32,890 filas; los cuatro `lobodeals_lowest_*` existen, pero todavía tienen cero filas certificadas.
+- `public.catalog_public_cache`: 32,890 filas. La definición verificada de `refresh_catalog_public_cache_v15()` no consulta el histórico detallado.
+- `certify_price_refresh_cycle(uuid)`: definición remota verificada; tampoco consulta el histórico detallado y conserva la propiedad exclusiva de los mínimos compactos certificados.
+
+### Hechos todavía ausentes
+
+- no existe aún un primer ciclo real certificado que demuestre la sustitución operativa del historial;
+- la UI de detalle todavía consume los resúmenes legacy `lowest_*`;
+- no se ha ensayado una recuperación fuera de producción;
+- no hay autorización separada para exportar, borrar o alterar ningún histórico.
+
+## Consultas read-only de referencia
+
+Estas consultas documentan la forma de repetir parte del inventario. Durante esta sesión se ejecutaron consultas read-only equivalentes y adicionales después de verificar cada columna; no se ejecutó ninguna sentencia mutante ni función operativa.
 
 ### 1. Inventario, tamaño y estimación
 
@@ -208,7 +240,7 @@ Evaluar para archivo y eliminación futura:
 Condiciones de go:
 
 1. esquema, conteos, tamaño, rango temporal, índices, FKs, triggers, vistas, funciones y jobs verificados read-only;
-2. exportación recuperable con conteos y hashes externos;
+2. decisión explícita sobre recuperación; una exportación recuperable con conteos y hashes sería la opción conservadora, pero no fue solicitada ni creada y su ausencia mantiene el resultado en `NO-GO`;
 3. caché y UI migradas a la fuente compacta prevista;
 4. runner diario real validado y ciclos certificados estables;
 5. comparación pública antes/después aprobada;

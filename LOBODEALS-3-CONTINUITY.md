@@ -1359,3 +1359,92 @@ La siguiente tarea local de máximo alcance seguro es construir adaptadores oper
 - `git diff --check`: aprobado después de normalizar el reporte;
 - búsqueda estática: los módulos nuevos no importan Supabase ni child_process y no contienen fetch/spawn/exec;
 - no se ejecutó build ni ningún proceso operativo.
+
+## 36. Checkpoint de preparación máxima previa al primer ciclo real — 2026-07-29
+
+### Estado de entrada y checkpoints
+
+La sesión comenzó en `main`, HEAD `0f45336c130463119dee0849c9c18a52e0e7545d`, worktree limpio y divergencia de cero commits detrás y veintiséis delante de la referencia local `origin/main`. La baseline fue 209/209 pruebas aprobadas.
+
+Se crearon los siguientes commits técnicos locales:
+
+1. `c043e2876db89ad3552c8fbec2d12c14dbb9f9f5` — Harden resumable PSDeals operational boundaries;
+2. `542cfa19e21c3ea381c417ef2c1d854ff03e2afb` — Verify PSDeals remote contracts read only;
+3. `d2700dd332dfecda906faf4ffbd615686ee23052` — Reconcile remote PSDeals cycle operations;
+4. `5678df87bd1259a0b48f3a3963dd222c532f929f` — Bind guarded PSDeals producer processes;
+5. `c6ee13a62e65e897b9ec61c26b47940202c12f89` — Prepare PSDeals public validation gates;
+6. `5278f76a28868c13b24338d80abd936f83397a4f` — Add the certified PSDeals runner wrapper;
+7. `3f1c332c9581142b2c06bd0f158c3716a413dea8` — Remove PSDeals adapter test lint warning.
+
+No se hizo push.
+
+### Revisión adversarial y autorizaciones
+
+Las autorizaciones operativas son ahora documentos separados, ligados a etapa, permiso, `local_cycle_id`, hash de `run_token`, ventana temporal y `authorization_id`; solo se acepta `source=operator_input`. Un booleano del manifiesto no puede habilitar una escritura. El runner verifica además que un resultado con `external_action_performed=true` cite la autorización exacta y que el receipt reabierto conserve el mismo hash registrado en el ledger. Un receipt alterado bloquea la reanudación.
+
+El modo operational sin autorización se detiene antes de llamar al adaptador y antes de escribir el ledger. La simulación integral recorrió el runner real, workspace, lock, ledger, receipts, especificaciones, clientes falsos y HTTP falso; todas las acciones externas quedaron con `external_action_performed=false` y `simulation_performed=true`.
+
+### Preflight y contratos remotos read-only
+
+La configuración local contiene URL, publishable key y secret key no vacías; sus valores no se imprimieron ni se versionaron. El proyecto remoto configurado respondió `ACTIVE_HEALTHY`, región `us-east-2`, PostgreSQL 17.6.1.104. La inspección usó únicamente metadatos y `SELECT`: cero mutaciones y cero RPC.
+
+Contratos verificados:
+
+- `psdeals_stage_items`: 32,890 filas, clave única `(region_code, storefront, psdeals_id)`, columnas comerciales/de listing/de detalle y cuatro mínimos compactos presentes;
+- `psdeals_import_runs`: 114 filas y estados `running`, `succeeded`, `failed`, `partial`, `cancelled`;
+- `price_refresh_cycles`: cero filas y estados/columnas coherentes con SQL local, pero sin `local_cycle_id` ni hash de `run_token`;
+- `ps_plus_monthly_games`: siete filas, cuatro activas, contrato mensual real verificado;
+- `catalog_public_cache`: 32,890 filas, 5,197 deals regulares, 1,605 PS Plus y cuatro mensuales;
+- `certify_price_refresh_cycle(uuid)`: definición remota verificada, `security invoker`, no ejecutada;
+- `refresh_catalog_public_cache_v15()`: definición remota verificada, reemplaza la caché en transacción, no ejecutada.
+
+El preflight es válido y read-only, pero clasifica `NOT_READY` por dos bloqueos concretos: create-cycle no puede reconciliar un timeout ambiguo con una identidad local única; cache v15 no produce un receipt independiente ligado al ciclo. `item_price_snapshots` no existe remotamente y queda como advertencia legacy, no como objeto requerido.
+
+### Puerto Supabase y adaptadores idempotentes
+
+`psdeals-supabase-port.mjs` separa lecturas de escrituras, carga cliente/credenciales solo al invocarse explícitamente, exige `AbortSignal`, limita lecturas a lotes de 500, usa timeout de 30 segundos y aplica allowlists de tablas y de las dos RPC exactas. Importar el módulo no conecta. Las pruebas solo usan clientes falsos.
+
+Create-cycle permanece `awaiting_contract`: el adaptador puede recuperar un receipt existente y modela reconciliación única, cero candidatos, múltiples candidatos y timeout posterior a commit, pero el esquema remoto no posee la clave necesaria. Nunca inventa UUID ni repite automáticamente una creación incierta.
+
+El upsert de listing está preparado sin ejecutarse: lee explícitamente IDs existentes, usa los builders parciales, agrupa por conjunto exacto de columnas, omite `undefined`, nulls destructivos, campos de detalle, mínimos, `free_to_play` inferido, tipo/plataformas ambiguos y duplicados. Verifica postcondiciones y, tras timeout, realiza como máximo una reconciliación de lectura; no reintenta ciegamente la escritura.
+
+Mark-succeeded y certify admiten reconciliación posterior por estado/UUID demostrados. La democión aplicada y el cache refresh permanecen `awaiting_contract` porque no existe un receipt remoto inequívoco para reconciliar una respuesta perdida.
+
+### Productores, importer, retry y ended deals
+
+Las cinco especificaciones de proceso fijan ejecutable, entrypoint, argumentos como arrays, `shell=false`, cwd, límites, allowlist de entorno, efectos, artefactos y evidencia para collector, fast-refresh analyzer, importer, retry y ended-deals analyzer. No aceptan ejecutables ni rutas arbitrarias del manifiesto y un exit code cero sin evidencia válida no completa la etapa.
+
+El collector acepta ahora rutas explícitas `--output-json` y `--output-txt` cuando recibe identidad rastreada; el modo legacy conserva el comportamiento anterior. Analyzer, importer y retry ya emiten sobres enlazados conforme al checkpoint previo. Ningún productor fue ejecutado.
+
+La etapa `apply_ended_deals` quedó separada del análisis, con permiso propio `allow_apply_demotion`. Solo se omite por `no_ended_deal_candidates`; candidatos reales no autorizan aplicación. Monthly conserva evidencia local, pero la fuente/procedimiento real sigue sin autorización y cualquier cambio propuesto bloquea el ciclo.
+
+### Validación pública, wrapper y readiness
+
+La validación pública modela home, catalog, deals y una muestra acotada de detalles con cliente HTTP inyectado, timeouts y criterios observables. Las pruebas usan HTTP falso; no se navegó ni se consultó producción.
+
+`scripts/run-psdeals-certified-cycle.ps1` es un wrapper nuevo y separado del PS1 histórico. Solo admite Plan, Preflight, Status y Resume; resume está limitado por el CLI a workspaces fixture. Resuelve rutas, comprueba Node/entrypoint, usa argumentos como array, propaga códigos 0–8, confina logs al proyecto antes de crearlos y usa mutex para impedir solapamiento. No contiene operational ni autorizaciones hardcodeadas. Su parser PowerShell y pruebas contractuales aprueban. No fue ejecutado y no se tocó ninguna tarea de Windows.
+
+La evaluación final permanece `NOT_READY`; READY nunca autorizaría por sí solo una ejecución. Además de los dos bloqueos remotos, siguen pendientes: fuente mensual autorizada, contrato reconciliable de democión/caché, conexión futura de adaptadores operativos por etapa con autorizaciones reales y validación pública real autorizada.
+
+### Price history remoto
+
+`psdeals_stage_price_history` existe con 841,549 filas exactas y 273,907,712 bytes totales: 107,372,544 de tabla y 166,469,632 de índices. Su rango es 2015-07-10 a 2026-06-06. Tiene PK, índice único, índices por item/kind y FK a `psdeals_stage_items(id) ON DELETE CASCADE`; no se encontraron triggers, consumidores directos en vistas/funciones accesibles ni `pg_cron`. Las funciones verificadas de certificación y caché no lo consumen.
+
+La limpieza sigue en `NO-GO`: todavía no existe un ciclo real certificado, los mínimos compactos certificados tienen cero filas, no se ha elegido/creado una exportación recuperable y no existe autorización separada. No se preparó SQL destructivo y `CASCADE` continúa prohibido.
+
+### Posición exacta del Bloque 4
+
+El Bloque 4 alcanzó el límite local anterior al primer ciclo controlado: runner reanudable, límites operativos, puertos inyectables, upsert preparado, especificaciones de productores, preflight remoto, wrapper y simulación con falsos están validados. No está implementado un camino real completo reconciliable ni se ha ejecutado un ciclo.
+
+El siguiente cambio local de máximo alcance es diseñar y versionar, sin ejecutarla, una migración revisable para añadir identidad local única a `price_refresh_cycles` y un receipt de cache ligado al ciclo, junto con el contrato exacto de receipt de democión. Después deben actualizarse el preflight y los adaptadores con pruebas falsas. Esto requiere una nueva instrucción porque esta sesión prohibió modificar SQL.
+
+### Validación final de esta sesión
+
+- `node --check`: 28 MJS cambiados desde el HEAD inicial aprobaron;
+- `npm test`: 243/243 pruebas aprobaron;
+- ensayo operational con runner real y adaptadores falsos: aprobado, sin acción externa;
+- CLI seguro: plan, status, verify, preflight, explain-blockers y comandos fixture cubiertos por las funciones reales; el preflight real devolvió el código bloqueado 4;
+- parser PowerShell del wrapper nuevo: aprobado;
+- `npm run lint`: cero errores y seis advertencias preexistentes; la única advertencia nueva se eliminó;
+- auditor local de history: 162 archivos y 156 referencias, sin escrituras ni conexiones;
+- `git diff --check` y búsquedas de SQL mutante, secretos, RPC ejecutadas, comandos arbitrarios, `shell=true`, autorizaciones hardcodeadas y rutas operativas por defecto: aprobadas con las coincidencias esperadas limitadas a contratos/puertos inyectables y al DDL histórico documentado.

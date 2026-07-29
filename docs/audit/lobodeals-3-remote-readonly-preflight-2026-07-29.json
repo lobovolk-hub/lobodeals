@@ -1,0 +1,40 @@
+{
+  "preflight_version": 1,
+  "checked_at": "2026-07-29T21:24:00.000Z",
+  "code_revision_at_collection": "c043e2876db89ad3552c8fbec2d12c14dbb9f9f5",
+  "classification": "NOT_READY",
+  "valid": true,
+  "ready": false,
+  "read_only_verified": true,
+  "mutations_executed": 0,
+  "rpcs_executed": 0,
+  "verified_contracts": [
+    "psdeals_stage_items",
+    "psdeals_import_runs",
+    "price_refresh_cycles",
+    "ps_plus_monthly_games",
+    "catalog_public_cache",
+    "psdeals_stage_price_history",
+    "function:certify_price_refresh_cycle",
+    "function:refresh_catalog_public_cache_v15"
+  ],
+  "blockers": [
+    {
+      "code": "PREFLIGHT_CREATE_CYCLE_RECONCILIATION_CONTRACT_MISSING",
+      "detail": "price_refresh_cycles has no unique local_cycle_id/run_token identity for unambiguous reconciliation."
+    },
+    {
+      "code": "PREFLIGHT_CACHE_RECONCILIATION_CONTRACT_MISSING",
+      "detail": "refresh_catalog_public_cache_v15 has no independent cycle-linked receipt for reconciling a lost response."
+    }
+  ],
+  "warnings": [
+    {
+      "code": "PREFLIGHT_LEGACY_ITEM_PRICE_SNAPSHOTS_ABSENT",
+      "detail": "The v1 object is documented locally but absent from the inspected remote schema."
+    }
+  ],
+  "missing_required_objects": [],
+  "incompatible_contracts": [],
+  "credentials_redacted": true
+}

@@ -1241,3 +1241,121 @@ Siguen abiertos:
 - conexión con un runner y tarea de Windows.
 
 El Bloque 4 no está cerrado. No se ejecutó un ciclo real ni histórico, no se certificó nada y no se conectó el runner. El siguiente cambio local seguro es implementar un inicializador/verificador offline del workspace del ciclo que cree una sola identidad compartida, verifique bytes y cargue sobres para el ensamblador sin ejecutar productores ni servicios externos.
+
+## 35. Checkpoint del runner local reanudable y auditoría de retención — 2026-07-29
+
+### Estado de entrada y commits técnicos
+
+La sesión comenzó en `main`, HEAD `4c2b9fd553c70fc31dfc04f9cdbe4b5b5213d7d7`, worktree limpio y divergencia de cero commits detrás y diecisiete delante de la referencia local `origin/main`. La baseline fue 168/168 pruebas aprobadas.
+
+Se crearon seis checkpoints técnicos locales antes de la documentación final:
+
+1. `2487fe837f9fac8b98043f3d87d8ccab193476e4` — Harden PSDeals evidence path containment;
+2. `543842b2d1d4ee28908381f616c5ad272d3003b4` — Initialize verified PSDeals cycle workspaces;
+3. `a23d570efe73d4370768683e6473882a0ac8337c` — Orchestrate resumable PSDeals cycle state;
+4. `8ffb3c5c31d38abb6e1c2f914944bd539cd0a720` — Record monthly PSDeals cycle evidence;
+5. `125a672715fc3e912ab53a5d848dfc232ece6b82` — Run resumable PSDeals cycles with fixtures;
+6. `46986777838eee8fedea9f0da5ff1e8598005a89` — Prepare guarded PSDeals operational adapters;
+7. `c03e450a1689d1c8fcc70c76af7273c4079b15dc` — Audit price history retention dependencies.
+
+No se hizo push.
+
+### Corrección adversarial de rutas
+
+La revisión encontró que el confinamiento era solamente léxico: una ruta dentro del workspace podía apuntar mediante symlink o junction a bytes externos. `psdeals-evidence-io.mjs` y `psdeals-evidence-runtime.mjs` verifican ahora el `realpath` tanto del root como del archivo, exigen que una ruta portable identifique los mismos bytes y leen, hashean y parsean el mismo archivo real. Una prueba Windows crea un junction real y confirma que el escape se rechaza.
+
+El resto del contrato adversarial permaneció cerrado: los tokens no se generan en productores, los hashes corresponden a bytes, partial no se vuelve succeeded por exit 0, el ensamblador rechaza duplicados y mezclas, `remote_cycle_id` no se inventa, ended-deals no aplica democión y los módulos importables no ejecutan `main`.
+
+### Workspace e identidad
+
+`scripts/lib/psdeals-cycle-workspace.mjs` implementa workspaces versión 1 con directorios separados: `state`, `artifacts`, `evidence`, `logs`, `manifest`, `locks` y `receipts`. Los workspaces futuros viven bajo `data/cycles` o una raíz explícita y quedan cubiertos por el ignore existente de `data/`; las fixtures de tests siguen rastreadas por separado.
+
+La identidad se crea una vez y conserva `local_cycle_id` visiblemente local, `run_token` opaco y no secreto, `remote_cycle_id=null`, timestamp, modo, US/PlayStation, contexto/fingerprint canónicos, revisión Git y versión. Los generadores y el reloj son inyectables. `identity.json` se escribe atómicamente, no se sobrescribe y se valida exactamente al reabrir. Traversal, rutas absolutas, NUL y reparse points fuera del root se rechazan. La finalización es un receipt único.
+
+### Lock y concurrencia
+
+`psdeals-cycle-lock.mjs` adquiere `locks/active.json` mediante creación exclusiva `wx`. Una segunda adquisición falla, la liberación exige el mismo owner y un lock corrupto no se elimina. La antigüedad solo clasifica stale: el takeover exige `CONFIRM_STALE_LOCK_TAKEOVER`, owner esperado, segunda verificación y receipt. Nunca mata procesos ni borra locks automáticamente.
+
+No se implementó heartbeat mutable porque reemplazar silenciosamente el lock activo en Windows reduciría la garantía de exclusión. Una ejecución prolongada sigue protegida porque el takeover stale nunca es automático.
+
+### Ledger y máquina de estados
+
+`psdeals-cycle-ledger.mjs` usa un journal append-only `state/ledger-NNNNNN.json`. Cada entrada tiene secuencia, hash anterior y hash propio. Solo se añade con el lock propio. La reconstrucción verifica todos los archivos; secuencia rota, hash alterado, identidad distinta, dos etapas running o transición inválida bloquean nuevas escrituras.
+
+Las 16 etapas conservan intentos y los estados `pending`, `ready`, `running`, `succeeded`, `partial`, `failed`, `blocked`, `skipped` y `awaiting_authorization`. Solo una etapa corre, succeeded no se repite y skip solo admite `retry_details/no_initial_failures`. Una etapa interrumpida se registra failed antes de un nuevo intento. El ledger guarda timestamps, hashes, evidencia, exit code, reasons, errores redactados, autorización y separación entre acción externa real y simulación.
+
+Se corrigieron tres gates circulares del plan previo: `validate_listing` determina `listing_complete`; `analyze_ended_deals` exige listing completo y produce la elegibilidad de democión; `validate_cycle` calcula `can_mark_succeeded` y no puede exigirlo de antemano.
+
+### Runner, modos y CLI
+
+`scripts/run-psdeals-cycle.mjs` expone `init`, `plan`, `status`, `verify`, `run-fixture`, `assemble`, `resume` y `explain-blockers`. La salida redacta todos los `run_token`. Códigos: 0 éxito; 1 uso/I-O; 2 evidencia inválida; 3 indeterminado; 4 bloqueado; 5 awaiting authorization; 6 fallo de etapa; 7 corrupción; 8 lock activo.
+
+Modos:
+
+- `plan`: no escribe ledger ni ejecuta adaptadores;
+- `offline_validation`: verifica bytes, sobres, ensamblador y manifiesto sin conexiones;
+- `fixture`: usa solo adaptadores falsos y directorios temporales;
+- `operational`: está bloqueado antes de escribir ledger o invocar adaptadores.
+
+El cargador solo descubre JSON dentro de `evidence/`, rechaza entradas no regulares, duplicados e identidades/fingerprints diferentes, y verifica cada referencia. El manifiesto guardado puede añadir el resultado local de validación, pero sus secciones productoras deben coincidir con un nuevo ensamblaje. Antes de mark-succeeded, certify o cache, el runner vuelve a verificar la cadena.
+
+### Simulación fixture y lifecycle
+
+La simulación válida recorre las 16 etapas: retry queda skipped por cero fallos y las otras quince terminan succeeded. Produce listing, colas, import, mensual, ended-deals, manifiesto, ledger y receipts. Las etapas externas simuladas conservan `simulation_performed=true` y `external_action_performed=false`.
+
+El manifiesto validado abre `can_mark_succeeded`, pero conserva `remote_cycle_id=null`, estado running, certificación false y caché false. Por eso su validador real mantiene `can_certify=false` y `can_refresh_cache=false`. Las gates posteriores abiertas al terminar la fixture proceden solo de receipts simulados del ledger.
+
+Se probaron reanudación sin repetir import, artefacto alterado, evidencia duplicada, lock, corrupción, operational bloqueado, adapter ausente, timeout simulado, salida simulada excesiva y redacción de secretos. Ninguna fixture abrió procesos o conexiones.
+
+### Evidencia mensual
+
+Se añadió `monthly_games_check` al sobre versión 1. Exige artefacto hasheado, `source_type`, `source_reference`, procedimiento/versión, resultado, propuestas y `application_performed=false`. Admite `no_changes`, `proposed_changes`, `indeterminate` y `failed`.
+
+Solo `no_changes` con evidencia semántica completa produce succeeded. `proposed_changes` es partial y bloquea certificación; nunca significa applied. `record-psdeals-monthly-evidence-offline.mjs` solo registra un artefacto ya presente dentro del workspace, sin consultar fuentes ni actualizar datos.
+
+### Payload, upsert y lifecycle remoto
+
+`psdeals-listing-upsert-adapter.mjs` prepara lotes con los builders seguros. Exige IDs existentes explícitos; no adivina insert/update. Usa la clave demostrada `region_code,storefront,psdeals_id`, agrupa por operación y columnas para evitar nulls, excluye mínimos certificados y usa lotes locales 1–500, default 100. La ejecución requiere un puerto inyectado; no existe cliente Supabase real.
+
+`psdeals-operational-contracts.mjs` modela sin ejecutar create-cycle, mark-succeeded, `certify_price_refresh_cycle(uuid)` y `refresh_catalog_public_cache_v15()`. Exige autorización específica, UUID remoto y gate. El receipt debe coincidir con acción y autorización. El SQL demuestra que mark-succeeded debe actualizar estado, validación y timestamps coherentemente, y que certificar es una acción distinta.
+
+Siguen bloqueados los adaptadores operativos de productores, reconciliación remota, upsert real, democión, ciclo remoto, certificación, caché, validación pública y métricas. La definición de cache v15 y el contrato público exacto no están versionados.
+
+### Auditoría de retención de price history
+
+El reporte reproducible quedó en `docs/audit/lobodeals-3-price-history-retention-audit-2026-07-29.md`; comando: `node scripts/audit-price-history-dependencies-local.mjs`.
+
+Se distinguen:
+
+1. `psdeals_stage_price_history`, histórico detallado sin DDL local; 841,549 es una medición histórica;
+2. `item_price_snapshots`, tabla v1 con FK a catalog items y `on delete cascade`;
+3. `lowest_price_amount` y `lowest_ps_plus_price_amount`, resúmenes aún escritos por importer y mostrados por el detalle;
+4. `lobodeals_lowest_*`, mínimos compactos certificados que deben conservarse.
+
+No existe evidencia suficiente para eliminar ninguno. Antes hacen falta inventario remoto read-only de columnas, índices, FKs, triggers, vistas, funciones, jobs, filas, tamaño y rango; definición de cache v15; exportación; migración y validación pública. El reporte propone consultas read-only, go/no-go, limpieza y recuperación. No ejecuta SQL ni incluye una operación destructiva autorizada.
+
+### Migración futura del PS1
+
+El PS1 histórico usa ruta fija, Edge, globs, logs y regex. Ejecuta collector, analyzer, import y retry, pero no demuestra el resultado final del import ni vuelve a comprobar fallos tras retry. No crea ciclo, mensual/ended-deals, manifiesto, succeeded o certificación; solo imprime SQL manual de caché.
+
+La futura tarea de Windows debe invocar un único entrypoint estable con raíz configurable, identidad/workspace exactos, códigos 0–8, lock, evidencia y resume con receipts. Debe registrar código, workspace y última etapa sin secretos. No se modificó el PS1 ni la tarea.
+
+### Posición exacta del Bloque 4
+
+El Bloque 4 dispone de contratos locales para evidencia, workspace, lock, ledger, reanudación, manifiesto, mensual, batching, lifecycle guardado y simulación completa. Esto demuestra orquestación offline, no operación real.
+
+Sigue abierto: operational está bloqueado, no hay integración remota probada ni fuente mensual autorizada, no se aplicó democión, no se creó/certificó ningún ciclo y no se refrescó caché. Tampoco se eliminó historial ni se creó automatización.
+
+La siguiente tarea local de máximo alcance seguro es construir adaptadores operativos uno por uno detrás de puertos inyectados, empezando por create-cycle y upsert listing con cliente Supabase totalmente falso y receipts/reconciliación idempotente; después preparar especificaciones de proceso separadas para collector/analyzer/import/retry. Conexión real, SQL, Edge y ejecución operational permanecen bloqueados hasta autorización explícita.
+
+### Validación final de la sesión
+
+- `npm test`: 209/209 aprobadas;
+- suites de runner, ledger, workspace, mensual, upsert/lifecycle y auditoría: aprobadas;
+- `node --check`: todos los MJS creados o modificados aprobados;
+- `npm run lint`: cero errores y las mismas seis advertencias preexistentes;
+- runner fixture: 16 etapas recorridas, 15 succeeded y retry skipped por cero fallos;
+- CLI: init/plan/status/verify/run-fixture/assemble/resume/explain-blockers probados;
+- `git diff --check`: aprobado después de normalizar el reporte;
+- búsqueda estática: los módulos nuevos no importan Supabase ni child_process y no contienen fetch/spawn/exec;
+- no se ejecutó build ni ningún proceso operativo.

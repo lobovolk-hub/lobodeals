@@ -1,7 +1,9 @@
 # LoboDeals 3.0 — Auditoría local de retención de historial de precios
 
-Fecha: 2026-07-29  
-Alcance: repositorio local, sin consultar ni modificar Supabase  
+Fecha: 2026-07-29
+
+Alcance: repositorio local, sin consultar ni modificar Supabase
+
 Comando reproducible: `node scripts/audit-price-history-dependencies-local.mjs`
 
 ## Conclusión

@@ -1448,3 +1448,137 @@ El siguiente cambio local de máximo alcance es diseñar y versionar, sin ejecut
 - `npm run lint`: cero errores y seis advertencias preexistentes; la única advertencia nueva se eliminó;
 - auditor local de history: 162 archivos y 156 referencias, sin escrituras ni conexiones;
 - `git diff --check` y búsquedas de SQL mutante, secretos, RPC ejecutadas, comandos arbitrarios, `shell=true`, autorizaciones hardcodeadas y rutas operativas por defecto: aprobadas con las coincidencias esperadas limitadas a contratos/puertos inyectables y al DDL histórico documentado.
+
+## 37. Checkpoint de migración reconciliable del ciclo — 2026-07-29
+
+### Estado de entrada y checkpoints
+
+La sesión comenzó en `main`, HEAD `70fb31bab2b3ab655766820a45f0042cd7d8761e`, worktree limpio y divergencia de cero commits detrás y 34 delante de la referencia local `origin/main`. La baseline fue 243/243 pruebas aprobadas.
+
+Se crearon cuatro checkpoints antes de esta actualización de continuidad:
+
+1. `e18a3c5bcd477e95f30ee297f1f54f43ef033910` — Design reconciliable PSDeals cycle migration;
+2. `d9dd718662698897599067b12bcbc5c516d8b10c` — Align PSDeals adapters with cycle receipts;
+3. `306ef06822218adc491ab6b9df98a0b1e10e1ce7` — Rehearse migrated PSDeals lifecycle offline;
+4. `8d801ff118e7fcbb4ae16a61473b831dbbb68892` — Document PSDeals migration application plan.
+
+No se hizo push.
+
+### Revalidación remota read-only
+
+La revalidación usó exclusivamente metadatos y `SELECT` contra el proyecto `vlxkoprpobfevxefizwr`; registró cero mutaciones y cero RPC. Los hechos siguieron estables:
+
+- proyecto `ACTIVE_HEALTHY`, región `us-east-2`, PostgreSQL 17.6.1.104;
+- `psdeals_stage_items`: 32,890 filas;
+- `psdeals_import_runs`: 114 filas;
+- `price_refresh_cycles`: cero filas;
+- `ps_plus_monthly_games`: siete filas, cuatro activas;
+- `catalog_public_cache`: 32,890 filas;
+- `psdeals_stage_price_history`: 841,549 filas y 273,907,712 bytes;
+- mínimos compactos certificados: cero filas.
+
+Las definiciones remotas tampoco cambiaron:
+
+- `certify_price_refresh_cycle(uuid)`: SHA-256 `3dfa2232903c014039f070f48d4044ffe0b329e38cb86615b9bdbc20c4f9aa88`;
+- `refresh_catalog_public_cache_v15()`: SHA-256 `1c6e71d26e6554e6f8fdf2e6ed0388db959419db4ee64132d8ddd5761b3996dc`.
+
+La huella de 004 permanece ausente en Supabase. El facts redactado versión 2 está en `docs/audit/lobodeals-3-remote-readonly-facts-2026-07-29.json`.
+
+### Migración 004
+
+`sql/004-lobodeals-3-reconciliable-cycle-actions.sql` quedó versionada con SHA-256 `712af68ff12934f7f3f7648b6e629e84610e576fbc4d044ccf74a8bd18630dbf`. No se aplicó.
+
+La migración es transaccional y fail-closed:
+
+- `lock_timeout=10s`, `statement_timeout=120s` y lock `ACCESS EXCLUSIVE` sobre cycles;
+- exige cero filas en `price_refresh_cycles`;
+- verifica objetos y columnas base, ausencia completa de la huella 004 y hashes exactos de v1/v15;
+- no usa `IF NOT EXISTS`, `CREATE OR REPLACE`, SQL dinámico, `CASCADE` ni sentencias destructivas;
+- no toca `psdeals_stage_price_history` ni datos históricos;
+- cualquier discrepancia revierte la transacción.
+
+### Identidad y create-cycle
+
+`price_refresh_cycles` recibe `local_cycle_id`, SHA-256 del `run_token`, revisión Git, fingerprint de filtros, hash de manifiesto, modo operational y timestamps de gates posteriores. El token crudo nunca se almacena remotamente.
+
+`local_cycle_id` y `run_token_sha256` tienen índices únicos separados, además del índice compuesto. Un trigger impide cambiar identidad, scope, fecha o inicio. La aplicación bloquea si aparece una fila legacy antes de ejecutar 004.
+
+`create_or_reconcile_price_refresh_cycle_v1` toma advisory locks deterministas para ambas identidades. Crea una sola fila `running`, devuelve el UUID remoto o recupera la coincidencia exacta; una reutilización parcial o combinación contradictoria falla. No marca succeeded, no certifica y no invoca otras etapas.
+
+### Receipts remotos
+
+`psdeals_cycle_action_receipts` usa una tabla única y acotada con:
+
+- `cycle_id`, parent receipt, kind, idempotency key global, attempt y hashes;
+- estados `intent`, `running`, `committed`, `failed`, `indeterminate`;
+- timestamps, conteo afectado, resultado JSON limitado a 16 KiB y error code redactado;
+- FKs `ON DELETE RESTRICT` y sin propagación destructiva;
+- índices por ciclo/kind/status, parent e idempotency key.
+
+Los kinds cubren create, listing validation/batches, fast refresh, detail import/retry, monthly, ended-deals, democión, mark, certify, cache, public validation y metrics. Un replay idéntico recupera el receipt; ciclo, parent, request hash, input hash o attempt distintos producen contradicción. Un receipt no terminal o committed no puede portar error code.
+
+Se eligió una tabla común porque estos campos y consultas son compartidos. Se descartaron JSON en `metrics`, tablas por acción y almacenamiento del token crudo. 004 no implementa purga: se propone conservar todo durante piloto/prueba y al menos 400 días los terminales certificados; failed/indeterminate se conservan hasta reconciliación. Cualquier política real será otra migración autorizada.
+
+### Monthly, democión y lifecycle
+
+`record_psdeals_monthly_check_v1` exige fuente, referencia segura, procedimiento/version, hash y resultado semántico. Nunca actualiza `ps_plus_monthly_games`. Solo `no_changes` con cero propuestas fija `monthly_games_checked_at`; `proposed_changes`, `indeterminate` y `failed` bloquean la finalización.
+
+`apply_psdeals_ended_deals_v1` exige ciclo running, listing completo, receipt de análisis enlazado, hashes coincidentes y un array canónico ordenado de hasta 500 IDs positivos. Recalcula SHA-256 sobre IDs separados por salto de línea, bloquea faltantes o extras y solo modifica el scope US/PlayStation exacto. Cada candidato debe conservar un descuento regular certificable 1–99: precios positivos, original mayor que actual y porcentaje redondeado exactamente coherente. Democión y receipt se comprometen en la misma transacción; el conjunto vacío también queda demostrado.
+
+El orden resuelto es: analizar ended deals, aplicar la democión mientras el ciclo sigue `running`, y después mark-succeeded. Esto evita exigir `succeeded` para una acción que a su vez es prerequisito de succeeded.
+
+`mark_psdeals_price_refresh_cycle_succeeded_v1` exige un conjunto explícito, único y acotado de receipts committed: listing, al menos un upsert batch, fast refresh, detail sin fallos pendientes, monthly `no_changes`, ended analysis y demotion. Bloquea receipts running/indeterminate y valida hashes, timestamps y métricas antes de fijar `succeeded`.
+
+`certify_price_refresh_cycle_v2` exige el receipt committed de mark, envuelve sin reemplazar `certify_price_refresh_cycle(uuid)` y registra el resultado en un receipt. El subbloque transaccional evita efectos parciales si v1 falla.
+
+`refresh_catalog_public_cache_v16` exige ciclo certified y receipt committed de certify, envuelve v15 y valida filas insertadas positivas y cero deals expirados aún activos. Si v15 o la postcondición falla, el subbloque revierte el refresh y conserva un receipt failed; un committed idéntico se reconcilia sin repetir.
+
+### Public validation, métricas y permisos
+
+Public validation solo puede comenzar desde un receipt committed de cache y solo puede comprometerse con `passed=true`; metrics exige como parent esa validación pública. Ambas actualizan timestamps separados y no vuelven a ejecutar cache.
+
+La tabla de receipts tiene RLS habilitado. `anon` y `authenticated` no pueden escribir ni ejecutar RPC operativas. `service_role` obtiene solo lectura de receipts y ejecución de entrypoints versionados; los helpers internos son solo de `postgres`. Las funciones `SECURITY DEFINER` fijan `search_path=''` y validan argumentos. Las funciones v1/v15 conservan sus definiciones, pero su ejecución directa se revoca al rol operativo para impedir bypass; solo wrappers v2/v16 forman la ruta futura.
+
+### Adaptadores, preflight y gates
+
+El puerto Supabase deja de exponer insert/update directos de cycles y bloquea los nombres legacy de certify/cache. Su allowlist contiene exclusivamente RPC 004 y el upsert stage demostrado. La conexión sigue siendo diferida y las pruebas usan clientes falsos.
+
+Create-cycle busca por ambas identidades inmutables y exige también un receipt remoto committed para reconciliar timeouts. Listing upsert abre y cierra un receipt por batch, verifica bytes/columnas post-upsert y no repite una escritura si un receipt committed ya no coincide con la fila leída. Lifecycle reconcilia por UUID y receipt exactos.
+
+El manifiesto v1 admite opcionalmente `receipt_contract_version=1` y una cadena remota limitada a 500 referencias. Con el contrato activo, democión, mark, certify y cache solo abren sus gates por kinds y parents committed compatibles.
+
+El preflight versión 2 distingue `MIGRATION_NOT_APPLIED`, `MIGRATION_PARTIALLY_APPLIED`, `MIGRATION_CONTRACT_MISMATCH`, `MIGRATION_READY`, `LIVE_CYCLE_READY` y `NOT_READY`. Sobre los facts reales terminó válido pero no listo, clasificación `MIGRATION_NOT_APPLIED` y código CLI 3. Las fixtures de un esquema completo producen `MIGRATION_READY`; nunca convierten por sí solas el entorno en live-ready.
+
+### Ensayo y pruebas SQL
+
+El ensayo usa el runner real de 17 etapas y un fake que reproduce identidad, unicidad, parents, hashes, receipts y efectos de 004. Recorrió create, listing, batch upsert, fast refresh, import, retry, monthly, ended deals, demotion, mark, certify, cache, public validation y metrics. Todo efecto externo quedó simulado.
+
+Se probaron timeout después de commit y resume sin repetir democión, mark, certify o cache; conjuntos de democión cero/no cero; límite 500; receipt contradictorio; parent de otro ciclo; y fallo de cache posterior a certify que conserva la certificación y no aplica cache.
+
+No había `psql`, servidor PostgreSQL, Docker, Podman ni Supabase CLI local. WSL no tenía subsistema instalado. Por ello, la migración no se ejecutó en PostgreSQL real: las garantías SQL son análisis estático, fixtures y ensayo contractual. Esta limitación debe tratarse expresamente antes de la primera aplicación.
+
+Validación final previa a continuidad:
+
+- `npm test`: 277/277 aprobadas;
+- suites específicas de migración, adaptadores y ensayo: aprobadas;
+- `node --check`: 19 MJS cambiados desde el HEAD inicial aprobados;
+- `npm run lint`: cero errores y las mismas seis advertencias preexistentes;
+- preflight offline: código 3 y `MIGRATION_NOT_APPLIED`;
+- `git diff --check`: aprobado;
+- búsquedas de destrucción, `CASCADE`, SQL dinámico, grants públicos, secrets, red y procesos en módulos puros: aprobadas; las coincidencias de roles son revocaciones explícitas.
+
+### Aplicación, rollback e history
+
+El procedimiento futuro exacto está en `docs/audit/lobodeals-3-cycle-migration-004-application-plan-2026-07-29.md`. Requiere HEAD/checksum, worktree limpio, backup o punto de recuperación demostrado, nuevo preflight read-only, cero ciclos, hashes legacy exactos, ventana sin productores y autorización explícita. La herramienta propuesta es una única operación Supabase `apply_migration` con el archivo 004 exacto, rol `postgres`, salida capturada y sin cambios adicionales.
+
+Antes de cualquier uso, una reversión solo podría prepararse con cycles/receipts en cero, inventario exacto y migración inversa separada sin `CASCADE`. Después de crear evidencia o certificar, no se borra ni “descertifica”: se revocan entrypoints afectados, se conserva auditoría y se corrige hacia adelante.
+
+La certificación v2 solo poblará mínimos al envolver v1 dentro de un primer ciclo real válido. Price history permanece `NO-GO` hasta 004 aplicada, ciclo real certificado, mínimos poblados, cache/public/metrics del mismo ciclo, consumidores comprobados, exportación recuperable y autorización independiente. La FK legacy `ON DELETE CASCADE` no debe usarse. No se eliminó ningún dato.
+
+### Posición exacta del Bloque 4
+
+El Bloque 4 tiene ahora una migración local versionada y fail-closed que cierra por diseño los cuatro bloqueos estructurales del Texto 0003: identidad create-cycle, receipt de democión, lifecycle reconciliable y cache ligada a certificación. Puertos, adaptadores, preflight, manifiesto y runner están alineados y ensayados con falsos.
+
+Producción sigue sin 004; por eso el estado remoto es `MIGRATION_NOT_APPLIED` y el ciclo live permanece `NOT_READY`. No se ejecutó un ciclo real y el Bloque 4 no está cerrado.
+
+La siguiente tarea de máximo alcance es una sesión separada y explícitamente autorizada para repetir el precheck read-only, confirmar backup/ventana/checksum y aplicar únicamente 004. Después debe hacerse el postcheck read-only hasta `MIGRATION_READY`. Esa sesión no debe crear aún un ciclo real salvo una autorización adicional posterior.

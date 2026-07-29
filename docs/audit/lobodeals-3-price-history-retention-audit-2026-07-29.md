@@ -263,6 +263,26 @@ Cualquier dependencia desconocida, discrepancia de conteos, ausencia de respaldo
 
 Borrar por fecha puede dejar mínimos o relaciones incoherentes y requerir un índice temporal que aún no está demostrado. Borrar toda una tabla pierde trazabilidad y puede romper dependencias ocultas. Borrar por partición solo sería planteable si el esquema remoto demuestra que existen particiones. Ninguna de esas operaciones está autorizada ahora.
 
+## Efecto del diseño de migración 004
+
+`certify_price_refresh_cycle_v2` no introduce otro algoritmo de mínimos: exige un cycle `succeeded` y un receipt `mark_succeeded` comprometido, y después envuelve la implementación verificada `certify_price_refresh_cycle(uuid)`. Por tanto, un primer ciclo real válido podrá inicializar o reducir los cuatro `lobodeals_lowest_*` con las mismas reglas certificadas. La migración por sí sola no crea mínimos y, mientras no se aplique ni se ejecute un ciclo, los conteos permanecen en cero.
+
+Antes de reconsiderar la eliminación del histórico se requiere, además de las condiciones anteriores:
+
+1. migración 004 aplicada y preflight `MIGRATION_READY`;
+2. primer ciclo real completo con receipts comprometidos de mark-succeeded y certify;
+3. mínimos regulares y PS Plus poblados y contrastados con precios válidos;
+4. receipt comprometido de cache v16, validación pública y métricas del mismo ciclo;
+5. consumidores de UI y cache verificados contra la fuente que sobrevivirá;
+6. exportación recuperable del histórico con esquema, filas, rango, tamaño y SHA-256;
+7. autorización independiente para el objeto y la operación exactos.
+
+La limpieza futura necesitará su propio `action_kind` o contrato de mantenimiento; 004 no lo inventa. Ese receipt deberá registrar export hash, conteo esperado, conteo afectado, tamaño lógico antes/después y resultado, sin almacenar el histórico en JSON.
+
+La liberación debe medirse con `count(*)`, `pg_relation_size`, `pg_indexes_size` y `pg_total_relation_size` antes y después. Una reducción lógica de filas no garantiza devolver espacio físico al sistema operativo; cualquier mantenimiento que reescriba la tabla requerirá una ventana y autorización distintas. La FK histórica `ON DELETE CASCADE` desde stage sigue siendo una amenaza de propagación, no una herramienta de limpieza: los objetos deben tratarse explícitamente y nunca eliminarse mediante el padre.
+
+Resultado actualizado: `NO-GO`. 004 está solamente versionada localmente; no existe ciclo real certificado, los mínimos siguen vacíos, no hay exportación ni autorización de borrado.
+
 ## Migración futura del PS1 y tarea de Windows
 
 El PS1 histórico ejecuta collector, analyzer, importer y retry; descubre el listing mediante glob/nombre, obtiene fallos parseando logs y termina imprimiendo SQL manual de caché. No crea ciclo remoto, no comprueba mensual ni ended-deals, no ensambla manifiesto, no marca succeeded ni certifica. Tampoco vuelve a comprobar fallos pendientes tras el retry. Su ruta está fijada a un directorio personal.

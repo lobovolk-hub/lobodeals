@@ -46,7 +46,7 @@ test('a completed listing validation with a closed gate blocks payload construct
 
 test('pure planner blocks certification and cache when their gates are closed', () => {
   const completedThroughMarkSucceeded = PSDEALS_DAILY_CYCLE_STEPS
-    .slice(0, 12)
+    .slice(0, 13)
     .map((step) => step.name)
   const result = buildPsdealsDailyCyclePlan({
     completed_steps: completedThroughMarkSucceeded,

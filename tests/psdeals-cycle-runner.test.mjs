@@ -77,7 +77,7 @@ async function runLocked(value, options = {}) {
   }
 }
 
-test('fixture runner traverses all 16 stages with no external action performed', async () => {
+test('fixture runner traverses all 17 stages with no external action performed', async () => {
   const value = await workspace()
   const result = await runLocked(value)
   assert.equal(result.exit_code, PSDEALS_CYCLE_RUNNER_EXIT_CODES.success)
@@ -85,6 +85,7 @@ test('fixture runner traverses all 16 stages with no external action performed',
   assert.equal(ledger.valid, true)
   assert.equal(Object.values(ledger.stages).filter((stage) => stage.status === 'succeeded').length, 15)
   assert.equal(ledger.stages.retry_details.status, 'skipped')
+  assert.equal(ledger.stages.apply_ended_deals.status, 'skipped')
   assert.equal(ledger.entries.some((entry) => entry.external_action_performed), false)
   assert.equal(ledger.entries.some((entry) => entry.simulation_performed), true)
   assert.equal(result.CAN_DEMOTE, true)

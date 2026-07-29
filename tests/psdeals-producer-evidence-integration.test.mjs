@@ -1,4 +1,6 @@
 import assert from 'node:assert/strict'
+import fs from 'node:fs/promises'
+import path from 'node:path'
 import { test } from 'node:test'
 
 import { buildAnalyzerFastRefreshEvidence } from '../scripts/analyze-psdeals-discounts-fast-refresh-v1.mjs'
@@ -293,6 +295,15 @@ test('tracked producer CLI preserves explicit opaque identity', () => {
   assert.equal(value.tracked, true)
   assert.equal(value.local_cycle_id, CYCLE)
   assert.equal(value.run_token, TOKEN)
+})
+
+test('collector source exposes explicit tracked artifact paths for operational specs', async () => {
+  const source = await fs.readFile(
+    path.resolve('scripts/collect-psdeals-listing-edge-live-cdp.mjs'),
+    'utf8'
+  )
+  assert.match(source, /getArgValue\('output-json'\)/)
+  assert.match(source, /tracked collection requires explicit --output-json and --output-txt/)
 })
 
 test('importing producer modules exposes adapters without executing main', () => {

@@ -444,6 +444,7 @@ export async function finalizePsdealsCycleWorkspace({
 } = {}) {
   const allowed = new Set([
     'fixture_complete',
+    'operational_complete',
     'blocked',
     'failed',
     'ready_for_authorized_operation',

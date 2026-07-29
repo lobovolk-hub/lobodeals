@@ -11,6 +11,7 @@ export const PSDEALS_OPERATIONAL_STAGE_PERMISSIONS = Object.freeze({
   retry_details: 'allow_detail_retry',
   check_monthly_games: 'allow_monthly_record',
   analyze_ended_deals: 'allow_analyze_ended_deals',
+  apply_ended_deals: 'allow_apply_demotion',
   validate_cycle: 'allow_remote_cycle_validation',
   mark_succeeded: 'allow_mark_succeeded',
   certify: 'allow_certify',

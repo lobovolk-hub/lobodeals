@@ -587,6 +587,8 @@ async function main() {
   const timeoutValue = getArgValue('timeout-ms')
   const outputDirValue = getArgValue('output-dir')
   const outputPrefixValue = getArgValue('output-prefix')
+  const outputJsonValue = getArgValue('output-json')
+  const outputTxtValue = getArgValue('output-txt')
   const stopAfterConsecutiveNoNewPagesValue = getArgValue('stop-after-consecutive-no-new-pages')
 
   if (!urlValue) {
@@ -604,6 +606,15 @@ async function main() {
   const stopAfterConsecutiveNoNewPages = stopAfterConsecutiveNoNewPagesValue
     ? Number(stopAfterConsecutiveNoNewPagesValue)
     : 5
+
+  if (Boolean(outputJsonValue) !== Boolean(outputTxtValue)) {
+    throw new Error('--output-json and --output-txt must be supplied together.')
+  }
+  if (evidenceOptions.tracked && (!outputJsonValue || !outputTxtValue)) {
+    throw new Error(
+      'EVIDENCE_OUTPUTS_INCOMPLETE: tracked collection requires explicit --output-json and --output-txt.'
+    )
+  }
 
   if (!Number.isFinite(maxPages) || maxPages <= 0) {
     throw new Error('Invalid --pages value.')
@@ -751,8 +762,14 @@ async function main() {
   })
 
   const stamp = nowStamp()
-  const jsonPath = path.resolve(outputDir, `${outputPrefix}-${stamp}.json`)
-  const txtPath = path.resolve(outputDir, `${outputPrefix}-${stamp}.txt`)
+  const jsonPath = outputJsonValue
+    ? path.resolve(process.cwd(), outputJsonValue)
+    : path.resolve(outputDir, `${outputPrefix}-${stamp}.json`)
+  const txtPath = outputTxtValue
+    ? path.resolve(process.cwd(), outputTxtValue)
+    : path.resolve(outputDir, `${outputPrefix}-${stamp}.txt`)
+  await fs.mkdir(path.dirname(jsonPath), { recursive: true })
+  await fs.mkdir(path.dirname(txtPath), { recursive: true })
 
   const jsonPayload = {
     collected_at: new Date().toISOString(),

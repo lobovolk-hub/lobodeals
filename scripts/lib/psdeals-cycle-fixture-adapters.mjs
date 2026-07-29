@@ -442,6 +442,20 @@ export function createPsdealsFixtureAdapters() {
       })
     },
 
+    async apply_ended_deals(context) {
+      return {
+        status: 'skipped',
+        finished_at: context.finished_at,
+        reason_codes: ['no_ended_deal_candidates'],
+        errors: [],
+        warnings: [],
+        output_hashes: [],
+        external_action_requested: 'apply_ended_deal_demotions',
+        external_action_performed: false,
+        simulation_performed: true,
+      }
+    },
+
     async validate_cycle(context) {
       const store = await loadVerifiedPsdealsCycleEvidence({
         workspace: context.workspace,

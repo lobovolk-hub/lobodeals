@@ -60,6 +60,12 @@ export const PSDEALS_DAILY_CYCLE_STEPS = Object.freeze([
     critical_gate: 'listing_complete',
   },
   {
+    name: 'apply_ended_deals',
+    scope: 'supabase',
+    requires_future_authorization: true,
+    critical_gate: 'can_demote',
+  },
+  {
     name: 'validate_cycle',
     scope: 'local_and_supabase',
     requires_future_authorization: true,

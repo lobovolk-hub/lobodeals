@@ -52,6 +52,7 @@ export const PSDEALS_OPERATIONAL_ADAPTER_READINESS = Object.freeze({
   retry_details: 'producer_exists_authorization_and_process_adapter_missing',
   check_monthly_games: 'manual_evidence_cli_implemented_real_source_review_required',
   analyze_ended_deals: 'analysis_exists_authorization_and_remote_adapter_missing',
+  apply_ended_deals: 'awaiting_contract_exact_cycle_linked_application_receipt_missing',
   validate_cycle: 'implemented_locally_remote_state_verification_missing',
   mark_succeeded: 'contract_known_authorization_and_remote_adapter_missing',
   certify: 'contract_known_authorization_and_remote_adapter_missing',
@@ -492,7 +493,7 @@ export async function runPsdealsCycle({
   try {
     await finalizePsdealsCycleWorkspace({
       workspace,
-      status: 'fixture_complete',
+      status: mode === 'fixture' ? 'fixture_complete' : 'operational_complete',
       finished_at: iso(now),
       manifest_reference: 'manifest/cycle-manifest.json',
       reason_codes: [],

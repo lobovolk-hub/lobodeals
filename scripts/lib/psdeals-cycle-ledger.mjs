@@ -35,6 +35,7 @@ const STAGE_NAMES = PSDEALS_DAILY_CYCLE_STEPS.map((stage) => stage.name)
 const STAGE_INDEX = new Map(STAGE_NAMES.map((stage, index) => [stage, index]))
 const SKIP_REASONS = Object.freeze({
   retry_details: new Set(['no_initial_failures']),
+  apply_ended_deals: new Set(['no_ended_deal_candidates']),
 })
 
 function parseTimestamp(value) {

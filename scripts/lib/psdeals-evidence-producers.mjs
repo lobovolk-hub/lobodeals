@@ -430,6 +430,89 @@ export function buildDetailRetryEvidence(input = {}) {
   return baseEnvelope('detail_retry', input, assessDetailRetry(input))
 }
 
+const MONTHLY_RESULTS = new Set([
+  'no_changes',
+  'proposed_changes',
+  'indeterminate',
+  'failed',
+])
+
+function assessMonthlyGames(input) {
+  const review = input.review || {}
+  const evidencePresent = hasArtifact(
+    input.outputs,
+    'monthly_games_review',
+    'final'
+  )
+  const semanticEvidence = [
+    review.source_type,
+    review.source_reference,
+    review.procedure,
+    review.procedure_version,
+  ].every(isNonEmptyString)
+  const resultAllowed = MONTHLY_RESULTS.has(review.result)
+  const proposedChanges = Array.isArray(review.proposed_changes)
+    ? review.proposed_changes
+    : null
+  const applicationSafe = review.application_performed === false
+  const noErrors = normalizeErrors(input.errors).length === 0
+  const completeNoChanges =
+    evidencePresent &&
+    semanticEvidence &&
+    resultAllowed &&
+    review.result === 'no_changes' &&
+    proposedChanges?.length === 0 &&
+    applicationSafe &&
+    noErrors
+
+  let status = 'indeterminate'
+  if (!noErrors || review.result === 'failed') status = 'failed'
+  else if (completeNoChanges) status = 'succeeded'
+  else if (
+    evidencePresent &&
+    semanticEvidence &&
+    resultAllowed &&
+    proposedChanges &&
+    applicationSafe
+  ) {
+    status = review.result === 'proposed_changes' ? 'partial' : 'indeterminate'
+  }
+
+  const reasonCodes = []
+  if (!evidencePresent) reasonCodes.push('MONTHLY_EVIDENCE_ARTIFACT_MISSING')
+  if (!semanticEvidence) reasonCodes.push('MONTHLY_SEMANTIC_EVIDENCE_MISSING')
+  if (!resultAllowed) reasonCodes.push('MONTHLY_RESULT_INVALID')
+  if (proposedChanges === null) reasonCodes.push('MONTHLY_PROPOSED_CHANGES_INVALID')
+  if (!applicationSafe) reasonCodes.push('MONTHLY_APPLICATION_NOT_ALLOWED')
+  if (review.result === 'proposed_changes') {
+    reasonCodes.push('MONTHLY_CHANGES_PENDING_APPLICATION')
+  }
+  if (review.result === 'indeterminate') reasonCodes.push('MONTHLY_RESULT_INDETERMINATE')
+  if (review.result === 'failed') reasonCodes.push('MONTHLY_REVIEW_FAILED')
+
+  return {
+    status,
+    reason_codes: reasonCodes,
+    payload: {
+      checked_at: input.timestamps?.finished_at,
+      source_type: review.source_type,
+      source_reference: review.source_reference,
+      procedure: review.procedure,
+      procedure_version: review.procedure_version,
+      result: review.result,
+      proposed_changes: proposedChanges,
+      proposed_change_count: proposedChanges?.length,
+      reviewer: review.reviewer,
+      application_performed: false,
+      review_result: completeNoChanges ? 'complete' : 'incomplete',
+    },
+  }
+}
+
+export function buildMonthlyGamesCheckEvidence(input = {}) {
+  return baseEnvelope('monthly_games_check', input, assessMonthlyGames(input))
+}
+
 function assessEndedDeals(input) {
   const result = input.result || {}
   const listingLinked = hasArtifact(input.inputs, 'listing_json', 'final')
@@ -521,6 +604,8 @@ function reassessEnvelope(envelope) {
       return assessDetailImport({ ...common, result: envelope.payload })
     case 'detail_retry':
       return assessDetailRetry({ ...common, result: envelope.payload })
+    case 'monthly_games_check':
+      return assessMonthlyGames({ ...common, review: envelope.payload })
     case 'ended_deals_analysis':
       return assessEndedDeals({ ...common, result: envelope.payload })
     default:

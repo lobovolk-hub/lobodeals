@@ -210,6 +210,7 @@ function validateTemporalOrder(stages, errors, incompatibleStages) {
     ['listing_collection', 'fast_refresh_analysis'],
     ['fast_refresh_analysis', 'detail_import'],
     ['detail_import', 'detail_retry'],
+    ['listing_collection', 'monthly_games_check'],
     ['listing_collection', 'ended_deals_analysis'],
   ]
   for (const [beforeKind, afterKind] of pairs) {
@@ -236,6 +237,7 @@ function buildManifest({ stages, anchor, generatedAt }) {
   const fast = stages.get('fast_refresh_analysis')?.envelope
   const detail = stages.get('detail_import')?.envelope
   const retry = stages.get('detail_retry')?.envelope
+  const monthly = stages.get('monthly_games_check')?.envelope
   const ended = stages.get('ended_deals_analysis')?.envelope
   const runToken = anchor.run_token
   const listingArtifact = artifactByRole(listing.outputs, 'listing_json')
@@ -364,7 +366,26 @@ function buildManifest({ stages, anchor, generatedAt }) {
             pending_failed_urls: [],
           },
     },
-    monthly_games: null,
+    monthly_games: monthly
+      ? {
+          run_token: runToken,
+          region_code: monthly.region_code,
+          storefront: monthly.storefront,
+          checked: monthly.status === 'succeeded',
+          checked_at: monthly.payload.checked_at,
+          method: `${monthly.payload.source_type}:${monthly.payload.procedure}@${monthly.payload.procedure_version}`,
+          source_reference: monthly.payload.source_reference,
+          result: monthly.payload.result,
+          proposed_changes: monthly.payload.proposed_change_count,
+          applied_changes: 0,
+          pending_changes: monthly.payload.proposed_change_count,
+          evidence: manifestArtifact(
+            artifactByRole(monthly.outputs, 'monthly_games_review'),
+            runToken
+          ),
+          application_performed: false,
+        }
+      : null,
     ended_deals: ended
       ? {
           run_token: runToken,
@@ -485,6 +506,7 @@ export function assemblePsdealsCycleManifest(evidenceRecordsInput, options = {})
   const fast = stages.get('fast_refresh_analysis')?.envelope
   const detail = stages.get('detail_import')?.envelope
   const retry = stages.get('detail_retry')?.envelope
+  const monthly = stages.get('monthly_games_check')?.envelope
   const ended = stages.get('ended_deals_analysis')?.envelope
 
   if (listing && fast) {
@@ -646,14 +668,16 @@ export function assemblePsdealsCycleManifest(evidenceRecordsInput, options = {})
     }
   }
 
-  missingStages.add('monthly_games')
-  warnings.push(
-    warning(
-      PSDEALS_EVIDENCE_ASSEMBLY_REASON_CODES.MONTHLY_EVIDENCE_ABSENT,
-      'monthly_games',
-      'Monthly PS Plus evidence is outside the implemented producer chain.'
+  if (!monthly) {
+    missingStages.add('monthly_games_check')
+    warnings.push(
+      warning(
+        PSDEALS_EVIDENCE_ASSEMBLY_REASON_CODES.MONTHLY_EVIDENCE_ABSENT,
+        'monthly_games_check',
+        'Monthly PS Plus semantic evidence is absent.'
+      )
     )
-  )
+  }
   if (!ended) {
     missingStages.add('ended_deals_analysis')
     warnings.push(

@@ -16,6 +16,7 @@ import {
   buildEndedDealsAnalysisEvidence,
   buildFastRefreshAnalysisEvidence,
   buildListingCollectionEvidence,
+  buildMonthlyGamesCheckEvidence,
 } from '../scripts/lib/psdeals-evidence-producers.mjs'
 
 const CYCLE = 'cycle-evidence-chain-001'
@@ -92,7 +93,7 @@ function evidenceSource(envelope, name) {
   })
 }
 
-function chain({ includeEnded = false, importFailures = 1 } = {}) {
+function chain({ includeEnded = false, includeMonthly = false, importFailures = 1 } = {}) {
   const listingJson = ref('listing_json', '1', 'psdeals_listing_json')
   const combined = ref('combined_queue', '2', 'url_queue')
   const failures = ref('detail_failures', '3', 'url_queue')
@@ -220,6 +221,27 @@ function chain({ includeEnded = false, importFailures = 1 } = {}) {
         },
       })
     : null
+  const monthly = includeMonthly
+    ? buildMonthlyGamesCheckEvidence({
+        identity: identity(),
+        producer: producer('monthly-review'),
+        timestamps: time(
+          '2026-07-29T17:12:30.000Z',
+          '2026-07-29T17:13:00.000Z'
+        ),
+        context: context(),
+        outputs: [ref('monthly_games_review', 'd')],
+        review: {
+          source_type: 'manual_official_source_review',
+          source_reference: 'fixture://official-monthly-review',
+          procedure: 'compare-active-monthly-allowlist',
+          procedure_version: '1',
+          result: 'no_changes',
+          proposed_changes: [],
+          application_performed: false,
+        },
+      })
+    : null
 
   return [
     { envelope: listing, source_artifact: evidenceSource(listing, 'listing') },
@@ -230,6 +252,9 @@ function chain({ includeEnded = false, importFailures = 1 } = {}) {
       : []),
     ...(ended
       ? [{ envelope: ended, source_artifact: evidenceSource(ended, 'ended') }]
+      : []),
+    ...(monthly
+      ? [{ envelope: monthly, source_artifact: evidenceSource(monthly, 'monthly') }]
       : []),
   ]
 }
@@ -265,6 +290,15 @@ test('the current manifest validator recognizes the assembled v1 contract', () =
     result.manifest_validation.reason_codes.join(','),
     /MANIFEST_VERSION_UNSUPPORTED|ARTIFACT_RUN_TOKEN_MISMATCH/
   )
+})
+
+test('monthly semantic evidence opens the monthly manifest gate without applying changes', () => {
+  const result = assemble(chain({ includeMonthly: true, includeEnded: true }))
+  assert.equal(result.assembled, true)
+  assert.equal(result.manifest.monthly_games.result, 'no_changes')
+  assert.equal(result.manifest.monthly_games.application_performed, false)
+  assert.equal(result.manifest_validation.monthly_complete, true)
+  assert.equal(result.missing_stages.includes('monthly_games_check'), false)
 })
 
 test('missing monthly evidence keeps certification closed', () => {

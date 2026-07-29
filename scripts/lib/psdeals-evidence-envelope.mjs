@@ -7,6 +7,7 @@ export const PSDEALS_EVIDENCE_KINDS = Object.freeze([
   'fast_refresh_analysis',
   'detail_import',
   'detail_retry',
+  'monthly_games_check',
   'ended_deals_analysis',
 ])
 

@@ -15,7 +15,7 @@ La eliminación de históricos permanece bloqueada. El repositorio demuestra cua
 3. `lowest_price_amount` y `lowest_ps_plus_price_amount`: resúmenes legacy de PSDeals que el importer todavía escribe y la página pública de detalle todavía muestra.
 4. Los cuatro campos `lobodeals_lowest_*`: mínimos compactos certificados de LoboDeals 3.0, propiedad exclusiva de `certify_price_refresh_cycle(uuid)`.
 
-El auditor local recorrió 143 archivos de texto y clasificó 134 referencias: 15 al histórico detallado, 18 a snapshots v1, 51 a mínimos certificados, 18 a resúmenes legacy y 32 referencias genéricas. La medición incluye documentación y el propio reporte para hacer visibles los contratos escritos; son métricas de referencias locales, no filas de base de datos.
+El auditor local recorrió 143 archivos de texto y clasificó 135 referencias: 15 al histórico detallado, 18 a snapshots v1, 51 a mínimos certificados, 18 a resúmenes legacy y 33 referencias genéricas. La medición incluye documentación y el propio reporte para hacer visibles los contratos escritos; son métricas de referencias locales, no filas de base de datos.
 
 ## Objetos y dependencias demostrados localmente
 

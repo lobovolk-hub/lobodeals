@@ -113,8 +113,18 @@ export async function writePsdealsEvidenceJsonAtomic({
   output_path,
   envelope,
 } = {}) {
+  return writePsdealsArtifactAtomic({
+    output_path,
+    content: stablePsdealsEvidenceJson(envelope),
+  })
+}
+
+export async function writePsdealsArtifactAtomic({
+  output_path,
+  content,
+} = {}) {
   if (!output_path || typeof output_path !== 'string') {
-    throw new Error('EVIDENCE_OUTPUT_PATH_REQUIRED')
+    throw new Error('ARTIFACT_OUTPUT_PATH_REQUIRED')
   }
 
   const outputPath = path.resolve(output_path)
@@ -123,7 +133,9 @@ export async function writePsdealsEvidenceJsonAtomic({
     directory,
     `${path.basename(outputPath)}.${process.pid}.${Date.now()}.partial.tmp`
   )
-  const serialized = stablePsdealsEvidenceJson(envelope)
+  const serialized = Buffer.isBuffer(content)
+    ? content
+    : Buffer.from(String(content ?? ''), 'utf8')
 
   await fs.mkdir(directory, { recursive: true })
   if (await pathExists(outputPath)) {
@@ -132,10 +144,7 @@ export async function writePsdealsEvidenceJsonAtomic({
 
   let temporaryCreated = false
   try {
-    await fs.writeFile(temporaryPath, serialized, {
-      encoding: 'utf8',
-      flag: 'wx',
-    })
+    await fs.writeFile(temporaryPath, serialized, { flag: 'wx' })
     temporaryCreated = true
 
     if (await pathExists(outputPath)) {

@@ -558,7 +558,10 @@ test('partial import with exit code zero remains partial', () => {
     },
   })
   assert.equal(value.status, 'partial')
-  assert.match(value.reason_codes.join(','), /DETAIL_IMPORT_PARTIAL_WITH_ZERO_EXIT/)
+  assert.match(
+    value.reason_codes.join(','),
+    /DETAIL_IMPORT_NON_SUCCEEDED_WITH_ZERO_EXIT/
+  )
   assert.equal(validatePsdealsProducerEvidence(value, { now: NOW }).valid, true)
 })
 

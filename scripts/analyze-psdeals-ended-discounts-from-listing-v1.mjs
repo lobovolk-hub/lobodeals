@@ -1,6 +1,16 @@
 ﻿import fs from 'node:fs/promises'
 import path from 'node:path'
+import { pathToFileURL } from 'node:url'
 import { createClient } from '@supabase/supabase-js'
+import { buildEndedDealsAnalysisEvidence } from './lib/psdeals-evidence-producers.mjs'
+import {
+  buildPsdealsRuntimeIdentity,
+  buildPsdealsRuntimeProducer,
+  emitPsdealsProducerEvidence,
+  getPsdealsEvidenceCliOptions,
+  referencePsdealsFile,
+  requireLinkedPsdealsEvidence,
+} from './lib/psdeals-evidence-runtime.mjs'
 
 function parseArgs(argv) {
   const args = new Map()
@@ -116,6 +126,33 @@ function summarizeBy(rows, keyFn) {
   return Object.fromEntries([...map.entries()].sort())
 }
 
+export function buildEndedDealsEvidenceForAnalyzer({
+  identity,
+  producer,
+  timestamps,
+  context,
+  inputs,
+  outputs,
+  listing_complete_confirmed,
+  candidates,
+  blockers = [],
+} = {}) {
+  return buildEndedDealsAnalysisEvidence({
+    identity,
+    producer,
+    timestamps,
+    context,
+    inputs,
+    outputs,
+    result: {
+      listing_complete_confirmed,
+      candidates,
+      application_performed: false,
+      blockers,
+    },
+  })
+}
+
 async function fetchDiscountSignalStageItems(admin) {
   const allRows = []
   const pageSize = 1000
@@ -185,15 +222,57 @@ async function fetchDiscountSignalStageItems(admin) {
 }
 
 async function main() {
+  const evidenceOptions = getPsdealsEvidenceCliOptions(process.argv)
+  const evidenceStartedAt = new Date().toISOString()
   const args = parseArgs(process.argv)
 
   const discountsJsonPath = getArg(args, 'discounts-json')
   const outputTxt = getArg(args, 'output-txt', null)
   const outputJson = getArg(args, 'output-json', null)
+  const listingEvidencePath = getArg(args, 'listing-evidence', null)
   const sampleLimit = Number(getArg(args, 'sample-limit', '80'))
 
   if (!discountsJsonPath) {
     throw new Error('Missing --discounts-json argument.')
+  }
+
+  if (evidenceOptions.tracked && (!outputJson || !listingEvidencePath)) {
+    throw new Error(
+      'EVIDENCE_OUTPUTS_INCOMPLETE: tracked ended-deals analysis requires --output-json and --listing-evidence.'
+    )
+  }
+
+  let parentEvidence = null
+  let trackedListingInput = null
+  let listingEvidenceReference = null
+  if (evidenceOptions.tracked) {
+    const projectRoot = process.cwd()
+    parentEvidence = await requireLinkedPsdealsEvidence({
+      evidence_path: path.resolve(projectRoot, listingEvidencePath),
+      expected_kind: 'listing_collection',
+      local_cycle_id: evidenceOptions.local_cycle_id,
+      run_token: evidenceOptions.run_token,
+    })
+    trackedListingInput = await referencePsdealsFile({
+      project_root: projectRoot,
+      file_path: path.resolve(projectRoot, discountsJsonPath),
+      role: 'listing_json',
+      artifact_kind: 'listing_json',
+    })
+    const expectedListing = parentEvidence.envelope.outputs.find(
+      (reference) => reference.role === 'listing_json'
+    )
+    if (!expectedListing || expectedListing.sha256 !== trackedListingInput.sha256) {
+      throw new Error('ENDED_DEALS_LISTING_HASH_MISMATCH')
+    }
+    listingEvidenceReference = await referencePsdealsFile({
+      project_root: projectRoot,
+      file_path: parentEvidence.absolute_path,
+      role: 'listing_evidence',
+      artifact_kind: 'evidence_envelope',
+      local_cycle_id: evidenceOptions.local_cycle_id,
+      run_token: evidenceOptions.run_token,
+    })
   }
 
   await loadKeyValueFile(path.resolve(process.cwd(), '.env.local'))
@@ -306,9 +385,55 @@ async function main() {
     )
     console.log(`ENDED_DISCOUNTS_JSON: ${outputJson}`)
   }
+
+  if (evidenceOptions.tracked) {
+    const projectRoot = process.cwd()
+    const outputReference = await referencePsdealsFile({
+      project_root: projectRoot,
+      file_path: path.resolve(projectRoot, outputJson),
+      role: 'ended_deals_analysis',
+      artifact_kind: 'ended_deals_analysis',
+    })
+    const evidenceFinishedAt = new Date().toISOString()
+    const listingComplete =
+      parentEvidence.envelope.status === 'succeeded' &&
+      parentEvidence.envelope.payload?.collection_result === 'complete'
+    const evidence = buildEndedDealsEvidenceForAnalyzer({
+      identity: buildPsdealsRuntimeIdentity(evidenceOptions),
+      producer: buildPsdealsRuntimeProducer(
+        'analyze-psdeals-ended-discounts-from-listing-v1',
+        evidenceOptions
+      ),
+      timestamps: {
+        started_at: evidenceStartedAt,
+        finished_at: evidenceFinishedAt,
+        generated_at: new Date().toISOString(),
+      },
+      context: parentEvidence.envelope.context,
+      inputs: [trackedListingInput, listingEvidenceReference],
+      outputs: [outputReference],
+      listing_complete_confirmed: listingComplete,
+      candidates: endedCandidates.length,
+      blockers: listingComplete ? [] : ['listing_not_strongly_complete'],
+    })
+    await emitPsdealsProducerEvidence({
+      output_path: path.resolve(projectRoot, evidenceOptions.evidence_output),
+      envelope: evidence,
+    })
+    console.log(`EVIDENCE_JSON: ${evidenceOptions.evidence_output}`)
+  }
 }
 
-main().catch((error) => {
-  console.error(error instanceof Error ? error.message : error)
-  process.exit(1)
-})
+function isMainModule() {
+  return Boolean(
+    process.argv[1] &&
+      import.meta.url === pathToFileURL(path.resolve(process.argv[1])).href
+  )
+}
+
+if (isMainModule()) {
+  main().catch((error) => {
+    console.error(error instanceof Error ? error.message : error)
+    process.exit(1)
+  })
+}

@@ -6,10 +6,18 @@ import {
   classifyPsdealsItemType,
   normalizePsdealsPlatforms,
 } from './lib/psdeals-item-classification.mjs'
+import { buildListingCollectionEvidence } from './lib/psdeals-evidence-producers.mjs'
+import {
+  buildPsdealsRuntimeIdentity,
+  buildPsdealsRuntimeProducer,
+  emitPsdealsProducerEvidence,
+  getPsdealsEvidenceCliOptions,
+  referencePsdealsFile,
+} from './lib/psdeals-evidence-runtime.mjs'
 
-function getArgValue(name) {
+function getArgValue(name, argv = process.argv) {
   const prefix = `--${name}=`
-  const arg = process.argv.find((value) => value.startsWith(prefix))
+  const arg = argv.find((value) => value.startsWith(prefix))
   return arg ? arg.slice(prefix.length) : null
 }
 
@@ -491,7 +499,86 @@ export function buildCollectedListingItem(item, pageUrl) {
   }
 }
 
+function inferListingTermination(payload) {
+  const reason = String(payload?.stop_reason || '')
+  if (reason.startsWith('unique_items_collected_reached_total_results')) {
+    return 'exact_total_reached'
+  }
+  if (payload?.pagination_final_observed === true) {
+    return 'pagination_final_observed'
+  }
+  if ((payload?.pages_failed || 0) > 0) return 'failed_page'
+  if (reason.startsWith('safety_cap_reached')) return 'safety_cap'
+  if (reason.startsWith('consecutive_no_new_pages')) {
+    return 'duplicate_page_heuristic'
+  }
+  return 'unknown'
+}
+
+function listingContextFromUrl(baseUrl, maxPages) {
+  const parsed = new URL(baseUrl)
+  return {
+    requested_url: parsed.toString(),
+    platforms: String(parsed.searchParams.get('platforms') || '')
+      .split(',')
+      .filter(Boolean),
+    content_types: parsed.searchParams.getAll('contentType[]'),
+    order: parsed.searchParams.get('sort'),
+    limits: { pages: maxPages },
+  }
+}
+
+export function buildCollectorListingEvidence({
+  identity,
+  producer,
+  timestamps,
+  context,
+  listing_payload,
+  outputs,
+} = {}) {
+  const pageSummaries = Array.isArray(listing_payload?.page_summaries)
+    ? listing_payload.page_summaries
+    : []
+  const totalCollected = pageSummaries.reduce(
+    (total, page) => total + (Number(page?.raw_item_count) || 0),
+    0
+  )
+  const duplicateIds = pageSummaries.reduce(
+    (total, page) => total + (Number(page?.duplicate_count) || 0),
+    0
+  )
+  const uniqueIds = listing_payload?.unique_items_collected
+
+  return buildListingCollectionEvidence({
+    identity,
+    producer,
+    timestamps,
+    context,
+    outputs,
+    errors: Array.isArray(listing_payload?.failed_pages)
+      ? listing_payload.failed_pages.map((page) => ({
+          code: 'LISTING_PAGE_FAILED',
+          message: page.error || `Page ${page.page_number} failed.`,
+        }))
+      : [],
+    collection: {
+      pages_requested: listing_payload?.pages_requested,
+      pages_completed: listing_payload?.pages_processed,
+      failed_pages: listing_payload?.failed_pages,
+      termination: inferListingTermination(listing_payload),
+      stop_reason: listing_payload?.stop_reason,
+      total_results_detected: listing_payload?.total_results_detected,
+      total_collected: totalCollected,
+      unique_ids: uniqueIds,
+      duplicate_ids: duplicateIds,
+      partial_artifact_present: false,
+    },
+  })
+}
+
 async function main() {
+  const evidenceOptions = getPsdealsEvidenceCliOptions(process.argv)
+  const evidenceStartedAt = new Date().toISOString()
   const urlValue = getArgValue('url')
   const endpointValue = getArgValue('endpoint')
   const pagesValue = getArgValue('pages')
@@ -711,6 +798,45 @@ async function main() {
 
   await fs.writeFile(jsonPath, JSON.stringify(jsonPayload, null, 2), 'utf8')
   await fs.writeFile(txtPath, txtPayload, 'utf8')
+
+  if (evidenceOptions.tracked) {
+    const projectRoot = process.cwd()
+    const evidenceFinishedAt = new Date().toISOString()
+    const outputs = [
+      await referencePsdealsFile({
+        project_root: projectRoot,
+        file_path: jsonPath,
+        role: 'listing_json',
+        artifact_kind: 'listing_json',
+      }),
+      await referencePsdealsFile({
+        project_root: projectRoot,
+        file_path: txtPath,
+        role: 'listing_urls',
+        artifact_kind: 'url_queue',
+      }),
+    ]
+    const evidence = buildCollectorListingEvidence({
+      identity: buildPsdealsRuntimeIdentity(evidenceOptions),
+      producer: buildPsdealsRuntimeProducer(
+        'collect-psdeals-listing-edge-live-cdp',
+        evidenceOptions
+      ),
+      timestamps: {
+        started_at: evidenceStartedAt,
+        finished_at: evidenceFinishedAt,
+        generated_at: new Date().toISOString(),
+      },
+      context: listingContextFromUrl(baseUrl, maxPages),
+      listing_payload: jsonPayload,
+      outputs,
+    })
+    await emitPsdealsProducerEvidence({
+      output_path: path.resolve(process.cwd(), evidenceOptions.evidence_output),
+      envelope: evidence,
+    })
+    console.log(`EVIDENCE_JSON: ${evidenceOptions.evidence_output}`)
+  }
 
   console.log('')
   console.log('Edge live listing collection finished.')

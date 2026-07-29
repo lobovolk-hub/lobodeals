@@ -12,6 +12,20 @@ import {
   normalizePsdealsPlatforms,
 } from './lib/psdeals-item-classification.mjs'
 import { buildPsdealsDetailUpsertPayload } from './lib/psdeals-stage-payload.mjs'
+import { writePsdealsArtifactAtomic } from './lib/psdeals-evidence-io.mjs'
+import {
+  buildDetailImportEvidence,
+  buildDetailRetryEvidence,
+} from './lib/psdeals-evidence-producers.mjs'
+import {
+  buildPsdealsRuntimeIdentity,
+  buildPsdealsRuntimeProducer,
+  emitPsdealsProducerEvidence,
+  getPsdealsCliArg,
+  getPsdealsEvidenceCliOptions,
+  referencePsdealsFile,
+  requireLinkedPsdealsEvidence,
+} from './lib/psdeals-evidence-runtime.mjs'
 
 function nowIso() {
   return new Date().toISOString()
@@ -616,6 +630,30 @@ export function buildCommercialUpsertPayload(parsed) {
   return payload
 }
 
+export function buildImporterDetailEvidence({
+  evidence_kind,
+  identity,
+  producer,
+  timestamps,
+  context,
+  inputs,
+  outputs,
+  result,
+} = {}) {
+  const input = {
+    identity,
+    producer,
+    timestamps,
+    context,
+    inputs,
+    outputs,
+    result,
+  }
+  return evidence_kind === 'detail_retry'
+    ? buildDetailRetryEvidence(input)
+    : buildDetailImportEvidence(input)
+}
+
 function ensureLikelyPsDealsDetailPage(html, status, url, title) {
   if (!Number.isInteger(status) || status >= 400) {
     throw new Error(`Navigation failed with status ${status} for ${url}`)
@@ -1014,6 +1052,30 @@ async function fetchHtmlWithEdgeLive(edgeLiveSession, url, timeoutMs, debugHtmlD
 }
 
 async function main() {
+const evidenceOptions = getPsdealsEvidenceCliOptions(process.argv)
+const evidenceStartedAt = new Date().toISOString()
+const evidenceKindArg = getPsdealsCliArg(
+  process.argv,
+  'evidence-kind',
+  'detail_import'
+)
+const parentEvidenceArg = getPsdealsCliArg(process.argv, 'parent-evidence')
+const summaryOutputArg = getPsdealsCliArg(process.argv, 'summary-output-json')
+const failuresOutputArg = getPsdealsCliArg(process.argv, 'failures-output-txt')
+
+if (!['detail_import', 'detail_retry'].includes(evidenceKindArg)) {
+  throw new Error('Invalid --evidence-kind. Use detail_import or detail_retry.')
+}
+
+if (
+  evidenceOptions.tracked &&
+  (!parentEvidenceArg || !summaryOutputArg || !failuresOutputArg)
+) {
+  throw new Error(
+    'EVIDENCE_OUTPUTS_INCOMPLETE: tracked import requires --parent-evidence, --summary-output-json and --failures-output-txt.'
+  )
+}
+
 await loadKeyValueFile(path.resolve(process.cwd(), '.env.local'))
 await loadKeyValueFile(
   path.resolve(process.cwd(), '..', 'worker-playstation-ingest', '.dev.vars')
@@ -1086,6 +1148,55 @@ if (urls.length === 0) {
   process.exit(1)
 }
 
+let parentEvidence = null
+let trackedInputReference = null
+let parentEvidenceReference = null
+if (evidenceOptions.tracked) {
+  const projectRoot = process.cwd()
+  parentEvidence = await requireLinkedPsdealsEvidence({
+    evidence_path: path.resolve(process.cwd(), parentEvidenceArg),
+    expected_kind:
+      evidenceKindArg === 'detail_retry'
+        ? 'detail_import'
+        : 'fast_refresh_analysis',
+    local_cycle_id: evidenceOptions.local_cycle_id,
+    run_token: evidenceOptions.run_token,
+  })
+  trackedInputReference = await referencePsdealsFile({
+    project_root: projectRoot,
+    file_path: inputPath,
+    role:
+      evidenceKindArg === 'detail_retry'
+        ? 'original_failures'
+        : 'combined_queue',
+    artifact_kind: 'url_queue',
+  })
+  const expectedParentArtifact = parentEvidence.envelope.outputs.find(
+    (reference) =>
+      reference.role ===
+      (evidenceKindArg === 'detail_retry'
+        ? 'detail_failures'
+        : 'combined_queue')
+  )
+  if (
+    !expectedParentArtifact ||
+    expectedParentArtifact.sha256 !== trackedInputReference.sha256
+  ) {
+    throw new Error('IMPORT_INPUT_HASH_MISMATCH')
+  }
+  parentEvidenceReference = await referencePsdealsFile({
+    project_root: projectRoot,
+    file_path: parentEvidence.absolute_path,
+    role:
+      evidenceKindArg === 'detail_retry'
+        ? 'initial_import_evidence'
+        : 'fast_refresh_evidence',
+    artifact_kind: 'evidence_envelope',
+    local_cycle_id: evidenceOptions.local_cycle_id,
+    run_token: evidenceOptions.run_token,
+  })
+}
+
 const { data: runRow, error: runInsertError } = await admin
   .from('psdeals_import_runs')
   .insert({
@@ -1112,6 +1223,7 @@ let itemsSeen = 0
 let itemsInserted = 0
 let itemsUpdated = 0
 let itemsFailed = 0
+const failedUrls = []
 
 let browser = null
 let context = null
@@ -1225,6 +1337,7 @@ try {
       }
     } catch (error) {
       itemsFailed += 1
+      failedUrls.push(url)
       console.error(`FAILED: ${url}`)
       console.error(summarizeError(error))
     }
@@ -1232,7 +1345,7 @@ try {
 
   const finalStatus = itemsFailed === 0 ? 'succeeded' : itemsInserted + itemsUpdated > 0 ? 'partial' : 'failed'
 
-  await admin
+  const { error: runUpdateError } = await admin
     .from('psdeals_import_runs')
     .update({
       status: finalStatus,
@@ -1243,6 +1356,114 @@ try {
       finished_at: nowIso(),
     })
     .eq('id', runId)
+
+  if (runUpdateError) throw runUpdateError
+
+  if (evidenceOptions.tracked) {
+    const projectRoot = process.cwd()
+    const succeededCount = itemsInserted + itemsUpdated
+    const uniqueFailedUrls = [...new Set(failedUrls)]
+    const summary = {
+      evidence_kind: evidenceKindArg,
+      import_run_id: runId,
+      attempted: itemsSeen,
+      inserted: itemsInserted,
+      updated: itemsUpdated,
+      succeeded: succeededCount,
+      failed: itemsFailed,
+      skipped: Math.max(0, itemsSeen - succeededCount - itemsFailed),
+      failed_urls: uniqueFailedUrls,
+      reported_status: finalStatus,
+      exit_code: 0,
+    }
+    const summaryPath = path.resolve(projectRoot, summaryOutputArg)
+    const failuresPath = path.resolve(projectRoot, failuresOutputArg)
+    await writePsdealsArtifactAtomic({
+      output_path: summaryPath,
+      content: `${JSON.stringify(summary, null, 2)}\n`,
+    })
+    await writePsdealsArtifactAtomic({
+      output_path: failuresPath,
+      content:
+        uniqueFailedUrls.length > 0
+          ? `${uniqueFailedUrls.join('\n')}\n`
+          : '',
+    })
+
+    const outputs = [
+      await referencePsdealsFile({
+        project_root: projectRoot,
+        file_path: summaryPath,
+        role:
+          evidenceKindArg === 'detail_retry'
+            ? 'detail_retry_summary'
+            : 'detail_import_summary',
+        artifact_kind:
+          evidenceKindArg === 'detail_retry'
+            ? 'detail_retry_summary'
+            : 'detail_import_summary',
+      }),
+      await referencePsdealsFile({
+        project_root: projectRoot,
+        file_path: failuresPath,
+        role:
+          evidenceKindArg === 'detail_retry'
+            ? 'pending_failures'
+            : 'detail_failures',
+        artifact_kind: 'url_queue',
+      }),
+    ]
+    const evidenceFinishedAt = new Date().toISOString()
+    const evidence = buildImporterDetailEvidence({
+      evidence_kind: evidenceKindArg,
+      identity: buildPsdealsRuntimeIdentity(evidenceOptions),
+      producer: buildPsdealsRuntimeProducer(
+        evidenceKindArg === 'detail_retry'
+          ? 'import-psdeals-detail-local-retry'
+          : 'import-psdeals-detail-local',
+        evidenceOptions
+      ),
+      timestamps: {
+        started_at: evidenceStartedAt,
+        finished_at: evidenceFinishedAt,
+        generated_at: new Date().toISOString(),
+      },
+      context: parentEvidence.envelope.context,
+      inputs:
+        evidenceKindArg === 'detail_retry'
+          ? [parentEvidenceReference, trackedInputReference]
+          : [trackedInputReference, parentEvidenceReference],
+      outputs,
+      result:
+        evidenceKindArg === 'detail_retry'
+          ? {
+              attempted: itemsSeen,
+              succeeded: succeededCount,
+              pending_failed: itemsFailed,
+              pending_failed_urls: uniqueFailedUrls,
+              reported_status: finalStatus,
+              exit_code: 0,
+              import_run_id: runId,
+            }
+          : {
+              attempted: itemsSeen,
+              succeeded: succeededCount,
+              failed: itemsFailed,
+              skipped: Math.max(0, itemsSeen - succeededCount - itemsFailed),
+              failed_urls: uniqueFailedUrls,
+              reported_status: finalStatus,
+              exit_code: 0,
+              import_run_id: runId,
+            },
+    })
+    await emitPsdealsProducerEvidence({
+      output_path: path.resolve(projectRoot, evidenceOptions.evidence_output),
+      envelope: evidence,
+    })
+    console.log(`IMPORT_SUMMARY_JSON: ${summaryOutputArg}`)
+    console.log(`IMPORT_FAILURES_TXT: ${failuresOutputArg}`)
+    console.log(`EVIDENCE_JSON: ${evidenceOptions.evidence_output}`)
+  }
 
   console.log('Import finished.')
   console.log(`Run ID: ${runId}`)

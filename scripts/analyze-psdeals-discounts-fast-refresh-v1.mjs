@@ -1,5 +1,6 @@
 import fs from 'node:fs/promises'
 import path from 'node:path'
+import { pathToFileURL } from 'node:url'
 import { createClient } from '@supabase/supabase-js'
 import {
   classifyFastRefreshItem,
@@ -8,6 +9,15 @@ import {
   selectFastRefreshQueues,
   summarizeCommercialClassifications,
 } from './lib/psdeals-fast-refresh.mjs'
+import { writePsdealsArtifactAtomic } from './lib/psdeals-evidence-io.mjs'
+import { buildFastRefreshAnalysisEvidence } from './lib/psdeals-evidence-producers.mjs'
+import {
+  buildPsdealsRuntimeIdentity,
+  buildPsdealsRuntimeProducer,
+  emitPsdealsProducerEvidence,
+  getPsdealsEvidenceCliOptions,
+  referencePsdealsFile,
+} from './lib/psdeals-evidence-runtime.mjs'
 
 function parseArgs(argv) {
   const args = new Map()
@@ -170,7 +180,114 @@ function toReportRow(row) {
   ].join(' | ')
 }
 
+function reasonCounts(rows) {
+  const counts = new Map()
+  for (const row of Array.isArray(rows) ? rows : []) {
+    for (const reason of Array.isArray(row?.reasons) ? row.reasons : []) {
+      counts.set(reason, (counts.get(reason) || 0) + 1)
+    }
+  }
+  return Object.fromEntries([...counts.entries()].sort())
+}
+
+function uniqueUrls(rows) {
+  return [
+    ...new Set(
+      (Array.isArray(rows) ? rows : [])
+        .map((row) => row?.listing?.psdeals_url || row?.psdeals_url)
+        .filter(Boolean)
+    ),
+  ]
+}
+
+function overlapCount(queueGroups) {
+  const counts = new Map()
+  for (const rows of queueGroups) {
+    for (const url of uniqueUrls(rows)) {
+      counts.set(url, (counts.get(url) || 0) + 1)
+    }
+  }
+  return [...counts.values()].filter((count) => count > 1).length
+}
+
+function analyzerContext(payload, { staleHours, staleLimit, psPlusRecheckLimit }) {
+  const parsed = new URL(payload.base_url)
+  return {
+    requested_url: parsed.toString(),
+    platforms: String(parsed.searchParams.get('platforms') || '')
+      .split(',')
+      .filter(Boolean),
+    content_types: parsed.searchParams.getAll('contentType[]'),
+    order: parsed.searchParams.get('sort'),
+    limits: {
+      stale_hours: staleHours,
+      stale: staleLimit,
+      ps_plus_recheck: psPlusRecheckLimit,
+    },
+  }
+}
+
+export function buildAnalyzerFastRefreshEvidence({
+  identity,
+  producer,
+  timestamps,
+  context,
+  listing_input,
+  outputs,
+  queues,
+} = {}) {
+  const mustUrls = uniqueUrls(queues?.must_refresh)
+  const psPlusUrls = uniqueUrls(queues?.ps_plus_recheck)
+  const staleUrls = uniqueUrls(queues?.stale)
+  const skippedUrls = uniqueUrls(queues?.skipped)
+  const combinedUrls = uniqueUrls(queues?.combined)
+
+  return buildFastRefreshAnalysisEvidence({
+    identity,
+    producer,
+    timestamps,
+    context,
+    inputs: [listing_input],
+    outputs,
+    analysis: {
+      must_refresh: {
+        count: mustUrls.length,
+        reason_counts: reasonCounts(queues?.must_refresh),
+      },
+      ps_plus_recheck: {
+        count: psPlusUrls.length,
+        limit: queues?.ps_plus_recheck_limit,
+        reason_counts: reasonCounts(queues?.ps_plus_recheck),
+      },
+      stale: {
+        count: staleUrls.length,
+        limit: queues?.stale_limit,
+        reason_counts: reasonCounts(queues?.stale),
+      },
+      skipped: { count: skippedUrls.length },
+      combined_count: combinedUrls.length,
+      overlap_count: overlapCount([
+        queues?.must_refresh,
+        queues?.ps_plus_recheck,
+        queues?.stale,
+      ]),
+      duplicate_urls:
+        (Array.isArray(queues?.combined) ? queues.combined.length : 0) -
+        combinedUrls.length,
+      limits_reached: {
+        ps_plus_recheck:
+          psPlusUrls.length === queues?.ps_plus_recheck_limit &&
+          queues?.ps_plus_recheck_limit > 0,
+        stale:
+          staleUrls.length === queues?.stale_limit && queues?.stale_limit > 0,
+      },
+    },
+  })
+}
+
 async function main() {
+  const evidenceOptions = getPsdealsEvidenceCliOptions(process.argv)
+  const evidenceStartedAt = new Date().toISOString()
   const args = parseArgs(process.argv)
 
   const filePath = getArg(args, 'file')
@@ -179,6 +296,7 @@ async function main() {
   const psPlusOutputTxt = getArg(args, 'ps-plus-output-txt')
   const staleOutputTxt = getArg(args, 'stale-output-txt')
   const skippedOutputTxt = getArg(args, 'skipped-output-txt')
+  const summaryOutputJson = getArg(args, 'summary-output-json')
   const staleLimit = Number(getArg(args, 'stale-limit', '500'))
   const staleHours = Number(getArg(args, 'stale-hours', '24'))
   const psPlusRecheckLimit = Number(
@@ -202,6 +320,22 @@ async function main() {
     psPlusRecheckLimit < 0
   ) {
     throw new Error('Invalid --ps-plus-recheck-limit argument.')
+  }
+
+  if (
+    evidenceOptions.tracked &&
+    [
+      outputTxt,
+      mustOutputTxt,
+      psPlusOutputTxt,
+      staleOutputTxt,
+      skippedOutputTxt,
+      summaryOutputJson,
+    ].some((value) => !value)
+  ) {
+    throw new Error(
+      'EVIDENCE_OUTPUTS_INCOMPLETE: tracked analysis requires every queue output and --summary-output-json.'
+    )
   }
 
   await loadKeyValueFile(path.resolve(process.cwd(), '.env.local'))
@@ -357,9 +491,99 @@ async function main() {
     )
     console.log(`SKIPPED_SAFE_TXT: ${skippedOutputTxt}`)
   }
+
+  if (evidenceOptions.tracked) {
+    const projectRoot = process.cwd()
+    const summary = {
+      collected_items: rawItems.length,
+      unique_psdeals_ids: uniqueItems.length,
+      must_refresh: mustRefresh.length,
+      ps_plus_recheck: psPlusRecheckCandidates.length,
+      stale: staleCandidates.length,
+      combined: combined.length,
+      skipped: skippedSafe.length,
+      commercial_classifications: commercialClassificationCounts,
+      reason_counts: reasonCounts(analyzed),
+    }
+    const summaryPath = path.resolve(projectRoot, summaryOutputJson)
+    await writePsdealsArtifactAtomic({
+      output_path: summaryPath,
+      content: `${JSON.stringify(summary, null, 2)}\n`,
+    })
+
+    const listingInput = await referencePsdealsFile({
+      project_root: projectRoot,
+      file_path: path.resolve(projectRoot, filePath),
+      role: 'listing_json',
+      artifact_kind: 'listing_json',
+    })
+    const outputSpecs = [
+      [summaryPath, 'fast_refresh_summary', 'fast_refresh_summary'],
+      [outputTxt, 'combined_queue', 'url_queue'],
+      [mustOutputTxt, 'must_refresh_queue', 'url_queue'],
+      [psPlusOutputTxt, 'ps_plus_recheck_queue', 'url_queue'],
+      [staleOutputTxt, 'stale_queue', 'url_queue'],
+      [skippedOutputTxt, 'skipped_queue', 'url_queue'],
+    ]
+    const outputs = []
+    for (const [file, role, artifactKind] of outputSpecs) {
+      outputs.push(
+        await referencePsdealsFile({
+          project_root: projectRoot,
+          file_path: path.resolve(projectRoot, file),
+          role,
+          artifact_kind: artifactKind,
+        })
+      )
+    }
+    const evidenceFinishedAt = new Date().toISOString()
+    const evidence = buildAnalyzerFastRefreshEvidence({
+      identity: buildPsdealsRuntimeIdentity(evidenceOptions),
+      producer: buildPsdealsRuntimeProducer(
+        'analyze-psdeals-discounts-fast-refresh-v1',
+        evidenceOptions
+      ),
+      timestamps: {
+        started_at: evidenceStartedAt,
+        finished_at: evidenceFinishedAt,
+        generated_at: new Date().toISOString(),
+      },
+      context: analyzerContext(payload, {
+        staleHours,
+        staleLimit: boundedStaleLimit,
+        psPlusRecheckLimit: boundedPsPlusRecheckLimit,
+      }),
+      listing_input: listingInput,
+      outputs,
+      queues: {
+        must_refresh: mustRefresh,
+        ps_plus_recheck: psPlusRecheckCandidates,
+        stale: staleCandidates,
+        skipped: skippedSafe,
+        combined,
+        stale_limit: boundedStaleLimit,
+        ps_plus_recheck_limit: boundedPsPlusRecheckLimit,
+      },
+    })
+    await emitPsdealsProducerEvidence({
+      output_path: path.resolve(projectRoot, evidenceOptions.evidence_output),
+      envelope: evidence,
+    })
+    console.log(`FAST_REFRESH_SUMMARY_JSON: ${summaryOutputJson}`)
+    console.log(`EVIDENCE_JSON: ${evidenceOptions.evidence_output}`)
+  }
 }
 
-main().catch((error) => {
-  console.error(error instanceof Error ? error.message : String(error))
-  process.exit(1)
-})
+function isMainModule() {
+  return Boolean(
+    process.argv[1] &&
+      import.meta.url === pathToFileURL(path.resolve(process.argv[1])).href
+  )
+}
+
+if (isMainModule()) {
+  main().catch((error) => {
+    console.error(error instanceof Error ? error.message : String(error))
+    process.exit(1)
+  })
+}

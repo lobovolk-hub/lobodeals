@@ -166,10 +166,17 @@ export function buildPsdealsFilterContext({
     limits: isObject(limits) ? limits : {},
   })
 
+  const filterIdentity = {
+    requested_url: normalized.requested_url,
+    platforms: normalized.platforms,
+    content_types: normalized.content_types,
+    order: normalized.order,
+  }
+
   return {
     ...normalized,
     fingerprint: sha256PsdealsBytes(
-      JSON.stringify(canonicalizePsdealsEvidenceValue(normalized))
+      JSON.stringify(canonicalizePsdealsEvidenceValue(filterIdentity))
     ),
   }
 }

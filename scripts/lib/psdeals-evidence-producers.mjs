@@ -322,8 +322,8 @@ function assessDetailImport(input) {
   if (!failuresPresent) reasonCodes.push('DETAIL_IMPORT_FAILURE_ARTIFACT_MISSING')
   if (!countsReconcile) reasonCodes.push('DETAIL_IMPORT_COUNTS_INCONSISTENT')
   if (!failedUrlsMatch) reasonCodes.push('DETAIL_IMPORT_FAILED_URLS_INCONSISTENT')
-  if (reportedStatus === 'partial' && result.exit_code === 0) {
-    reasonCodes.push('DETAIL_IMPORT_PARTIAL_WITH_ZERO_EXIT')
+  if (reportedStatus !== 'succeeded' && result.exit_code === 0) {
+    reasonCodes.push('DETAIL_IMPORT_NON_SUCCEEDED_WITH_ZERO_EXIT')
   }
   if (!isNonEmptyString(result.import_run_id)) {
     reasonCodes.push('DETAIL_IMPORT_RUN_ID_NOT_EVIDENCED')

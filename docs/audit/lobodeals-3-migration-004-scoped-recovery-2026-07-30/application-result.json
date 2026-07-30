@@ -1,0 +1,18 @@
+{
+  "result_version": 1,
+  "authorization": "Texto 0006",
+  "classification": "MIGRATION_READY",
+  "project_id": "vlxkoprpobfevxefizwr",
+  "pre_application_head": "4127875931172285241445331c2fdc8c3a01fa11",
+  "migration_sha256": "712af68ff12934f7f3f7648b6e629e84610e576fbc4d044ccf74a8bd18630dbf",
+  "migration_version": "20260730010927",
+  "apply_migration_invocations": 1,
+  "apply_result": "success_true",
+  "postcheck_at": "2026-07-30T01:11:41.826225Z",
+  "price_refresh_cycles": 0,
+  "psdeals_cycle_action_receipts": 0,
+  "recovery_invocations": 0,
+  "operational_rpcs_executed": 0,
+  "commercial_data_unchanged": true,
+  "recovery_sql_authorized": false
+}

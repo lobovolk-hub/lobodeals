@@ -181,3 +181,11 @@ Por tanto:
 No debe relajarse este gate por tratarse de una migración aditiva. La siguiente sesión solo puede retomar la aplicación cuando exista una recuperación demostrable y autorizada sin contradecir la decisión vigente de no exportar el historial detallado.
 
 La validación final conservó 277/277 pruebas aprobadas, lint con cero errores y seis advertencias preexistentes, cinco JSON parseables, checksum exacto y cero archivos SQL modificados. Los únicos ajustes de prueba eliminaron instantes fijos caducables en dos fixtures de CLI; no se modificó el runner ni código operativo.
+
+## Resultado de la aplicación autorizada por Texto 0006
+
+El 2026-07-30 se demostró `SCOPED_RECOVERY_PROVEN` sin exportar el histórico: 004 no lo referencia ni lo muta, la tabla de ciclos seguía vacía, receipts no existía y las definiciones/ACL legacy estaban capturadas. El recovery exacto quedó fuera de la ruta automática, sin `CASCADE`, protegido en el commit `4127875931172285241445331c2fdc8c3a01fa11` y no autorizado para ejecución.
+
+El precheck repetido confirmó proyecto, PostgreSQL, huella ausente, cero ciclos, cero sesiones relevantes, hashes y ACL v1/v15, conteos y checksum. Se invocó `apply_migration` exactamente una vez con el nombre `lobodeals_3_reconciliable_cycle_actions`; respondió éxito y registró la versión `20260730010927`.
+
+El postcheck read-only confirmó la huella completa: diez columnas, nueve constraints y tres índices nuevos en cycles; receipts con 16 columnas, 14 constraints, cuatro índices, RLS y cero filas; doce funciones y dos triggers con firmas/permisos esperados; v1/v15 con hashes intactos e internalizados. Stage, import runs, monthly, caché, históricos, mínimos y timestamps permanecieron iguales. El preflight offline terminó `MIGRATION_READY` con código 2. No se creó un ciclo, no se invocó ninguna RPC nueva y no se ejecutó el recovery.

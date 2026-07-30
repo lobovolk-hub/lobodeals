@@ -68,14 +68,38 @@
     {
       "role": "bundle_readme",
       "path": "docs/audit/lobodeals-3-migration-004-scoped-recovery-2026-07-30/README.md",
-      "sha256": "7885a69ba7a2121728ef6c91701bd5bc5dfd370de6eebb22d605a42608fd5360",
-      "bytes": 4105
+      "sha256": "1c6f82aa096202d7c17f7b8562ed641bcf55248eadd4fbb75645e03d8c11f3d9",
+      "bytes": 4885
+    },
+    {
+      "role": "application_result",
+      "path": "docs/audit/lobodeals-3-migration-004-scoped-recovery-2026-07-30/application-result.json",
+      "sha256": "60d94c622af64332ec6b561f5b4db954bbbce538387f3adb886abb51a732435b",
+      "bytes": 661
     },
     {
       "role": "remote_facts_baseline",
       "path": "docs/audit/lobodeals-3-remote-readonly-facts-2026-07-29.json",
       "sha256": "613dc93fc5f40dd0e1ab1652952df0a9ab35c3533bfa18f3491d18263a13c202",
       "bytes": 7950
+    },
+    {
+      "role": "remote_facts_postcheck",
+      "path": "docs/audit/lobodeals-3-remote-readonly-facts-2026-07-30.json",
+      "sha256": "fa6cdc8f27cefff6d604459c13160ac23ea52dba0978a95303dd287e6d5624b5",
+      "bytes": 13574
+    },
+    {
+      "role": "remote_preflight_postcheck",
+      "path": "docs/audit/lobodeals-3-remote-readonly-preflight-2026-07-30.json",
+      "sha256": "f617212d566f257b6b85e72998946fcb649a7ece6e8d962267d6f828a2ee4e62",
+      "bytes": 2699
+    },
+    {
+      "role": "application_log",
+      "path": "docs/audit/lobodeals-3-migration-004-application-log-2026-07-30.json",
+      "sha256": "79d11083d5977c358f698c4617a0dcb3c3352452104cd9e748a78348a6fb924e",
+      "bytes": 2934
     },
     {
       "role": "schema_baseline",
@@ -92,8 +116,8 @@
     {
       "role": "application_plan",
       "path": "docs/audit/lobodeals-3-cycle-migration-004-application-plan-2026-07-29.md",
-      "sha256": "85a2fdb9c9b130490748b83da04a7a593890e5d1bd6805b68c375b13fbe35cd6",
-      "bytes": 13265
+      "sha256": "8b78694c42b6397a0c45676d09d5c85c9f7a6b7fe062e413cc5883977d913514",
+      "bytes": 14575
     },
     {
       "role": "price_history_scope_audit",
@@ -114,7 +138,7 @@
       "bytes": 639
     }
   ],
-  "fingerprint": "735b7243a6b41b690c63c5d5ce8d8995afede32ba0e576a6fab52ba34d237584",
+  "fingerprint": "80105d7c70739c91e0b42e45a9bed35345b2376261df758f4036aae5aec0f801",
   "recovery_sql_validation": {
     "valid": true,
     "errors": [],
@@ -122,8 +146,17 @@
   },
   "migration_history": {
     "application_record_created_by_control_plane": true,
-    "applied_version": null,
+    "applied_version": "20260730010927",
     "direct_history_sql_forbidden": true,
     "reconciliation_after_recovery": "separate_explicitly_authorized_supabase_migration_repair"
+  },
+  "application": {
+    "classification": "MIGRATION_READY",
+    "apply_migration_invocations": 1,
+    "postcheck_at": "2026-07-30T01:11:41.826225Z",
+    "cycles": 0,
+    "receipts": 0,
+    "recovery_invocations": 0,
+    "operational_rpcs_executed": 0
   }
 }

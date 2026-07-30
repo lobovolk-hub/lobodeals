@@ -18,6 +18,7 @@ El histórico detallado no se exporta: 004 no menciona ni muta `psdeals_stage_pr
 - `empty-operational-data.json`: exportación explícita de las cero filas de ciclos y ausencia previa de receipts.
 - `recovery-manifest.json`: baseline, alcance, gates, referencias y fingerprints.
 - `checksums.json`: SHA-256 y tamaño de cada miembro; excluye su propio hash para evitar circularidad.
+- `application-result.json`: resultado redactado de la única aplicación autorizada y sus gates posteriores.
 - `sql/recovery/004-lobodeals-3-reconciliable-cycle-actions-before-use.sql`: recuperación transaccional separada de la ruta automática.
 
 Reproducción local:
@@ -39,6 +40,12 @@ Solo podría considerarse en una sesión futura con autorización separada y des
 7. revisión humana del diff y del estado remoto inmediatamente anterior.
 
 El script se niega ante cualquier discrepancia, trabaja en una transacción, revoca entrypoints nuevos primero, elimina dependencias en orden inverso y no usa `CASCADE`, DML comercial ni borrado de filas. Después del primer ciclo o receipt queda prohibido: corresponde corregir hacia adelante.
+
+## Resultado de aplicación
+
+La recuperación quedó protegida primero en el commit `4127875931172285241445331c2fdc8c3a01fa11`. Después, el precheck remoto repitió huella ausente, cero ciclos, hashes y ACL legacy exactos, conteos estables y cero actividad concurrente. `apply_migration` se invocó una sola vez con los 67.999 bytes autorizados y registró la versión `20260730010927`.
+
+El postcheck terminó `MIGRATION_READY`: cero ciclos, cero receipts, objetos 004 completos, v1/v15 intactas y sin ejecución operativa. El recovery SQL no se ejecutó y sigue sin autorización. El bundle conserva tanto el baseline anterior como los facts y preflight posteriores.
 
 ## Contención de emergencia no autorizada
 

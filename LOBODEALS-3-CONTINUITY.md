@@ -1612,3 +1612,56 @@ La sesión se clasificó `PRECHECK_BLOCKED`. No se invocó `apply_migration`, no
 La validación final repitió `npm test` con 277/277 aprobadas, `npm run lint` con cero errores y las seis advertencias preexistentes, parseó los cinco JSON de auditoría y confirmó `git diff --check`. Dos fixtures de CLI dejaron de fijar instantes que caducaban frente a evidencia generada con el reloj real; no cambió el runner ni ningún comportamiento operativo.
 
 Posición exacta del Bloque 4: 004 continúa versionada y validada localmente, pero no instalada. El runner real sigue sin autorizarse y el Bloque 4 no está cerrado. La siguiente tarea de máximo alcance es decidir y demostrar una vía de recuperación compatible con el plan Free y con la prohibición vigente de exportar el historial; solo después podrá repetirse el precheck y solicitarse una aplicación nueva de 004.
+
+## 39. Recuperación acotada y aplicación verificada de migración 004 — 2026-07-30
+
+Texto 0006 autorizó demostrar una recuperación limitada a la superficie de 004, protegerla localmente y aplicar una sola vez la migración exacta si todas las gates aprobaban. La sesión comenzó en `main`, HEAD `39cd12781304a05da2802f60f81ba8e50f612fd8`, 41 commits delante/0 detrás de `origin/main` y worktree limpio.
+
+### Recuperación acotada demostrada
+
+El parser local cubrió las 2.205 líneas y clasificó 78 sentencias: 68 mutaciones persistentes, dos controles transaccionales, dos controles de sesión, un lock, un guard y cuatro postchecks read-only. No quedó ninguna sentencia desconocida ni mutación sin inversa.
+
+El mapa incluye las diez columnas, nueve constraints y tres índices nuevos de cycles; la tabla de receipts con 16 columnas, 14 constraints y cuatro índices resultantes; RLS sin policies; doce funciones; dos triggers; comentarios; grants/revokes; y el registro del plano de control de migraciones como efecto separado. Cada objeto SQL tiene inversa, dependencia, precondición, riesgo y orden.
+
+`sql/recovery/004-lobodeals-3-reconciliable-cycle-actions-before-use.sql` quedó separado de la ruta de migraciones y fuera del runner. Exige huella 004 exacta, cero ciclos, cero receipts, firmas/owner/search path/permisos exactos, hashes v1/v15 y RLS/constraints/índices/triggers compatibles. Revoca entrypoints primero, retira dependencias en orden inverso, restaura las ACL legacy capturadas, opera transaccionalmente y no contiene `CASCADE`, DML comercial, history ni manipulación del historial de migraciones. No está autorizado para ejecución y queda prohibido después de uso operativo.
+
+La reconciliación futura del registro es otra operación: solo después de un recovery autorizado y validado se obtendría la versión exacta y se usaría el procedimiento oficial `migration repair --status reverted`; nunca SQL directo sobre tablas internas.
+
+El bundle reproducible está en `docs/audit/lobodeals-3-migration-004-scoped-recovery-2026-07-30/`. Conserva baseline, exportación explícita de cero ciclos, ausencia previa de receipts, definiciones legacy, mapa, manifiesto y SHA-256. No exporta las 841.549 filas/273.907.712 bytes de `psdeals_stage_price_history` porque 004 no menciona ni muta esa tabla, no ejecuta ninguna función que la toque y su recovery no depende de ella. La gate quedó `SCOPED_RECOVERY_PROVEN`.
+
+Antes de cualquier mutación se creó `4127875931172285241445331c2fdc8c3a01fa11` (`Prepare scoped recovery for PSDeals migration 004`). Contenía solo el bundle, recovery SQL no autorizado, builder/validador, 25 pruebas y el plan actualizado. El worktree quedó limpio y 004 conservó SHA-256 `712af68ff12934f7f3f7648b6e629e84610e576fbc4d044ccf74a8bd18630dbf`.
+
+### Precheck, aplicación y postcheck
+
+El precheck read-only repetido a las `2026-07-30T01:08:20.804171Z` confirmó:
+
+- proyecto `vlxkoprpobfevxefizwr`, `ACTIVE_HEALTHY`, región `us-east-2`, PostgreSQL 17.6.1.104;
+- historial de migraciones vacío y huella 004 completamente ausente;
+- cero ciclos, cero sesiones relevantes y cero mínimos certificados;
+- conteos/timestamps iguales al baseline;
+- certify v1 SHA-256 `3dfa2232903c014039f070f48d4044ffe0b329e38cb86615b9bdbc20c4f9aa88` con ACL `postgres`/`service_role`;
+- cache v15 SHA-256 `1c6e71d26e6554e6f8fdf2e6ed0388db959419db4ee64132d8ddd5761b3996dc` con ACL `PUBLIC`, `postgres`, `anon`, `authenticated` y `service_role`.
+
+Se invocó `apply_migration` una sola vez sobre el proyecto exacto, nombre `lobodeals_3_reconciliable_cycle_actions` y los 67.999 bytes de 004. La herramienta respondió `success=true` y registró la versión `20260730010927`. No hubo timeout ni reintento.
+
+El postcheck read-only a las `2026-07-30T01:11:41.826225Z` verificó:
+
+- diez columnas, nueve constraints y tres índices 004 añadidos a cycles;
+- receipts con 16 columnas, 14 constraints, cuatro índices, RLS, cero policies y cero filas;
+- doce funciones y dos triggers con firmas exactas; once `SECURITY DEFINER`, el trigger identity invoker, `search_path=''`, owner `postgres` y grants esperados;
+- helpers internos solo para `postgres`; entrypoints solo para `service_role`/`postgres`; sin ejecución para `anon` o `authenticated`;
+- v1/v15 con definiciones y hashes intactos, ahora ejecutables únicamente por `postgres`;
+- 0 cycles, 0 receipts, 32.890 stage items, 114 import runs, siete monthly/cuatro activos, 32.890 cache, 841.549 history/273.907.712 bytes y cero mínimos certificados;
+- todos los timestamps comerciales iguales al baseline: no hubo upsert, monthly, cache refresh ni history.
+
+Los asesores no encontraron warnings atribuibles a 004. Solo marcaron como `INFO` RLS sin policy para cycles/receipts y los índices nuevos todavía sin uso; es coherente con cero filas/ciclos y ausencia de grants a clientes. La deuda security/performance restante era preexistente y no se modificó.
+
+El facts redactado está en `docs/audit/lobodeals-3-remote-readonly-facts-2026-07-30.json`. El preflight offline pasó válido/listo, sin blockers ni objetos faltantes, clasificación `MIGRATION_READY` y código 2. `LIVE_CYCLE_READY` sigue falso por diseño.
+
+### Validación y posición del Bloque 4
+
+Antes de la aplicación aprobaron 302/302 pruebas, incluidas 25/25 de recuperación, node checks, bundle `--check`, `git diff --check` y lint con cero errores/las seis advertencias preexistentes. No se ejecutó build. La validación final debe conservar esos resultados después de registrar la aplicación.
+
+Posición exacta: la infraestructura reconciliable de 004 ya está instalada y verificada como `MIGRATION_READY`, pero el Bloque 4 no está cerrado. No existe aún un ciclo real ni evidencia live. Continúan bloqueados create-cycle, productores, upsert, monthly, democión, mark-succeeded, certificación, caché, validación pública y métricas hasta una autorización separada para el primer ciclo controlado. La prueba de 30 días no comenzó.
+
+Siguiente tarea local segura: preparar, sin ejecutar, el runbook exacto del primer ciclo controlado usando los RPC 004 ya verificados, sus receipts y los artefactos locales; debe incluir gates de abort/reconciliación y no autoriza todavía la ejecución.

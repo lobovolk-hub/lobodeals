@@ -1,0 +1,87 @@
+{
+  "log_version": 1,
+  "authorization": "Texto 0006",
+  "classification": "MIGRATION_READY",
+  "initial_head": "39cd12781304a05da2802f60f81ba8e50f612fd8",
+  "pre_application_head": "4127875931172285241445331c2fdc8c3a01fa11",
+  "migration": {
+    "file": "sql/004-lobodeals-3-reconciliable-cycle-actions.sql",
+    "sha256": "712af68ff12934f7f3f7648b6e629e84610e576fbc4d044ccf74a8bd18630dbf",
+    "bytes": 67999,
+    "lines": 2205,
+    "method": "supabase_mcp_apply_migration",
+    "name": "lobodeals_3_reconciliable_cycle_actions",
+    "version": "20260730010927",
+    "apply_migration_invocations": 1,
+    "tool_result": "success_true",
+    "transaction_result": "committed"
+  },
+  "recovery": {
+    "classification": "SCOPED_RECOVERY_PROVEN",
+    "pre_application_commit": "4127875931172285241445331c2fdc8c3a01fa11",
+    "recovery_sql_authorized": false,
+    "recovery_invocations": 0,
+    "emergency_containment_invocations": 0
+  },
+  "remote": {
+    "project_id": "vlxkoprpobfevxefizwr",
+    "region": "us-east-2",
+    "status": "ACTIVE_HEALTHY",
+    "postgres_version": "17.6.1.104",
+    "readonly_sql_queries_this_session": 2,
+    "operational_rpcs_executed": 0,
+    "mutating_sql_outside_migration_004": 0
+  },
+  "precheck": {
+    "observed_at": "2026-07-30T01:08:20.804171Z",
+    "migration_history_entries": 0,
+    "migration_004_footprint": "absent",
+    "price_refresh_cycles": 0,
+    "other_active_sessions": 0,
+    "relevant_active_sessions": 0,
+    "legacy_hashes_match": true,
+    "baseline_counts_match": true
+  },
+  "postcheck": {
+    "observed_at": "2026-07-30T01:11:41.826225Z",
+    "migration_history_entries": 1,
+    "migration_004_footprint": "complete",
+    "cycle_columns_added": 10,
+    "cycle_constraints_added": 9,
+    "cycle_indexes_added": 3,
+    "receipt_columns": 16,
+    "receipt_constraints": 14,
+    "receipt_indexes": 4,
+    "receipt_rls_enabled": true,
+    "receipt_policies": 0,
+    "new_functions": 12,
+    "new_triggers": 2,
+    "price_refresh_cycles": 0,
+    "psdeals_cycle_action_receipts": 0,
+    "legacy_hashes_match": true,
+    "commercial_counts_and_timestamps_unchanged": true,
+    "migration_related_advisor_warnings": 0
+  },
+  "counts_before_and_after": {
+    "psdeals_stage_items": [32890, 32890],
+    "psdeals_import_runs": [114, 114],
+    "price_refresh_cycles": [0, 0],
+    "psdeals_cycle_action_receipts": [null, 0],
+    "ps_plus_monthly_games": [7, 7],
+    "active_monthly_games": [4, 4],
+    "catalog_public_cache": [32890, 32890],
+    "psdeals_stage_price_history": [841549, 841549],
+    "price_history_total_bytes": [273907712, 273907712],
+    "certified_regular_lows": [0, 0],
+    "certified_ps_plus_lows": [0, 0]
+  },
+  "prohibitions_confirmed": {
+    "recovery_sql_executed": false,
+    "operational_rpc_called": false,
+    "cycle_created": false,
+    "receipt_created": false,
+    "cache_refreshed": false,
+    "monthly_updated": false,
+    "history_modified": false
+  }
+}

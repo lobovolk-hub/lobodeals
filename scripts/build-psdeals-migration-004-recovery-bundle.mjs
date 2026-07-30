@@ -25,7 +25,11 @@ const INPUT_ARTIFACTS = Object.freeze([
   { role: 'migration_sql', path: PSDEALS_MIGRATION_004_PATH },
   { role: 'recovery_sql_not_authorized', path: PSDEALS_MIGRATION_004_RECOVERY_PATH },
   { role: 'bundle_readme', path: README_PATH },
+  { role: 'application_result', path: `${BUNDLE_DIRECTORY}/application-result.json` },
   { role: 'remote_facts_baseline', path: 'docs/audit/lobodeals-3-remote-readonly-facts-2026-07-29.json' },
+  { role: 'remote_facts_postcheck', path: 'docs/audit/lobodeals-3-remote-readonly-facts-2026-07-30.json' },
+  { role: 'remote_preflight_postcheck', path: 'docs/audit/lobodeals-3-remote-readonly-preflight-2026-07-30.json' },
+  { role: 'application_log', path: 'docs/audit/lobodeals-3-migration-004-application-log-2026-07-30.json' },
   { role: 'schema_baseline', path: 'docs/audit/lobodeals-3-migration-004-schema-precheck-2026-07-29.json' },
   { role: 'legacy_function_definitions', path: 'docs/audit/lobodeals-3-migration-004-legacy-function-definitions-precheck-2026-07-29.json' },
   { role: 'application_plan', path: 'docs/audit/lobodeals-3-cycle-migration-004-application-plan-2026-07-29.md' },
@@ -53,6 +57,7 @@ export async function buildPsdealsMigration004RecoveryBundleArtifacts() {
   const migrationSql = await readPortable(PSDEALS_MIGRATION_004_PATH)
   const recoverySql = await readPortable(PSDEALS_MIGRATION_004_RECOVERY_PATH)
   const facts = JSON.parse(await readPortable('docs/audit/lobodeals-3-remote-readonly-facts-2026-07-29.json'))
+  const applicationResult = JSON.parse(await readPortable(`${BUNDLE_DIRECTORY}/application-result.json`))
   const mutationMap = buildPsdealsMigration004MutationMap(migrationSql)
   const recoveryValidation = validatePsdealsMigration004RecoverySql(recoverySql, migrationSql)
   const scopedRecoveryProven = recoveryValidation.valid
@@ -116,9 +121,18 @@ export async function buildPsdealsMigration004RecoveryBundleArtifacts() {
   }
   manifest.migration_history = {
     application_record_created_by_control_plane: true,
-    applied_version: null,
+    applied_version: applicationResult.migration_version,
     direct_history_sql_forbidden: true,
     reconciliation_after_recovery: 'separate_explicitly_authorized_supabase_migration_repair',
+  }
+  manifest.application = {
+    classification: applicationResult.classification,
+    apply_migration_invocations: applicationResult.apply_migration_invocations,
+    postcheck_at: applicationResult.postcheck_at,
+    cycles: applicationResult.price_refresh_cycles,
+    receipts: applicationResult.psdeals_cycle_action_receipts,
+    recovery_invocations: applicationResult.recovery_invocations,
+    operational_rpcs_executed: applicationResult.operational_rpcs_executed,
   }
   const manifestBytes = Buffer.from(formatJson(manifest))
 

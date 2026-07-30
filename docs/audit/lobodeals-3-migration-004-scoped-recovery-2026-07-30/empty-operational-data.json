@@ -1,0 +1,25 @@
+{
+  "export_version": 1,
+  "source": "read-only remote baseline captured before migration 004",
+  "observed_at": "2026-07-29T23:57:38.643985Z",
+  "project_id": "vlxkoprpobfevxefizwr",
+  "price_refresh_cycles": {
+    "row_count": 0,
+    "rows": []
+  },
+  "psdeals_cycle_action_receipts": {
+    "exists": false,
+    "row_count": null,
+    "rows": null
+  },
+  "certified_compact_lows": {
+    "regular_rows": 0,
+    "ps_plus_rows": 0
+  },
+  "price_history": {
+    "exported": false,
+    "row_count_observed": 841549,
+    "total_bytes_observed": 273907712,
+    "exclusion_reason": "Migration 004 does not reference or mutate this table."
+  }
+}

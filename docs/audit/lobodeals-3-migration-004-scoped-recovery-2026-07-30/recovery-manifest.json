@@ -1,0 +1,129 @@
+{
+  "recovery_bundle_version": 1,
+  "authorization": "Texto 0006",
+  "classification": "SCOPED_RECOVERY_PROVEN",
+  "prepared_at": "2026-07-30T00:47:21.4842928Z",
+  "initial_head": "39cd12781304a05da2802f60f81ba8e50f612fd8",
+  "migration": {
+    "path": "sql/004-lobodeals-3-reconciliable-cycle-actions.sql",
+    "commit": "e18a3c5bcd477e95f30ee297f1f54f43ef033910",
+    "sha256": "712af68ff12934f7f3f7648b6e629e84610e576fbc4d044ccf74a8bd18630dbf",
+    "source_line_count": 2205,
+    "statement_count": 78,
+    "mutation_count": 68
+  },
+  "remote_baseline": {
+    "observed_at": "2026-07-29T23:57:38.643985Z",
+    "project_id": "vlxkoprpobfevxefizwr",
+    "region": "us-east-2",
+    "status": "ACTIVE_HEALTHY",
+    "postgres_version": "17.6.1.104",
+    "price_refresh_cycles": 0,
+    "receipts_table_exists": false,
+    "certified_regular_low_rows": 0,
+    "certified_ps_plus_low_rows": 0,
+    "certify_v1_sha256": "3dfa2232903c014039f070f48d4044ffe0b329e38cb86615b9bdbc20c4f9aa88",
+    "cache_v15_sha256": "1c6e71d26e6554e6f8fdf2e6ed0388db959419db4ee64132d8ddd5761b3996dc"
+  },
+  "recovery_scope": {
+    "includes": [
+      "price_refresh_cycles migration 004 columns, constraints, indexes, and identity trigger",
+      "psdeals_cycle_action_receipts empty table and metadata",
+      "migration 004 functions and grants",
+      "captured legacy function grants"
+    ],
+    "excludes": [
+      "all operational rows",
+      "all catalog and stage item data",
+      "all monthly game data",
+      "all cache data",
+      "all detailed price history data"
+    ],
+    "price_history_export_required": false,
+    "reason": "Migration 004 neither references nor mutates detailed price history; recovery removes only unused additive schema objects while cycles and receipts remain empty."
+  },
+  "gates": {
+    "scoped_recovery": "SCOPED_RECOVERY_PROVEN",
+    "requires_zero_cycles": true,
+    "requires_zero_receipts": true,
+    "requires_exact_004_footprint": true,
+    "requires_legacy_function_hashes": true,
+    "recovery_sql_authorized_for_execution": false,
+    "rollback_after_operational_use_forbidden": true,
+    "migration_history_reconciliation_separate": true
+  },
+  "artifacts": [
+    {
+      "role": "migration_sql",
+      "path": "sql/004-lobodeals-3-reconciliable-cycle-actions.sql",
+      "sha256": "712af68ff12934f7f3f7648b6e629e84610e576fbc4d044ccf74a8bd18630dbf",
+      "bytes": 67999
+    },
+    {
+      "role": "recovery_sql_not_authorized",
+      "path": "sql/recovery/004-lobodeals-3-reconciliable-cycle-actions-before-use.sql",
+      "sha256": "a904aa4a7bad93538b30770b88cea8ce2a5042a2e5b1858eb0206e166d3fbe5b",
+      "bytes": 21536
+    },
+    {
+      "role": "bundle_readme",
+      "path": "docs/audit/lobodeals-3-migration-004-scoped-recovery-2026-07-30/README.md",
+      "sha256": "7885a69ba7a2121728ef6c91701bd5bc5dfd370de6eebb22d605a42608fd5360",
+      "bytes": 4105
+    },
+    {
+      "role": "remote_facts_baseline",
+      "path": "docs/audit/lobodeals-3-remote-readonly-facts-2026-07-29.json",
+      "sha256": "613dc93fc5f40dd0e1ab1652952df0a9ab35c3533bfa18f3491d18263a13c202",
+      "bytes": 7950
+    },
+    {
+      "role": "schema_baseline",
+      "path": "docs/audit/lobodeals-3-migration-004-schema-precheck-2026-07-29.json",
+      "sha256": "6c6bb4af879441d02eeebf2008f394fb75f11135f65f04ba4718fd9df9f22c51",
+      "bytes": 32234
+    },
+    {
+      "role": "legacy_function_definitions",
+      "path": "docs/audit/lobodeals-3-migration-004-legacy-function-definitions-precheck-2026-07-29.json",
+      "sha256": "d644fe790f4c82f93ca458400896a2f81b9a15f3fd37698cc00fbbda9e30bb63",
+      "bytes": 21944
+    },
+    {
+      "role": "application_plan",
+      "path": "docs/audit/lobodeals-3-cycle-migration-004-application-plan-2026-07-29.md",
+      "sha256": "85a2fdb9c9b130490748b83da04a7a593890e5d1bd6805b68c375b13fbe35cd6",
+      "bytes": 13265
+    },
+    {
+      "role": "price_history_scope_audit",
+      "path": "docs/audit/lobodeals-3-price-history-retention-audit-2026-07-29.md",
+      "sha256": "d41d613adaf04c72d86c506873f20ddd89efaa5fff7b6965c61a5f4aae833069",
+      "bytes": 16640
+    },
+    {
+      "role": "mutation_map",
+      "path": "docs/audit/lobodeals-3-migration-004-scoped-recovery-2026-07-30/mutation-map.json",
+      "sha256": "29dcab240c30512300d56f35c0a6171676f6d422141df1065dc7ea3ef6385e31",
+      "bytes": 50695
+    },
+    {
+      "role": "empty_operational_data",
+      "path": "docs/audit/lobodeals-3-migration-004-scoped-recovery-2026-07-30/empty-operational-data.json",
+      "sha256": "15f9cf9c4b396edef084ba45719c591bf1a2f6ca3f9cb3b821e192dbd9d172fe",
+      "bytes": 639
+    }
+  ],
+  "fingerprint": "735b7243a6b41b690c63c5d5ce8d8995afede32ba0e576a6fab52ba34d237584",
+  "recovery_sql_validation": {
+    "valid": true,
+    "errors": [],
+    "execution_authorized": false
+  },
+  "migration_history": {
+    "application_record_created_by_control_plane": true,
+    "applied_version": null,
+    "direct_history_sql_forbidden": true,
+    "reconciliation_after_recovery": "separate_explicitly_authorized_supabase_migration_repair"
+  }
+}

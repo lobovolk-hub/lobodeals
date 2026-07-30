@@ -36,9 +36,10 @@ La sesión futura debe mostrar exactamente cada consulta o mutación y su efecto
    - archivo 004 idéntico al commit revisado;
    - SHA-256 exacto `712af68ff12934f7f3f7648b6e629e84610e576fbc4d044ccf74a8bd18630dbf`.
 
-2. Confirmar recuperabilidad antes de cualquier DDL:
+2. Confirmar recuperabilidad antes de cualquier DDL mediante una de estas dos rutas demostradas:
 
-   - backup administrado o punto de restauración vigente y comprobado;
+   - backup administrado o punto de restauración vigente y comprobado; o
+   - recuperación acotada de la superficie exacta de 004, protegida en un commit anterior a la aplicación, únicamente mientras ciclos y receipts permanezcan en cero y no exista uso operativo;
    - exportación separada del esquema, definiciones, grants y políticas de `price_refresh_cycles` y de las dos funciones legacy;
    - registro de conteos y hashes en un artefacto redactado;
    - responsable y procedimiento de recuperación identificados.
@@ -120,7 +121,9 @@ Solo con autorización separada, backup confirmado y conteos exactos en cero pue
 7. confirmar que las definiciones v1/v15 nunca cambiaron;
 8. repetir inventario y preflight read-only.
 
-Los comandos de reversión no se versionan aquí porque una lista ejecutable puede quedar obsoleta frente al esquema real. Deben generarse desde el inventario post-aplicación y revisarse como una migración independiente, sin `CASCADE` ni borrado de datos.
+La recuperación acotada está versionada fuera de la ruta normal de migraciones en `sql/recovery/004-lobodeals-3-reconciliable-cycle-actions-before-use.sql` y su bundle reproducible está en `docs/audit/lobodeals-3-migration-004-scoped-recovery-2026-07-30/`. El script no está autorizado para ejecución: primero debe validar la huella post-004 exacta, cero ciclos, cero receipts, hashes y grants legacy, firmas, RLS, constraints, índices y triggers. Cualquier discrepancia obliga a corregir hacia adelante. No usa `CASCADE` ni borrado de filas.
+
+El registro creado por `apply_migration` en el historial de Supabase se trata como una operación del plano de control separada. Una recuperación futura debe obtener primero la versión exacta registrada y solo después, con autorización independiente y una recuperación SQL ya confirmada, usar el procedimiento documentado `supabase migration repair --status reverted <version-exacta>`. Nunca debe editar directamente `supabase_migrations.schema_migrations`.
 
 ### Después de crear un ciclo o cualquier receipt
 

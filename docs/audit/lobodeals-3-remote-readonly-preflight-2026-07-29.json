@@ -1,8 +1,9 @@
 {
-  "preflight_version": 1,
-  "checked_at": "2026-07-29T21:24:00.000Z",
-  "code_revision_at_collection": "c043e2876db89ad3552c8fbec2d12c14dbb9f9f5",
-  "classification": "NOT_READY",
+  "preflight_version": 2,
+  "checked_at": "2026-07-29T23:57:38.643985Z",
+  "code_revision_at_collection": "c87fa118daf7155d0eedf38e707e15f82bef994f",
+  "classification": "PRECHECK_BLOCKED",
+  "schema_classification": "MIGRATION_NOT_APPLIED",
   "valid": true,
   "ready": false,
   "read_only_verified": true,
@@ -20,12 +21,12 @@
   ],
   "blockers": [
     {
-      "code": "PREFLIGHT_CREATE_CYCLE_RECONCILIATION_CONTRACT_MISSING",
-      "detail": "price_refresh_cycles has no unique local_cycle_id/run_token identity for unambiguous reconciliation."
+      "code": "PREFLIGHT_RECOVERY_NOT_DEMONSTRATED",
+      "detail": "The verified organization plan is Free. No managed backup or PITR restore point was demonstrable, while the versioned application plan makes one mandatory before DDL."
     },
     {
-      "code": "PREFLIGHT_CACHE_RECONCILIATION_CONTRACT_MISSING",
-      "detail": "refresh_catalog_public_cache_v15 has no independent cycle-linked receipt for reconciling a lost response."
+      "code": "PREFLIGHT_MIGRATION_NOT_APPLIED",
+      "detail": "The 004 cycle columns, receipt table, indexes, and versioned functions remain wholly absent."
     }
   ],
   "warnings": [
@@ -36,5 +37,14 @@
   ],
   "missing_required_objects": [],
   "incompatible_contracts": [],
-  "credentials_redacted": true
+  "credentials_redacted": true,
+  "migration_sha256": "712af68ff12934f7f3f7648b6e629e84610e576fbc4d044ccf74a8bd18630dbf",
+  "legacy_function_sha256": {
+    "certify_price_refresh_cycle": "3dfa2232903c014039f070f48d4044ffe0b329e38cb86615b9bdbc20c4f9aa88",
+    "refresh_catalog_public_cache_v15": "1c6e71d26e6554e6f8fdf2e6ed0388db959419db4ee64132d8ddd5761b3996dc"
+  },
+  "price_refresh_cycles": 0,
+  "active_price_refresh_cycles": 0,
+  "receipts_present": false,
+  "apply_migration_invocations": 0
 }

@@ -1,10 +1,24 @@
 {
   "preflight_version": 2,
   "collection_mode": "supabase_mcp_readonly",
-  "checked_at": "2026-07-29T22:37:06.267Z",
-  "code_revision": "70fb31bab2b3ab655766820a45f0042cd7d8761e",
+  "checked_at": "2026-07-29T23:57:38.643985Z",
+  "code_revision": "c87fa118daf7155d0eedf38e707e15f82bef994f",
   "mutations_executed": 0,
   "rpcs_executed": 0,
+  "precheck_session": {
+    "authorization": "Texto 0005",
+    "session_classification": "PRECHECK_BLOCKED",
+    "schema_classification": "MIGRATION_NOT_APPLIED",
+    "migration_sha256": "712af68ff12934f7f3f7648b6e629e84610e576fbc4d044ccf74a8bd18630dbf",
+    "migration_history_entries": 0,
+    "other_active_sessions": 0,
+    "relevant_active_sessions": 0,
+    "organization_plan": "free",
+    "managed_backup_verified": false,
+    "pitr_verified": false,
+    "recovery_blocker": "The application plan requires a verified managed backup or restore point. Current Supabase documentation limits managed daily backups to Pro, Team, and Enterprise projects; this project belongs to a Free organization and no backup or PITR restore point was demonstrated.",
+    "apply_migration_invocations": 0
+  },
   "project": {
     "id": "vlxkoprpobfevxefizwr",
     "region": "us-east-2",
@@ -136,6 +150,9 @@
   "live_cycle_prerequisites_verified": false,
   "measurements": {
     "price_refresh_cycles": 0,
+    "active_price_refresh_cycles": 0,
+    "stage_max_updated_at": "2026-07-27T14:00:51.013950Z",
+    "import_runs_max_updated_at": "2026-06-06T21:50:17.373795Z",
     "latest_listing_seen_at": "2026-05-13T22:20:58.293505Z",
     "latest_detail_synced_at": "2026-06-06T21:50:14.275Z",
     "listing_marked_rows": 7337,

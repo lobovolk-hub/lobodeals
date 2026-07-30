@@ -1,0 +1,1100 @@
+{
+  "snapshot_version": 1,
+  "collected_at": "2026-07-29T23:57:38.643985Z",
+  "project_id": "vlxkoprpobfevxefizwr",
+  "collection_mode": "supabase_mcp_readonly",
+  "mutations_executed": 0,
+  "operational_rpcs_executed": 0,
+  "schema": {
+    "rls": [
+      {
+        "table": "price_refresh_cycles",
+        "forced": false,
+        "enabled": true
+      },
+      {
+        "table": "psdeals_stage_items",
+        "forced": false,
+        "enabled": true
+      }
+    ],
+    "grants": [
+      {
+        "table": "price_refresh_cycles",
+        "grantee": "postgres",
+        "privilege": "DELETE"
+      },
+      {
+        "table": "price_refresh_cycles",
+        "grantee": "postgres",
+        "privilege": "INSERT"
+      },
+      {
+        "table": "price_refresh_cycles",
+        "grantee": "postgres",
+        "privilege": "REFERENCES"
+      },
+      {
+        "table": "price_refresh_cycles",
+        "grantee": "postgres",
+        "privilege": "SELECT"
+      },
+      {
+        "table": "price_refresh_cycles",
+        "grantee": "postgres",
+        "privilege": "TRIGGER"
+      },
+      {
+        "table": "price_refresh_cycles",
+        "grantee": "postgres",
+        "privilege": "TRUNCATE"
+      },
+      {
+        "table": "price_refresh_cycles",
+        "grantee": "postgres",
+        "privilege": "UPDATE"
+      },
+      {
+        "table": "price_refresh_cycles",
+        "grantee": "service_role",
+        "privilege": "DELETE"
+      },
+      {
+        "table": "price_refresh_cycles",
+        "grantee": "service_role",
+        "privilege": "INSERT"
+      },
+      {
+        "table": "price_refresh_cycles",
+        "grantee": "service_role",
+        "privilege": "REFERENCES"
+      },
+      {
+        "table": "price_refresh_cycles",
+        "grantee": "service_role",
+        "privilege": "SELECT"
+      },
+      {
+        "table": "price_refresh_cycles",
+        "grantee": "service_role",
+        "privilege": "TRIGGER"
+      },
+      {
+        "table": "price_refresh_cycles",
+        "grantee": "service_role",
+        "privilege": "TRUNCATE"
+      },
+      {
+        "table": "price_refresh_cycles",
+        "grantee": "service_role",
+        "privilege": "UPDATE"
+      },
+      {
+        "table": "psdeals_stage_items",
+        "grantee": "anon",
+        "privilege": "DELETE"
+      },
+      {
+        "table": "psdeals_stage_items",
+        "grantee": "anon",
+        "privilege": "INSERT"
+      },
+      {
+        "table": "psdeals_stage_items",
+        "grantee": "anon",
+        "privilege": "REFERENCES"
+      },
+      {
+        "table": "psdeals_stage_items",
+        "grantee": "anon",
+        "privilege": "SELECT"
+      },
+      {
+        "table": "psdeals_stage_items",
+        "grantee": "anon",
+        "privilege": "TRIGGER"
+      },
+      {
+        "table": "psdeals_stage_items",
+        "grantee": "anon",
+        "privilege": "TRUNCATE"
+      },
+      {
+        "table": "psdeals_stage_items",
+        "grantee": "anon",
+        "privilege": "UPDATE"
+      },
+      {
+        "table": "psdeals_stage_items",
+        "grantee": "authenticated",
+        "privilege": "DELETE"
+      },
+      {
+        "table": "psdeals_stage_items",
+        "grantee": "authenticated",
+        "privilege": "INSERT"
+      },
+      {
+        "table": "psdeals_stage_items",
+        "grantee": "authenticated",
+        "privilege": "REFERENCES"
+      },
+      {
+        "table": "psdeals_stage_items",
+        "grantee": "authenticated",
+        "privilege": "SELECT"
+      },
+      {
+        "table": "psdeals_stage_items",
+        "grantee": "authenticated",
+        "privilege": "TRIGGER"
+      },
+      {
+        "table": "psdeals_stage_items",
+        "grantee": "authenticated",
+        "privilege": "TRUNCATE"
+      },
+      {
+        "table": "psdeals_stage_items",
+        "grantee": "authenticated",
+        "privilege": "UPDATE"
+      },
+      {
+        "table": "psdeals_stage_items",
+        "grantee": "postgres",
+        "privilege": "DELETE"
+      },
+      {
+        "table": "psdeals_stage_items",
+        "grantee": "postgres",
+        "privilege": "INSERT"
+      },
+      {
+        "table": "psdeals_stage_items",
+        "grantee": "postgres",
+        "privilege": "REFERENCES"
+      },
+      {
+        "table": "psdeals_stage_items",
+        "grantee": "postgres",
+        "privilege": "SELECT"
+      },
+      {
+        "table": "psdeals_stage_items",
+        "grantee": "postgres",
+        "privilege": "TRIGGER"
+      },
+      {
+        "table": "psdeals_stage_items",
+        "grantee": "postgres",
+        "privilege": "TRUNCATE"
+      },
+      {
+        "table": "psdeals_stage_items",
+        "grantee": "postgres",
+        "privilege": "UPDATE"
+      },
+      {
+        "table": "psdeals_stage_items",
+        "grantee": "service_role",
+        "privilege": "DELETE"
+      },
+      {
+        "table": "psdeals_stage_items",
+        "grantee": "service_role",
+        "privilege": "INSERT"
+      },
+      {
+        "table": "psdeals_stage_items",
+        "grantee": "service_role",
+        "privilege": "REFERENCES"
+      },
+      {
+        "table": "psdeals_stage_items",
+        "grantee": "service_role",
+        "privilege": "SELECT"
+      },
+      {
+        "table": "psdeals_stage_items",
+        "grantee": "service_role",
+        "privilege": "TRIGGER"
+      },
+      {
+        "table": "psdeals_stage_items",
+        "grantee": "service_role",
+        "privilege": "TRUNCATE"
+      },
+      {
+        "table": "psdeals_stage_items",
+        "grantee": "service_role",
+        "privilege": "UPDATE"
+      }
+    ],
+    "columns": [
+      {
+        "name": "id",
+        "table": "price_refresh_cycles",
+        "default": "gen_random_uuid()",
+        "ordinal": 1,
+        "nullable": "NO",
+        "udt_name": "uuid",
+        "data_type": "uuid"
+      },
+      {
+        "name": "region_code",
+        "table": "price_refresh_cycles",
+        "default": "'us'::text",
+        "ordinal": 2,
+        "nullable": "NO",
+        "udt_name": "text",
+        "data_type": "text"
+      },
+      {
+        "name": "storefront",
+        "table": "price_refresh_cycles",
+        "default": "'playstation'::text",
+        "ordinal": 3,
+        "nullable": "NO",
+        "udt_name": "text",
+        "data_type": "text"
+      },
+      {
+        "name": "cycle_date",
+        "table": "price_refresh_cycles",
+        "default": null,
+        "ordinal": 4,
+        "nullable": "NO",
+        "udt_name": "date",
+        "data_type": "date"
+      },
+      {
+        "name": "status",
+        "table": "price_refresh_cycles",
+        "default": "'running'::text",
+        "ordinal": 5,
+        "nullable": "NO",
+        "udt_name": "text",
+        "data_type": "text"
+      },
+      {
+        "name": "listing_completed_at",
+        "table": "price_refresh_cycles",
+        "default": null,
+        "ordinal": 6,
+        "nullable": "YES",
+        "udt_name": "timestamptz",
+        "data_type": "timestamp with time zone"
+      },
+      {
+        "name": "details_completed_at",
+        "table": "price_refresh_cycles",
+        "default": null,
+        "ordinal": 7,
+        "nullable": "YES",
+        "udt_name": "timestamptz",
+        "data_type": "timestamp with time zone"
+      },
+      {
+        "name": "ended_discounts_completed_at",
+        "table": "price_refresh_cycles",
+        "default": null,
+        "ordinal": 8,
+        "nullable": "YES",
+        "udt_name": "timestamptz",
+        "data_type": "timestamp with time zone"
+      },
+      {
+        "name": "monthly_games_checked_at",
+        "table": "price_refresh_cycles",
+        "default": null,
+        "ordinal": 9,
+        "nullable": "YES",
+        "udt_name": "timestamptz",
+        "data_type": "timestamp with time zone"
+      },
+      {
+        "name": "validation_completed_at",
+        "table": "price_refresh_cycles",
+        "default": null,
+        "ordinal": 10,
+        "nullable": "YES",
+        "udt_name": "timestamptz",
+        "data_type": "timestamp with time zone"
+      },
+      {
+        "name": "validation_passed",
+        "table": "price_refresh_cycles",
+        "default": "false",
+        "ordinal": 11,
+        "nullable": "NO",
+        "udt_name": "bool",
+        "data_type": "boolean"
+      },
+      {
+        "name": "items_seen",
+        "table": "price_refresh_cycles",
+        "default": "0",
+        "ordinal": 12,
+        "nullable": "NO",
+        "udt_name": "int4",
+        "data_type": "integer"
+      },
+      {
+        "name": "items_updated",
+        "table": "price_refresh_cycles",
+        "default": "0",
+        "ordinal": 13,
+        "nullable": "NO",
+        "udt_name": "int4",
+        "data_type": "integer"
+      },
+      {
+        "name": "items_failed",
+        "table": "price_refresh_cycles",
+        "default": "0",
+        "ordinal": 14,
+        "nullable": "NO",
+        "udt_name": "int4",
+        "data_type": "integer"
+      },
+      {
+        "name": "new_items_detected",
+        "table": "price_refresh_cycles",
+        "default": "0",
+        "ordinal": 15,
+        "nullable": "NO",
+        "udt_name": "int4",
+        "data_type": "integer"
+      },
+      {
+        "name": "ended_discounts_applied",
+        "table": "price_refresh_cycles",
+        "default": "0",
+        "ordinal": 16,
+        "nullable": "NO",
+        "udt_name": "int4",
+        "data_type": "integer"
+      },
+      {
+        "name": "regular_lows_initialized",
+        "table": "price_refresh_cycles",
+        "default": "0",
+        "ordinal": 17,
+        "nullable": "NO",
+        "udt_name": "int4",
+        "data_type": "integer"
+      },
+      {
+        "name": "regular_lows_lowered",
+        "table": "price_refresh_cycles",
+        "default": "0",
+        "ordinal": 18,
+        "nullable": "NO",
+        "udt_name": "int4",
+        "data_type": "integer"
+      },
+      {
+        "name": "ps_plus_lows_initialized",
+        "table": "price_refresh_cycles",
+        "default": "0",
+        "ordinal": 19,
+        "nullable": "NO",
+        "udt_name": "int4",
+        "data_type": "integer"
+      },
+      {
+        "name": "ps_plus_lows_lowered",
+        "table": "price_refresh_cycles",
+        "default": "0",
+        "ordinal": 20,
+        "nullable": "NO",
+        "udt_name": "int4",
+        "data_type": "integer"
+      },
+      {
+        "name": "failure_reason",
+        "table": "price_refresh_cycles",
+        "default": null,
+        "ordinal": 21,
+        "nullable": "YES",
+        "udt_name": "text",
+        "data_type": "text"
+      },
+      {
+        "name": "metrics",
+        "table": "price_refresh_cycles",
+        "default": "'{}'::jsonb",
+        "ordinal": 22,
+        "nullable": "NO",
+        "udt_name": "jsonb",
+        "data_type": "jsonb"
+      },
+      {
+        "name": "started_at",
+        "table": "price_refresh_cycles",
+        "default": "now()",
+        "ordinal": 23,
+        "nullable": "NO",
+        "udt_name": "timestamptz",
+        "data_type": "timestamp with time zone"
+      },
+      {
+        "name": "finished_at",
+        "table": "price_refresh_cycles",
+        "default": null,
+        "ordinal": 24,
+        "nullable": "YES",
+        "udt_name": "timestamptz",
+        "data_type": "timestamp with time zone"
+      },
+      {
+        "name": "certified_at",
+        "table": "price_refresh_cycles",
+        "default": null,
+        "ordinal": 25,
+        "nullable": "YES",
+        "udt_name": "timestamptz",
+        "data_type": "timestamp with time zone"
+      },
+      {
+        "name": "created_at",
+        "table": "price_refresh_cycles",
+        "default": "now()",
+        "ordinal": 26,
+        "nullable": "NO",
+        "udt_name": "timestamptz",
+        "data_type": "timestamp with time zone"
+      },
+      {
+        "name": "updated_at",
+        "table": "price_refresh_cycles",
+        "default": "now()",
+        "ordinal": 27,
+        "nullable": "NO",
+        "udt_name": "timestamptz",
+        "data_type": "timestamp with time zone"
+      },
+      {
+        "name": "id",
+        "table": "psdeals_stage_items",
+        "default": "gen_random_uuid()",
+        "ordinal": 1,
+        "nullable": "NO",
+        "udt_name": "uuid",
+        "data_type": "uuid"
+      },
+      {
+        "name": "region_code",
+        "table": "psdeals_stage_items",
+        "default": "'us'::text",
+        "ordinal": 2,
+        "nullable": "NO",
+        "udt_name": "text",
+        "data_type": "text"
+      },
+      {
+        "name": "storefront",
+        "table": "psdeals_stage_items",
+        "default": "'playstation'::text",
+        "ordinal": 3,
+        "nullable": "NO",
+        "udt_name": "text",
+        "data_type": "text"
+      },
+      {
+        "name": "psdeals_id",
+        "table": "psdeals_stage_items",
+        "default": null,
+        "ordinal": 4,
+        "nullable": "NO",
+        "udt_name": "int8",
+        "data_type": "bigint"
+      },
+      {
+        "name": "psdeals_slug",
+        "table": "psdeals_stage_items",
+        "default": null,
+        "ordinal": 5,
+        "nullable": "NO",
+        "udt_name": "text",
+        "data_type": "text"
+      },
+      {
+        "name": "psdeals_url",
+        "table": "psdeals_stage_items",
+        "default": null,
+        "ordinal": 6,
+        "nullable": "NO",
+        "udt_name": "text",
+        "data_type": "text"
+      },
+      {
+        "name": "title",
+        "table": "psdeals_stage_items",
+        "default": null,
+        "ordinal": 7,
+        "nullable": "NO",
+        "udt_name": "text",
+        "data_type": "text"
+      },
+      {
+        "name": "platforms",
+        "table": "psdeals_stage_items",
+        "default": "'{}'::text[]",
+        "ordinal": 8,
+        "nullable": "NO",
+        "udt_name": "_text",
+        "data_type": "ARRAY"
+      },
+      {
+        "name": "content_type",
+        "table": "psdeals_stage_items",
+        "default": "'other'::text",
+        "ordinal": 9,
+        "nullable": "NO",
+        "udt_name": "text",
+        "data_type": "text"
+      },
+      {
+        "name": "item_type_label",
+        "table": "psdeals_stage_items",
+        "default": null,
+        "ordinal": 10,
+        "nullable": "YES",
+        "udt_name": "text",
+        "data_type": "text"
+      },
+      {
+        "name": "store_url",
+        "table": "psdeals_stage_items",
+        "default": null,
+        "ordinal": 11,
+        "nullable": "YES",
+        "udt_name": "text",
+        "data_type": "text"
+      },
+      {
+        "name": "store_url_kind",
+        "table": "psdeals_stage_items",
+        "default": null,
+        "ordinal": 12,
+        "nullable": "YES",
+        "udt_name": "text",
+        "data_type": "text"
+      },
+      {
+        "name": "ps_store_primary_id",
+        "table": "psdeals_stage_items",
+        "default": null,
+        "ordinal": 13,
+        "nullable": "YES",
+        "udt_name": "text",
+        "data_type": "text"
+      },
+      {
+        "name": "image_url",
+        "table": "psdeals_stage_items",
+        "default": null,
+        "ordinal": 14,
+        "nullable": "YES",
+        "udt_name": "text",
+        "data_type": "text"
+      },
+      {
+        "name": "description",
+        "table": "psdeals_stage_items",
+        "default": null,
+        "ordinal": 15,
+        "nullable": "YES",
+        "udt_name": "text",
+        "data_type": "text"
+      },
+      {
+        "name": "publisher",
+        "table": "psdeals_stage_items",
+        "default": null,
+        "ordinal": 16,
+        "nullable": "YES",
+        "udt_name": "text",
+        "data_type": "text"
+      },
+      {
+        "name": "genres",
+        "table": "psdeals_stage_items",
+        "default": "'{}'::text[]",
+        "ordinal": 17,
+        "nullable": "NO",
+        "udt_name": "_text",
+        "data_type": "ARRAY"
+      },
+      {
+        "name": "release_date",
+        "table": "psdeals_stage_items",
+        "default": null,
+        "ordinal": 18,
+        "nullable": "YES",
+        "udt_name": "date",
+        "data_type": "date"
+      },
+      {
+        "name": "current_price_amount",
+        "table": "psdeals_stage_items",
+        "default": null,
+        "ordinal": 19,
+        "nullable": "YES",
+        "udt_name": "numeric",
+        "data_type": "numeric"
+      },
+      {
+        "name": "original_price_amount",
+        "table": "psdeals_stage_items",
+        "default": null,
+        "ordinal": 20,
+        "nullable": "YES",
+        "udt_name": "numeric",
+        "data_type": "numeric"
+      },
+      {
+        "name": "discount_percent",
+        "table": "psdeals_stage_items",
+        "default": null,
+        "ordinal": 21,
+        "nullable": "YES",
+        "udt_name": "int4",
+        "data_type": "integer"
+      },
+      {
+        "name": "currency_code",
+        "table": "psdeals_stage_items",
+        "default": "'USD'::text",
+        "ordinal": 22,
+        "nullable": "NO",
+        "udt_name": "text",
+        "data_type": "text"
+      },
+      {
+        "name": "deal_ends_at",
+        "table": "psdeals_stage_items",
+        "default": null,
+        "ordinal": 23,
+        "nullable": "YES",
+        "udt_name": "timestamptz",
+        "data_type": "timestamp with time zone"
+      },
+      {
+        "name": "lowest_price_amount",
+        "table": "psdeals_stage_items",
+        "default": null,
+        "ordinal": 24,
+        "nullable": "YES",
+        "udt_name": "numeric",
+        "data_type": "numeric"
+      },
+      {
+        "name": "lowest_ps_plus_price_amount",
+        "table": "psdeals_stage_items",
+        "default": null,
+        "ordinal": 25,
+        "nullable": "YES",
+        "udt_name": "numeric",
+        "data_type": "numeric"
+      },
+      {
+        "name": "is_ps_plus_discount",
+        "table": "psdeals_stage_items",
+        "default": "false",
+        "ordinal": 26,
+        "nullable": "NO",
+        "udt_name": "bool",
+        "data_type": "boolean"
+      },
+      {
+        "name": "metacritic_score",
+        "table": "psdeals_stage_items",
+        "default": null,
+        "ordinal": 27,
+        "nullable": "YES",
+        "udt_name": "int4",
+        "data_type": "integer"
+      },
+      {
+        "name": "metacritic_user_score",
+        "table": "psdeals_stage_items",
+        "default": null,
+        "ordinal": 28,
+        "nullable": "YES",
+        "udt_name": "numeric",
+        "data_type": "numeric"
+      },
+      {
+        "name": "metacritic_reviews_count",
+        "table": "psdeals_stage_items",
+        "default": null,
+        "ordinal": 29,
+        "nullable": "YES",
+        "udt_name": "int4",
+        "data_type": "integer"
+      },
+      {
+        "name": "playstation_rating",
+        "table": "psdeals_stage_items",
+        "default": null,
+        "ordinal": 30,
+        "nullable": "YES",
+        "udt_name": "numeric",
+        "data_type": "numeric"
+      },
+      {
+        "name": "playstation_ratings_count",
+        "table": "psdeals_stage_items",
+        "default": null,
+        "ordinal": 31,
+        "nullable": "YES",
+        "udt_name": "int4",
+        "data_type": "integer"
+      },
+      {
+        "name": "all_add_ons_url",
+        "table": "psdeals_stage_items",
+        "default": null,
+        "ordinal": 32,
+        "nullable": "YES",
+        "udt_name": "text",
+        "data_type": "text"
+      },
+      {
+        "name": "whats_inside_lines",
+        "table": "psdeals_stage_items",
+        "default": "'{}'::text[]",
+        "ordinal": 33,
+        "nullable": "NO",
+        "udt_name": "_text",
+        "data_type": "ARRAY"
+      },
+      {
+        "name": "is_free_to_play",
+        "table": "psdeals_stage_items",
+        "default": "false",
+        "ordinal": 34,
+        "nullable": "NO",
+        "udt_name": "bool",
+        "data_type": "boolean"
+      },
+      {
+        "name": "availability_state",
+        "table": "psdeals_stage_items",
+        "default": null,
+        "ordinal": 35,
+        "nullable": "YES",
+        "udt_name": "text",
+        "data_type": "text"
+      },
+      {
+        "name": "listing_last_seen_at",
+        "table": "psdeals_stage_items",
+        "default": null,
+        "ordinal": 36,
+        "nullable": "YES",
+        "udt_name": "timestamptz",
+        "data_type": "timestamp with time zone"
+      },
+      {
+        "name": "detail_last_synced_at",
+        "table": "psdeals_stage_items",
+        "default": null,
+        "ordinal": 37,
+        "nullable": "YES",
+        "udt_name": "timestamptz",
+        "data_type": "timestamp with time zone"
+      },
+      {
+        "name": "raw_listing_json",
+        "table": "psdeals_stage_items",
+        "default": null,
+        "ordinal": 38,
+        "nullable": "YES",
+        "udt_name": "jsonb",
+        "data_type": "jsonb"
+      },
+      {
+        "name": "raw_detail_json",
+        "table": "psdeals_stage_items",
+        "default": null,
+        "ordinal": 39,
+        "nullable": "YES",
+        "udt_name": "jsonb",
+        "data_type": "jsonb"
+      },
+      {
+        "name": "source_note",
+        "table": "psdeals_stage_items",
+        "default": null,
+        "ordinal": 40,
+        "nullable": "YES",
+        "udt_name": "text",
+        "data_type": "text"
+      },
+      {
+        "name": "created_at",
+        "table": "psdeals_stage_items",
+        "default": "now()",
+        "ordinal": 41,
+        "nullable": "NO",
+        "udt_name": "timestamptz",
+        "data_type": "timestamp with time zone"
+      },
+      {
+        "name": "updated_at",
+        "table": "psdeals_stage_items",
+        "default": "now()",
+        "ordinal": 42,
+        "nullable": "NO",
+        "udt_name": "timestamptz",
+        "data_type": "timestamp with time zone"
+      },
+      {
+        "name": "lobodeals_lowest_regular_price_amount",
+        "table": "psdeals_stage_items",
+        "default": null,
+        "ordinal": 43,
+        "nullable": "YES",
+        "udt_name": "numeric",
+        "data_type": "numeric"
+      },
+      {
+        "name": "lobodeals_lowest_regular_price_first_seen_at",
+        "table": "psdeals_stage_items",
+        "default": null,
+        "ordinal": 44,
+        "nullable": "YES",
+        "udt_name": "timestamptz",
+        "data_type": "timestamp with time zone"
+      },
+      {
+        "name": "lobodeals_lowest_ps_plus_price_amount",
+        "table": "psdeals_stage_items",
+        "default": null,
+        "ordinal": 45,
+        "nullable": "YES",
+        "udt_name": "numeric",
+        "data_type": "numeric"
+      },
+      {
+        "name": "lobodeals_lowest_ps_plus_price_first_seen_at",
+        "table": "psdeals_stage_items",
+        "default": null,
+        "ordinal": 46,
+        "nullable": "YES",
+        "udt_name": "timestamptz",
+        "data_type": "timestamp with time zone"
+      }
+    ],
+    "indexes": [
+      {
+        "name": "price_refresh_cycles_certified_at_idx",
+        "table": "price_refresh_cycles",
+        "definition": "CREATE INDEX price_refresh_cycles_certified_at_idx ON public.price_refresh_cycles USING btree (certified_at DESC) WHERE (certified_at IS NOT NULL)"
+      },
+      {
+        "name": "price_refresh_cycles_certified_date_unique_idx",
+        "table": "price_refresh_cycles",
+        "definition": "CREATE UNIQUE INDEX price_refresh_cycles_certified_date_unique_idx ON public.price_refresh_cycles USING btree (region_code, storefront, cycle_date) WHERE (status = 'certified'::text)"
+      },
+      {
+        "name": "price_refresh_cycles_pkey",
+        "table": "price_refresh_cycles",
+        "definition": "CREATE UNIQUE INDEX price_refresh_cycles_pkey ON public.price_refresh_cycles USING btree (id)"
+      },
+      {
+        "name": "price_refresh_cycles_status_idx",
+        "table": "price_refresh_cycles",
+        "definition": "CREATE INDEX price_refresh_cycles_status_idx ON public.price_refresh_cycles USING btree (status, started_at DESC)"
+      },
+      {
+        "name": "price_refresh_cycles_storefront_date_idx",
+        "table": "price_refresh_cycles",
+        "definition": "CREATE INDEX price_refresh_cycles_storefront_date_idx ON public.price_refresh_cycles USING btree (region_code, storefront, cycle_date DESC, started_at DESC)"
+      },
+      {
+        "name": "psdeals_stage_items_content_type_idx",
+        "table": "psdeals_stage_items",
+        "definition": "CREATE INDEX psdeals_stage_items_content_type_idx ON public.psdeals_stage_items USING btree (content_type)"
+      },
+      {
+        "name": "psdeals_stage_items_discount_idx",
+        "table": "psdeals_stage_items",
+        "definition": "CREATE INDEX psdeals_stage_items_discount_idx ON public.psdeals_stage_items USING btree (discount_percent DESC NULLS LAST)"
+      },
+      {
+        "name": "psdeals_stage_items_metacritic_idx",
+        "table": "psdeals_stage_items",
+        "definition": "CREATE INDEX psdeals_stage_items_metacritic_idx ON public.psdeals_stage_items USING btree (metacritic_score DESC NULLS LAST)"
+      },
+      {
+        "name": "psdeals_stage_items_pkey",
+        "table": "psdeals_stage_items",
+        "definition": "CREATE UNIQUE INDEX psdeals_stage_items_pkey ON public.psdeals_stage_items USING btree (id)"
+      },
+      {
+        "name": "psdeals_stage_items_release_date_idx",
+        "table": "psdeals_stage_items",
+        "definition": "CREATE INDEX psdeals_stage_items_release_date_idx ON public.psdeals_stage_items USING btree (release_date DESC)"
+      },
+      {
+        "name": "psdeals_stage_items_slug_idx",
+        "table": "psdeals_stage_items",
+        "definition": "CREATE INDEX psdeals_stage_items_slug_idx ON public.psdeals_stage_items USING btree (psdeals_slug)"
+      },
+      {
+        "name": "psdeals_stage_items_store_url_idx",
+        "table": "psdeals_stage_items",
+        "definition": "CREATE INDEX psdeals_stage_items_store_url_idx ON public.psdeals_stage_items USING btree (store_url)"
+      },
+      {
+        "name": "psdeals_stage_items_title_idx",
+        "table": "psdeals_stage_items",
+        "definition": "CREATE INDEX psdeals_stage_items_title_idx ON public.psdeals_stage_items USING btree (title)"
+      },
+      {
+        "name": "psdeals_stage_items_unique_psdeals",
+        "table": "psdeals_stage_items",
+        "definition": "CREATE UNIQUE INDEX psdeals_stage_items_unique_psdeals ON public.psdeals_stage_items USING btree (region_code, storefront, psdeals_id)"
+      }
+    ],
+    "policies": [
+      {
+        "cmd": "SELECT",
+        "qual": "((region_code = 'us'::text) AND (storefront = 'playstation'::text))",
+        "roles": [
+          "anon"
+        ],
+        "tablename": "psdeals_stage_items",
+        "permissive": "PERMISSIVE",
+        "policyname": "Public read psdeals stage items",
+        "schemaname": "public",
+        "with_check": null
+      }
+    ],
+    "triggers": [
+      {
+        "name": "trg_price_refresh_cycles_set_updated_at",
+        "event": "UPDATE",
+        "table": "price_refresh_cycles",
+        "timing": "BEFORE",
+        "statement": "EXECUTE FUNCTION set_updated_at()"
+      },
+      {
+        "name": "trg_psdeals_stage_items_set_updated_at",
+        "event": "UPDATE",
+        "table": "psdeals_stage_items",
+        "timing": "BEFORE",
+        "statement": "EXECUTE FUNCTION set_updated_at()"
+      }
+    ],
+    "constraints": [
+      {
+        "name": "price_refresh_cycles_certified_after_finish_check",
+        "type": "c",
+        "table": "price_refresh_cycles",
+        "definition": "CHECK (((certified_at IS NULL) OR (certified_at >= finished_at)))"
+      },
+      {
+        "name": "price_refresh_cycles_finished_after_start_check",
+        "type": "c",
+        "table": "price_refresh_cycles",
+        "definition": "CHECK (((finished_at IS NULL) OR (finished_at >= started_at)))"
+      },
+      {
+        "name": "price_refresh_cycles_metrics_object_check",
+        "type": "c",
+        "table": "price_refresh_cycles",
+        "definition": "CHECK ((jsonb_typeof(metrics) = 'object'::text))"
+      },
+      {
+        "name": "price_refresh_cycles_nonnegative_counts_check",
+        "type": "c",
+        "table": "price_refresh_cycles",
+        "definition": "CHECK (((items_seen >= 0) AND (items_updated >= 0) AND (items_failed >= 0) AND (new_items_detected >= 0) AND (ended_discounts_applied >= 0) AND (regular_lows_initialized >= 0) AND (regular_lows_lowered >= 0) AND (ps_plus_lows_initialized >= 0) AND (ps_plus_lows_lowered >= 0)))"
+      },
+      {
+        "name": "price_refresh_cycles_pkey",
+        "type": "p",
+        "table": "price_refresh_cycles",
+        "definition": "PRIMARY KEY (id)"
+      },
+      {
+        "name": "price_refresh_cycles_status_check",
+        "type": "c",
+        "table": "price_refresh_cycles",
+        "definition": "CHECK ((status = ANY (ARRAY['running'::text, 'succeeded'::text, 'failed'::text, 'partial'::text, 'cancelled'::text, 'certified'::text])))"
+      },
+      {
+        "name": "price_refresh_cycles_status_timestamps_check",
+        "type": "c",
+        "table": "price_refresh_cycles",
+        "definition": "CHECK ((((status = 'running'::text) AND (finished_at IS NULL) AND (certified_at IS NULL)) OR ((status = ANY (ARRAY['succeeded'::text, 'failed'::text, 'partial'::text, 'cancelled'::text])) AND (finished_at IS NOT NULL) AND (certified_at IS NULL)) OR ((status = 'certified'::text) AND (finished_at IS NOT NULL) AND (certified_at IS NOT NULL))))"
+      },
+      {
+        "name": "price_refresh_cycles_validation_check",
+        "type": "c",
+        "table": "price_refresh_cycles",
+        "definition": "CHECK (((validation_passed = false) OR ((validation_completed_at IS NOT NULL) AND (status = ANY (ARRAY['succeeded'::text, 'certified'::text])))))"
+      },
+      {
+        "name": "psdeals_stage_items_content_type_check",
+        "type": "c",
+        "table": "psdeals_stage_items",
+        "definition": "CHECK ((content_type = ANY (ARRAY['game'::text, 'bundle'::text, 'dlc'::text, 'add_on'::text, 'season_pass'::text, 'currency'::text, 'demo'::text, 'other'::text])))"
+      },
+      {
+        "name": "psdeals_stage_items_discount_percent_check",
+        "type": "c",
+        "table": "psdeals_stage_items",
+        "definition": "CHECK (((discount_percent IS NULL) OR ((discount_percent >= 0) AND (discount_percent <= 100))))"
+      },
+      {
+        "name": "psdeals_stage_items_lobodeals_ps_plus_low_pair_check",
+        "type": "c",
+        "table": "psdeals_stage_items",
+        "definition": "CHECK ((((lobodeals_lowest_ps_plus_price_amount IS NULL) AND (lobodeals_lowest_ps_plus_price_first_seen_at IS NULL)) OR ((lobodeals_lowest_ps_plus_price_amount IS NOT NULL) AND (lobodeals_lowest_ps_plus_price_first_seen_at IS NOT NULL))))"
+      },
+      {
+        "name": "psdeals_stage_items_lobodeals_ps_plus_low_positive_check",
+        "type": "c",
+        "table": "psdeals_stage_items",
+        "definition": "CHECK (((lobodeals_lowest_ps_plus_price_amount IS NULL) OR (lobodeals_lowest_ps_plus_price_amount > (0)::numeric)))"
+      },
+      {
+        "name": "psdeals_stage_items_lobodeals_regular_low_pair_check",
+        "type": "c",
+        "table": "psdeals_stage_items",
+        "definition": "CHECK ((((lobodeals_lowest_regular_price_amount IS NULL) AND (lobodeals_lowest_regular_price_first_seen_at IS NULL)) OR ((lobodeals_lowest_regular_price_amount IS NOT NULL) AND (lobodeals_lowest_regular_price_first_seen_at IS NOT NULL))))"
+      },
+      {
+        "name": "psdeals_stage_items_lobodeals_regular_low_positive_check",
+        "type": "c",
+        "table": "psdeals_stage_items",
+        "definition": "CHECK (((lobodeals_lowest_regular_price_amount IS NULL) OR (lobodeals_lowest_regular_price_amount > (0)::numeric)))"
+      },
+      {
+        "name": "psdeals_stage_items_pkey",
+        "type": "p",
+        "table": "psdeals_stage_items",
+        "definition": "PRIMARY KEY (id)"
+      },
+      {
+        "name": "psdeals_stage_items_store_url_kind_check",
+        "type": "c",
+        "table": "psdeals_stage_items",
+        "definition": "CHECK (((store_url_kind IS NULL) OR (store_url_kind = ANY (ARRAY['product'::text, 'concept'::text, 'other'::text]))))"
+      },
+      {
+        "name": "psdeals_stage_items_unique_psdeals",
+        "type": "u",
+        "table": "psdeals_stage_items",
+        "definition": "UNIQUE (region_code, storefront, psdeals_id)"
+      }
+    ],
+    "public_view_hashes": {}
+  }
+}

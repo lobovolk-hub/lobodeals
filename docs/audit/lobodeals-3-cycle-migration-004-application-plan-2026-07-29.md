@@ -150,3 +150,31 @@ La política debe revisarse con volumen real. Hasta entonces, retención indefin
 ## Limitación de validación local
 
 No había `psql`, servidor PostgreSQL, Docker, Podman ni Supabase CLI local disponibles. WSL estaba presente como ejecutable, pero el subsistema no estaba instalado. Por ello, 004 tuvo análisis estático, pruebas contractuales y ensayo integral con clientes falsos; no se ejecutó en un motor PostgreSQL real. La primera aplicación autorizada debe tratar esta limitación como criterio de cautela adicional y capturar toda la salida.
+
+## Resultado de la sesión autorizada por Texto 0005
+
+La sesión del 2026-07-29 recibió autorización expresa para aplicar exclusivamente 004, pero terminó `PRECHECK_BLOCKED`; no llamó `apply_migration`.
+
+Los prechecks técnicos read-only aprobaron:
+
+- proyecto exacto `vlxkoprpobfevxefizwr`, `ACTIVE_HEALTHY`, PostgreSQL 17.6;
+- cero migraciones registradas por el canal, cero ciclos y cero sesiones activas relevantes;
+- huella 004 completamente ausente, sin columnas, tabla ni funciones parciales;
+- hashes legacy v1/v15 exactamente iguales a los auditados;
+- conteos operativos coherentes y cero mínimos certificados;
+- checksum local de 004 exactamente `712af68ff12934f7f3f7648b6e629e84610e576fbc4d044ccf74a8bd18630dbf`;
+- 277/277 pruebas locales y 35/35 pruebas específicas antes de decidir; la validación final amplió la selección a 37/37, incluido el ensayo operacional con adaptadores falsos.
+
+El criterio de recuperación no aprobó. La organización remota está en plan Free y la documentación oficial vigente reserva los backups diarios administrados para Pro, Team y Enterprise; tampoco se demostró PITR ni un punto de restauración. Se capturaron definiciones, hashes y metadatos read-only, pero eso no sustituye el backup o restore point obligatorio de este plan.
+
+Por tanto:
+
+- `apply_migration` invocaciones: 0;
+- SQL mutante remoto: 0;
+- RPC operativas: 0;
+- estado remoto: `MIGRATION_NOT_APPLIED`;
+- clasificación de sesión: `PRECHECK_BLOCKED`.
+
+No debe relajarse este gate por tratarse de una migración aditiva. La siguiente sesión solo puede retomar la aplicación cuando exista una recuperación demostrable y autorizada sin contradecir la decisión vigente de no exportar el historial detallado.
+
+La validación final conservó 277/277 pruebas aprobadas, lint con cero errores y seis advertencias preexistentes, cinco JSON parseables, checksum exacto y cero archivos SQL modificados. Los únicos ajustes de prueba eliminaron instantes fijos caducables en dos fixtures de CLI; no se modificó el runner ni código operativo.

@@ -1582,3 +1582,33 @@ El Bloque 4 tiene ahora una migración local versionada y fail-closed que cierra
 Producción sigue sin 004; por eso el estado remoto es `MIGRATION_NOT_APPLIED` y el ciclo live permanece `NOT_READY`. No se ejecutó un ciclo real y el Bloque 4 no está cerrado.
 
 La siguiente tarea de máximo alcance es una sesión separada y explícitamente autorizada para repetir el precheck read-only, confirmar backup/ventana/checksum y aplicar únicamente 004. Después debe hacerse el postcheck read-only hasta `MIGRATION_READY`. Esa sesión no debe crear aún un ciclo real salvo una autorización adicional posterior.
+
+## 38. Precheck autorizado de migración 004 bloqueado por recuperación — 2026-07-29
+
+Texto 0005 autorizó una sola aplicación de `sql/004-lobodeals-3-reconciliable-cycle-actions.sql`, condicionada a todos los prechecks y a una recuperación demostrable. La sesión comenzó en `main`, HEAD `c87fa118daf7155d0eedf38e707e15f82bef994f`, worktree limpio y divergencia 39 delante/0 detrás de `origin/main`.
+
+La verificación local aprobó:
+
+- SHA-256 exacto `712af68ff12934f7f3f7648b6e629e84610e576fbc4d044ccf74a8bd18630dbf` sobre 67,999 bytes y 2,205 líneas;
+- ausencia de `CASCADE`, `DROP`, `TRUNCATE`, `DELETE`, mutación de `psdeals_stage_price_history`, SQL dinámico, secretos y grants públicos inesperados;
+- `npm test`: 277/277;
+- suites específicas de migración/preflight/rehearsal: 35/35 antes de la decisión y 37/37 en la validación final, incluido el ensayo operacional con adaptadores falsos;
+- `node --check` de contrato y preflight: aprobado.
+
+El precheck remoto read-only confirmó:
+
+- proyecto exacto `vlxkoprpobfevxefizwr`, `ACTIVE_HEALTHY`, PostgreSQL 17.6.1.104;
+- historial de migraciones del canal vacío y huella 004 completamente ausente;
+- cero `price_refresh_cycles`, cero ciclos activos y cero sesiones activas relevantes;
+- ninguna columna, tabla o función parcial de 004;
+- certify v1 SHA-256 `3dfa2232903c014039f070f48d4044ffe0b329e38cb86615b9bdbc20c4f9aa88`;
+- cache v15 SHA-256 `1c6e71d26e6554e6f8fdf2e6ed0388db959419db4ee64132d8ddd5761b3996dc`;
+- 32,890 stage items, 114 import runs, siete monthly/cuatro activos, 32,890 cache, 841,549 history y cero mínimos certificados.
+
+La recuperación obligatoria no pudo demostrarse. La organización Supabase está en plan Free; la documentación oficial vigente indica backups diarios administrados para Pro, Team y Enterprise, y no se demostró PITR. Aunque se capturaron definiciones, hashes, columnas, constraints, índices, RLS, policies y grants, ese inventario no sustituye el backup o punto de restauración exigido por el plan versionado.
+
+La sesión se clasificó `PRECHECK_BLOCKED`. No se invocó `apply_migration`, no comenzó ninguna transacción y producción permanece `MIGRATION_NOT_APPLIED`; el preflight offline conserva código contractual 3. No hubo ciclos, receipts, RPC operativas, caché, monthly ni cambios de history.
+
+La validación final repitió `npm test` con 277/277 aprobadas, `npm run lint` con cero errores y las seis advertencias preexistentes, parseó los cinco JSON de auditoría y confirmó `git diff --check`. Dos fixtures de CLI dejaron de fijar instantes que caducaban frente a evidencia generada con el reloj real; no cambió el runner ni ningún comportamiento operativo.
+
+Posición exacta del Bloque 4: 004 continúa versionada y validada localmente, pero no instalada. El runner real sigue sin autorizarse y el Bloque 4 no está cerrado. La siguiente tarea de máximo alcance es decidir y demostrar una vía de recuperación compatible con el plan Free y con la prohibición vigente de exportar el historial; solo después podrá repetirse el precheck y solicitarse una aplicación nueva de 004.

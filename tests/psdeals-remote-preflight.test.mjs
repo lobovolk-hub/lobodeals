@@ -47,7 +47,6 @@ test('offline preflight CLI evaluates the redacted real facts without opening co
   let errors = ''
   const exitCode = await runPsdealsRemotePreflightCli([
     `--facts=${factsPath}`,
-    '--now=2026-07-29T22:37:06.267Z',
   ], {
     stdout: (value) => { output += value },
     stderr: (value) => { errors += value },

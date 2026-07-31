@@ -429,7 +429,8 @@ begin
       'DELETE',
       'TRUNCATE',
       'REFERENCES',
-      'TRIGGER'
+      'TRIGGER',
+      'MAINTAIN'
     ]
     loop
       if not pg_catalog.has_table_privilege(
@@ -460,46 +461,82 @@ begin
     raise exception 'PSDEALS_006_UNEXPECTED_PUBLIC_GRANT';
   end if;
 
-  if (
-    select count(*)
-    from pg_catalog.pg_class as relation,
-      lateral pg_catalog.aclexplode(
+  if exists (
+    with expected_acl(
+      grantee_name,
+      privilege_type,
+      is_grantable,
+      grantor_name
+    ) as (
+      select
+        expected_role.grantee_name,
+        expected_privilege.privilege_type,
+        false,
+        'postgres'
+      from (
+        values
+          ('anon'),
+          ('authenticated'),
+          ('service_role'),
+          ('postgres')
+      ) as expected_role(grantee_name)
+      cross join (
+        values
+          ('SELECT'),
+          ('INSERT'),
+          ('UPDATE'),
+          ('DELETE'),
+          ('TRUNCATE'),
+          ('REFERENCES'),
+          ('TRIGGER'),
+          ('MAINTAIN')
+      ) as expected_privilege(privilege_type)
+    ),
+    actual_acl as (
+      select
+        grantee_role.rolname as grantee_name,
+        acl.privilege_type,
+        acl.is_grantable,
+        grantor_role.rolname as grantor_name
+      from pg_catalog.pg_class as relation
+      cross join lateral pg_catalog.aclexplode(
         coalesce(
           relation.relacl,
           pg_catalog.acldefault('r', relation.relowner)
         )
       ) as acl
-    where relation.oid = history_oid
-      and acl.grantee <> 0
-      and acl.privilege_type in (
-        'SELECT',
-        'INSERT',
-        'UPDATE',
-        'DELETE',
-        'TRUNCATE',
-        'REFERENCES',
-        'TRIGGER'
-      )
-  ) <> 28
-    or exists (
-      select 1
-      from pg_catalog.pg_class as relation,
-        lateral pg_catalog.aclexplode(
-          coalesce(
-            relation.relacl,
-            pg_catalog.acldefault('r', relation.relowner)
-          )
-        ) as acl
-      join pg_catalog.pg_roles as role_row
-        on role_row.oid = acl.grantee
+      left join pg_catalog.pg_roles as grantee_role
+        on grantee_role.oid = acl.grantee
+      left join pg_catalog.pg_roles as grantor_role
+        on grantor_role.oid = acl.grantor
       where relation.oid = history_oid
-        and role_row.rolname not in (
-          'anon',
-          'authenticated',
-          'service_role',
-          'postgres'
-        )
-    ) then
+    ),
+    acl_drift as (
+      (
+        select * from expected_acl
+        except
+        select * from actual_acl
+      )
+      union all
+      (
+        select * from actual_acl
+        except
+        select * from expected_acl
+      )
+    )
+    select 1
+    from acl_drift
+  ) or (
+    select count(*)
+    from pg_catalog.pg_class as relation
+    cross join lateral pg_catalog.aclexplode(
+      coalesce(
+        relation.relacl,
+        pg_catalog.acldefault('r', relation.relowner)
+      )
+    ) as acl
+    where relation.oid = history_oid
+  ) <> 32 then
     raise exception 'PSDEALS_006_GRANT_SURFACE_MISMATCH';
   end if;
 end;
@@ -510,7 +547,7 @@ drop policy "Public read psdeals price history"
 
 revoke all privileges
   on table public.psdeals_stage_price_history
-  from public, anon, authenticated, service_role;
+  from public, anon, authenticated, service_role, postgres;
 
 drop table public.psdeals_stage_price_history restrict;
 

@@ -32,6 +32,59 @@ const postcheck = fs.readFileSync(
   'utf8'
 )
 
+function parseExpectedHistoryAcl(source) {
+  const contract = source.match(
+    /with expected_acl\([\s\S]*?\),\s*actual_acl as \(/i
+  )?.[0]
+  assert.ok(contract, 'expected ACL contract must be present')
+
+  const roleValues = contract.match(
+    /from\s*\(\s*values([\s\S]*?)\)\s*as expected_role/i
+  )?.[1]
+  const privilegeValues = contract.match(
+    /cross join\s*\(\s*values([\s\S]*?)\)\s*as expected_privilege/i
+  )?.[1]
+  assert.ok(roleValues)
+  assert.ok(privilegeValues)
+
+  const roles = [...roleValues.matchAll(/\('([^']+)'\)/g)].map(
+    (match) => match[1]
+  )
+  const privileges = [
+    ...privilegeValues.matchAll(/\('([^']+)'\)/g),
+  ].map((match) => match[1])
+
+  return roles.flatMap((grantee) =>
+    privileges.map((privilegeType) => ({
+      grantee,
+      privilegeType,
+      isGrantable: false,
+      grantor: 'postgres',
+    }))
+  )
+}
+
+function aclEntryKey(entry) {
+  return [
+    entry.grantee,
+    entry.privilegeType,
+    String(entry.isGrantable),
+    entry.grantor,
+  ].join(':')
+}
+
+function exactAclMatches(expected, actual) {
+  const expectedKeys = new Set(expected.map(aclEntryKey))
+  const actualKeys = new Set(actual.map(aclEntryKey))
+  return (
+    expected.length === 32 &&
+    actual.length === 32 &&
+    expectedKeys.size === 32 &&
+    actualKeys.size === 32 &&
+    [...expectedKeys].every((entry) => actualKeys.has(entry))
+  )
+}
+
 test('migration 006 is transactional, locked, fail-closed and restrictive', () => {
   assert.match(retirement, /^begin;/m)
   assert.match(retirement, /^commit;/m)
@@ -143,6 +196,191 @@ test('future precheck and postcheck files are strictly read-only', () => {
     /to_regclass\('public\.psdeals_stage_price_history'\)/
   )
   assert.match(postcheck, /catalog_public_cache/)
+})
+
+test('precheck dependency queries are deterministic and PostgreSQL 17 safe', () => {
+  assert.doesNotMatch(
+    precheck,
+    /order\s+by\s+dependent_catalog::text/i
+  )
+  assert.match(
+    precheck,
+    /history_dependencies\.dependent_catalog::text/
+  )
+  assert.match(precheck, /external_dependencies as \(/)
+  assert.match(
+    precheck,
+    /dependency\.classid::regclass::text/
+  )
+  assert.match(
+    precheck,
+    /dependency\.objid,\s*dependency\.objsubid/
+  )
+})
+
+test('migration 006 models the complete PostgreSQL 17 ACL', () => {
+  const expectedAcl = parseExpectedHistoryAcl(retirement)
+  assert.equal(expectedAcl.length, 32)
+  assert.deepEqual(
+    new Set(expectedAcl.map((entry) => entry.grantee)),
+    new Set(['anon', 'authenticated', 'service_role', 'postgres'])
+  )
+  assert.deepEqual(
+    new Set(expectedAcl.map((entry) => entry.privilegeType)),
+    new Set([
+      'SELECT',
+      'INSERT',
+      'UPDATE',
+      'DELETE',
+      'TRUNCATE',
+      'REFERENCES',
+      'TRIGGER',
+      'MAINTAIN',
+    ])
+  )
+  assert.ok(expectedAcl.every((entry) => !entry.isGrantable))
+  assert.ok(
+    expectedAcl.every((entry) => entry.grantor === 'postgres')
+  )
+  assert.match(retirement, /aclexplode/)
+  assert.match(retirement, /select \* from expected_acl\s+except/)
+  assert.match(retirement, /select \* from actual_acl\s+except/)
+  assert.match(retirement, /\) <> 32 then/)
+})
+
+test('migration 006 rejects incomplete or expanded ACL cardinalities', () => {
+  const expectedAcl = parseExpectedHistoryAcl(retirement)
+  const withoutMaintain = expectedAcl.filter(
+    (entry) => entry.privilegeType !== 'MAINTAIN'
+  )
+  assert.equal(withoutMaintain.length, 28)
+  assert.equal(exactAclMatches(expectedAcl, withoutMaintain), false)
+  assert.equal(exactAclMatches(expectedAcl, expectedAcl.slice(0, 31)), false)
+  assert.equal(exactAclMatches(expectedAcl, expectedAcl), true)
+  assert.equal(
+    exactAclMatches(expectedAcl, [
+      ...expectedAcl,
+      {
+        grantee: 'anon',
+        privilegeType: 'UNKNOWN',
+        isGrantable: false,
+        grantor: 'postgres',
+      },
+    ]),
+    false
+  )
+})
+
+test('migration 006 rejects ACL identity and option drift', () => {
+  const expectedAcl = parseExpectedHistoryAcl(retirement)
+  for (const replacement of [
+    { grantee: 'PUBLIC' },
+    { grantee: 'unexpected_role' },
+    { privilegeType: 'UNKNOWN' },
+    { isGrantable: true },
+    { grantor: 'unexpected_grantor' },
+  ]) {
+    const drifted = expectedAcl.map((entry, index) =>
+      index === 0 ? { ...entry, ...replacement } : entry
+    )
+    assert.equal(exactAclMatches(expectedAcl, drifted), false)
+  }
+})
+
+test('precheck exposes the full effective ACL and unambiguous gates', () => {
+  for (const evidence of [
+    /history_information_schema_grants_count/,
+    /history_effective_acl_entries_count/,
+    /history_maintain_grants_count/,
+    /history_public_grants_count/,
+    /history_unexpected_grantees_count/,
+    /history_unexpected_privileges_count/,
+    /history_unexpected_grant_options_count/,
+    /history_grants_match_006/,
+    /count\(\*\) = 32/,
+  ]) {
+    assert.match(precheck, evidence)
+  }
+  assert.match(precheck, /aclexplode/)
+  assert.match(precheck, /grantor_role\.rolname/)
+})
+
+test('postcheck proves retirement and migration 006 registration', () => {
+  for (const evidence of [
+    /remaining_history_relations/,
+    /remaining_history_columns/,
+    /remaining_history_constraints/,
+    /remaining_history_indexes/,
+    /remaining_history_triggers/,
+    /remaining_history_policies/,
+    /remaining_history_acl_entries/,
+    /remaining_history_dependencies/,
+    /history_retirement_postcheck_passed/,
+    /lobodeals_3_restrictive_price_history_retirement/,
+    /migration_006_registered/,
+  ]) {
+    assert.match(postcheck, evidence)
+  }
+})
+
+test('postcheck proves all migration 005 objects remain exact', () => {
+  for (const column of [
+    'regular_certification_cycle_id',
+    'regular_certification_observed_at',
+    'regular_certification_evidence_sha256',
+    'regular_certification_candidate',
+    'ps_plus_certification_cycle_id',
+    'ps_plus_certification_observed_at',
+    'ps_plus_certification_evidence_sha256',
+    'ps_plus_certification_candidate',
+  ]) {
+    assert.match(postcheck, new RegExp(column))
+  }
+  for (const evidence of [
+    /migration_005_columns_match/,
+    /migration_005_constraints_present/,
+    /migration_005_restrictive_fks_present/,
+    /migration_005_partial_indexes_present/,
+    /_psdeals_certification_candidate_sha256_v1/,
+    /candidate_hash_helper_definition_matches/,
+    /certify_price_refresh_cycle_v3/,
+    /certification_v3_definition_matches/,
+    /certification_function_acl_matches/,
+    /array\['search_path='\]/,
+  ]) {
+    assert.match(postcheck, evidence)
+  }
+})
+
+test('postcheck compares every preserved data invariant to baseline', () => {
+  for (const evidence of [
+    /lobodeals_lowest_regular_price_amount/,
+    /lobodeals_lowest_regular_price_first_seen_at/,
+    /lobodeals_lowest_ps_plus_price_amount/,
+    /lobodeals_lowest_ps_plus_price_first_seen_at/,
+    /regular_candidates/,
+    /ps_plus_candidates/,
+    /monthly_active_rows/,
+    /cache_max_updated_at/,
+    /preserved_data_matches_authorized_baseline/,
+    /database_bytes_difference/,
+    /public_relations_total_bytes_after/,
+    /history_relation_size_absent/,
+  ]) {
+    assert.match(postcheck, evidence)
+  }
+})
+
+test('migration 006 still revokes all ACL entries and drops restrictively', () => {
+  assert.match(
+    retirement,
+    /revoke all privileges\s+on table public\.psdeals_stage_price_history/
+  )
+  assert.match(
+    retirement,
+    /drop table public\.psdeals_stage_price_history restrict/
+  )
+  assert.doesNotMatch(retirement, /\bcascade\b/i)
 })
 
 test('migration 006 never writes detailed history rows', () => {

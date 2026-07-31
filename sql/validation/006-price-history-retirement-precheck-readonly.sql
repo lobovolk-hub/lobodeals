@@ -52,15 +52,108 @@ where schemaname = 'public'
   and tablename = 'psdeals_stage_price_history'
 order by indexname;
 
+select *
+from (
+  select
+    dependency.classid::regclass as dependent_catalog,
+    dependency.objid,
+    dependency.objsubid,
+    dependency.deptype
+  from pg_catalog.pg_depend as dependency
+  where dependency.refobjid =
+    'public.psdeals_stage_price_history'::regclass
+) as history_dependencies
+order by
+  history_dependencies.dependent_catalog::text,
+  history_dependencies.objid,
+  history_dependencies.objsubid;
+
+with history_object as (
+  select 'public.psdeals_stage_price_history'::regclass::oid as history_oid
+),
+external_dependencies as (
+  select dependency.*
+  from pg_catalog.pg_depend as dependency
+  cross join history_object
+  where dependency.refobjid = history_object.history_oid
+    and not (
+      dependency.classid = 'pg_catalog.pg_class'::regclass
+      and dependency.objid in (
+        select indexrelid
+        from pg_catalog.pg_index
+        where indrelid = history_object.history_oid
+        union all
+        select reltoastrelid
+        from pg_catalog.pg_class
+        where oid = history_object.history_oid
+          and reltoastrelid <> 0
+      )
+    )
+    and not (
+      dependency.classid = 'pg_catalog.pg_type'::regclass
+      and dependency.objid in (
+        select type_row.oid
+        from pg_catalog.pg_type as type_row
+        where type_row.typrelid = history_object.history_oid
+          or type_row.typelem in (
+            select row_type.oid
+            from pg_catalog.pg_type as row_type
+            where row_type.typrelid = history_object.history_oid
+          )
+      )
+    )
+    and not (
+      dependency.classid = 'pg_catalog.pg_trigger'::regclass
+      and dependency.objid in (
+        select oid
+        from pg_catalog.pg_trigger
+        where tgrelid = history_object.history_oid
+          and tgisinternal
+      )
+    )
+    and not (
+      dependency.classid = 'pg_catalog.pg_constraint'::regclass
+      and dependency.objid in (
+        select oid
+        from pg_catalog.pg_constraint
+        where conrelid = history_object.history_oid
+      )
+    )
+    and not (
+      dependency.classid = 'pg_catalog.pg_rewrite'::regclass
+      and dependency.objid in (
+        select oid
+        from pg_catalog.pg_rewrite
+        where ev_class = history_object.history_oid
+      )
+    )
+    and not (
+      dependency.classid = 'pg_catalog.pg_policy'::regclass
+      and dependency.objid in (
+        select oid
+        from pg_catalog.pg_policy
+        where polrelid = history_object.history_oid
+      )
+    )
+    and not (
+      dependency.classid = 'pg_catalog.pg_attrdef'::regclass
+      and dependency.objid in (
+        select oid
+        from pg_catalog.pg_attrdef
+        where adrelid = history_object.history_oid
+      )
+    )
+)
 select
   dependency.classid::regclass as dependent_catalog,
   dependency.objid,
   dependency.objsubid,
   dependency.deptype
-from pg_catalog.pg_depend as dependency
-where dependency.refobjid =
-  'public.psdeals_stage_price_history'::regclass
-order by dependent_catalog::text, dependency.objid, dependency.objsubid;
+from external_dependencies as dependency
+order by
+  dependency.classid::regclass::text,
+  dependency.objid,
+  dependency.objsubid;
 
 select
   trigger_row.tgname,
@@ -107,11 +200,182 @@ where policy.schemaname = 'public'
 
 select
   grant_row.grantee,
-  grant_row.privilege_type
+  grant_row.privilege_type,
+  grant_row.is_grantable
 from information_schema.role_table_grants as grant_row
 where grant_row.table_schema = 'public'
   and grant_row.table_name = 'psdeals_stage_price_history'
 order by grant_row.grantee, grant_row.privilege_type;
+
+select
+  case
+    when acl.grantee = 0 then 'PUBLIC'
+    else grantee_role.rolname
+  end as grantee,
+  acl.privilege_type,
+  acl.is_grantable,
+  grantor_role.rolname as grantor
+from pg_catalog.pg_class as relation
+cross join lateral pg_catalog.aclexplode(
+  coalesce(
+    relation.relacl,
+    pg_catalog.acldefault('r', relation.relowner)
+  )
+) as acl
+left join pg_catalog.pg_roles as grantee_role
+  on grantee_role.oid = acl.grantee
+left join pg_catalog.pg_roles as grantor_role
+  on grantor_role.oid = acl.grantor
+where relation.oid =
+  'public.psdeals_stage_price_history'::regclass
+order by
+  grantee,
+  acl.privilege_type,
+  grantor;
+
+select
+  case
+    when acl.grantee = 0 then 'PUBLIC'
+    else grantee_role.rolname
+  end as grantee,
+  count(*)::integer as effective_acl_entries
+from pg_catalog.pg_class as relation
+cross join lateral pg_catalog.aclexplode(
+  coalesce(
+    relation.relacl,
+    pg_catalog.acldefault('r', relation.relowner)
+  )
+) as acl
+left join pg_catalog.pg_roles as grantee_role
+  on grantee_role.oid = acl.grantee
+where relation.oid =
+  'public.psdeals_stage_price_history'::regclass
+group by grantee
+order by grantee;
+
+select
+  acl.privilege_type,
+  count(*)::integer as effective_acl_entries
+from pg_catalog.pg_class as relation
+cross join lateral pg_catalog.aclexplode(
+  coalesce(
+    relation.relacl,
+    pg_catalog.acldefault('r', relation.relowner)
+  )
+) as acl
+where relation.oid =
+  'public.psdeals_stage_price_history'::regclass
+group by acl.privilege_type
+order by acl.privilege_type;
+
+with expected_acl(
+  grantee,
+  privilege_type,
+  is_grantable,
+  grantor
+) as (
+  select
+    expected_role.grantee,
+    expected_privilege.privilege_type,
+    false,
+    'postgres'
+  from (
+    values
+      ('anon'),
+      ('authenticated'),
+      ('service_role'),
+      ('postgres')
+  ) as expected_role(grantee)
+  cross join (
+    values
+      ('SELECT'),
+      ('INSERT'),
+      ('UPDATE'),
+      ('DELETE'),
+      ('TRUNCATE'),
+      ('REFERENCES'),
+      ('TRIGGER'),
+      ('MAINTAIN')
+  ) as expected_privilege(privilege_type)
+),
+effective_acl as (
+  select
+    case
+      when acl.grantee = 0 then 'PUBLIC'
+      else grantee_role.rolname
+    end as grantee,
+    acl.privilege_type,
+    acl.is_grantable,
+    grantor_role.rolname as grantor
+  from pg_catalog.pg_class as relation
+  cross join lateral pg_catalog.aclexplode(
+    coalesce(
+      relation.relacl,
+      pg_catalog.acldefault('r', relation.relowner)
+    )
+  ) as acl
+  left join pg_catalog.pg_roles as grantee_role
+    on grantee_role.oid = acl.grantee
+  left join pg_catalog.pg_roles as grantor_role
+    on grantor_role.oid = acl.grantor
+  where relation.oid =
+    'public.psdeals_stage_price_history'::regclass
+),
+acl_drift as (
+  (
+    select * from expected_acl
+    except
+    select * from effective_acl
+  )
+  union all
+  (
+    select * from effective_acl
+    except
+    select * from expected_acl
+  )
+)
+select
+  (
+    select count(*)
+    from information_schema.role_table_grants
+    where table_schema = 'public'
+      and table_name = 'psdeals_stage_price_history'
+  )::integer as history_information_schema_grants_count,
+  count(*)::integer as history_effective_acl_entries_count,
+  count(*) filter (
+    where privilege_type = 'MAINTAIN'
+  )::integer as history_maintain_grants_count,
+  count(*) filter (
+    where grantee = 'PUBLIC'
+  )::integer as history_public_grants_count,
+  count(*) filter (
+    where grantee not in (
+      'anon',
+      'authenticated',
+      'service_role',
+      'postgres'
+    )
+  )::integer as history_unexpected_grantees_count,
+  count(*) filter (
+    where privilege_type not in (
+      'SELECT',
+      'INSERT',
+      'UPDATE',
+      'DELETE',
+      'TRUNCATE',
+      'REFERENCES',
+      'TRIGGER',
+      'MAINTAIN'
+    )
+  )::integer as history_unexpected_privileges_count,
+  count(*) filter (
+    where is_grantable
+  )::integer as history_unexpected_grant_options_count,
+  (
+    count(*) = 32
+    and not exists (select 1 from acl_drift)
+  ) as history_grants_match_006
+from effective_acl;
 
 select
   lock_row.pid,

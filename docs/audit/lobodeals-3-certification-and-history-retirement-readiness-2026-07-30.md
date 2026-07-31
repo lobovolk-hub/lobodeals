@@ -232,3 +232,45 @@ y verificada; no significa updater completo, ciclo listo, certificación
 ejecutada, mínimos inicializados ni sistema operativo. No debe poblarse ningún
 candidate mientras history siga presente. El siguiente gate es exclusivamente
 el precheck remoto read-only de 006.
+
+## Corrección local posterior al precheck 006 — 2026-07-31
+
+El precheck remoto read-only del Texto 3.2-0009 terminó `NO-GO`, sin aplicar
+006. Confirmó estructura exacta, cero dependencias externas y producción
+compatible, pero encontró tres defectos en la preparación local:
+
+1. consulta de dependencias inválida por cast de alias en `ORDER BY`;
+2. ACL PostgreSQL 17 real de 32 entradas, con `MAINTAIN`, frente al contrato
+   incompleto de 28;
+3. postcheck sin cobertura integral de objetos 005 y datos conservados.
+
+El commit local
+`f6403701b18068bda6b3ba5daba241c38abf5469`
+(`Harden restrictive history retirement validation`) corrige esos puntos.
+006 ahora exige exactamente cuatro roles por ocho privilegios, grantor
+`postgres`, cero grant options y cero drift. El precheck expone
+`information_schema` y `aclexplode` por separado. El postcheck comprueba la
+retirada completa, el registro de 006, los objetos 005, conteos operativos,
+first-seen, candidates, monthly activas, cache `max(updated_at)` y capacidad.
+
+Nuevo SHA-256 local de 006:
+
+`e754bbd0beb5f1790f72d8e219fca239477bd25853fdee61758139fec9d96c34`
+
+La validación local aprobó 375/375 pruebas y 84/84 enfocadas; lint mantuvo cero
+errores y seis advertencias preexistentes. No hubo SQL remoto ni mutaciones.
+
+Readiness:
+
+- `MIGRATION_006_DESTRUCTIVE_SCOPE_EXACT=true`;
+- `MIGRATION_006_FAIL_CLOSED=true`;
+- `POSTCHECK_006_COMPLETE=true`;
+- `HISTORY_RETIREMENT_MIGRATION_LOCAL_APPROVED=true`;
+- `REMOTE_006_READY_TO_APPLY=false`;
+- `STORAGE_READY=false`;
+- `COMPACT_MINIMA_READY=false`;
+- `HISTORY_RETIRED=false`;
+- `LIVE_CYCLE_READY=false`.
+
+La siguiente tarea debe repetir exclusivamente el precheck remoto read-only
+con los archivos corregidos. No existe autorización para aplicar 006.

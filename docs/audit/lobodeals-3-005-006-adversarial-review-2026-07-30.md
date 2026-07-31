@@ -286,8 +286,9 @@ El preflight exige:
   publicaciones o dependencias externas;
 - RLS habilitado;
 - una policy exacta de SELECT público;
-- 28 grants directos exactos entre anon, authenticated, service_role y
-  postgres; ningún grantee adicional.
+- 32 entradas ACL directas exactas en PostgreSQL 17 entre anon,
+  authenticated, service_role y postgres: ocho privilegios por rol, incluido
+  `MAINTAIN`; ningún grantee, privilege, grantor o grant option adicional.
 
 La postcondición comprueba antes del commit que tabla, índices, policies y
 grants desaparecieron. No hay `CASCADE`, DML por filas, `TRUNCATE`, `VACUUM`,
@@ -441,3 +442,51 @@ Readiness posterior:
 `CERTIFICATION_FIX_REQUIRED=false` solo resuelve la ausencia remota de v3; no
 declara listo el updater ni autoriza ciclos. El siguiente gate es
 exclusivamente el precheck remoto read-only de 006.
+
+## 18. Resolución del precheck 006 y ACL PostgreSQL 17 — 2026-07-31
+
+Texto 3.2-0009 terminó `NO-GO` sin mutaciones. La estructura y dependencias de
+history pasaron, producción y runtime local conservaron cero consumers, pero
+el precheck canónico falló por `ORDER BY dependent_catalog::text`.
+`aclexplode(relacl)` demostró además que el ACL efectivo tenía 32 entradas,
+no las 28 visibles mediante `information_schema.role_table_grants`: los siete
+privilegios históricos más `MAINTAIN` para cada uno de los cuatro roles.
+Finalmente, el postcheck preparado no cubría todas las invariantes exigidas.
+
+Texto 3.2-0010 corrigió localmente los tres defectos:
+
+- el precheck ordena el alias desde una subconsulta y conserva una consulta
+  separada de dependencias externas con las mismas exclusiones internas de
+  006;
+- la fuente canónica de ACL es `aclexplode(relacl)` y la assertion compara
+  simétricamente 32 tuplas exactas, incluido grantor y grant option;
+- el postcheck verifica retirada completa, registro de 006, conservación de
+  todos los objetos 005, datos operativos, monthly activas, cache
+  `max(updated_at)` y capacidad.
+
+La migración mantiene `REVOKE ALL PRIVILEGES`, `DROP TABLE ... RESTRICT`,
+transacción, timeouts, lock y postcondición. No se añadió `CASCADE`, backup,
+copia, exportación, backfill ni mutación de otra tabla.
+
+Commit técnico:
+
+- `f6403701b18068bda6b3ba5daba241c38abf5469` —
+  `Harden restrictive history retirement validation`.
+
+SHA-256 local nuevo de 006:
+
+`e754bbd0beb5f1790f72d8e219fca239477bd25853fdee61758139fec9d96c34`
+
+Validación: 375/375 pruebas, 84/84 enfocadas, `node --check`, diff checks y
+lint con cero errores/seis advertencias preexistentes.
+
+Readiness exclusivamente local:
+
+- `MIGRATION_006_DESTRUCTIVE_SCOPE_EXACT=true`;
+- `MIGRATION_006_FAIL_CLOSED=true`;
+- `POSTCHECK_006_COMPLETE=true`;
+- `HISTORY_RETIREMENT_MIGRATION_LOCAL_APPROVED=true`;
+- `REMOTE_006_READY_TO_APPLY=false`.
+
+Debe repetirse el precheck remoto read-only. 006 sigue sin aplicar y no existe
+autorización DB WRITE.

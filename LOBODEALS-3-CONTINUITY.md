@@ -1787,7 +1787,8 @@ separados; la autorización demostrable es ACL + action kind + parent receipt +
 idempotency/request/input/manifest hashes.
 
 006 ahora verifica owner, estructura exacta de los cuatro índices, superficie
-cerrada de 28 grants y ausencia de grantees adicionales. Tras
+cerrada de 32 entradas ACL de PostgreSQL 17, incluido `MAINTAIN`, sin
+grantees, privilegios, grantors ni grant options adicionales. Tras
 `DROP TABLE ... RESTRICT` ejecuta una postcondición dentro de la misma
 transacción. Conserva lock timeout 5 s y statement timeout 60 s; no contiene
 `CASCADE`, DML por filas, `TRUNCATE`, `VACUUM`, copia, exportación ni backfill.
@@ -2003,3 +2004,73 @@ mark-succeeded, certificación, cache refresh, monthly write, push, deploy,
 eliminación histórica ni prueba de 30 días. El Bloque 4 no está cerrado. El
 siguiente gate, todavía no ejecutado ni autorizado como escritura, es
 exclusivamente el precheck remoto read-only de la migración 006.
+
+## 45. Precheck 006 NO-GO y endurecimiento local PostgreSQL 17 — 2026-07-31
+
+Texto 3.2-0009 ejecutó exclusivamente el precheck remoto read-only de 006.
+Confirmó que history sigue presente con 841.549 filas y 273.907.712 bytes, su
+estructura de ocho columnas/cuatro constraints/cuatro índices es exacta, no
+hay FKs entrantes, triggers de usuario, dependencias externas, writers o
+consumers almacenados, consumers de producción ni consumers runtime locales.
+Stage conserva 32.890 filas; cycles, receipts, mínimos y candidates siguen en
+cero; monthly conserva 7 filas/4 activas y cache 32.890 filas.
+
+El resultado fue `NO-GO` por tres defectos locales verificables:
+
+1. el precheck canónico usaba el alias `dependent_catalog` dentro de un cast
+   en `ORDER BY`, forma inválida en PostgreSQL 17;
+2. `information_schema.role_table_grants` mostraba 28 grants, pero
+   `aclexplode(relacl)` demostró 32 entradas efectivas: ocho privilegios para
+   cada uno de `anon`, `authenticated`, `service_role` y `postgres`, incluido
+   `MAINTAIN`;
+3. el postcheck no protegía todas las invariantes de history, 005 y los datos
+   conservados.
+
+Texto 3.2-0010 corrigió esos tres defectos exclusivamente de forma local en el
+commit `f6403701b18068bda6b3ba5daba241c38abf5469`
+(`Harden restrictive history retirement validation`).
+
+El precheck ahora ordena las dependencias desde una subconsulta, reproduce las
+exclusiones internas de 006 y muestra por separado `information_schema`, ACL
+efectivo, conteos por rol/privilegio, `MAINTAIN`, `PUBLIC`, grantees,
+privilegios, grant options y drift total.
+
+006 compara bidireccionalmente el ACL real con un conjunto cerrado de 32
+tuplas `(grantee, privilege_type, is_grantable, grantor)`. Rechaza 28, 31 o 33
+entradas, ausencia de `MAINTAIN`, `PUBLIC`, rol/privilegio/grantor adicional y
+grant option inesperado. Conserva transacción, timeouts, `ACCESS EXCLUSIVE`,
+retirada de policy, `REVOKE ALL PRIVILEGES`, `DROP TABLE ... RESTRICT`,
+postcondición y `COMMIT`; no contiene `CASCADE`, copia, backup, exportación,
+backfill ni DML de filas.
+
+El postcheck read-only ampliado comprueba ausencia de tabla, columnas,
+constraints, índices, triggers, policy, ACL y dependencias; registro de 006;
+las ocho columnas, cuatro constraints, dos FKs, dos índices, helper SHA, v1,
+v2 y v3 de 005; first-seen, candidates, monthly activas, cache
+`max(updated_at)` y capacidad. Los valores previos están visibles como
+baseline autorizable y deben refrescarse inmediatamente antes de una futura
+aplicación.
+
+El SHA-256 local nuevo de 006 es
+`e754bbd0beb5f1790f72d8e219fca239477bd25853fdee61758139fec9d96c34`
+y su tamaño es 15.762 bytes. La validación local aprobó 375/375 pruebas,
+84/84 enfocadas, `node --check`, diff checks y lint con cero errores y las seis
+advertencias preexistentes. No se ejecutó SQL remoto, 006, collector,
+importer, runner, ciclo, certificación, caché, monthly, push ni deploy.
+
+Readiness local:
+
+- `MIGRATION_006_DESTRUCTIVE_SCOPE_EXACT=true`;
+- `MIGRATION_006_FAIL_CLOSED=true`;
+- `POSTCHECK_006_COMPLETE=true`;
+- `HISTORY_RETIREMENT_MIGRATION_LOCAL_APPROVED=true`;
+- `REMOTE_006_READY_TO_APPLY=false`;
+- `STORAGE_READY=false`;
+- `COMPACT_MINIMA_READY=false`;
+- `HISTORY_RETIRED=false`;
+- `LIVE_CYCLE_READY=false`.
+
+El Bloque 3 conserva pendiente la retirada física de history y el Bloque 4 no
+está cerrado. El siguiente paso seguro es repetir exclusivamente el precheck
+remoto DB READ-ONLY de 006 usando los archivos corregidos. Eso no autoriza
+aplicar 006 ni iniciar la prueba de 30 días.

@@ -2,6 +2,7 @@ import fs from 'node:fs'
 import path from 'node:path'
 import test from 'node:test'
 import assert from 'node:assert/strict'
+import crypto from 'node:crypto'
 import { fileURLToPath } from 'node:url'
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
@@ -28,6 +29,15 @@ const postcheck = fs.readFileSync(
     'sql',
     'validation',
     '006-price-history-retirement-postcheck-readonly.sql'
+  ),
+  'utf8'
+)
+const certificate = fs.readFileSync(
+  path.join(
+    root,
+    'sql',
+    'validation',
+    '006-price-history-retirement-precheck-certificate-readonly.sql'
   ),
   'utf8'
 )
@@ -440,5 +450,181 @@ test('migration 006 never writes detailed history rows', () => {
   assert.doesNotMatch(
     retirement,
     /update\s+public\.psdeals_stage_price_history/i
+  )
+})
+
+test('single-result-set certificate is one strictly read-only statement', () => {
+  const statements = splitSqlStatements(certificate)
+  assert.equal(statements.length, 1)
+  assert.match(statements[0], /^with\b/i)
+  assert.match(statements[0], /\bselect\b/i)
+  assert.doesNotMatch(
+    certificate,
+    /^\s*(?:begin|commit|insert|update|delete|alter|drop|truncate|vacuum|grant|revoke|create|call|do|lock)\b/im
+  )
+  assert.doesNotMatch(certificate, /\bpg_advisory_|\bpg_terminate_backend\b/i)
+})
+
+test('certificate returns exactly the required machine-readable columns', () => {
+  const finalProjection = certificate.match(
+    /select\s+checks\.check_id::integer[\s\S]*?order by checks\.check_id;/i
+  )?.[0]
+  assert.ok(finalProjection)
+  for (const column of [
+    'checks.check_id::integer',
+    'checks.check_name::text',
+    'checks.passed::boolean',
+    'checks.severity::text',
+    'checks.observed::jsonb',
+    'checks.expected::jsonb',
+    'context.backend_pid::integer',
+    'context.snapshot_id::text',
+    'context.checked_at::timestamptz',
+  ]) {
+    assert.match(finalProjection, new RegExp(column.replaceAll('.', '\\.')))
+  }
+})
+
+test('certificate defines unique consecutive check IDs 1 through 20', () => {
+  const ids = [
+    ...certificate.matchAll(/(?:select|union all\s+select)\s+(\d+),\s*'[^']+'/gi),
+  ].map((match) => Number(match[1]))
+  assert.deepEqual(ids, Array.from({ length: 20 }, (_, index) => index + 1))
+  assert.equal(new Set(ids).size, 20)
+})
+
+test('certificate shares one backend snapshot and statement timestamp', () => {
+  assert.match(certificate, /certificate_context as materialized/)
+  assert.match(certificate, /pg_catalog\.pg_backend_pid\(\)/)
+  assert.match(certificate, /pg_catalog\.pg_current_snapshot\(\)::text/)
+  assert.match(certificate, /statement_timestamp\(\) as checked_at/)
+  assert.match(certificate, /cross join certificate_context as context/)
+  assert.equal((certificate.match(/pg_current_snapshot\(\)/g) ?? []).length, 1)
+  assert.equal((certificate.match(/as checked_at/g) ?? []).length, 1)
+})
+
+test('certificate pass values derive from current catalog observations', () => {
+  assert.doesNotMatch(
+    certificate,
+    /(?:select|union all\s+select)\s+\d+,\s*'[^']+',\s*true\s*,/i
+  )
+  assert.match(certificate, /checks\(check_id, check_name, passed, severity, observed, expected\)/)
+  assert.match(certificate, /jsonb_build_object\(/)
+  assert.match(certificate, /to_jsonb\(/)
+  assert.doesNotMatch(certificate, /Texto\s+3\.2|3\.2-0013|3\.2-0014/i)
+})
+
+test('certificate covers exact history columns, constraints and indexes', () => {
+  for (const column of [
+    'id',
+    'item_id',
+    'price_kind',
+    'observed_at',
+    'price_amount',
+    'currency_code',
+    'source_name',
+    'created_at',
+  ]) {
+    assert.match(certificate, new RegExp(`'${column}'`))
+  }
+  assert.match(certificate, /column_drift/)
+  assert.match(certificate, /primary_key_matches/)
+  assert.match(certificate, /unique_matches/)
+  assert.match(certificate, /foreign_key_matches/)
+  assert.match(certificate, /incoming_count = 0/)
+  for (const indexName of [
+    'psdeals_stage_price_history_pkey',
+    'psdeals_stage_price_history_unique_point',
+    'psdeals_stage_price_history_item_idx',
+    'psdeals_stage_price_history_kind_idx',
+  ]) {
+    assert.match(certificate, new RegExp(indexName))
+  }
+  assert.match(certificate, /index_drift/)
+})
+
+test('certificate covers dependency, trigger, routine and view blockers', () => {
+  for (const evidence of [
+    /all_history_dependencies as materialized/,
+    /external_dependencies as materialized/,
+    /external_dependencies_and_blockers/,
+    /history_triggers as materialized/,
+    /history_routines as materialized/,
+    /history_views as materialized/,
+    /history_rules as materialized/,
+    /stored_writers/,
+    /stored_consumers/,
+  ]) {
+    assert.match(certificate, evidence)
+  }
+})
+
+test('certificate covers exact RLS, policy and PostgreSQL 17 ACL', () => {
+  assert.match(certificate, /Public read psdeals price history/)
+  assert.match(certificate, /relrowsecurity/)
+  assert.match(certificate, /relforcerowsecurity/)
+  assert.match(certificate, /information_schema_acl/)
+  assert.match(certificate, /effective_acl as materialized/)
+  assert.match(certificate, /aclexplode/)
+  assert.match(certificate, /acldefault/)
+  assert.match(certificate, /expected_acl\(grantee, privilege_type, is_grantable, grantor\)/)
+  assert.match(certificate, /acl_by_grantee as materialized/)
+  assert.match(certificate, /acl_by_privilege as materialized/)
+  assert.match(certificate, /acl_drift/)
+  assert.match(certificate, /privilege_type = 'MAINTAIN'/)
+  assert.match(certificate, /actual_count', 32/)
+})
+
+test('certificate uses bounded lock and activity aggregates', () => {
+  assert.match(certificate, /lock_summary as materialized/)
+  assert.match(certificate, /activity_summary as materialized/)
+  assert.match(certificate, /activity\.pid <> pg_catalog\.pg_backend_pid\(\)/)
+  assert.match(certificate, /activity\.backend_type = 'client backend'/)
+  assert.match(certificate, /interval '5 minutes'/)
+  assert.match(certificate, /interval '2 minutes'/)
+  assert.match(certificate, /active_history_mentions/)
+  assert.doesNotMatch(certificate, /select\s+activity\.pid[\s\S]*from pg_catalog\.pg_stat_activity/i)
+})
+
+test('certificate covers migration 005, minima and operational state', () => {
+  for (const evidence of [
+    /required_005_columns/,
+    /required_005_constraints/,
+    /required_005_indexes/,
+    /restrictive_fks_present/,
+    /_psdeals_certification_candidate_sha256_v1/,
+    /certify_price_refresh_cycle_v3/,
+    /regular_minimum_amount_rows/,
+    /regular_first_seen_rows/,
+    /plus_minimum_amount_rows/,
+    /plus_first_seen_rows/,
+    /price_refresh_cycles/,
+    /psdeals_cycle_action_receipts/,
+    /regular_candidate_rows/,
+    /plus_candidate_rows/,
+    /monthly_active_rows/,
+    /cache_max_updated_at/,
+    /lobodeals_3_cycle_bound_price_certification/,
+    /lobodeals_3_restrictive_price_history_retirement/,
+  ]) {
+    assert.match(certificate, evidence)
+  }
+})
+
+test('certificate severity values are closed and every blocker is observable', () => {
+  const severities = [...certificate.matchAll(/\n\s*'(blocker|informational)',/g)].map(
+    (match) => match[1]
+  )
+  assert.equal(severities.length, 20)
+  assert.equal(severities.filter((value) => value === 'informational').length, 1)
+  assert.equal(severities.filter((value) => value === 'blocker').length, 19)
+  assert.equal((certificate.match(/observed/g) ?? []).length >= 2, true)
+  assert.equal((certificate.match(/expected/g) ?? []).length >= 2, true)
+})
+
+test('migration 006 remains byte-for-byte unchanged', () => {
+  assert.equal(
+    crypto.createHash('sha256').update(retirement).digest('hex'),
+    'e754bbd0beb5f1790f72d8e219fca239477bd25853fdee61758139fec9d96c34'
   )
 })

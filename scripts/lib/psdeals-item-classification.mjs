@@ -253,6 +253,11 @@ export function normalizePsdealsPlatforms(rawSignal, options = {}) {
   const sourceContext = normalizeSourceContext(options.sourceContext)
   const tokens = sourcePlatformTokens(rawSignal)
   const normalizedTokens = tokens.map(normalizePlatformToken)
+  const recognizedValues = normalizedTokens
+    .filter((entry) => entry.kind !== 'unknown')
+    .map((entry) => `${entry.kind}:${entry.value}`)
+  const hasDuplicateRecognizedToken =
+    new Set(recognizedValues).size !== recognizedValues.length
   const targetPlatforms = orderedUnique(
     normalizedTokens.filter((entry) => entry.kind === 'target').map((entry) => entry.value),
     TARGET_PLATFORM_ORDER
@@ -284,6 +289,13 @@ export function normalizePsdealsPlatforms(rawSignal, options = {}) {
 
   if (tokens.length === 0) {
     result.reason_codes.push('platform_signal_missing')
+    return result
+  }
+
+  if (hasDuplicateRecognizedToken) {
+    result.classification = 'duplicate_tokens'
+    result.confidence = 'high'
+    result.reason_codes.push('duplicate_platform_token')
     return result
   }
 

@@ -25,12 +25,15 @@ test('accepts a coherent regular discount', () => {
   assert.equal(state.is_certified_regular_discount_eligible, true)
 })
 
-test('uses cent-exact rounding at representative and 1/99 boundaries', () => {
+test('accepts cent-exact coherent discounts from 1 through 99 percent', () => {
   for (const sample of [
-    { currentPrice: '$14.99', originalPrice: '$19.99', percent: 25 },
-    { currentPrice: '$9.99', originalPrice: '$14.99', percent: 33 },
-    { currentPrice: '$9.89', originalPrice: '$9.99', percent: 1 },
-    { currentPrice: '$0.10', originalPrice: '$9.99', percent: 99 },
+    { currentPrice: '$99.00', originalPrice: '$100.00', percent: 1 },
+    { currentPrice: '$50.00', originalPrice: '$100.00', percent: 50 },
+    { currentPrice: '$5.00', originalPrice: '$100.00', percent: 95 },
+    { currentPrice: '$4.00', originalPrice: '$100.00', percent: 96 },
+    { currentPrice: '$3.00', originalPrice: '$100.00', percent: 97 },
+    { currentPrice: '$2.00', originalPrice: '$100.00', percent: 98 },
+    { currentPrice: '$1.00', originalPrice: '$100.00', percent: 99 },
   ]) {
     const state = normalize({
       currentPrice: sample.currentPrice,
@@ -40,7 +43,19 @@ test('uses cent-exact rounding at representative and 1/99 boundaries', () => {
     assert.equal(state.calculated_discount_percent, sample.percent)
     assert.equal(state.discount_percent_normalized, sample.percent)
     assert.equal(state.classification, 'regular_discount')
+    assert.equal(state.is_certified_regular_discount_eligible, true)
   }
+})
+
+test('keeps one hundred percent outside regular certification', () => {
+  const state = normalize({
+    currentPrice: '$0.00',
+    originalPrice: '$100.00',
+    discountPercent: '-100%',
+  })
+  assert.equal(state.discount_percent_normalized, 100)
+  assert.equal(state.is_regular_discount_eligible, false)
+  assert.equal(state.is_certified_regular_discount_eligible, false)
 })
 
 test('preserves the negative PSDeals percentage while normalizing it', () => {
@@ -138,7 +153,6 @@ test('classifies $945.00 to $0.49 at -100% as extreme and non-certifiable', () =
   assert.equal(state.is_valid, false)
   assert.equal(state.is_certified_regular_discount_eligible, false)
   assert.ok(state.reason_codes.includes('full_discount_positive_current_price'))
-  assert.ok(state.reason_codes.includes('certified_price_ratio_exceeded'))
 })
 
 test('classifies $12.99 to $0.02 at -100% as extreme and non-certifiable', () => {

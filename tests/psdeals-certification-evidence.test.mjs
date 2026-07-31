@@ -163,24 +163,28 @@ test('regular evidence requires exact rounded percentage coherence', () => {
   })).eligible, false)
 })
 
-test('regular evidence accepts 1 percent and excludes 99 by ratio limit', () => {
-  const onePercent = regularEvidence(listing({
-    discountText: '-1%',
-    discountPriceText: '$9.89',
-    originalPriceText: '$9.99',
-  }))
-  assert.equal(onePercent.eligible, true)
-  assert.equal(onePercent.candidate.discount_percent, 1)
+test('regular evidence accepts coherent discounts from 1 through 99 percent', () => {
+  for (const percent of [1, 50, 95, 96, 97, 98, 99]) {
+    const current = 100 - percent
+    const result = regularEvidence(listing({
+      discountText: `-${percent}%`,
+      discountPriceText: `$${current.toFixed(2)}`,
+      regularPriceText: `$${current.toFixed(2)}`,
+      originalPriceText: '$100.00',
+    }))
+    assert.equal(result.eligible, true, `${percent}%`)
+    assert.equal(result.candidate.discount_percent, percent)
+  }
+})
 
-  const ninetyNinePercent = regularEvidence(listing({
-    discountText: '-99%',
-    discountPriceText: '$0.10',
-    originalPriceText: '$9.99',
+test('regular evidence excludes a coherent one hundred percent signal', () => {
+  const result = regularEvidence(listing({
+    discountText: '-100%',
+    discountPriceText: '$0.00',
+    regularPriceText: '$0.00',
+    originalPriceText: '$100.00',
   }))
-  assert.equal(ninetyNinePercent.eligible, false)
-  assert.ok(ninetyNinePercent.reason_codes.includes(
-    'regular_commercial_state_not_certifiable'
-  ))
+  assert.equal(result.eligible, false)
 })
 
 test('minus one hundred, zero and FREE never create regular candidates', () => {
@@ -221,9 +225,12 @@ test('only target-only PS4 and PS5 classifications are certifiable', () => {
   assert.equal(regularEvidence(listing({
     platformLabel: 'Unknown',
   })).eligible, false)
+  assert.equal(regularEvidence(listing({
+    platformLabel: 'PS5 / PS4 / PS5',
+  })).eligible, false)
 })
 
-test('only games and bundles are certifiable while heterogeneous add-ons fail closed', () => {
+test('games, bundles and safely classified public add-ons are certifiable', () => {
   assert.equal(regularEvidence(listing({ typeLabel: 'Full Game' })).eligible, true)
   assert.equal(regularEvidence(listing({ typeLabel: 'Bundle' })).eligible, true)
   for (const typeLabel of [
@@ -239,8 +246,38 @@ test('only games and bundles are certifiable while heterogeneous add-ons fail cl
     'Map',
     'Item',
   ]) {
-    assert.equal(regularEvidence(listing({ typeLabel })).eligible, false)
+    assert.equal(regularEvidence(listing({ typeLabel })).eligible, true, typeLabel)
   }
+})
+
+test('contradictory or non-contemporary type evidence is excluded', () => {
+  const contradictory = listing()
+  contradictory.type_classification = {
+    ...contradictory.type_classification,
+    content_type: 'game',
+    item_type_label: 'addon',
+  }
+  assert.equal(regularEvidence(contradictory).eligible, false)
+
+  const stale = listing({ typeLabel: 'Unknown' })
+  stale.type_classification.can_write = false
+  stale.type_classification.can_replace_existing = false
+  assert.equal(regularEvidence(stale).eligible, false)
+})
+
+test('canonical platform order produces the same candidate hash', () => {
+  const ps5First = regularEvidence(listing({
+    platformLabel: 'PS5 / PS4',
+  }))
+  const ps4First = regularEvidence(listing({
+    platformLabel: 'PS4 / PS5',
+  }))
+  assert.deepEqual(ps5First.candidate.platforms, ['PS5', 'PS4'])
+  assert.deepEqual(ps4First.candidate.platforms, ['PS5', 'PS4'])
+  assert.equal(
+    ps5First.candidate.candidate_sha256,
+    ps4First.candidate.candidate_sha256
+  )
 })
 
 test('demo and ambiguous type proposals are excluded', () => {
@@ -293,6 +330,14 @@ test('PS Plus parser records a current coherent buy-box observation', () => {
     true
   )
   assert.equal(plusEvidence(parsed).eligible, true)
+})
+
+test('PS Plus certification preserves a safely classified add-on product', () => {
+  const parsed = parsedDetail({ type: 'addon' })
+  const result = plusEvidence(parsed)
+  assert.equal(result.eligible, true)
+  assert.equal(result.candidate.content_type, 'dlc')
+  assert.equal(result.candidate.item_type_label, 'addon')
 })
 
 test('PS Plus from another cycle or artifact cannot inherit identity', () => {

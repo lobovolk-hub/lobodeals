@@ -40,6 +40,14 @@ function exactMoney(value, expected) {
   return positiveMoney(value) === expected
 }
 
+function expectedDiscountPercent(current, original) {
+  const currentCents = Math.round(current * 100)
+  const originalCents = Math.round(original * 100)
+  return Math.round(
+    (100 * (originalCents - currentCents)) / originalCents
+  )
+}
+
 function evaluateRegularObservation(observation, priceAmount, reasons) {
   const commercial = observation?.commercial_state
 
@@ -74,7 +82,7 @@ function evaluateRegularObservation(observation, priceAmount, reasons) {
   } else if (
     current !== null &&
     original !== null &&
-    Math.round((100 * (original - current)) / original) !== percent
+    expectedDiscountPercent(current, original) !== percent
   ) {
     reasons.push('regular_discount_percent_mismatch')
   }

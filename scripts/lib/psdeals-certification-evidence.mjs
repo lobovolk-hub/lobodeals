@@ -9,6 +9,7 @@ const UUID_PATTERN =
 const ALLOWED_TYPE_PAIRS = new Set([
   'game:game',
   'bundle:bundle',
+  'dlc:addon',
 ])
 const TARGET_PLATFORMS = new Set(['PS5', 'PS4'])
 

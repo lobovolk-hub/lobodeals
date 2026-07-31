@@ -2,6 +2,18 @@
 -- application of migration 005.
 
 select
+  '2e631ebaabe809d8828690f25de4ae8b0b598f6faf0519e114e71f7bde2b7b96'
+    as expected_migration_005_sha256,
+  1024::integer as candidate_max_bytes,
+  1::integer as minimum_regular_discount_percent,
+  99::integer as maximum_regular_discount_percent,
+  array['game:game', 'bundle:bundle', 'dlc:addon']::text[]
+    as certifiable_public_type_pairs,
+  array['PS4', 'PS5', 'PS5,PS4']::text[]
+    as canonical_platform_sets,
+  false as ratio_limit_expected;
+
+select
   clock_timestamp() as checked_at,
   current_database() as database_name,
   current_user as session_role,

@@ -2,6 +2,17 @@
 -- and successful application of migration 005.
 
 select
+  '2e631ebaabe809d8828690f25de4ae8b0b598f6faf0519e114e71f7bde2b7b96'
+    as expected_migration_005_sha256,
+  1024::integer as candidate_max_bytes,
+  1::integer as minimum_regular_discount_percent,
+  99::integer as maximum_regular_discount_percent,
+  array['game:game', 'bundle:bundle', 'dlc:addon']::text[]
+    as certifiable_public_type_pairs,
+  array['PS4', 'PS5', 'PS5,PS4']::text[]
+    as canonical_platform_sets;
+
+select
   clock_timestamp() as checked_at,
   current_database() as database_name,
   current_user as session_role,
@@ -115,6 +126,50 @@ where namespace.nspname = 'public'
     '_psdeals_certification_candidate_sha256_v1'
   )
 order by procedure.proname, arguments, grantee;
+
+with certification_function as (
+  select lower(
+    pg_catalog.pg_get_functiondef(procedure.oid)
+  ) as definition
+  from pg_catalog.pg_proc as procedure
+  join pg_catalog.pg_namespace as namespace
+    on namespace.oid = procedure.pronamespace
+  where namespace.nspname = 'public'
+    and procedure.proname = 'certify_price_refresh_cycle_v3'
+    and pg_catalog.pg_get_function_identity_arguments(
+      procedure.oid
+    ) = 'p_cycle_id uuid, p_mark_succeeded_receipt_id uuid, p_idempotency_key text, p_request_hash text, p_started_at timestamp with time zone'
+)
+select
+  position(
+    'source.candidate_percent between 1 and 99'
+    in definition
+  ) > 0 as regular_discounts_1_to_99_allowed,
+  position(
+    'source.original_amount / source.candidate_amount <= 20'
+    in definition
+  ) = 0 as ratio_limit_absent,
+  position(
+    'source.candidate ->> ''content_type'' = ''game'''
+    in definition
+  ) > 0 as game_pair_present,
+  position(
+    'source.candidate ->> ''content_type'' = ''bundle'''
+    in definition
+  ) > 0 as bundle_pair_present,
+  position(
+    'source.candidate ->> ''content_type'' = ''dlc'''
+    in definition
+  ) > 0
+    and position(
+      'source.candidate ->> ''item_type_label'' = ''addon'''
+      in definition
+    ) > 0 as dlc_addon_pair_present,
+  position(
+    '''["ps5","ps4"]''::jsonb'
+    in definition
+  ) > 0 as canonical_combined_platform_present
+from certification_function;
 
 select
   count(*)::bigint as stage_rows,

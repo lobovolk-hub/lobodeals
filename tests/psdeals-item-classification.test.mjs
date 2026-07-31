@@ -162,7 +162,6 @@ test('normalizes PS4 and PS5 with canonical PS5-first ordering', () => {
     ['PS5 / PS4', ['PS5', 'PS4']],
     ['PS4 / PS5', ['PS5', 'PS4']],
     [['PS4', 'PS5'], ['PS5', 'PS4']],
-    [[' ps4 ', 'PS5', 'PS4'], ['PS5', 'PS4']],
   ]
 
   for (const [signal, expected] of cases) {
@@ -170,6 +169,22 @@ test('normalizes PS4 and PS5 with canonical PS5-first ordering', () => {
     assert.deepEqual(result.target_platforms, expected, JSON.stringify(signal))
     assert.equal(result.classification, 'target_only', JSON.stringify(signal))
     assert.equal(result.can_replace_existing, true, JSON.stringify(signal))
+  }
+})
+
+test('rejects duplicate target platform tokens instead of silently deduplicating', () => {
+  for (const signal of [
+    'PS4 / PS4',
+    'PS5 / PS4 / PS5',
+    [' ps4 ', 'PS5', 'PS4'],
+  ]) {
+    const result = normalizePsdealsPlatforms(signal, {
+      sourceContext: 'listing',
+    })
+    assert.equal(result.classification, 'duplicate_tokens')
+    assert.equal(result.can_write, false)
+    assert.equal(result.can_replace_existing, false)
+    assert.ok(result.reason_codes.includes('duplicate_platform_token'))
   }
 })
 

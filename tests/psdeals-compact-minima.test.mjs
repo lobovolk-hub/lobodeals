@@ -65,6 +65,41 @@ test('accepts a coherent regular observation from one explicit future cycle', ()
   assert.equal(result.normalized_observation.price_amount, 4.99)
 })
 
+test('accepts coherent regular observations across the full 1 to 99 range', () => {
+  for (const percent of [1, 50, 95, 96, 97, 98, 99]) {
+    const current = 100 - percent
+    const commercialState = normalizePsdealsCommercialState({
+      currentPrice: current,
+      originalPrice: 100,
+      discountPercent: -percent,
+      sourceContext: 'discount_listing',
+    })
+    const result = evaluatePsdealsCertifiedPriceLowObservation(
+      regularObservation({
+        price_amount: current,
+        commercial_state: commercialState,
+      })
+    )
+    assert.equal(result.can_update_certified_low, true, `${percent}%`)
+  }
+})
+
+test('rejects one hundred percent as a certified regular observation', () => {
+  const commercialState = normalizePsdealsCommercialState({
+    currentPrice: 0,
+    originalPrice: 100,
+    discountPercent: -100,
+    sourceContext: 'discount_listing',
+  })
+  const result = evaluatePsdealsCertifiedPriceLowObservation(
+    regularObservation({
+      price_amount: 0,
+      commercial_state: commercialState,
+    })
+  )
+  assert.equal(result.can_update_certified_low, false)
+})
+
 test('accepts a current non-monthly PS Plus observation from detail', () => {
   const result = evaluatePsdealsCertifiedPriceLowObservation(psPlusObservation())
   assert.equal(result.is_valid, true)

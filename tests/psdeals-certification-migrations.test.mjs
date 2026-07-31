@@ -115,22 +115,36 @@ test('regular certification uses only cycle-bound complete tuple evidence', () =
     /source\.candidate_percent = round\(/,
     /source\.candidate_amount > 0/,
     /source\.original_amount > source\.candidate_amount/,
-    /source\.original_amount \/ source\.candidate_amount <= 20/,
   ]) {
     assert.match(certification, evidence)
   }
+  assert.doesNotMatch(
+    certification,
+    /source\.original_amount\s*\/\s*source\.candidate_amount\s*<=\s*20/
+  )
 })
 
-test('regular certification excludes unsafe scope, type and platforms', () => {
+test('regular certification supports safe public families and exact platforms', () => {
   assert.match(certification, /source\.candidate ->> 'currency_code' = 'USD'/)
   assert.match(certification, /source\.candidate ->> 'is_free_to_play' = 'false'/)
-  assert.match(certification, /'game'[\s\S]*'bundle'/)
-  assert.doesNotMatch(certification, /source\.candidate ->> 'content_type' = 'dlc'/)
+  for (const pair of [
+    ["game", "game"],
+    ["bundle", "bundle"],
+    ["dlc", "addon"],
+  ]) {
+    assert.match(
+      certification,
+      new RegExp(
+        `content_type' = '${pair[0]}'[\\s\\S]*item_type_label' = '${pair[1]}'`
+      )
+    )
+  }
   assert.match(
     certification,
     /'\["PS4"\]'::jsonb,[\s\S]*'\["PS5"\]'::jsonb,[\s\S]*'\["PS5", "PS4"\]'::jsonb/
   )
   assert.doesNotMatch(certification, /candidate_percent between 0 and 100/)
+  assert.match(certification, /candidate_percent between 1 and 99/)
 })
 
 test('PS Plus certification requires same-cycle parser-safe evidence', () => {
@@ -212,9 +226,16 @@ test('migration 005 precheck and postcheck are strictly read-only', () => {
     )
   }
   assert.match(precheck, /pg_database_size/)
+  assert.match(precheck, /2e631ebaabe809d8828690f25de4ae8b0b598f6faf0519e114e71f7bde2b7b96/)
+  assert.match(precheck, /'dlc:addon'/)
+  assert.match(precheck, /ratio_limit_expected/)
   assert.match(precheck, /certify_price_refresh_cycle_v2/)
   assert.match(postcheck, /regular_candidates/)
   assert.match(postcheck, /ps_plus_candidates/)
   assert.match(postcheck, /aclexplode/)
   assert.match(postcheck, /convalidated/)
+  assert.match(postcheck, /regular_discounts_1_to_99_allowed/)
+  assert.match(postcheck, /ratio_limit_absent/)
+  assert.match(postcheck, /dlc_addon_pair_present/)
+  assert.match(postcheck, /canonical_combined_platform_present/)
 })

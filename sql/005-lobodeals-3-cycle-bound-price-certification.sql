@@ -536,6 +536,10 @@ begin
             source.candidate ->> 'content_type' = 'bundle'
             and source.candidate ->> 'item_type_label' = 'bundle'
           )
+          or (
+            source.candidate ->> 'content_type' = 'dlc'
+            and source.candidate ->> 'item_type_label' = 'addon'
+          )
         )
         and source.candidate -> 'platforms' in (
           '["PS4"]'::jsonb,
@@ -544,7 +548,6 @@ begin
         )
         and source.candidate_amount > 0
         and source.original_amount > source.candidate_amount
-        and source.original_amount / source.candidate_amount <= 20
         and source.candidate_percent between 1 and 99
         and source.candidate_percent = round(
           100 * (
@@ -640,6 +643,10 @@ begin
           or (
             source.candidate ->> 'content_type' = 'bundle'
             and source.candidate ->> 'item_type_label' = 'bundle'
+          )
+          or (
+            source.candidate ->> 'content_type' = 'dlc'
+            and source.candidate ->> 'item_type_label' = 'addon'
           )
         )
         and source.candidate -> 'platforms' in (

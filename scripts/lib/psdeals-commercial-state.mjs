@@ -1,5 +1,3 @@
-export const CERTIFIED_PRICE_RATIO_LIMIT = 20
-
 function roundMoney(value) {
   return Number(value.toFixed(2))
 }
@@ -104,7 +102,6 @@ export function normalizePsdealsCommercialState({
   originalPrice,
   discountPercent,
   sourceContext = 'unknown',
-  certifiedPriceRatioLimit = CERTIFIED_PRICE_RATIO_LIMIT,
 } = {}) {
   const currentSignal = parsePsdealsPriceSignal(currentPrice)
   const originalSignal = parsePsdealsPriceSignal(originalPrice)
@@ -121,13 +118,6 @@ export function normalizePsdealsCommercialState({
     discountSignal.kind === 'integer' ? discountSignal.percent : null
   const normalizedDiscountPercent =
     sourceDiscountPercent === null ? null : Math.abs(sourceDiscountPercent)
-  const priceRatio =
-    currentPriceAmount !== null &&
-    currentPriceAmount > 0 &&
-    originalPriceAmount !== null
-      ? originalPriceAmount / currentPriceAmount
-      : null
-
   let classification = 'invalid'
   let isValid = false
   let isRegularDiscountEligible = false
@@ -215,18 +205,9 @@ export function normalizePsdealsCommercialState({
       classification = 'regular_discount'
       isValid = true
       isRegularDiscountEligible = true
+      isCertifiedRegularDiscountEligible = true
       isSafeForPriceUpdate = true
       requiresDetailRevalidation = false
-
-      if (
-        priceRatio !== null &&
-        priceRatio <= certifiedPriceRatioLimit
-      ) {
-        isCertifiedRegularDiscountEligible = true
-      } else {
-        reasons.push('certified_price_ratio_exceeded')
-        requiresDetailRevalidation = true
-      }
     } else {
       classification = 'incoherent_regular_discount'
     }
@@ -251,13 +232,6 @@ export function normalizePsdealsCommercialState({
     } else if (currentPriceAmount > 0) {
       classification = 'extreme_full_discount'
       reasons.push('full_discount_positive_current_price')
-
-      if (
-        priceRatio !== null &&
-        priceRatio > certifiedPriceRatioLimit
-      ) {
-        reasons.push('certified_price_ratio_exceeded')
-      }
     } else {
       classification = 'invalid_full_discount'
       reasons.push('full_discount_invalid_price_tuple')
@@ -282,9 +256,6 @@ export function normalizePsdealsCommercialState({
     discount_percent_source: sourceDiscountPercent,
     discount_percent_normalized: normalizedDiscountPercent,
     calculated_discount_percent: calculatedDiscountPercent,
-    price_ratio:
-      priceRatio === null ? null : Number(priceRatio.toFixed(4)),
-    certified_price_ratio_limit: certifiedPriceRatioLimit,
     classification,
     is_valid: isValid,
     reason_codes: uniqueReasons(reasons),

@@ -2,12 +2,17 @@
 
 Fecha local: 2026-07-30 (America/Lima)
 
-Resultado local: `PREPARED_NOT_APPLIED`
+Resultado de esta sesión local del 2026-07-30: `PREPARED_NOT_APPLIED`
 
 > Nota posterior: el contrato definitivo conserva Games, Bundles y
 > DLC/Add-ons, admite descuentos coherentes de 1% a 99%, excluye 100% y limita
 > cada candidate a 1.024 bytes. El contrato vigente está en
 > `lobodeals-3-005-006-adversarial-review-2026-07-30.md`.
+>
+> Resolución remota posterior, 2026-07-31: 005 fue aplicada y verificada con
+> resultado `GO`; 006 continúa sin aplicar, history sigue intacta y no se
+> ejecutó ningún ciclo. Las referencias posteriores a migraciones pendientes
+> describen el estado histórico al cierre de esta sesión local.
 
 ## Baseline
 
@@ -145,7 +150,8 @@ Las consultas futuras de precheck/postcheck están separadas en `sql/validation/
 - `9d10089806ea86f090210d86cb67a2bfb34ae6ca` — `Bind price certification evidence to refresh cycles`;
 - `00ea4c74142388aeb54ffb158f32f459a3d1ab36` — `Prepare restrictive PSDeals history retirement`.
 
-Ninguna migración fue aplicada.
+Al cierre de esta sesión local del 2026-07-30, ninguna migración había sido
+aplicada.
 
 ## Validación local final
 
@@ -158,7 +164,7 @@ Ninguna migración fue aplicada.
 - búsqueda de operaciones prohibidas en 006: sin hallazgos;
 - build omitido por instrucción.
 
-## Gates
+## Gates al cierre local del 2026-07-30
 
 - `STORAGE_READY=false`;
 - `COMPACT_MINIMA_READY=false`;
@@ -167,7 +173,7 @@ Ninguna migración fue aplicada.
 - `HISTORY_RETIREMENT_PREFLIGHT_READY=true` solo como diseño local revisable;
 - `CERTIFICATION_FIX_REQUIRED=true` en remoto.
 
-## Siguiente gate
+## Secuencia planeada al 2026-07-30
 
 Revisión humana exacta de 005 y 006, seguida de una autorización separada para:
 
@@ -179,3 +185,50 @@ Revisión humana exacta de 005 y 006, seguida de una autorización separada para
 6. verificar ausencia de history y capacidad.
 
 Eso no autoriza todavía un ciclo real, caché ni prueba de 30 días.
+
+## Resolución remota posterior — 2026-07-31
+
+Texto 3.2-0007 aplicó únicamente 005 al proyecto
+`vlxkoprpobfevxefizwr`. Quedó registrada como versión `20260731052531`, nombre
+`lobodeals_3_cycle_bound_price_certification`, fecha
+`2026-07-31 05:25:31 UTC` y SHA-256
+`2e631ebaabe809d8828690f25de4ae8b0b598f6faf0519e114e71f7bde2b7b96`.
+El resultado transaccional y el postcheck fueron exitosos.
+
+El postcheck verificó las ocho columnas candidatas completamente null, cuatro
+constraints, dos FKs `RESTRICT`, dos índices parciales, el helper SHA y v3.
+V1/v2 quedaron solo para `postgres`; v3 quedó solo para `service_role` y
+`postgres`, con `SECURITY DEFINER` y `search_path=''`.
+
+Database Size pasó de 440.683.667 a 440.741.011 bytes: crecimiento total
+57.344 bytes. Stage/public creció 16.384 bytes por dos índices vacíos de 8.192
+bytes; heap y TOAST de stage no crecieron. El margen aproximado frente a 500 MB
+decimales es 59.258.989 bytes.
+
+Stage conserva 32.890 filas; history conserva 841.549 filas y su tamaño
+previamente medido de 273.907.712 bytes. Cycles, receipts, mínimos y candidates
+siguen en cero. Monthly conserva 7 filas, 4 activas. La caché no fue
+refrescada.
+
+006 no fue aplicada ni registrada. History conserva sus cuatro índices, policy
+y grants. No se ejecutó `DROP` ni ningún ciclo.
+
+Readiness vigente:
+
+- `MIGRATION_005_APPLIED=true`;
+- `MIGRATION_005_POSTCHECK_PASSED=true`;
+- `MIGRATION_006_UNTOUCHED=true`;
+- `NO_CYCLE_EXECUTED=true`;
+- `COMPACT_MINIMA_SCHEMA_READY=true`;
+- `COMPACT_MINIMA_READY=false`;
+- `STORAGE_READY=false`;
+- `HISTORY_RETIRED=false`;
+- `LIVE_CYCLE_READY=false`;
+- `CERTIFICATION_FIX_REQUIRED=false`;
+- `REMOTE_006_READY_TO_APPLY=false`.
+
+`CERTIFICATION_FIX_REQUIRED=false` significa únicamente que v3 está instalada
+y verificada; no significa updater completo, ciclo listo, certificación
+ejecutada, mínimos inicializados ni sistema operativo. No debe poblarse ningún
+candidate mientras history siga presente. El siguiente gate es exclusivamente
+el precheck remoto read-only de 006.

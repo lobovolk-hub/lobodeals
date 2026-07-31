@@ -2,11 +2,18 @@
 
 Fecha local: 2026-07-30 (America/Lima)
 
-Resultado: `LOCAL_APPROVED_REMOTE_NOT_APPLIED`
+Resultado de la revisión local del 2026-07-30:
+`LOCAL_APPROVED_REMOTE_NOT_APPLIED`
 
 Este dossier reemplaza, para 005/006, las conclusiones de tamaño, tipos y ACL
 del informe de preparación anterior. No autoriza ni registra una aplicación
 remota.
+
+> Resolución posterior verificada, 2026-07-31: Texto 3.2-0007 terminó `GO`.
+> La migración 005 fue aplicada y aprobó su postcheck remoto. La migración 006
+> continúa sin aplicar; history permanece intacta y no se ejecutó ningún ciclo.
+> Los apartados que describen ambas migraciones como pendientes conservan el
+> estado histórico de esta revisión del 2026-07-30.
 
 Commit técnico:
 
@@ -373,7 +380,7 @@ futura, no un error.
 - build: no ejecutado;
 - migraciones: no ejecutadas.
 
-## 16. Readiness
+## 16. Readiness al cierre local del 2026-07-30
 
 - `CERTIFICATION_MIGRATION_LOCAL_APPROVED=true`;
 - `HISTORY_RETIREMENT_MIGRATION_LOCAL_APPROVED=true`;
@@ -388,5 +395,49 @@ futura, no un error.
 - `LIVE_CYCLE_READY=false`;
 - `CERTIFICATION_FIX_REQUIRED=true` remotamente.
 
-Posición: 005 y 006 están corregidas y aprobadas localmente, pero no aplicadas.
-El Bloque 4 no está cerrado y la prueba de 30 días no comenzó.
+Posición al cierre de esta revisión del 2026-07-30: 005 y 006 estaban
+corregidas y aprobadas localmente, pero no aplicadas. El Bloque 4 no estaba
+cerrado y la prueba de 30 días no había comenzado.
+
+## 17. Resolución remota posterior — 2026-07-31
+
+Texto 3.2-0007 aplicó exclusivamente 005 al proyecto
+`vlxkoprpobfevxefizwr` y terminó `GO`:
+
+- versión: `20260731052531`;
+- nombre: `lobodeals_3_cycle_bound_price_certification`;
+- fecha: `2026-07-31 05:25:31 UTC`;
+- SHA-256 aplicado:
+  `2e631ebaabe809d8828690f25de4ae8b0b598f6faf0519e114e71f7bde2b7b96`;
+- postcheck: aprobado;
+- Database Size: 440.683.667 → 440.741.011 bytes, incremento 57.344;
+- ocho columnas presentes, nullable, sin default y completamente null;
+- dos índices parciales de 8.192 bytes cada uno;
+- v1 y v2 ejecutables solo por `postgres`;
+- v3 ejecutable solo por `service_role` y `postgres`, `SECURITY DEFINER`,
+  `search_path=''`;
+- stage: 32.890; history: 841.549; cycles: 0; receipts: 0;
+- mínimos: 0; candidates: 0; monthly: 7 filas, 4 activas;
+- caché no refrescada.
+
+006 no fue aplicada ni registrada. History conserva sus cuatro índices, policy
+y grants. Su tamaño previamente medido es 273.907.712 bytes y el margen
+posterior a 005 frente a 500 MB decimales es 59.258.989 bytes.
+
+Readiness posterior:
+
+- `MIGRATION_005_APPLIED=true`;
+- `MIGRATION_005_POSTCHECK_PASSED=true`;
+- `MIGRATION_006_UNTOUCHED=true`;
+- `NO_CYCLE_EXECUTED=true`;
+- `COMPACT_MINIMA_SCHEMA_READY=true`;
+- `COMPACT_MINIMA_READY=false`;
+- `STORAGE_READY=false`;
+- `HISTORY_RETIRED=false`;
+- `LIVE_CYCLE_READY=false`;
+- `CERTIFICATION_FIX_REQUIRED=false`;
+- `REMOTE_006_READY_TO_APPLY=false`.
+
+`CERTIFICATION_FIX_REQUIRED=false` solo resuelve la ausencia remota de v3; no
+declara listo el updater ni autoriza ciclos. El siguiente gate es
+exclusivamente el precheck remoto read-only de 006.

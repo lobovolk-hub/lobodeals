@@ -1899,3 +1899,107 @@ Readiness local:
 cerrado y la prueba de 30 días no comenzó. El siguiente paso separado es
 ejecutar únicamente el precheck remoto read-only de 005; no autoriza aplicar
 005/006 ni iniciar un ciclo real.
+
+## 44. Aplicación remota verificada de 005 — 2026-07-31
+
+Texto 3.2-0007 terminó con resultado `GO`. Johan autorizó exclusivamente
+aplicar la migración 005 con prechecks inmediatos y postcheck, sin aplicar 006
+ni ejecutar ciclos. La operación se realizó sobre el proyecto Supabase
+`vlxkoprpobfevxefizwr`.
+
+La migración quedó registrada una sola vez:
+
+- versión: `20260731052531`;
+- nombre: `lobodeals_3_cycle_bound_price_certification`;
+- fecha: `2026-07-31 05:25:31 UTC`;
+- fecha local: `2026-07-31 00:25:31 America/Lima`;
+- SHA-256:
+  `2e631ebaabe809d8828690f25de4ae8b0b598f6faf0519e114e71f7bde2b7b96`;
+- tamaño del archivo local aplicado: 28.396 bytes;
+- resultado transaccional: exitoso;
+- postcheck remoto: aprobado.
+
+El precheck inmediato confirmó PostgreSQL 17.6, sesión `postgres`, 004 exacta,
+005/006 ausentes, v3 y las ocho columnas ausentes, cero colisiones, cero locks
+o actividad riesgosa, 32.890 filas stage, 841.549 filas history, cero cycles,
+cero receipts y cero mínimos.
+
+005 instaló las ocho columnas candidatas nullable sin default, dos constraints
+todo-null/completo con claves cerradas y máximo 1.024 bytes, dos FKs
+`ON DELETE RESTRICT`, dos índices parciales, el helper
+`_psdeals_certification_candidate_sha256_v1(jsonb)` y
+`certify_price_refresh_cycle_v3(uuid,uuid,text,text,timestamptz)`.
+
+El postcheck verificó:
+
+- las ocho columnas presentes y completamente null en las 32.890 filas;
+- v1 ejecutable únicamente por `postgres`;
+- v2 ejecutable únicamente por `postgres`;
+- v3 ejecutable únicamente por `service_role` y `postgres`;
+- cero `EXECUTE` de v3 para `PUBLIC`, `anon` o `authenticated`;
+- v3 con owner `postgres`, `SECURITY DEFINER` y `search_path=''`;
+- descuentos regulares coherentes de 1% a 99%;
+- exclusión de 100%, cero, FREE y datos incoherentes;
+- ausencia del límite histórico 20:1;
+- pares seguros `game/game`, `bundle/bundle` y `dlc/addon`;
+- exclusión de tipos ambiguos;
+- PS4, PS5 y conjunto combinado canónico PS5+PS4;
+- cycle ID, timestamp, artifact hash y candidate hash obligatorios;
+- rechazo de candidatos de otro ciclo;
+- mínimos monotónicos y first seen preservado;
+- monthly activo excluido;
+- receipts e idempotencia conservados.
+
+El coste inmediato fue pequeño y coherente con columnas nullable y candidatos
+vacíos:
+
+- Database Size antes: 440.683.667 bytes;
+- Database Size después: 440.741.011 bytes;
+- incremento total observado: 57.344 bytes;
+- incremento en relaciones `public`/stage: 16.384 bytes;
+- heap y TOAST de stage: sin crecimiento;
+- índices parciales nuevos: 8.192 bytes cada uno y sin entradas;
+- margen aproximado frente a 500 MB decimales: 59.258.989 bytes.
+
+La integridad operativa quedó sin cambios: stage conserva 32.890 filas;
+history conserva 841.549 filas y su tamaño previamente medido de 273.907.712
+bytes; existen cero cycles, cero receipts, cero mínimos y cero candidates.
+Monthly conserva 7 filas, 4 activas. La caché no fue refrescada.
+
+La migración 006 no fue aplicada ni registrada. Su SHA-256 local continúa
+siendo
+`a121bfa29a94978209c6568502d13265e8bc5accae1b5aa21e617dc3ce6997aa`.
+`public.psdeals_stage_price_history` sigue presente con sus 841.549 filas,
+cuatro índices, policy y grants previos. No se ejecutó `DROP`. No debe poblarse
+ningún candidate mientras history permanezca presente.
+
+Readiness remoto actual:
+
+- `MIGRATION_005_APPLIED=true`;
+- `MIGRATION_005_POSTCHECK_PASSED=true`;
+- `MIGRATION_006_UNTOUCHED=true`;
+- `NO_CYCLE_EXECUTED=true`;
+- `COMPACT_MINIMA_SCHEMA_READY=true`;
+- `COMPACT_MINIMA_READY=false`;
+- `STORAGE_READY=false`;
+- `HISTORY_RETIRED=false`;
+- `LIVE_CYCLE_READY=false`;
+- `CERTIFICATION_FIX_REQUIRED=false`;
+- `REMOTE_006_READY_TO_APPLY=false`.
+
+`CERTIFICATION_FIX_REQUIRED=false` significa únicamente que la corrección
+remota v3 está instalada y verificada. No significa updater completo, ciclo
+listo, certificación ejecutada, mínimos inicializados ni sistema listo para
+operación.
+
+`COMPACT_MINIMA_SCHEMA_READY=true` significa que columnas, constraints,
+índices, helper, v3 y ACL pasaron el postcheck remoto.
+`COMPACT_MINIMA_READY=false` continúa porque faltan retirar history, realizar
+la simulación integral, validar el updater, ejecutar el primer ciclo
+expresamente autorizado y completar la verificación operativa.
+
+No se ejecutaron collector, importer, analyzer operativo, runner, ciclo,
+mark-succeeded, certificación, cache refresh, monthly write, push, deploy,
+eliminación histórica ni prueba de 30 días. El Bloque 4 no está cerrado. El
+siguiente gate, todavía no ejecutado ni autorizado como escritura, es
+exclusivamente el precheck remoto read-only de la migración 006.

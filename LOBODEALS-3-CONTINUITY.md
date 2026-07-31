@@ -1,13 +1,13 @@
-# LoboDeals 3.0 — Documento canónico de continuidad
+# LoboDeals 3.2 — Documento canónico de continuidad
 
-Actualizado: 2026-07-28
+Actualizado: 2026-07-30
 Proyecto local: D:\Proyectos\lobodeals
 Repositorio: lobovolk-hub/lobodeals
 Rama principal: main
 
 ## 1. Fuente de verdad
 
-Este es el documento canónico para continuar LoboDeals 3.0 en un chat nuevo.
+Este es el documento canónico para continuar LoboDeals 3.2 en una tarea nueva.
 
 Los documentos con sufijo v1.9 están obsoletos y fueron retirados del repositorio en el commit 4f826ac873850d3e61ceb68721512099625f1515.
 
@@ -53,7 +53,7 @@ No generar ZIP, backup, CSV, SQL dump ni pg_dump del historial de precios.
 
 ## 3. Dirección de producto
 
-LoboDeals 3.0 comienza limitado a PlayStation US.
+LoboDeals 3.2 comienza limitado a PlayStation US.
 
 Debe mostrar:
 
@@ -306,15 +306,25 @@ No crear:
 - ZIP;
 - pg_dump.
 
-El historial todavía no debe eliminarse.
+El historial todavía no debe eliminarse durante una sesión local. Su retirada física es una operación remota futura y separada.
+
+Decisiones definitivas de LoboDeals 3.2:
+
+- no exportar ni respaldar `psdeals_stage_price_history`;
+- no reconstruir ni backfillear mínimos certificados desde sus 841.549 filas;
+- los cuatro mínimos compactos comienzan vacíos;
+- únicamente observaciones válidas de ciclos futuros certificados pueden inicializarlos o reducirlos;
+- el histórico debe retirarse físicamente antes del primer ciclo real por el límite de capacidad comunicado (`0,456/0,5 GB`);
+- la retirada será sin backup y sin `CASCADE`.
 
 Orden obligatorio:
 
-1. infraestructura compacta;
-2. primer ciclo real certificado;
-3. producción deja de consumir historial;
-4. verificación final;
-5. DROP sin backup y sin CASCADE.
+1. cerrar y probar localmente el contrato de mínimos futuros;
+2. auditar en remoto, solo lectura, cero writers, consumidores y dependencias actuales;
+3. revisar y aprobar una migración exacta de retirada sin backup ni `CASCADE`;
+4. ejecutar esa migración únicamente con autorización crítica separada;
+5. verificar capacidad y ausencia del histórico;
+6. solo después permitir el primer ciclo real controlado.
 
 ## 11. Mínimos compactos
 
@@ -1329,10 +1339,10 @@ Se distinguen:
 
 1. `psdeals_stage_price_history`, histórico detallado sin DDL local; 841,549 es una medición histórica;
 2. `item_price_snapshots`, tabla v1 con FK a catalog items y `on delete cascade`;
-3. `lowest_price_amount` y `lowest_ps_plus_price_amount`, resúmenes aún escritos por importer y mostrados por el detalle;
+3. `lowest_price_amount` y `lowest_ps_plus_price_amount`, resúmenes que en aquel checkpoint aún escribía el importer y mostraba el detalle, retirados después del runtime actual;
 4. `lobodeals_lowest_*`, mínimos compactos certificados que deben conservarse.
 
-No existe evidencia suficiente para eliminar ninguno. Antes hacen falta inventario remoto read-only de columnas, índices, FKs, triggers, vistas, funciones, jobs, filas, tamaño y rango; definición de cache v15; exportación; migración y validación pública. El reporte propone consultas read-only, go/no-go, limpieza y recuperación. No ejecuta SQL ni incluye una operación destructiva autorizada.
+En ese checkpoint no existía evidencia suficiente para eliminar ninguno. La propuesta original incluía exportación, pero quedó sustituida por la decisión definitiva de LoboDeals 3.2: no exportar ni backfillear el histórico. Se mantienen como requisitos el inventario remoto read-only de columnas, índices, FKs, triggers, vistas, funciones, jobs, filas, tamaño y rango, junto con una migración exacta separada y validaciones posteriores. El reporte no ejecutó SQL ni incluyó una operación destructiva autorizada.
 
 ### Migración futura del PS1
 
@@ -1430,7 +1440,7 @@ La evaluación final permanece `NOT_READY`; READY nunca autorizaría por sí sol
 
 `psdeals_stage_price_history` existe con 841,549 filas exactas y 273,907,712 bytes totales: 107,372,544 de tabla y 166,469,632 de índices. Su rango es 2015-07-10 a 2026-06-06. Tiene PK, índice único, índices por item/kind y FK a `psdeals_stage_items(id) ON DELETE CASCADE`; no se encontraron triggers, consumidores directos en vistas/funciones accesibles ni `pg_cron`. Las funciones verificadas de certificación y caché no lo consumen.
 
-La limpieza sigue en `NO-GO`: todavía no existe un ciclo real certificado, los mínimos compactos certificados tienen cero filas, no se ha elegido/creado una exportación recuperable y no existe autorización separada. No se preparó SQL destructivo y `CASCADE` continúa prohibido.
+La limpieza seguía en `NO-GO` en ese checkpoint. La ausencia de exportación dejó de ser un bloqueo por decisión expresa de producto: LoboDeals 3.2 no conservará respaldo ni hará backfill. Continúan siendo bloqueos la auditoría remota actual, el contrato de certificación, una migración exacta separada y la autorización crítica. No se preparó SQL destructivo y `CASCADE` continúa prohibido.
 
 ### Posición exacta del Bloque 4
 
@@ -1573,7 +1583,7 @@ El procedimiento futuro exacto está en `docs/audit/lobodeals-3-cycle-migration-
 
 Antes de cualquier uso, una reversión solo podría prepararse con cycles/receipts en cero, inventario exacto y migración inversa separada sin `CASCADE`. Después de crear evidencia o certificar, no se borra ni “descertifica”: se revocan entrypoints afectados, se conserva auditoría y se corrige hacia adelante.
 
-La certificación v2 solo poblará mínimos al envolver v1 dentro de un primer ciclo real válido. Price history permanece `NO-GO` hasta 004 aplicada, ciclo real certificado, mínimos poblados, cache/public/metrics del mismo ciclo, consumidores comprobados, exportación recuperable y autorización independiente. La FK legacy `ON DELETE CASCADE` no debe usarse. No se eliminó ningún dato.
+La certificación v2 solo poblará mínimos al envolver v1 dentro de un ciclo real válido. El orden descrito originalmente para price history quedó sustituido por LoboDeals 3.2: la tabla histórica debe retirarse antes del primer ciclo real, sin exportación ni backfill, después de demostrar cero dependencias actuales y aprobar una migración exacta independiente. La FK legacy `ON DELETE CASCADE` no debe usarse. No se eliminó ningún dato.
 
 ### Posición exacta del Bloque 4
 
@@ -1611,7 +1621,7 @@ La sesión se clasificó `PRECHECK_BLOCKED`. No se invocó `apply_migration`, no
 
 La validación final repitió `npm test` con 277/277 aprobadas, `npm run lint` con cero errores y las seis advertencias preexistentes, parseó los cinco JSON de auditoría y confirmó `git diff --check`. Dos fixtures de CLI dejaron de fijar instantes que caducaban frente a evidencia generada con el reloj real; no cambió el runner ni ningún comportamiento operativo.
 
-Posición exacta del Bloque 4: 004 continúa versionada y validada localmente, pero no instalada. El runner real sigue sin autorizarse y el Bloque 4 no está cerrado. La siguiente tarea de máximo alcance es decidir y demostrar una vía de recuperación compatible con el plan Free y con la prohibición vigente de exportar el historial; solo después podrá repetirse el precheck y solicitarse una aplicación nueva de 004.
+Posición exacta de aquel checkpoint: 004 continuaba versionada y validada localmente, pero no instalada. La recuperación acotada posterior de 004 quedó documentada en la sección siguiente. La decisión actual de LoboDeals 3.2 prohíbe exportar/backfillear history y separa esa retirada física de la recuperación de 004.
 
 ## 39. Recuperación acotada y aplicación verificada de migración 004 — 2026-07-30
 
@@ -1665,3 +1675,42 @@ Antes de la aplicación aprobaron 302/302 pruebas, incluidas 25/25 de recuperaci
 Posición exacta: la infraestructura reconciliable de 004 ya está instalada y verificada como `MIGRATION_READY`, pero el Bloque 4 no está cerrado. No existe aún un ciclo real ni evidencia live. Continúan bloqueados create-cycle, productores, upsert, monthly, democión, mark-succeeded, certificación, caché, validación pública y métricas hasta una autorización separada para el primer ciclo controlado. La prueba de 30 días no comenzó.
 
 Siguiente tarea local segura: preparar, sin ejecutar, el runbook exacto del primer ciclo controlado usando los RPC 004 ya verificados, sus receipts y los artefactos locales; debe incluir gates de abort/reconciliación y no autoriza todavía la ejecución.
+
+## 40. Decisión LoboDeals 3.2 sobre retención compacta — 2026-07-30
+
+La sesión comenzó en `main`, HEAD `6d45b60c96295b85ac26833ca7f708082e01e7fb`, 43 commits delante/0 detrás de la referencia local `origin/main`, worktree limpio y baseline 302/302. El worktree heredado de Texto 0007-R1 fue revisado archivo por archivo antes de conservar, adaptar o descartar cambios.
+
+### Decisión definitiva de producto
+
+Johan descartó expresamente cualquier exportación o respaldo de `psdeals_stage_price_history` y cualquier backfill de mínimos a partir de sus 841.549 filas. No se conservará JSONL, gzip, CSV, dump, ZIP, espejo ni copia remota. Las herramientas locales de exportación que estaban sin rastrear fueron eliminadas antes de commit y nunca se ejecutaron; se exportaron cero filas.
+
+Los cuatro campos `lobodeals_lowest_*` comienzan vacíos. Solo una observación positiva, coherente y segura del mismo ciclo futuro certificado puede inicializar el mínimo correspondiente; después únicamente un importe estrictamente menor puede reemplazarlo. No se importan mínimos legacy, no se crean columnas legacy alternativas y no se presenta un mínimo matemático histórico como certificado.
+
+### Contrato local protegido
+
+`scripts/lib/psdeals-compact-minima.mjs` quedó reducido a un contrato puro de observaciones futuras. Exige identidad explícita de ciclo e ítem, scope US/PlayStation/USD, productor correcto, precio positivo, oferta activa y señales comerciales seguras. Regular requiere descuento 1–99 coherente; PS Plus exige evidencia actual de detalle y exclusión mensual explícita. FREE, cero, `-100%`, monthly, tipo/plataforma insegura o evidencia incompleta no inicializan ni reducen mínimos.
+
+Git demuestra que el writer detallado fue introducido por `06edcc1` y retirado por `c2e3281`; el runtime local actual no contiene writer directo de `psdeals_stage_price_history`. El importer ya no parsea ni escribe `lowest_price_amount` o `lowest_ps_plus_price_amount`; el stage payload bloquea esos campos legacy y los cuatro certificados; la página de detalle consume únicamente `lobodeals_lowest_*` y los rotula como mínimos certificados. La certificación conserva propiedad exclusiva de esos cuatro campos.
+
+### Evidencia remota y retirada pendiente
+
+No se consultó Supabase durante esta sesión. La última evidencia remota conservada, fechada `2026-07-30T01:11:41.826225Z`, reporta 841.549 filas de history, 273.907.712 bytes, 32.890 stage items y cero mínimos certificados. El uso `0,456/0,5 GB` fue aportado por Johan y no fue medido de nuevo.
+
+La revisión adversarial local de 003 mantiene un gap: la función no recalcula por sí misma la igualdad exacta del porcentaje ni exige evidencia explícita de tipo/plataforma segura. Además, un listing ambiguo puede omitir el tuple comercial pero actualizar `listing_last_seen_at`, dejando la posibilidad de combinar timestamp nuevo y precios anteriores. Esta superficie debe cerrarse antes del primer ciclo mediante un contrato remoto verificado y una migración separada revisable; no se modificaron 003/004 ni se inventó 005.
+
+La retirada física del histórico es obligatoria antes del primer ciclo real por la presión de capacidad, pero todavía está bloqueada. Primero se requiere una auditoría remota de solo lectura que confirme esquema, tamaño, dependencias y cero writers/consumidores actuales; después debe prepararse y aprobarse una migración exacta sin backup y sin `CASCADE`. No se ejecutó exportación, backfill, índice, migración, `DELETE`, `TRUNCATE`, `DROP`, `CASCADE`, `VACUUM` ni `VACUUM FULL`.
+
+Readiness demostrado:
+
+- `HISTORY_REMOTE_AUDIT_READY=false`;
+- `CERTIFICATION_CONTRACT_READY=false`;
+- `HISTORY_RETIREMENT_MIGRATION_READY=false`;
+- `HISTORY_RETIRED=false`;
+- `STORAGE_READY=false`;
+- `LIVE_CYCLE_READY=false`.
+
+El reporte detallado actualizado está en `docs/audit/lobodeals-3-compact-price-retention-readiness-2026-07-30.md`. Como `docs/**` está ignorado, se añadió intencionalmente con `git add -f` solo ese archivo; no se amplió `.gitignore` ni se añadió otro documento ignorado.
+
+El checkpoint local `90031cf` (`Preserve certified price low ownership boundaries`) conserva siete archivos de código/pruebas. La validación final aprobó 311/311 pruebas, 27/27 suites enfocadas, todos los `node --check`, `git diff --check` y lint con cero errores y las seis advertencias preexistentes. No se ejecutó build ni ningún proceso operativo.
+
+Posición exacta del Bloque 4: la infraestructura reconciliable de 004 continúa instalada y verificada, y los límites locales de propiedad de mínimos están protegidos. El Bloque 4 no está cerrado, no existe ciclo real y la prueba de 30 días no comenzó. El siguiente paso seguro es una auditoría remota estrictamente de solo lectura sobre `psdeals_stage_price_history`, sus dependencias y el contrato efectivo de certificación; no autoriza exportación, backfill, retirada física ni ejecución del ciclo.

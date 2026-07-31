@@ -10,7 +10,9 @@ import {
 } from '../scripts/lib/psdeals-stage-payload.mjs'
 
 const OBSERVED_AT = '2026-07-29T12:00:00.123456+00:00'
-const CERTIFIED_FIELDS = [
+const PROTECTED_PRICE_LOW_FIELDS = [
+  'lowest_price_amount',
+  'lowest_ps_plus_price_amount',
   'lobodeals_lowest_regular_price_amount',
   'lobodeals_lowest_regular_price_first_seen_at',
   'lobodeals_lowest_ps_plus_price_amount',
@@ -112,7 +114,7 @@ test('builds a partial listing update with only safe producer-owned fields', () 
   for (const field of DETAIL_OWNED_FIELDS) {
     assert.equal(field in result.payload, false, field)
   }
-  for (const field of CERTIFIED_FIELDS) {
+  for (const field of PROTECTED_PRICE_LOW_FIELDS) {
     assert.equal(field in result.payload, false, field)
   }
 })
@@ -233,7 +235,7 @@ test('builds an existing detail update without null wipes or listing-owned field
   for (const field of ['psdeals_slug', 'psdeals_url', 'title', 'image_url', 'platforms', 'content_type', 'item_type_label']) {
     assert.equal(field in result.payload, false, field)
   }
-  for (const field of CERTIFIED_FIELDS) {
+  for (const field of PROTECTED_PRICE_LOW_FIELDS) {
     assert.equal(field in result.payload, false, field)
   }
   assertNoNullishTopLevel(result.payload)
@@ -263,6 +265,20 @@ test('omits absent detail fields and never converts undefined to null', () => {
     assert.equal(field in result.payload, false, field)
   }
   assertNoNullishTopLevel(result.payload)
+})
+
+test('detail payload never writes legacy or certified price-low fields', () => {
+  const parsed = parsedDetail()
+
+  for (const field of PROTECTED_PRICE_LOW_FIELDS) {
+    parsed[field] = field.endsWith('_at') ? OBSERVED_AT : 1.99
+  }
+
+  const result = buildPsdealsDetailUpsertPayload(parsed, { isExisting: true })
+
+  for (const field of PROTECTED_PRICE_LOW_FIELDS) {
+    assert.equal(field in result.payload, false, field)
+  }
 })
 
 test('an incoherent detail tuple does not overwrite previous valid prices', () => {

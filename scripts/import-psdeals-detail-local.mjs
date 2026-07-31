@@ -480,20 +480,6 @@ export function parsePage(html, url) {
     extractFirst(html, /itemprop="priceCurrency" content="([^"]+)"/i) ||
     (extractFirst(html, /var item_currency="([^"]+)";/i) === '$' ? 'USD' : 'USD')
 
-  const lowestPriceAmount = parseMoney(
-    extractFirst(
-      html,
-      /<p class="game-stats-col-title">Lowest price<\/p>[\s\S]*?<span class="game-stats-col-number-big[^"]*">([^<]+)<\/span>/i
-    )
-  )
-
-  const lowestPsPlusRaw = extractFirst(
-    html,
-    /<p class="game-stats-col-title">Lowest PS\+ price<\/p>[\s\S]*?<span class="game-stats-col-number-big[^"]*">([^<]+)<\/span>/i
-  )
-  const lowestPsPlusPriceAmount =
-    lowestPsPlusRaw && lowestPsPlusRaw !== '--' ? parseMoney(lowestPsPlusRaw) : null
-
   const playstationScore = parseFloatNumber(
     extractFirst(
       html,
@@ -577,8 +563,6 @@ export function parsePage(html, url) {
     discount_percent: discountPercent,
     currency_code: currencyCode,
     deal_ends_at: dealEndsAt,
-    lowest_price_amount: lowestPriceAmount,
-    lowest_ps_plus_price_amount: lowestPsPlusPriceAmount,
     is_ps_plus_discount: isPsPlusDiscount,
     // Metacritic fields are intentionally not written by the PSDeals importer.
     // They are owned by the dedicated Metacritic collector/backfill flow.

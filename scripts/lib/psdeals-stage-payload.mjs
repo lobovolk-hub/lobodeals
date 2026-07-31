@@ -1,4 +1,6 @@
-const COMPACT_LOW_FIELDS = new Set([
+const PROTECTED_PRICE_LOW_FIELDS = new Set([
+  'lowest_price_amount',
+  'lowest_ps_plus_price_amount',
   'lobodeals_lowest_regular_price_amount',
   'lobodeals_lowest_regular_price_first_seen_at',
   'lobodeals_lowest_ps_plus_price_amount',
@@ -99,8 +101,8 @@ function omitNullishKeys(payload) {
   )
 }
 
-function assertNoCompactLowFields(payload) {
-  for (const field of COMPACT_LOW_FIELDS) {
+function assertNoPriceLowFields(payload) {
+  for (const field of PROTECTED_PRICE_LOW_FIELDS) {
     delete payload[field]
   }
   return payload
@@ -108,7 +110,7 @@ function assertNoCompactLowFields(payload) {
 
 function result(payload, reasonCodes, isValid = true) {
   return {
-    payload: assertNoCompactLowFields(omitNullishKeys(payload)),
+    payload: assertNoPriceLowFields(omitNullishKeys(payload)),
     is_valid: isValid,
     reason_codes: [...new Set(reasonCodes)],
   }
@@ -332,8 +334,6 @@ export function buildPsdealsDetailUpsertPayload(parsed, options = {}) {
     genres: nonEmptyStringArray,
     release_date: validDateOnly,
     currency_code: currencyCode,
-    lowest_price_amount: (value) => finiteNumber(value, { minimum: 0 }),
-    lowest_ps_plus_price_amount: (value) => finiteNumber(value, { minimum: 0 }),
     playstation_rating: (value) => finiteNumber(value, { minimum: 0 }),
     playstation_ratings_count: (value) => finiteNumber(value, { minimum: 0 }),
     all_add_ons_url: (value) => safeHttpUrl(value, 'psdeals.net'),

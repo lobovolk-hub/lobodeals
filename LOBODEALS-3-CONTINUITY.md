@@ -529,15 +529,16 @@ Los descuentos -100 se clasifican aparte. Nunca son descuentos regulares certifi
 - actual igual a cero y original positivo: candidato a promoción gratuita temporal;
 - actual ausente: ambiguo y requiere detalle;
 - actual positivo: extremo;
-- ratio superior a 20: no certificable.
+- en aquel checkpoint existía una gate histórica de ratio 20:1; Texto
+  3.2-0005 la retiró porque producto permite descuentos coherentes 1–99.
 
 Nunca deben crear automáticamente un mínimo de cero.
 
 La repetición offline sobre el JSON local de junio produjo:
 
 - 5,310 descuentos regulares coherentes;
-- 5,174 elegibles para certificación por ratio;
-- 136 regulares coherentes que superan el ratio 20 y requieren revalidación;
+- 5,174 habrían sido elegibles bajo la antigua gate de ratio;
+- 136 regulares coherentes fueron excluidos por aquella gate ya retirada;
 - 162 descuentos completos ambiguos por precio actual ausente;
 - 16 descuentos completos extremos con precio actual positivo;
 - 43 tuplas ambiguas sin porcentaje;
@@ -1770,11 +1771,12 @@ consumida. El techo textual conjunto para 32.890 filas baja de unos 257 MiB a
 todos los items poblaran ambos slots, antes de overhead.
 
 SQL y JavaScript calculan el porcentaje sobre importes de dos decimales/cents
-con tolerancia cero. El límite 20:1 se repite en v3: 99% puede ser
-matemáticamente coherente, pero no certificable. Solo `game/game` y
-`bundle/bundle` certifican. `dlc/addon` queda fail-closed porque la evidencia
-local muestra que agrupa Add-On, Season Pass, Avatar, Costume, Character,
-Vehicle, Weapons, Soundtrack, Theme, Map e Item. Plataformas admitidas:
+con tolerancia cero. Texto 3.2-0005 retiró posteriormente el límite 20:1:
+todo descuento coherente de 1% a 99% puede certificar y 100% permanece
+excluido. Certifican `game/game`, `bundle/bundle` y `dlc/addon` cuando la
+clasificación contemporánea es segura. La variedad de Add-On, Season Pass,
+Avatar, Costume, Character, Vehicle, Weapons, Soundtrack, Theme, Map e Item no
+reduce su alcance público ni mezcla identidades. Plataformas admitidas:
 `["PS4"]`, `["PS5"]` y `["PS5","PS4"]`.
 
 005 exige owner de aplicación `postgres`, fija timeouts, conserva v1/v2 solo
@@ -1830,3 +1832,70 @@ Ninguna migración fue aplicada, history continúa presente y el Bloque 4 no
 está cerrado. El siguiente paso es una sesión separada para ejecutar únicamente
 el precheck remoto read-only de 005; no autoriza aplicar 005/006 ni iniciar un
 ciclo.
+
+## 43. Alcance público preservado en la certificación — 2026-07-30
+
+Texto 3.2-0005 comenzó en `main`, HEAD
+`862f9dfb288a1e39003cb46b7471fda58c8b0c24`, 50 commits delante/0 detrás de la
+referencia local `origin/main`, worktree limpio y baseline 358/358.
+
+La decisión final de producto conserva sin cambios la web pública existente:
+Games, Bundles y DLC/Add-ons, sus filtros, categorías, rutas, disponibilidad y
+precios actuales. Los cambios se limitan al contrato local de evidencia,
+normalización y certificación; no se modificaron archivos de `app/` ni
+`components/`.
+
+Un candidato regular puede certificar cuando sus importes positivos de dos
+decimales producen exactamente, sobre cents, un porcentaje entero entre 1% y
+99%, el original es mayor que el actual y toda la evidencia contemporánea del
+mismo ciclo es segura. Se retiró la gate general 20:1 de JavaScript y 005.
+Descuentos coherentes de 1%, 50%, 95%, 96%, 97%, 98% y 99% aprobaron; 100%,
+cero, FREE, negativos, porcentajes incoherentes, evidencia incompleta o ciclos
+mezclados permanecen excluidos.
+
+La allowlist de certificación es simétrica en JavaScript y SQL:
+`game/game`, `bundle/bundle` y `dlc/addon`. Un producto seguro dentro de
+DLC/Add-ons conserva su identidad PSDeals individual y su propio mínimo; no se
+mezcla con el juego relacionado. Catalog, Combo, Subscription, desconocidos,
+pares contradictorios y evidencia preservada de otro ciclo no certifican y no
+degradan el precio público anterior.
+
+PS4, PS5 y su conjunto combinado son certificables. Ambos órdenes fuente
+PS4/PS5 y PS5/PS4 se normalizan antes del candidate y del SHA-256 a
+`["PS5","PS4"]`. Duplicados, vacío, null, unknown, PS3, PS Vita, PSP y mezclas
+legacy se rechazan.
+
+005 conserva candidates de máximo 1.024 bytes, claves cerradas, SHA-256 del
+candidate y artefacto, cycle ID, timestamp, FKs `RESTRICT`, índices parciales,
+constraints todo-null/completo, ACL restrictiva, receipts, idempotencia,
+monotonicidad, first seen, exclusión monthly y ausencia de historial detallado.
+Su SHA-256 local vigente es
+`2e631ebaabe809d8828690f25de4ae8b0b598f6faf0519e114e71f7bde2b7b96`.
+006 no cambió y conserva SHA-256
+`a121bfa29a94978209c6568502d13265e8bc5accae1b5aa21e617dc3ce6997aa`.
+
+Los precheck/postcheck 005 read-only registran el SHA, el rango 1–99, la
+ausencia de ratio 20:1, las tres familias seguras y las plataformas canónicas.
+No fueron ejecutados contra Supabase. La validación final aprobó 366/366 pruebas
+y 94/94 enfocadas; todos los `node --check`, diff checks y lint aprobaron, con
+cero errores y las seis advertencias preexistentes.
+
+El checkpoint técnico es `3211c1f`
+(`Preserve public product scope in certified price lows`).
+
+Readiness local:
+
+- `PUBLIC_GAMES_PRESERVED=true`;
+- `PUBLIC_BUNDLES_PRESERVED=true`;
+- `PUBLIC_DLC_ADDONS_PRESERVED=true`;
+- `PUBLIC_FILTERS_PRESERVED=true`;
+- `PUBLIC_CURRENT_PRICES_PRESERVED=true`;
+- `CERTIFICATION_MIGRATION_LOCAL_APPROVED=true`;
+- `HISTORY_RETIREMENT_MIGRATION_LOCAL_APPROVED=true`;
+- `REMOTE_005_READY_TO_APPLY=false`;
+- `REMOTE_006_READY_TO_APPLY=false`.
+
+005 y 006 continúan sin aplicar. History permanece presente, el Bloque 4 no está
+cerrado y la prueba de 30 días no comenzó. El siguiente paso separado es
+ejecutar únicamente el precheck remoto read-only de 005; no autoriza aplicar
+005/006 ni iniciar un ciclo real.

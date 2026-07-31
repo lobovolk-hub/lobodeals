@@ -12,6 +12,19 @@ Commit técnico:
 
 - `3b89f1e` — `Harden PSDeals certification and history retirement`.
 
+Decisión posterior de producto, Texto 3.2-0005:
+
+- commit técnico: `3211c1f` —
+  `Preserve public product scope in certified price lows`;
+- 005 SHA-256 vigente:
+  `2e631ebaabe809d8828690f25de4ae8b0b598f6faf0519e114e71f7bde2b7b96`;
+- 006 permanece sin cambios, SHA-256:
+  `a121bfa29a94978209c6568502d13265e8bc5accae1b5aa21e617dc3ce6997aa`;
+- todo descuento regular coherente de 1% a 99% puede certificar;
+- Games, Bundles y DLC/Add-ons seguros conservan mínimos por producto;
+- 100%, cero y FREE continúan excluidos;
+- PS4+PS5 se normaliza como conjunto canónico, independiente del orden fuente.
+
 ## 1. Baseline y alcance
 
 - rama: `main`;
@@ -38,11 +51,12 @@ La revisión adversarial encontró defectos reales en los borradores originales:
 2. los JSON aceptaban claves adicionales, incluido contenido raw;
 3. el hash guardado identificaba el artefacto fuente, no el tuple candidato;
 4. PS Plus no ligaba el candidato al hash exacto de la cola importada;
-5. `dlc/addon` agrupaba contenido auxiliar heterogéneo;
-6. el check SQL de plataformas aceptaba duplicados y orden inverso;
+5. la primera revisión trató la variedad interna de `dlc/addon` como motivo
+   para excluir toda la familia, reduciendo incorrectamente el alcance público;
+6. la normalización JavaScript aceptaba duplicados de plataforma;
 7. 005 no reafirmaba todas las ACL legacy contra drift;
 8. JavaScript calculaba el porcentaje con importes binarios, no cents;
-9. SQL no repetía el límite certificado de relación 20:1;
+9. se había añadido un límite general 20:1 no respaldado por producto;
 10. 005 no tenía timeouts ni pre/postchecks separados;
 11. 006 verificaba nombres de índices, no su estructura completa;
 12. 006 no rechazaba grants o propietario inesperados ni verificaba el DROP
@@ -129,19 +143,22 @@ La fórmula en PostgreSQL numeric y en JavaScript sobre cents enteros es:
 
 `round(100 × (original - current) / original)`.
 
-La tolerancia es cero. Se probaron 19,99→14,99=25, 14,99→9,99=33,
-9,99→9,89=1 y 9,99→0,10=99. El 99 es matemáticamente coherente, pero no puede
-certificarse porque excede la relación máxima 20:1. Cien queda excluido.
+La tolerancia es cero. Se probaron explícitamente 1%, 50%, 95%, 96%, 97%,
+98%, 99% y 100%. Todo valor coherente de 1% a 99% puede certificar. No existe
+una gate general basada en `original/current`. Cien queda excluido, igual que
+cero, FREE, importes negativos y porcentajes incoherentes.
 
 Tipos certificables:
 
 - `content_type=game`, `item_type_label=game`;
-- `content_type=bundle`, `item_type_label=bundle`.
+- `content_type=bundle`, `item_type_label=bundle`;
+- `content_type=dlc`, `item_type_label=addon`.
 
-No se certifica `dlc/addon`. La evidencia local demuestra que ese bucket
-incluye Add-On, Season Pass, Avatar, Costume, Character, Vehicle, Weapons,
-Soundtrack, Theme, Map e Item. Hace falta una política de subtipos explícita
-antes de abrirlo.
+La variedad interna de DLC/Add-ons no impide certificar el precio de cada
+producto individual. Add-On, Season Pass, Avatar, Costume, Character, Vehicle,
+Weapons, Soundtrack, Theme, Map e Item conservan su identidad PSDeals y mínimo
+propio cuando la clasificación contemporánea es segura. Catalog, Combo,
+Subscription, tipos desconocidos o pares contradictorios continúan excluidos.
 
 Plataformas SQL/JavaScript:
 
@@ -149,8 +166,8 @@ Plataformas SQL/JavaScript:
 - `["PS5"]`;
 - `["PS5","PS4"]`.
 
-PS3, PS Vita, PSP, legacy mixto, unknown, null, vacío, duplicados y orden
-inverso no certifican.
+PS4/PS5 y PS5/PS4 producen ambos `["PS5","PS4"]` antes del hash. PS3, PS Vita,
+PSP, legacy mixto, unknown, null, vacío y duplicados no certifican.
 
 ## 7. Funciones y ACL después de 005
 
@@ -344,9 +361,9 @@ futura, no un error.
 
 ## 15. Validación local
 
-- `npm test`: 358/358;
-- suites enfocadas de commercial state, evidencia, migración 005 y retirement:
-  63/63;
+- `npm test`: 366/366;
+- suites enfocadas de porcentajes, evidencia, tipos, plataformas, mínimos,
+  migración 005 y retirement: 94/94;
 - `node --check`: todos los MJS modificados;
 - lint: 0 errores, seis advertencias preexistentes;
 - `git diff --check`: aprobado;

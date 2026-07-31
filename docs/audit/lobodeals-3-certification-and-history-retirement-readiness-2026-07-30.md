@@ -4,9 +4,9 @@ Fecha local: 2026-07-30 (America/Lima)
 
 Resultado local: `PREPARED_NOT_APPLIED`
 
-> Nota posterior: los límites de 4.096 bytes, la allowlist `dlc/addon` y las
-> ACL descritas abajo fueron reemplazados por la revisión adversarial del
-> commit `3b89f1e`. El contrato vigente está en
+> Nota posterior: el contrato definitivo conserva Games, Bundles y
+> DLC/Add-ons, admite descuentos coherentes de 1% a 99%, excluye 100% y limita
+> cada candidate a 1.024 bytes. El contrato vigente está en
 > `lobodeals-3-005-006-adversarial-review-2026-07-30.md`.
 
 ## Baseline
@@ -50,9 +50,9 @@ La migración local 005 añade dos slots sobrescribibles en `psdeals_stage_items
   - `ps_plus_certification_evidence_sha256`;
   - `ps_plus_certification_candidate`.
 
-Cada grupo es todo-null o completo, referencia `price_refresh_cycles(id)` con retirada restrictiva, limita el JSON a 4.096 bytes y tiene un índice parcial por ciclo. Un slot antiguo puede permanecer, pero nunca es elegible para un ciclo diferente.
+Cada grupo es todo-null o completo, referencia `price_refresh_cycles(id)` con retirada restrictiva, limita el JSON a 1.024 bytes y tiene un índice parcial por ciclo. Un slot antiguo puede permanecer, pero nunca es elegible para un ciclo diferente.
 
-No es una tabla histórica. El número de filas no crece por observación. El máximo estructural es dos candidatos por fila stage; los builders producen JSON pequeños, normalmente muy por debajo del límite. Con 32.890 filas, el crecimiento real esperado es de decenas de MiB si con el tiempo todos los ítems reciben ambos candidatos; el techo teórico de los dos JSON es aproximadamente 257 MiB antes de overhead, pero no representa el tamaño esperado. Debe medirse tras una aplicación futura antes del primer ciclo.
+No es una tabla histórica. El número de filas no crece por observación. El máximo estructural es dos candidatos por fila stage. Con 32.890 filas, el techo textual conjunto es aproximadamente 64,24 MiB antes de overhead; las muestras combinadas proyectan aproximadamente 41,97 MiB. Debe medirse tras una aplicación futura antes del primer ciclo.
 
 ## Flujo regular
 

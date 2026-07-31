@@ -1,6 +1,6 @@
 # LoboDeals 3.2 — Documento canónico de continuidad
 
-Actualizado: 2026-07-30
+Actualizado: 2026-07-31
 Proyecto local: D:\Proyectos\lobodeals
 Repositorio: lobovolk-hub/lobodeals
 Rama principal: main
@@ -2127,3 +2127,42 @@ Readiness local:
 
 El siguiente paso es repetir íntegramente el precheck remoto DB READ-ONLY de
 006. No existe autorización DB WRITE y 006 continúa sin aplicar.
+
+## Certificado MCP de retirada del histórico — 2026-07-31
+
+Texto 3.2-0014 ejecutó las 20 consultas canónicas dentro de un único lote
+`REPEATABLE READ READ ONLY`. La base permaneció estable, no hubo errores SQL
+ni de transporte y los canarios conservaron OID/relfilenode `19928`, 841.549
+filas y 273.907.712 bytes. Sin embargo, Supabase MCP devolvió únicamente el
+último result set, por lo que la corrida terminó `NO-GO` técnico: no quedaron
+observables las veinte evidencias intermedias por separado.
+
+Texto 3.2-0015 adapta el contrato a esa capacidad mediante:
+
+`sql/validation/006-price-history-retirement-precheck-certificate-readonly.sql`
+
+El certificado es un único statement `WITH`/`SELECT`, usa un solo snapshot y
+devuelve exactamente veinte filas machine-readable con ID, nombre, resultado,
+severidad, evidencia observada/esperada, backend PID, snapshot y timestamp
+compartidos. Los valores `passed` se derivan de catálogos y datos actuales; no
+reutilizan resultados de conversaciones anteriores.
+
+Commit técnico:
+
+- `9da0c16` — `Add machine-readable history retirement certificate`.
+
+Validación local previa: 389/389 pruebas, 31/31 de retirement, `node --check`,
+diff checks y lint con cero errores y seis advertencias preexistentes. La
+migración 006 y el precheck diagnóstico conservaron sus SHA-256 anteriores.
+
+La ejecución remota del certificado todavía no está documentada en este
+checkpoint. No se aplicó 006, no hubo DB WRITE y no existe autorización para
+retirar history.
+
+- `PRECHECK_CERTIFICATE_SINGLE_RESULT_SET=true`;
+- `HISTORY_RETIREMENT_MIGRATION_LOCAL_APPROVED=true`;
+- `REMOTE_006_READY_TO_APPLY=false` hasta ejecutar y revisar el certificado;
+- `STORAGE_READY=false`;
+- `COMPACT_MINIMA_READY=false`;
+- `HISTORY_RETIRED=false`;
+- `LIVE_CYCLE_READY=false`.

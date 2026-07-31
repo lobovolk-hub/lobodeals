@@ -515,3 +515,30 @@ advertencias preexistentes.
 `ACL_GROUPING_QUERY_POSTGRES17_VALID=true`, pero
 `REMOTE_006_READY_TO_APPLY=false` hasta repetir íntegramente el precheck remoto
 DB READ-ONLY. No existe autorización DB WRITE.
+
+## Certificado read-only compatible con Supabase MCP — 2026-07-31
+
+Texto 3.2-0014 demostró una limitación de observabilidad, no un drift de base:
+las veinte consultas terminaron en una transacción `REPEATABLE READ READ ONLY`
+sin error SQL o de transporte, pero MCP expuso solamente el último result set.
+History conservó OID/relfilenode `19928`, 841.549 filas y 273.907.712 bytes
+antes, durante y después.
+
+El commit `9da0c16` (`Add machine-readable history retirement certificate`)
+añade
+`sql/validation/006-price-history-retirement-precheck-certificate-readonly.sql`.
+Es un único statement `WITH`/`SELECT` que devuelve veinte checks consecutivos
+en un solo result set. Cada fila conserva JSON observado y esperado junto con
+PID, snapshot y timestamp compartidos. Las gates cubren identidad, estructura,
+dependencias, policy, ACL PostgreSQL 17, actividad acotada, 005 y estado
+operativo.
+
+La validación local aprobó 389/389 pruebas y 31/31 pruebas de retirement; lint
+mantiene cero errores y seis advertencias preexistentes. 006 conserva SHA-256
+`e754bbd0beb5f1790f72d8e219fca239477bd25853fdee61758139fec9d96c34` y
+continúa sin aplicar. La ejecución remota del certificado es el siguiente gate
+read-only y todavía no autoriza DB WRITE.
+
+- `PRECHECK_CERTIFICATE_SINGLE_RESULT_SET=true`;
+- `HISTORY_RETIREMENT_MIGRATION_LOCAL_APPROVED=true`;
+- `REMOTE_006_READY_TO_APPLY=false`.

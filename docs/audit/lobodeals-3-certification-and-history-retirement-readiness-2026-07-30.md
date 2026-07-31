@@ -301,3 +301,32 @@ errores y seis advertencias preexistentes.
 `HISTORY_RETIRED=false` y `LIVE_CYCLE_READY=false`. Debe repetirse el precheck
 remoto DB READ-ONLY completo antes de considerar una autorización DB WRITE
 separada.
+
+## Certificado machine-readable para MCP — 2026-07-31
+
+Texto 3.2-0014 terminó `NO-GO` técnico porque Supabase MCP devolvió únicamente
+el último result set del lote. La transacción read-only sí terminó sin errores
+SQL o de transporte y la identidad de history permaneció estable, pero no era
+posible auditar las veinte salidas intermedias desde la respuesta del conector.
+
+El commit `9da0c16` (`Add machine-readable history retirement certificate`)
+crea un certificado canónico de un único statement y un único snapshot:
+
+`sql/validation/006-price-history-retirement-precheck-certificate-readonly.sql`
+
+Devuelve veinte filas con `check_id` 1–20, `passed`, severidad, JSON observado
+y esperado, backend PID, snapshot y timestamp comunes. Los checks consultan
+directamente el catálogo y las tablas actuales y fallan cerrados ante drift.
+
+Validación local: 389/389 globales, 31/31 de retirement, `node --check`, diff
+checks y lint con cero errores/seis advertencias preexistentes. 006 no cambió,
+no fue aplicada y no existe autorización DB WRITE. La ejecución remota del
+certificado permanece pendiente en este checkpoint documental.
+
+- `PRECHECK_CERTIFICATE_SINGLE_RESULT_SET=true`;
+- `HISTORY_RETIREMENT_MIGRATION_LOCAL_APPROVED=true`;
+- `REMOTE_006_READY_TO_APPLY=false`;
+- `STORAGE_READY=false`;
+- `COMPACT_MINIMA_READY=false`;
+- `HISTORY_RETIRED=false`;
+- `LIVE_CYCLE_READY=false`.

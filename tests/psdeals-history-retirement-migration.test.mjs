@@ -32,6 +32,14 @@ const postcheck = fs.readFileSync(
   'utf8'
 )
 
+function splitSqlStatements(source) {
+  return source
+    .replace(/^\s*--.*$/gm, '')
+    .split(/;\s*(?:\r?\n|$)/)
+    .map((statement) => statement.trim())
+    .filter(Boolean)
+}
+
 function parseExpectedHistoryAcl(source) {
   const contract = source.match(
     /with expected_acl\([\s\S]*?\),\s*actual_acl as \(/i
@@ -303,6 +311,47 @@ test('precheck exposes the full effective ACL and unambiguous gates', () => {
   }
   assert.match(precheck, /aclexplode/)
   assert.match(precheck, /grantor_role\.rolname/)
+})
+
+test('precheck materializes ACL identity before grouping by grantee', () => {
+  const statements = splitSqlStatements(precheck)
+  assert.equal(statements.length, 20)
+
+  const granteeCounts = statements[13]
+  assert.match(granteeCounts, /^with effective_acl as \(/i)
+  assert.match(
+    granteeCounts,
+    /when acl\.grantee = 0 then 'PUBLIC'/
+  )
+  assert.match(granteeCounts, /else grantee_role\.rolname/)
+  assert.match(granteeCounts, /grantor_role\.rolname as grantor/)
+  assert.match(granteeCounts, /acl\.is_grantable/)
+  assert.match(granteeCounts, /acl\.privilege_type/)
+  assert.match(
+    granteeCounts,
+    /group by effective_acl\.grantee\s+order by effective_acl\.grantee/i
+  )
+  assert.doesNotMatch(granteeCounts, /group by grantee\b/i)
+})
+
+test('precheck grantee counts preserve deterministic ACL evidence', () => {
+  const granteeCounts = splitSqlStatements(precheck)[13]
+  assert.match(
+    granteeCounts,
+    /count\(\*\)::integer as effective_acl_entries/
+  )
+  assert.match(
+    granteeCounts,
+    /array_agg\(\s*effective_acl\.privilege_type\s+order by effective_acl\.privilege_type\s*\) as privilege_types/
+  )
+  assert.match(
+    granteeCounts,
+    /array_agg\(\s*effective_acl\.grantor\s+order by effective_acl\.privilege_type\s*\) as grantors/
+  )
+  assert.match(
+    granteeCounts,
+    /array_agg\(\s*effective_acl\.is_grantable\s+order by effective_acl\.privilege_type\s*\) as grant_options/
+  )
 })
 
 test('postcheck proves retirement and migration 006 registration', () => {

@@ -233,25 +233,47 @@ order by
   acl.privilege_type,
   grantor;
 
+with effective_acl as (
+  select
+    case
+      when acl.grantee = 0 then 'PUBLIC'
+      else grantee_role.rolname
+    end as grantee,
+    acl.privilege_type,
+    acl.is_grantable,
+    grantor_role.rolname as grantor
+  from pg_catalog.pg_class as relation
+  cross join lateral pg_catalog.aclexplode(
+    coalesce(
+      relation.relacl,
+      pg_catalog.acldefault('r', relation.relowner)
+    )
+  ) as acl
+  left join pg_catalog.pg_roles as grantee_role
+    on grantee_role.oid = acl.grantee
+  left join pg_catalog.pg_roles as grantor_role
+    on grantor_role.oid = acl.grantor
+  where relation.oid =
+    'public.psdeals_stage_price_history'::regclass
+)
 select
-  case
-    when acl.grantee = 0 then 'PUBLIC'
-    else grantee_role.rolname
-  end as grantee,
-  count(*)::integer as effective_acl_entries
-from pg_catalog.pg_class as relation
-cross join lateral pg_catalog.aclexplode(
-  coalesce(
-    relation.relacl,
-    pg_catalog.acldefault('r', relation.relowner)
-  )
-) as acl
-left join pg_catalog.pg_roles as grantee_role
-  on grantee_role.oid = acl.grantee
-where relation.oid =
-  'public.psdeals_stage_price_history'::regclass
-group by grantee
-order by grantee;
+  effective_acl.grantee,
+  count(*)::integer as effective_acl_entries,
+  array_agg(
+    effective_acl.privilege_type
+    order by effective_acl.privilege_type
+  ) as privilege_types,
+  array_agg(
+    effective_acl.grantor
+    order by effective_acl.privilege_type
+  ) as grantors,
+  array_agg(
+    effective_acl.is_grantable
+    order by effective_acl.privilege_type
+  ) as grant_options
+from effective_acl
+group by effective_acl.grantee
+order by effective_acl.grantee;
 
 select
   acl.privilege_type,

@@ -25,6 +25,24 @@ test('accepts a coherent regular discount', () => {
   assert.equal(state.is_certified_regular_discount_eligible, true)
 })
 
+test('uses cent-exact rounding at representative and 1/99 boundaries', () => {
+  for (const sample of [
+    { currentPrice: '$14.99', originalPrice: '$19.99', percent: 25 },
+    { currentPrice: '$9.99', originalPrice: '$14.99', percent: 33 },
+    { currentPrice: '$9.89', originalPrice: '$9.99', percent: 1 },
+    { currentPrice: '$0.10', originalPrice: '$9.99', percent: 99 },
+  ]) {
+    const state = normalize({
+      currentPrice: sample.currentPrice,
+      originalPrice: sample.originalPrice,
+      discountPercent: `-${sample.percent}%`,
+    })
+    assert.equal(state.calculated_discount_percent, sample.percent)
+    assert.equal(state.discount_percent_normalized, sample.percent)
+    assert.equal(state.classification, 'regular_discount')
+  }
+})
+
 test('preserves the negative PSDeals percentage while normalizing it', () => {
   const state = normalize({ discountPercent: '-50%' })
 

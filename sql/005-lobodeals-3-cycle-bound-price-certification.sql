@@ -6,10 +6,17 @@
 
 begin;
 
+set local lock_timeout = '5s';
+set local statement_timeout = '120s';
+
 do $preflight$
 declare
   missing_stage_columns integer;
 begin
+  if current_user <> 'postgres' then
+    raise exception 'PSDEALS_005_POSTGRES_OWNER_REQUIRED';
+  end if;
+
   if to_regclass('public.psdeals_stage_items') is null
     or to_regclass('public.price_refresh_cycles') is null
     or to_regclass('public.psdeals_cycle_action_receipts') is null then
@@ -71,6 +78,12 @@ begin
   ) is not null then
     raise exception 'PSDEALS_005_FUNCTION_ALREADY_EXISTS';
   end if;
+
+  if to_regprocedure(
+    'public._psdeals_certification_candidate_sha256_v1(jsonb)'
+  ) is not null then
+    raise exception 'PSDEALS_005_HASH_FUNCTION_ALREADY_EXISTS';
+  end if;
 end;
 $preflight$;
 
@@ -83,6 +96,93 @@ alter table public.psdeals_stage_items
   add column ps_plus_certification_observed_at timestamptz null,
   add column ps_plus_certification_evidence_sha256 varchar(64) null,
   add column ps_plus_certification_candidate jsonb null;
+
+create function public._psdeals_certification_candidate_sha256_v1(
+  p_candidate jsonb
+)
+returns text
+language sql
+immutable
+strict
+parallel safe
+security invoker
+set search_path = ''
+as $function$
+  select pg_catalog.encode(
+    pg_catalog.sha256(
+      pg_catalog.convert_to(
+        pg_catalog.array_to_string(
+          case p_candidate ->> 'kind'
+            when 'regular' then array[
+              p_candidate ->> 'contract_version',
+              p_candidate ->> 'kind',
+              p_candidate ->> 'cycle_id',
+              p_candidate ->> 'observed_at',
+              p_candidate ->> 'evidence_sha256',
+              p_candidate ->> 'psdeals_id',
+              p_candidate ->> 'region_code',
+              p_candidate ->> 'storefront',
+              p_candidate ->> 'currency_code',
+              p_candidate ->> 'current_price_amount',
+              p_candidate ->> 'original_price_amount',
+              p_candidate ->> 'discount_percent',
+              p_candidate ->> 'is_active_discount',
+              p_candidate ->> 'is_free_to_play',
+              p_candidate ->> 'content_type',
+              p_candidate ->> 'item_type_label',
+              case p_candidate -> 'platforms'
+                when '["PS5"]'::jsonb then 'PS5'
+                when '["PS4"]'::jsonb then 'PS4'
+                when '["PS5", "PS4"]'::jsonb then 'PS5,PS4'
+                else null
+              end
+            ]
+            when 'ps_plus' then array[
+              p_candidate ->> 'contract_version',
+              p_candidate ->> 'kind',
+              p_candidate ->> 'cycle_id',
+              p_candidate ->> 'observed_at',
+              p_candidate ->> 'evidence_sha256',
+              p_candidate ->> 'input_artifact_sha256',
+              p_candidate ->> 'psdeals_id',
+              p_candidate ->> 'region_code',
+              p_candidate ->> 'storefront',
+              p_candidate ->> 'currency_code',
+              p_candidate ->> 'current_price_amount',
+              p_candidate ->> 'ps_plus_price_amount',
+              p_candidate ->> 'is_active_discount',
+              p_candidate ->> 'is_ps_plus_discount',
+              p_candidate ->> 'is_free_to_play',
+              p_candidate ->> 'parser_status',
+              p_candidate ->> 'source_consistent',
+              p_candidate ->> 'content_type',
+              p_candidate ->> 'item_type_label',
+              case p_candidate -> 'platforms'
+                when '["PS5"]'::jsonb then 'PS5'
+                when '["PS4"]'::jsonb then 'PS4'
+                when '["PS5", "PS4"]'::jsonb then 'PS5,PS4'
+                else null
+              end
+            ]
+            else array[null::text]
+          end,
+          pg_catalog.chr(31),
+          '<null>'
+        ),
+        'UTF8'
+      )
+    ),
+    'hex'
+  );
+$function$;
+
+revoke all on function
+  public._psdeals_certification_candidate_sha256_v1(jsonb)
+from public, anon, authenticated;
+
+grant execute on function
+  public._psdeals_certification_candidate_sha256_v1(jsonb)
+to service_role, postgres;
 
 alter table public.psdeals_stage_items
   add constraint psdeals_stage_items_regular_certification_cycle_fkey
@@ -119,7 +219,37 @@ alter table public.psdeals_stage_items
         )::timestamptz = regular_certification_observed_at
         and regular_certification_candidate ->> 'evidence_sha256'
           = regular_certification_evidence_sha256
-        and pg_column_size(regular_certification_candidate) <= 4096
+        and regular_certification_candidate ->> 'candidate_sha256'
+          ~ '^[a-f0-9]{64}$'
+        and regular_certification_candidate ->> 'candidate_sha256'
+          = public._psdeals_certification_candidate_sha256_v1(
+              regular_certification_candidate
+            )
+        and regular_certification_candidate ->> 'psdeals_id'
+          = psdeals_id::text
+        and regular_certification_candidate - array[
+          'contract_version',
+          'kind',
+          'cycle_id',
+          'observed_at',
+          'evidence_sha256',
+          'psdeals_id',
+          'region_code',
+          'storefront',
+          'currency_code',
+          'current_price_amount',
+          'original_price_amount',
+          'discount_percent',
+          'is_active_discount',
+          'is_free_to_play',
+          'content_type',
+          'item_type_label',
+          'platforms',
+          'candidate_sha256'
+        ]::text[] = '{}'::jsonb
+        and pg_catalog.octet_length(
+          regular_certification_candidate::text
+        ) <= 1024
       )
     ),
   add constraint psdeals_stage_items_ps_plus_certification_pair_check
@@ -148,7 +278,43 @@ alter table public.psdeals_stage_items
         )::timestamptz = ps_plus_certification_observed_at
         and ps_plus_certification_candidate ->> 'evidence_sha256'
           = ps_plus_certification_evidence_sha256
-        and pg_column_size(ps_plus_certification_candidate) <= 4096
+        and ps_plus_certification_candidate
+          ->> 'input_artifact_sha256'
+          ~ '^[a-f0-9]{64}$'
+        and ps_plus_certification_candidate ->> 'candidate_sha256'
+          ~ '^[a-f0-9]{64}$'
+        and ps_plus_certification_candidate ->> 'candidate_sha256'
+          = public._psdeals_certification_candidate_sha256_v1(
+              ps_plus_certification_candidate
+            )
+        and ps_plus_certification_candidate ->> 'psdeals_id'
+          = psdeals_id::text
+        and ps_plus_certification_candidate - array[
+          'contract_version',
+          'kind',
+          'cycle_id',
+          'observed_at',
+          'evidence_sha256',
+          'input_artifact_sha256',
+          'psdeals_id',
+          'region_code',
+          'storefront',
+          'currency_code',
+          'current_price_amount',
+          'ps_plus_price_amount',
+          'is_active_discount',
+          'is_ps_plus_discount',
+          'is_free_to_play',
+          'parser_status',
+          'source_consistent',
+          'content_type',
+          'item_type_label',
+          'platforms',
+          'candidate_sha256'
+        ]::text[] = '{}'::jsonb
+        and pg_catalog.octet_length(
+          ps_plus_certification_candidate::text
+        ) <= 1024
       )
     );
 
@@ -370,23 +536,15 @@ begin
             source.candidate ->> 'content_type' = 'bundle'
             and source.candidate ->> 'item_type_label' = 'bundle'
           )
-          or (
-            source.candidate ->> 'content_type' = 'dlc'
-            and source.candidate ->> 'item_type_label' = 'addon'
-          )
         )
-        and jsonb_typeof(source.candidate -> 'platforms') = 'array'
-        and jsonb_array_length(source.candidate -> 'platforms')
-          between 1 and 2
-        and not exists (
-          select 1
-          from jsonb_array_elements_text(
-            source.candidate -> 'platforms'
-          ) as platform(value)
-          where platform.value not in ('PS4', 'PS5')
+        and source.candidate -> 'platforms' in (
+          '["PS4"]'::jsonb,
+          '["PS5"]'::jsonb,
+          '["PS5", "PS4"]'::jsonb
         )
         and source.candidate_amount > 0
         and source.original_amount > source.candidate_amount
+        and source.original_amount / source.candidate_amount <= 20
         and source.candidate_percent between 1 and 99
         and source.candidate_percent = round(
           100 * (
@@ -450,6 +608,9 @@ begin
               'detail_retry'
             )
             and detail_receipt.status = 'committed'
+            and detail_receipt.input_artifact_hash
+              = item.ps_plus_certification_candidate
+                ->> 'input_artifact_sha256'
             and coalesce(
               (detail_receipt.result ->> 'pending_failures')::integer,
               0
@@ -480,20 +641,11 @@ begin
             source.candidate ->> 'content_type' = 'bundle'
             and source.candidate ->> 'item_type_label' = 'bundle'
           )
-          or (
-            source.candidate ->> 'content_type' = 'dlc'
-            and source.candidate ->> 'item_type_label' = 'addon'
-          )
         )
-        and jsonb_typeof(source.candidate -> 'platforms') = 'array'
-        and jsonb_array_length(source.candidate -> 'platforms')
-          between 1 and 2
-        and not exists (
-          select 1
-          from jsonb_array_elements_text(
-            source.candidate -> 'platforms'
-          ) as platform(value)
-          where platform.value not in ('PS4', 'PS5')
+        and source.candidate -> 'platforms' in (
+          '["PS4"]'::jsonb,
+          '["PS5"]'::jsonb,
+          '["PS5", "PS4"]'::jsonb
         )
         and source.candidate_amount > 0
         and source.current_amount > source.candidate_amount
@@ -642,7 +794,25 @@ revoke execute on function
     text,
     timestamptz
   )
-from service_role;
+from public, anon, authenticated, service_role;
+
+grant execute on function
+  public.certify_price_refresh_cycle_v2(
+    uuid,
+    uuid,
+    text,
+    text,
+    timestamptz
+  )
+to postgres;
+
+revoke execute on function
+  public.certify_price_refresh_cycle(uuid)
+from public, anon, authenticated, service_role;
+
+grant execute on function
+  public.certify_price_refresh_cycle(uuid)
+to postgres;
 
 comment on function
   public.certify_price_refresh_cycle_v3(

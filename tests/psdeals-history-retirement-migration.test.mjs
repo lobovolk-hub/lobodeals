@@ -44,12 +44,14 @@ test('migration 006 is transactional, locked, fail-closed and restrictive', () =
     /drop table public\.psdeals_stage_price_history restrict;/
   )
   assert.doesNotMatch(retirement, /\bcascade\b/i)
+  assert.match(retirement, /PSDEALS_006_POSTGRES_OWNER_REQUIRED/)
 })
 
 test('migration 006 asserts the exact verified object surface', () => {
   for (const evidence of [
     /relation\.relkind = 'r'/,
     /relation\.relpersistence = 'p'/,
+    /PSDEALS_006_HISTORY_OWNER_MISMATCH/,
     /expected_columns <> 8/,
     /expected_constraints <> 4/,
     /expected_indexes <> 4/,
@@ -61,9 +63,24 @@ test('migration 006 asserts the exact verified object surface', () => {
     /EXTERNAL_DEPENDENCY_PRESENT/,
     /POLICY_SURFACE_MISMATCH/,
     /EXPECTED_GRANT_MISSING/,
+    /GRANT_SURFACE_MISMATCH/,
+    /indkey\[0\]/,
+    /indkey\[3\]/,
   ]) {
     assert.match(retirement, evidence)
   }
+})
+
+test('migration 006 validates the drop before committing', () => {
+  const drop = retirement.indexOf(
+    'drop table public.psdeals_stage_price_history restrict'
+  )
+  const postcondition = retirement.indexOf('do $postcondition$')
+  const commit = retirement.lastIndexOf('commit;')
+  assert.ok(drop > 0)
+  assert.ok(postcondition > drop)
+  assert.ok(commit > postcondition)
+  assert.match(retirement, /PSDEALS_006_POSTCONDITION_FAILED/)
 })
 
 test('migration 006 intentionally removes the verified access surface first', () => {

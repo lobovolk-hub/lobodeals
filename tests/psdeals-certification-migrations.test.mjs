@@ -13,6 +13,24 @@ const certification = fs.readFileSync(
   ),
   'utf8'
 )
+const precheck = fs.readFileSync(
+  path.join(
+    root,
+    'sql',
+    'validation',
+    '005-cycle-bound-price-certification-precheck-readonly.sql'
+  ),
+  'utf8'
+)
+const postcheck = fs.readFileSync(
+  path.join(
+    root,
+    'sql',
+    'validation',
+    '005-cycle-bound-price-certification-postcheck-readonly.sql'
+  ),
+  'utf8'
+)
 
 test('migration 005 is additive and does not alter applied migrations', () => {
   assert.match(certification, /^begin;/m)
@@ -20,9 +38,10 @@ test('migration 005 is additive and does not alter applied migrations', () => {
   assert.doesNotMatch(certification, /alter\s+(?:function|table).*003/i)
   assert.doesNotMatch(certification, /create\s+or\s+replace/i)
   assert.doesNotMatch(certification, /psdeals_stage_price_history/i)
+  assert.match(certification, /PSDEALS_005_POSTGRES_OWNER_REQUIRED/)
 })
 
-test('migration 005 adds two bounded candidate tuples with restrictive FKs', () => {
+test('migration 005 adds two tightly bounded candidate tuples with restrictive FKs', () => {
   for (const field of [
     'regular_certification_cycle_id',
     'regular_certification_observed_at',
@@ -44,8 +63,37 @@ test('migration 005 adds two bounded candidate tuples with restrictive FKs', () 
     (certification.match(/on delete restrict/g) || []).length,
     2
   )
-  assert.match(certification, /pg_column_size\(regular_certification_candidate\) <= 4096/)
-  assert.match(certification, /pg_column_size\(ps_plus_certification_candidate\) <= 4096/)
+  assert.match(
+    certification,
+    /octet_length\(\s*regular_certification_candidate::text\s*\)\s*<= 1024/
+  )
+  assert.match(
+    certification,
+    /octet_length\(\s*ps_plus_certification_candidate::text\s*\)\s*<= 1024/
+  )
+  assert.match(
+    certification,
+    /regular_certification_candidate - array\[[\s\S]*candidate_sha256[\s\S]*= '\{\}'::jsonb/
+  )
+  assert.match(
+    certification,
+    /ps_plus_certification_candidate - array\[[\s\S]*input_artifact_sha256[\s\S]*= '\{\}'::jsonb/
+  )
+})
+
+test('candidate hashes bind the exact tuple and PS Plus input artifact', () => {
+  assert.match(
+    certification,
+    /create function public\._psdeals_certification_candidate_sha256_v1/
+  )
+  assert.match(
+    certification,
+    /candidate_sha256'[\s\S]*_psdeals_certification_candidate_sha256_v1/
+  )
+  assert.match(
+    certification,
+    /detail_receipt\.input_artifact_hash[\s\S]*input_artifact_sha256/
+  )
 })
 
 test('certification v3 never delegates to the unsafe v1 or v2 implementation', () => {
@@ -67,6 +115,7 @@ test('regular certification uses only cycle-bound complete tuple evidence', () =
     /source\.candidate_percent = round\(/,
     /source\.candidate_amount > 0/,
     /source\.original_amount > source\.candidate_amount/,
+    /source\.original_amount \/ source\.candidate_amount <= 20/,
   ]) {
     assert.match(certification, evidence)
   }
@@ -75,8 +124,12 @@ test('regular certification uses only cycle-bound complete tuple evidence', () =
 test('regular certification excludes unsafe scope, type and platforms', () => {
   assert.match(certification, /source\.candidate ->> 'currency_code' = 'USD'/)
   assert.match(certification, /source\.candidate ->> 'is_free_to_play' = 'false'/)
-  assert.match(certification, /'game'[\s\S]*'bundle'[\s\S]*'dlc'/)
-  assert.match(certification, /platform\.value not in \('PS4', 'PS5'\)/)
+  assert.match(certification, /'game'[\s\S]*'bundle'/)
+  assert.doesNotMatch(certification, /source\.candidate ->> 'content_type' = 'dlc'/)
+  assert.match(
+    certification,
+    /'\["PS4"\]'::jsonb,[\s\S]*'\["PS5"\]'::jsonb,[\s\S]*'\["PS5", "PS4"\]'::jsonb/
+  )
   assert.doesNotMatch(certification, /candidate_percent between 0 and 100/)
 })
 
@@ -124,14 +177,22 @@ test('v3 preserves monotonic lows and first-seen timestamps', () => {
   )
 })
 
-test('service role is directed to v3 while legacy functions remain present', () => {
+test('service role is directed only to v3 while legacy functions remain postgres-only', () => {
   assert.match(
     certification,
     /grant execute on function[\s\S]*certify_price_refresh_cycle_v3[\s\S]*to service_role, postgres/
   )
   assert.match(
     certification,
-    /revoke execute on function[\s\S]*certify_price_refresh_cycle_v2[\s\S]*from service_role/
+    /revoke execute on function[\s\S]*certify_price_refresh_cycle_v2[\s\S]*from public, anon, authenticated, service_role/
+  )
+  assert.match(
+    certification,
+    /revoke execute on function[\s\S]*certify_price_refresh_cycle\(uuid\)[\s\S]*from public, anon, authenticated, service_role/
+  )
+  assert.match(
+    certification,
+    /grant execute on function[\s\S]*certify_price_refresh_cycle_v2[\s\S]*to postgres/
   )
   assert.doesNotMatch(
     certification,
@@ -141,4 +202,19 @@ test('service role is directed to v3 while legacy functions remain present', () 
 
 test('migration 005 never reads or writes detailed history', () => {
   assert.doesNotMatch(certification, /psdeals_stage_price_history/i)
+})
+
+test('migration 005 precheck and postcheck are strictly read-only', () => {
+  for (const source of [precheck, postcheck]) {
+    assert.doesNotMatch(
+      source,
+      /^\s*(?:insert|update|delete|alter|drop|truncate|vacuum|grant|revoke|create|call|do)\b/im
+    )
+  }
+  assert.match(precheck, /pg_database_size/)
+  assert.match(precheck, /certify_price_refresh_cycle_v2/)
+  assert.match(postcheck, /regular_candidates/)
+  assert.match(postcheck, /ps_plus_candidates/)
+  assert.match(postcheck, /aclexplode/)
+  assert.match(postcheck, /convalidated/)
 })

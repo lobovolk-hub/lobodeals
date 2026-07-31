@@ -6,6 +6,8 @@ import { parsePage } from '../scripts/import-psdeals-detail-local.mjs'
 import {
   buildPsdealsPsPlusCertificationEvidence,
   buildPsdealsRegularCertificationEvidence,
+  hashPsdealsCertificationCandidate,
+  PSDEALS_CERTIFICATION_CANDIDATE_MAX_BYTES,
 } from '../scripts/lib/psdeals-certification-evidence.mjs'
 import {
   buildPsdealsDetailUpsertPayload,
@@ -15,6 +17,7 @@ import {
 const CYCLE = '11111111-1111-4111-8111-111111111111'
 const OTHER_CYCLE = '22222222-2222-4222-8222-222222222222'
 const HASH = 'a'.repeat(64)
+const INPUT_HASH = 'b'.repeat(64)
 const OBSERVED = '2026-07-30T12:00:00.000Z'
 
 function listing(overrides = {}) {
@@ -85,6 +88,7 @@ function plusEvidence(source = parsedDetail(), context = {}) {
     remote_cycle_id: CYCLE,
     observed_at: OBSERVED,
     evidence_sha256: HASH,
+    input_artifact_sha256: INPUT_HASH,
     ...context,
   })
 }
@@ -98,6 +102,14 @@ test('builds one complete regular tuple tied to a cycle and artifact', () => {
   assert.equal(result.candidate.original_price_amount, 9.99)
   assert.equal(result.candidate.discount_percent, 50)
   assert.deepEqual(result.candidate.platforms, ['PS5', 'PS4'])
+  assert.equal(
+    result.candidate.candidate_sha256,
+    hashPsdealsCertificationCandidate(result.candidate)
+  )
+  assert.ok(
+    Buffer.byteLength(JSON.stringify(result.candidate), 'utf8') <=
+      PSDEALS_CERTIFICATION_CANDIDATE_MAX_BYTES
+  )
 })
 
 test('a new timestamp without a valid commercial tuple writes no candidate', () => {
@@ -151,6 +163,26 @@ test('regular evidence requires exact rounded percentage coherence', () => {
   })).eligible, false)
 })
 
+test('regular evidence accepts 1 percent and excludes 99 by ratio limit', () => {
+  const onePercent = regularEvidence(listing({
+    discountText: '-1%',
+    discountPriceText: '$9.89',
+    originalPriceText: '$9.99',
+  }))
+  assert.equal(onePercent.eligible, true)
+  assert.equal(onePercent.candidate.discount_percent, 1)
+
+  const ninetyNinePercent = regularEvidence(listing({
+    discountText: '-99%',
+    discountPriceText: '$0.10',
+    originalPriceText: '$9.99',
+  }))
+  assert.equal(ninetyNinePercent.eligible, false)
+  assert.ok(ninetyNinePercent.reason_codes.includes(
+    'regular_commercial_state_not_certifiable'
+  ))
+})
+
 test('minus one hundred, zero and FREE never create regular candidates', () => {
   for (const source of [
     listing({
@@ -191,10 +223,24 @@ test('only target-only PS4 and PS5 classifications are certifiable', () => {
   })).eligible, false)
 })
 
-test('known game, bundle and public add-on pairs are allowed', () => {
+test('only games and bundles are certifiable while heterogeneous add-ons fail closed', () => {
   assert.equal(regularEvidence(listing({ typeLabel: 'Full Game' })).eligible, true)
   assert.equal(regularEvidence(listing({ typeLabel: 'Bundle' })).eligible, true)
-  assert.equal(regularEvidence(listing({ typeLabel: 'Add-On' })).eligible, true)
+  for (const typeLabel of [
+    'Add-On',
+    'Season Pass',
+    'Avatar',
+    'Costume',
+    'Character',
+    'Vehicle',
+    'Weapons',
+    'Soundtrack',
+    'Theme',
+    'Map',
+    'Item',
+  ]) {
+    assert.equal(regularEvidence(listing({ typeLabel })).eligible, false)
+  }
 })
 
 test('demo and ambiguous type proposals are excluded', () => {
@@ -256,6 +302,23 @@ test('PS Plus from another cycle or artifact cannot inherit identity', () => {
   assert.equal(plusEvidence(parsedDetail(), {
     evidence_sha256: 'bad',
   }).eligible, false)
+  assert.equal(plusEvidence(parsedDetail(), {
+    input_artifact_sha256: 'bad',
+  }).eligible, false)
+})
+
+test('PS Plus seals the parsed tuple and links its exact input queue', () => {
+  const result = plusEvidence()
+  assert.equal(result.eligible, true)
+  assert.equal(result.candidate.input_artifact_sha256, INPUT_HASH)
+  assert.equal(
+    result.candidate.candidate_sha256,
+    hashPsdealsCertificationCandidate(result.candidate)
+  )
+  assert.ok(
+    Buffer.byteLength(JSON.stringify(result.candidate), 'utf8') <=
+      PSDEALS_CERTIFICATION_CANDIDATE_MAX_BYTES
+  )
 })
 
 test('PS Plus preserved without a current parser observation is excluded', () => {
@@ -312,6 +375,7 @@ test('detail payload writes a safe candidate without writing compact lows', () =
     certificationContext: {
       remote_cycle_id: CYCLE,
       evidence_sha256: HASH,
+      input_artifact_sha256: INPUT_HASH,
     },
   })
   assert.equal(built.payload.ps_plus_certification_cycle_id, CYCLE)

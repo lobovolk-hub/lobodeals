@@ -1303,6 +1303,7 @@ try {
           ? {
               remote_cycle_id: remoteCycleIdArg,
               evidence_sha256: detailSourceSha256,
+              input_artifact_sha256: trackedInputReference.sha256,
             }
           : null,
         rawDetailMetadata: {

@@ -22,6 +22,10 @@ declare
   role_name text;
   privilege_name text;
 begin
+  if current_user <> 'postgres' then
+    raise exception 'PSDEALS_006_POSTGRES_OWNER_REQUIRED';
+  end if;
+
   select relation.oid
   into history_oid
   from pg_catalog.pg_class as relation
@@ -34,6 +38,17 @@ begin
 
   if history_oid is null then
     raise exception 'PSDEALS_006_HISTORY_OBJECT_IDENTITY_MISMATCH';
+  end if;
+
+  if not exists (
+    select 1
+    from pg_catalog.pg_class as relation
+    join pg_catalog.pg_roles as owner_role
+      on owner_role.oid = relation.relowner
+    where relation.oid = history_oid
+      and owner_role.rolname = 'postgres'
+  ) then
+    raise exception 'PSDEALS_006_HISTORY_OWNER_MISMATCH';
   end if;
 
   select count(*)::integer
@@ -148,11 +163,81 @@ begin
   join pg_catalog.pg_class as index_relation
     on index_relation.oid = index_row.indexrelid
   where index_row.indrelid = history_oid
-    and index_relation.relname in (
-      'psdeals_stage_price_history_pkey',
-      'psdeals_stage_price_history_unique_point',
-      'psdeals_stage_price_history_item_idx',
-      'psdeals_stage_price_history_kind_idx'
+    and index_row.indisvalid
+    and index_row.indisready
+    and index_row.indexprs is null
+    and index_row.indpred is null
+    and (
+      (
+        index_relation.relname =
+          'psdeals_stage_price_history_pkey'
+        and index_row.indisprimary
+        and index_row.indisunique
+        and index_row.indnkeyatts = 1
+        and index_row.indkey[0] = (
+          select attnum
+          from pg_catalog.pg_attribute
+          where attrelid = history_oid
+            and attname = 'id'
+        )
+      )
+      or (
+        index_relation.relname =
+          'psdeals_stage_price_history_unique_point'
+        and not index_row.indisprimary
+        and index_row.indisunique
+        and index_row.indnkeyatts = 4
+        and index_row.indkey[0] = (
+          select attnum
+          from pg_catalog.pg_attribute
+          where attrelid = history_oid
+            and attname = 'item_id'
+        )
+        and index_row.indkey[1] = (
+          select attnum
+          from pg_catalog.pg_attribute
+          where attrelid = history_oid
+            and attname = 'price_kind'
+        )
+        and index_row.indkey[2] = (
+          select attnum
+          from pg_catalog.pg_attribute
+          where attrelid = history_oid
+            and attname = 'observed_at'
+        )
+        and index_row.indkey[3] = (
+          select attnum
+          from pg_catalog.pg_attribute
+          where attrelid = history_oid
+            and attname = 'price_amount'
+        )
+      )
+      or (
+        index_relation.relname =
+          'psdeals_stage_price_history_item_idx'
+        and not index_row.indisprimary
+        and not index_row.indisunique
+        and index_row.indnkeyatts = 1
+        and index_row.indkey[0] = (
+          select attnum
+          from pg_catalog.pg_attribute
+          where attrelid = history_oid
+            and attname = 'item_id'
+        )
+      )
+      or (
+        index_relation.relname =
+          'psdeals_stage_price_history_kind_idx'
+        and not index_row.indisprimary
+        and not index_row.indisunique
+        and index_row.indnkeyatts = 1
+        and index_row.indkey[0] = (
+          select attnum
+          from pg_catalog.pg_attribute
+          where attrelid = history_oid
+            and attname = 'price_kind'
+        )
+      )
     );
 
   if expected_indexes <> 4
@@ -374,6 +459,49 @@ begin
   ) then
     raise exception 'PSDEALS_006_UNEXPECTED_PUBLIC_GRANT';
   end if;
+
+  if (
+    select count(*)
+    from pg_catalog.pg_class as relation,
+      lateral pg_catalog.aclexplode(
+        coalesce(
+          relation.relacl,
+          pg_catalog.acldefault('r', relation.relowner)
+        )
+      ) as acl
+    where relation.oid = history_oid
+      and acl.grantee <> 0
+      and acl.privilege_type in (
+        'SELECT',
+        'INSERT',
+        'UPDATE',
+        'DELETE',
+        'TRUNCATE',
+        'REFERENCES',
+        'TRIGGER'
+      )
+  ) <> 28
+    or exists (
+      select 1
+      from pg_catalog.pg_class as relation,
+        lateral pg_catalog.aclexplode(
+          coalesce(
+            relation.relacl,
+            pg_catalog.acldefault('r', relation.relowner)
+          )
+        ) as acl
+      join pg_catalog.pg_roles as role_row
+        on role_row.oid = acl.grantee
+      where relation.oid = history_oid
+        and role_row.rolname not in (
+          'anon',
+          'authenticated',
+          'service_role',
+          'postgres'
+        )
+    ) then
+    raise exception 'PSDEALS_006_GRANT_SURFACE_MISMATCH';
+  end if;
 end;
 $preflight$;
 
@@ -385,5 +513,31 @@ revoke all privileges
   from public, anon, authenticated, service_role;
 
 drop table public.psdeals_stage_price_history restrict;
+
+do $postcondition$
+begin
+  if to_regclass('public.psdeals_stage_price_history') is not null
+    or exists (
+      select 1
+      from pg_catalog.pg_indexes
+      where schemaname = 'public'
+        and tablename = 'psdeals_stage_price_history'
+    )
+    or exists (
+      select 1
+      from pg_catalog.pg_policies
+      where schemaname = 'public'
+        and tablename = 'psdeals_stage_price_history'
+    )
+    or exists (
+      select 1
+      from information_schema.role_table_grants
+      where table_schema = 'public'
+        and table_name = 'psdeals_stage_price_history'
+    ) then
+    raise exception 'PSDEALS_006_POSTCONDITION_FAILED';
+  end if;
+end;
+$postcondition$;
 
 commit;

@@ -1,4 +1,7 @@
+import { createHash } from 'node:crypto'
+
 export const PSDEALS_CERTIFICATION_EVIDENCE_VERSION = 1
+export const PSDEALS_CERTIFICATION_CANDIDATE_MAX_BYTES = 1024
 
 const HASH_PATTERN = /^[a-f0-9]{64}$/
 const UUID_PATTERN =
@@ -6,7 +9,6 @@ const UUID_PATTERN =
 const ALLOWED_TYPE_PAIRS = new Set([
   'game:game',
   'bundle:bundle',
-  'dlc:addon',
 ])
 const TARGET_PLATFORMS = new Set(['PS5', 'PS4'])
 
@@ -29,6 +31,26 @@ function validMoney(value) {
     value <= 99999999.99
     ? Number(value.toFixed(2))
     : null
+}
+
+function moneyCents(value) {
+  const money = validMoney(value)
+  return money === null ? null : Math.round(money * 100)
+}
+
+function expectedDiscountPercent(current, original) {
+  const currentCents = moneyCents(current)
+  const originalCents = moneyCents(original)
+  if (
+    currentCents === null ||
+    originalCents === null ||
+    originalCents <= currentCents
+  ) {
+    return null
+  }
+  return Math.round(
+    (100 * (originalCents - currentCents)) / originalCents
+  )
 }
 
 function uniqueReasons(values) {
@@ -84,6 +106,88 @@ function commonContext(context, reasons) {
   return { cycleId, observedAt, evidenceSha256 }
 }
 
+const REGULAR_HASH_FIELDS = Object.freeze([
+  'contract_version',
+  'kind',
+  'cycle_id',
+  'observed_at',
+  'evidence_sha256',
+  'psdeals_id',
+  'region_code',
+  'storefront',
+  'currency_code',
+  'current_price_amount',
+  'original_price_amount',
+  'discount_percent',
+  'is_active_discount',
+  'is_free_to_play',
+  'content_type',
+  'item_type_label',
+  'platforms',
+])
+
+const PS_PLUS_HASH_FIELDS = Object.freeze([
+  'contract_version',
+  'kind',
+  'cycle_id',
+  'observed_at',
+  'evidence_sha256',
+  'input_artifact_sha256',
+  'psdeals_id',
+  'region_code',
+  'storefront',
+  'currency_code',
+  'current_price_amount',
+  'ps_plus_price_amount',
+  'is_active_discount',
+  'is_ps_plus_discount',
+  'is_free_to_play',
+  'parser_status',
+  'source_consistent',
+  'content_type',
+  'item_type_label',
+  'platforms',
+])
+
+function hashFieldValue(value) {
+  if (Array.isArray(value)) return value.join(',')
+  if (value === null || value === undefined) return '<null>'
+  return String(value)
+}
+
+export function hashPsdealsCertificationCandidate(candidate) {
+  const fields =
+    candidate?.kind === 'regular'
+      ? REGULAR_HASH_FIELDS
+      : candidate?.kind === 'ps_plus'
+        ? PS_PLUS_HASH_FIELDS
+        : null
+  if (!fields) return null
+  const canonical = fields
+    .map((field) => hashFieldValue(candidate[field]))
+    .join('\u001f')
+  return createHash('sha256').update(canonical, 'utf8').digest('hex')
+}
+
+function sealCandidate(candidate, reasons) {
+  const candidateSha256 = hashPsdealsCertificationCandidate(candidate)
+  if (!candidateSha256) {
+    reasons.push('certification_candidate_hash_invalid')
+    return candidate
+  }
+  const sealed = {
+    ...candidate,
+    candidate_sha256: candidateSha256,
+  }
+  if (
+    Buffer.byteLength(JSON.stringify(sealed), 'utf8') >
+    PSDEALS_CERTIFICATION_CANDIDATE_MAX_BYTES
+  ) {
+    reasons.push('certification_candidate_too_large')
+  }
+  return sealed
+}
+
 function result(kind, reasons, common, candidate) {
   const reasonCodes = uniqueReasons(reasons)
   if (reasonCodes.length > 0) {
@@ -127,10 +231,7 @@ export function buildPsdealsRegularCertificationEvidence(
   const current = validMoney(commercial?.current_price_amount)
   const original = validMoney(commercial?.original_price_amount)
   const percent = commercial?.discount_percent_normalized
-  const calculated =
-    current !== null && original !== null
-      ? Math.round((100 * (original - current)) / original)
-      : null
+  const calculated = expectedDiscountPercent(current, original)
 
   if (!String(listingItem?.source_page_url || '').includes('/discounts')) {
     reasons.push('regular_discount_listing_source_required')
@@ -153,7 +254,7 @@ export function buildPsdealsRegularCertificationEvidence(
     reasons.push('regular_discount_percent_mismatch')
   }
 
-  const candidate = {
+  const candidate = sealCandidate({
     contract_version: PSDEALS_CERTIFICATION_EVIDENCE_VERSION,
     kind: 'regular',
     cycle_id: common.cycleId,
@@ -171,7 +272,7 @@ export function buildPsdealsRegularCertificationEvidence(
     content_type: type?.content_type ?? null,
     item_type_label: type?.item_type_label ?? null,
     platforms,
-  }
+  }, reasons)
   return result('regular', reasons, common, candidate)
 }
 
@@ -190,6 +291,8 @@ export function buildPsdealsPsPlusCertificationEvidence(
   const plusEvidence = raw?.ps_plus_evidence
   const plus = validMoney(raw?.current_ps_plus_price_amount)
   const current = validMoney(parsedDetail?.current_price_amount)
+  const inputArtifactSha256 =
+    cleanText(context?.input_artifact_sha256)?.toLowerCase() || null
 
   if (parsedDetail?.is_ps_plus_discount !== true) {
     reasons.push('ps_plus_discount_not_explicitly_true')
@@ -208,13 +311,20 @@ export function buildPsdealsPsPlusCertificationEvidence(
   if (parsedDetail?.is_free_to_play !== false) {
     reasons.push('ps_plus_free_to_play_not_explicitly_false')
   }
+  if (
+    !inputArtifactSha256 ||
+    !HASH_PATTERN.test(inputArtifactSha256)
+  ) {
+    reasons.push('ps_plus_input_artifact_sha256_invalid')
+  }
 
-  const candidate = {
+  const candidate = sealCandidate({
     contract_version: PSDEALS_CERTIFICATION_EVIDENCE_VERSION,
     kind: 'ps_plus',
     cycle_id: common.cycleId,
     observed_at: common.observedAt,
     evidence_sha256: common.evidenceSha256,
+    input_artifact_sha256: inputArtifactSha256,
     psdeals_id: parsedDetail?.psdeals_id ?? null,
     region_code: 'us',
     storefront: 'playstation',
@@ -229,6 +339,6 @@ export function buildPsdealsPsPlusCertificationEvidence(
     content_type: type?.content_type ?? null,
     item_type_label: type?.item_type_label ?? null,
     platforms,
-  }
+  }, reasons)
   return result('ps_plus', reasons, common, candidate)
 }

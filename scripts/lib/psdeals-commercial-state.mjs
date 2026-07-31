@@ -76,8 +76,10 @@ export function parsePsdealsDiscountSignal(value) {
 }
 
 function expectedDiscountPercent(currentPrice, originalPrice) {
+  const currentCents = Math.round(currentPrice * 100)
+  const originalCents = Math.round(originalPrice * 100)
   return Math.round(
-    (100 * (originalPrice - currentPrice)) / originalPrice
+    (100 * (originalCents - currentCents)) / originalCents
   )
 }
 

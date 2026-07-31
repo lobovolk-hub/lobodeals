@@ -1,5 +1,6 @@
 import fs from 'node:fs/promises'
 import path from 'node:path'
+import { createHash } from 'node:crypto'
 import { pathToFileURL } from 'node:url'
 import { createClient } from '@supabase/supabase-js'
 import { chromium } from 'playwright'
@@ -131,23 +132,29 @@ function parseJsStringLiteral(rawLiteral) {
   const candidate = String(rawLiteral).trim()
 
   try {
-    return JSON.parse(`"${candidate.replace(/"/g, '\\"')}"`)
+    const quoted = candidate.replace(
+      /(^|[^\\])"/g,
+      (_, prefix) => `${prefix}\\"`
+    )
+    return JSON.parse(`"${quoted}"`)
   } catch {
     return candidate
   }
 }
 
-function parseChartJsonString(rawLiteral) {
-  if (!rawLiteral) return []
+function parseChartJsonEvidence(rawLiteral) {
+  if (!rawLiteral) return { entries: [], parser_status: 'absent' }
 
   const decoded = parseJsStringLiteral(rawLiteral)
-  if (!decoded) return []
+  if (!decoded) return { entries: [], parser_status: 'invalid' }
 
   try {
     const parsed = JSON.parse(String(decoded))
-    return Array.isArray(parsed) ? parsed : []
+    return Array.isArray(parsed)
+      ? { entries: parsed, parser_status: 'parsed' }
+      : { entries: [], parser_status: 'invalid' }
   } catch {
-    return []
+    return { entries: [], parser_status: 'invalid' }
   }
 }
 
@@ -402,7 +409,7 @@ function getLatestChartPriceAmount(entries) {
   return latestPrice
 }
 
-export function parsePage(html, url) {
+export function parsePage(html, url, options = {}) {
   const psdealsId = parseInteger(extractFirst(html, /var item_id=(\d+);/i))
   const title =
     extractFirst(html, /<div itemprop="name" class="game-title-info-name">([\s\S]*?)<\/div>/i) ||
@@ -504,8 +511,11 @@ export function parsePage(html, url) {
   const chartBonusPricesRaw = extractFirst(html, /var chart_bonus_prices="([\s\S]*?)";var /i)
   const chartBonusActive = /var chart_bonus_active=true;/i.test(html)
 
-  const chartBonusPrices = parseChartJsonString(chartBonusPricesRaw)
+  const chartEvidence = parseChartJsonEvidence(chartBonusPricesRaw)
+  const chartBonusPrices = chartEvidence.entries
 
+  const psPlusBuyBoxMarkerPresent =
+    /\bgame-buy-button-price-bonus\b/i.test(html)
   const currentPsPlusBuyBoxPriceAmount = parseCurrentPsPlusPriceFromBuyBox(html)
 
   const latestChartBonusPriceAmount = chartBonusActive
@@ -521,6 +531,30 @@ export function parsePage(html, url) {
     current > 0 &&
     currentPsPlusPriceAmount < current
   )
+  const plusSourceConsistent = Boolean(
+    currentPsPlusBuyBoxPriceAmount !== null &&
+    (
+      latestChartBonusPriceAmount === null ||
+      latestChartBonusPriceAmount === currentPsPlusBuyBoxPriceAmount
+    )
+  )
+  const plusParserStatus = !psPlusBuyBoxMarkerPresent
+    ? 'buy_box_absent'
+    : currentPsPlusBuyBoxPriceAmount === null
+      ? 'buy_box_unparseable'
+      : isPsPlusDiscount
+        ? 'parsed_current_discount'
+        : 'parsed_not_discount'
+  const currentPsPlusDiscountState =
+    plusParserStatus === 'parsed_current_discount'
+      ? true
+      : plusParserStatus === 'parsed_not_discount'
+        ? false
+        : null
+  const detailObservedAt =
+    options.observedAt && !Number.isNaN(new Date(options.observedAt).getTime())
+      ? new Date(options.observedAt).toISOString()
+      : nowIso()
 
   const isTemporaryFreePromotion =
     commercialState.classification ===
@@ -563,7 +597,7 @@ export function parsePage(html, url) {
     discount_percent: discountPercent,
     currency_code: currencyCode,
     deal_ends_at: dealEndsAt,
-    is_ps_plus_discount: isPsPlusDiscount,
+    is_ps_plus_discount: currentPsPlusDiscountState,
     // Metacritic fields are intentionally not written by the PSDeals importer.
     // They are owned by the dedicated Metacritic collector/backfill flow.
     playstation_rating: playstationScore,
@@ -572,15 +606,21 @@ export function parsePage(html, url) {
     whats_inside_lines: whatsInsideLines,
     is_free_to_play: isFreeToPlay,
     availability_state: availabilityState,
-    detail_last_synced_at: nowIso(),
+    detail_last_synced_at: detailObservedAt,
     raw_detail_json: {
   fetched_url: url,
-  imported_at: nowIso(),
+  imported_at: detailObservedAt,
   chart_bonus_prices_count: chartBonusPrices.length,
   chart_bonus_active: chartBonusActive,
   current_ps_plus_price_amount: currentPsPlusPriceAmount,
   current_ps_plus_buy_box_price_amount: currentPsPlusBuyBoxPriceAmount,
   latest_chart_bonus_price_amount: latestChartBonusPriceAmount,
+  ps_plus_evidence: {
+    parser_status: plusParserStatus,
+    buy_box_marker_present: psPlusBuyBoxMarkerPresent,
+    chart_parser_status: chartEvidence.parser_status,
+    source_consistent: plusSourceConsistent,
+  },
   commercial_state: commercialState,
   type_classification: typeClassification,
   platform_classification: platformClassification,
@@ -600,7 +640,10 @@ export function buildCommercialUpsertPayload(parsed) {
     original_price_amount: parsed.original_price_amount,
     discount_percent: parsed.discount_percent,
     deal_ends_at: parsed.deal_ends_at,
-    is_ps_plus_discount: parsed.is_ps_plus_discount,
+  }
+
+  if (typeof parsed.is_ps_plus_discount === 'boolean') {
+    payload.is_ps_plus_discount = parsed.is_ps_plus_discount
   }
 
   if (typeof parsed.is_free_to_play === 'boolean') {
@@ -1044,6 +1087,7 @@ const evidenceKindArg = getPsdealsCliArg(
   'detail_import'
 )
 const parentEvidenceArg = getPsdealsCliArg(process.argv, 'parent-evidence')
+const remoteCycleIdArg = getPsdealsCliArg(process.argv, 'remote-cycle-id')
 const summaryOutputArg = getPsdealsCliArg(process.argv, 'summary-output-json')
 const failuresOutputArg = getPsdealsCliArg(process.argv, 'failures-output-txt')
 
@@ -1053,11 +1097,18 @@ if (!['detail_import', 'detail_retry'].includes(evidenceKindArg)) {
 
 if (
   evidenceOptions.tracked &&
-  (!parentEvidenceArg || !summaryOutputArg || !failuresOutputArg)
+  (!parentEvidenceArg || !summaryOutputArg || !failuresOutputArg || !remoteCycleIdArg)
 ) {
   throw new Error(
-    'EVIDENCE_OUTPUTS_INCOMPLETE: tracked import requires --parent-evidence, --summary-output-json and --failures-output-txt.'
+    'EVIDENCE_OUTPUTS_INCOMPLETE: tracked import requires --parent-evidence, --remote-cycle-id, --summary-output-json and --failures-output-txt.'
   )
+}
+if (
+  evidenceOptions.tracked &&
+  !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
+    .test(remoteCycleIdArg)
+) {
+  throw new Error('REMOTE_CYCLE_ID_INVALID')
 }
 
 await loadKeyValueFile(path.resolve(process.cwd(), '.env.local'))
@@ -1231,6 +1282,9 @@ try {
           ? await fetchHtmlWithEdgeLive(edgeLiveSession, url, timeoutMs, debugHtmlDir)
           : await fetchHtmlWithPlaywright(context, url, timeoutMs, debugHtmlDir)
       const parsed = parsePage(fetched.html, url)
+      const detailSourceSha256 = createHash('sha256')
+        .update(Buffer.from(fetched.html, 'utf8'))
+        .digest('hex')
       const { data: existing, error: existingError } = await admin
         .from('psdeals_stage_items')
         .select('id')
@@ -1245,6 +1299,12 @@ try {
 
       const detailPayloadResult = buildPsdealsDetailUpsertPayload(parsed, {
         isExisting: Boolean(existing?.id),
+        certificationContext: evidenceOptions.tracked
+          ? {
+              remote_cycle_id: remoteCycleIdArg,
+              evidence_sha256: detailSourceSha256,
+            }
+          : null,
         rawDetailMetadata: {
           http_status: fetched.status,
           page_title: fetched.title,

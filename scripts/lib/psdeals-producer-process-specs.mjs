@@ -1,5 +1,8 @@
 import path from 'node:path'
 
+const UUID_PATTERN =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
+
 const PRODUCERS = Object.freeze({
   collect_listing: {
     entrypoint: 'scripts/collect-psdeals-listing-edge-live-cdp.mjs',
@@ -101,6 +104,7 @@ export function buildPsdealsProducerProcessSpec({
   pages = 1000,
   stale_limit = 500,
   ps_plus_recheck_limit = 500,
+  remote_cycle_id = workspace?.identity?.remote_cycle_id,
 } = {}) {
   const definition = PRODUCERS[stage]
   if (!definition) throw new Error('PROCESS_SPEC_STAGE_UNKNOWN')
@@ -111,6 +115,12 @@ export function buildPsdealsProducerProcessSpec({
   }
   if (!workspace?.identity?.local_cycle_id || !inside(workspaceRoot, path.join(workspaceRoot, 'artifacts'))) {
     throw new Error('PROCESS_SPEC_WORKSPACE_INVALID')
+  }
+  if (
+    ['import_details', 'retry_details'].includes(stage) &&
+    !UUID_PATTERN.test(String(remote_cycle_id || ''))
+  ) {
+    throw new Error('PROCESS_SPEC_REMOTE_CYCLE_ID_REQUIRED')
   }
   const p = paths(workspace)
   let args = []
@@ -134,6 +144,7 @@ export function buildPsdealsProducerProcessSpec({
     evidencePath = p.importEvidence
     args = [
       option('file', p.combined), option('evidence-kind', 'detail_import'),
+      option('remote-cycle-id', remote_cycle_id),
       option('parent-evidence', p.fastEvidence), option('summary-output-json', p.importSummary),
       option('failures-output-txt', p.importFailures),
     ]
@@ -141,6 +152,7 @@ export function buildPsdealsProducerProcessSpec({
     evidencePath = p.retryEvidence
     args = [
       option('file', p.importFailures), option('evidence-kind', 'detail_retry'),
+      option('remote-cycle-id', remote_cycle_id),
       option('parent-evidence', p.importEvidence), option('summary-output-json', p.retrySummary),
       option('failures-output-txt', p.retryFailures),
     ]

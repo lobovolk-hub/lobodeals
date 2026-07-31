@@ -37,6 +37,7 @@ export function preparePsdealsListingUpsertBatches({
   listing_items,
   existing_psdeals_ids,
   listing_observed_at,
+  certification_context = null,
   batch_size = PSDEALS_STAGE_UPSERT_DEFAULT_BATCH_SIZE,
 } = {}) {
   if (!Array.isArray(listing_items)) throw new Error('LISTING_ITEMS_REQUIRED')
@@ -61,9 +62,13 @@ export function preparePsdealsListingUpsertBatches({
     }
     if (id) seenIds.add(id)
     const operation = id && existing.has(id) ? 'update' : 'insert'
+    const payloadOptions = {
+      listingObservedAt: listing_observed_at,
+      certificationContext: certification_context,
+    }
     const built = operation === 'update'
-      ? buildPsdealsListingUpdatePayload(item, { listingObservedAt: listing_observed_at })
-      : buildPsdealsListingInsertPayload(item, { listingObservedAt: listing_observed_at })
+      ? buildPsdealsListingUpdatePayload(item, payloadOptions)
+      : buildPsdealsListingInsertPayload(item, payloadOptions)
     if (!built.is_valid) {
       omitted.push({ index, psdeals_id: id, operation, reason_codes: built.reason_codes })
       continue
@@ -239,6 +244,12 @@ export async function executeReconciledPsdealsListingUpsert({
     listing_items,
     existing_psdeals_ids: existingIds,
     listing_observed_at,
+    certification_context: remoteReceiptsRequired
+      ? {
+          remote_cycle_id: receipt_context.remote_cycle_id,
+          evidence_sha256: receipt_context.listing_artifact_hash,
+        }
+      : null,
     batch_size,
   })
   const batchResults = []

@@ -16,6 +16,7 @@ const workspace = {
     local_cycle_id: 'local-cycle-process-fixture',
     run_token: 'run_process_fixture_token_123456',
     code_revision: 'fixture',
+    remote_cycle_id: '11111111-1111-4111-8111-111111111111',
     context: {
       requested_url: 'https://psdeals.net/us-store/discounts?platforms=ps5%2Cps4',
     },

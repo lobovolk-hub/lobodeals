@@ -10,7 +10,7 @@ export const PSDEALS_CRITICAL_ACTIONS = Object.freeze({
     idempotency: 'exact receipt replay returns the existing committed transition',
   },
   certify: {
-    target: 'public.certify_price_refresh_cycle_v2',
+    target: 'public.certify_price_refresh_cycle_v3',
     operation: 'rpc',
     idempotency: 'cycle-bound receipt reconciles a lost response without invoking certification twice',
   },

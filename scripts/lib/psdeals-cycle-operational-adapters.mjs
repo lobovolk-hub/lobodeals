@@ -215,7 +215,7 @@ export function assessPsdealsLifecycleContracts(remoteFacts) {
     },
     certify: {
       ready: cycles?.exists === true && receiptReady &&
-        functions.certify_price_refresh_cycle_v2?.definition_verified === true,
+        functions.certify_price_refresh_cycle_v3?.definition_verified === true,
       reconciliation: 'read_committed_certify_receipt_and_cycle_status',
     },
     refresh_cache: {

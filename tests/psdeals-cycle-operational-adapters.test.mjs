@@ -150,7 +150,7 @@ test('lifecycle readiness requires every migrated receipt-bound RPC', () => {
   const functions = Object.fromEntries([
     'create_or_reconcile_price_refresh_cycle_v1',
     'mark_psdeals_price_refresh_cycle_succeeded_v1',
-    'certify_price_refresh_cycle_v2',
+    'certify_price_refresh_cycle_v3',
     'refresh_catalog_public_cache_v16',
     'apply_psdeals_ended_deals_v1',
     'record_psdeals_monthly_check_v1',

@@ -1,3 +1,8 @@
+import {
+  buildPsdealsPsPlusCertificationEvidence,
+  buildPsdealsRegularCertificationEvidence,
+} from './psdeals-certification-evidence.mjs'
+
 const PROTECTED_PRICE_LOW_FIELDS = new Set([
   'lowest_price_amount',
   'lowest_ps_plus_price_amount',
@@ -196,6 +201,18 @@ function buildListingBase(listingItem, options, isExisting) {
   addSafeListingCommercialState(payload, listingItem, reasonCodes)
   addListingClassifications(payload, listingItem, { isExisting }, reasonCodes)
 
+  if (options.certificationContext) {
+    const certification = buildPsdealsRegularCertificationEvidence(
+      listingItem,
+      {
+        ...options.certificationContext,
+        observed_at: observedAt,
+      }
+    )
+    Object.assign(payload, certification.columns)
+    reasonCodes.push(...certification.reason_codes)
+  }
+
   if (listingItem && typeof listingItem === 'object') {
     payload.raw_listing_json = listingItem
   } else {
@@ -310,6 +327,18 @@ export function buildPsdealsDetailUpsertPayload(parsed, options = {}) {
 
   addDetailClassificationFields(payload, parsed, isExisting, reasonCodes)
   addDetailCommercialFields(payload, parsed, reasonCodes)
+
+  if (options.certificationContext) {
+    const certification = buildPsdealsPsPlusCertificationEvidence(
+      parsed,
+      {
+        ...options.certificationContext,
+        observed_at: detailSyncedAt,
+      }
+    )
+    Object.assign(payload, certification.columns)
+    reasonCodes.push(...certification.reason_codes)
+  }
 
   const storeUrl = safeHttpUrl(parsed?.store_url, 'playstation.com')
   if (storeUrl) {

@@ -542,7 +542,7 @@ export function createPsdealsFixtureAdapters() {
         output_hashes: [value.reference.sha256],
         evidence_path: value.portablePath,
         action_receipt_path: value.portablePath,
-        external_action_requested: 'certify_price_refresh_cycle_v2',
+        external_action_requested: 'certify_price_refresh_cycle_v3',
         simulation_performed: true,
         gate_updates: { certified: true, can_refresh_cache: true },
       })

@@ -6,7 +6,7 @@ const WRITE_RPC_ALLOWLIST = new Set([
   'record_psdeals_monthly_check_v1',
   'apply_psdeals_ended_deals_v1',
   'mark_psdeals_price_refresh_cycle_succeeded_v1',
-  'certify_price_refresh_cycle_v2',
+  'certify_price_refresh_cycle_v3',
   'refresh_catalog_public_cache_v16',
 ])
 const READ_BATCH_SIZE = 500

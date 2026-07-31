@@ -100,13 +100,12 @@ test('Night of the Dead does not infer current PS Plus from historical chart equ
 
   assert.equal(parsed.raw_detail_json.latest_chart_bonus_price_amount, 3.84)
   assert.equal(parsed.raw_detail_json.current_ps_plus_price_amount, null)
-  assert.equal(parsed.is_ps_plus_discount, false)
+  assert.equal(parsed.is_ps_plus_discount, null)
   assert.deepEqual(buildCommercialUpsertPayload(parsed), {
     current_price_amount: 3.84,
     original_price_amount: 10.99,
     discount_percent: 65,
     deal_ends_at: null,
-    is_ps_plus_discount: false,
     is_free_to_play: false,
     availability_state: 'priced',
   })
@@ -144,7 +143,7 @@ test('Brand New Cadillac does not restore chart precedence or historical equalit
 
   assert.equal(parsed.raw_detail_json.latest_chart_bonus_price_amount, 1.99)
   assert.equal(parsed.raw_detail_json.current_ps_plus_price_amount, null)
-  assert.equal(parsed.is_ps_plus_discount, false)
+  assert.equal(parsed.is_ps_plus_discount, null)
 })
 
 test('unsafe extreme full discounts do not produce a commercial upsert payload', () => {

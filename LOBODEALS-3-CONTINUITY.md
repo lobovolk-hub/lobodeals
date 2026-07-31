@@ -1714,3 +1714,43 @@ El reporte detallado actualizado está en `docs/audit/lobodeals-3-compact-price-
 El checkpoint local `90031cf` (`Preserve certified price low ownership boundaries`) conserva siete archivos de código/pruebas. La validación final aprobó 311/311 pruebas, 27/27 suites enfocadas, todos los `node --check`, `git diff --check` y lint con cero errores y las seis advertencias preexistentes. No se ejecutó build ni ningún proceso operativo.
 
 Posición exacta del Bloque 4: la infraestructura reconciliable de 004 continúa instalada y verificada, y los límites locales de propiedad de mínimos están protegidos. El Bloque 4 no está cerrado, no existe ciclo real y la prueba de 30 días no comenzó. El siguiente paso seguro es una auditoría remota estrictamente de solo lectura sobre `psdeals_stage_price_history`, sus dependencias y el contrato efectivo de certificación; no autoriza exportación, backfill, retirada física ni ejecución del ciclo.
+
+## 41. Certificación ligada al ciclo y retirada restrictiva preparada — 2026-07-30
+
+Texto 3.2-0002 completó la auditoría remota read-only: history conserva 841.549 filas/273.907.712 bytes; no hay blockers externos ni writers/consumers SQL almacenados, pero permanecen la policy pública y grants directos amplios. Los cuatro mínimos, cycles y receipts continúan en cero. La certificación remota 003/004 sigue insegura porque una marca nueva podía combinarse con valores públicos preservados.
+
+Texto 3.2-0003 comenzó en `main`, HEAD `169c5870fce05f92fd9554a435cf22e6b5688ce4`, 45 commits delante/0 detrás de la referencia local `origin/main`, worktree limpio y baseline 311/311.
+
+La solución local seleccionada separa precio público conservado de candidato certificable. La migración 005 añade dos slots acotados y sobrescribibles dentro de cada fila stage: regular y PS Plus, cada uno con remote cycle ID, timestamp, SHA-256 y JSON completo. No crea una fila por observación ni depende de history.
+
+El listing solo produce candidato con tuple regular completo, tipo/plataforma seguros, fuente discounts, porcentaje 1–99 y fórmula exacta `round(100 * (original - current) / original)`. Un tuple inválido puede actualizar presencia/raw listing, pero no reemplaza el candidato; el slot anterior queda excluido por cycle ID.
+
+El detalle usa un único instante de parseo, calcula SHA-256 del HTML y registra estado explícito del parser PS Plus. Buy box ausente/ilegible, chart inválido o discrepancia de fuentes no se convierten en un `false` seguro ni producen candidato. PS Plus requiere precio positivo menor que el regular del mismo parseo, tipo/plataforma seguros y exclusión monthly en certificación.
+
+`certify_price_refresh_cycle_v3` no llama a v1/v2. Verifica cycle/timestamps/receipts, enlaza regular al hash exacto de listing validado, exige detail committed sin fallos pendientes, filtra scope/tipo/plataforma/monthly y conserva advisory lock, rollback, receipts, idempotencia, monotonicidad y first seen. 005 conserva v1/v2 para compatibilidad, revoca v2 a `service_role` y dirige la ruta futura a v3. 003 y 004 no fueron modificadas.
+
+La migración 006 prepara la retirada de `public.psdeals_stage_price_history`. Es transaccional, toma lock acotado, verifica ocho columnas, cuatro constraints, cuatro índices, RLS, policy, grants, dependencias, FKs, triggers, vistas, rutinas y publicaciones; retira intencionalmente la superficie de acceso y termina con `DROP TABLE ... RESTRICT`. No contiene `CASCADE`, exportación, backfill, copia, mutación masiva por filas, `TRUNCATE` ni `VACUUM`. Los pre/postchecks read-only quedaron separados bajo `sql/validation/`.
+
+Commits técnicos:
+
+- `9d10089806ea86f090210d86cb67a2bfb34ae6ca` — `Bind price certification evidence to refresh cycles`;
+- `00ea4c74142388aeb54ffb158f32f459a3d1ab36` — `Prepare restrictive PSDeals history retirement`.
+
+El reporte detallado está en `docs/audit/lobodeals-3-certification-and-history-retirement-readiness-2026-07-30.md`.
+
+La caché pública sigue sin los cuatro mínimos; v15/v16 no los propagan y el slug consulta stage. Esto no bloquea retirar history, pero debe resolverse antes de una fila pública “Lowest price ever” o filtro equivalente.
+
+Ninguna migración fue aplicada. History sigue presente. No hubo SQL remoto, mutaciones Supabase, ciclo, certificación, caché, collector/importer/runner real, push, deploy ni prueba de 30 días.
+
+La validación final aprobó 352/352 pruebas y 122/122 enfocadas. Todos los `node --check` aprobaron; lint conservó cero errores y las seis advertencias preexistentes; los diff checks y búsquedas de secretos/operaciones prohibidas aprobaron. No se ejecutó build.
+
+Readiness:
+
+- `STORAGE_READY=false`;
+- `COMPACT_MINIMA_READY=false`;
+- `HISTORY_RETIRED=false`;
+- `LIVE_CYCLE_READY=false`;
+- `HISTORY_RETIREMENT_PREFLIGHT_READY=true` solo como readiness del diseño local;
+- `CERTIFICATION_FIX_REQUIRED=true` en remoto.
+
+Posición exacta: Bloque 3 conserva la retirada física pendiente; Bloque 4 tiene la corrección local de certificación y la retirada restrictiva preparadas, pero ninguna está aplicada. El siguiente gate es revisar 005/006 y autorizar por separado un precheck remoto read-only y su aplicación secuencial. Eso no autoriza todavía el primer ciclo real.

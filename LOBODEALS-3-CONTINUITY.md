@@ -1754,3 +1754,79 @@ Readiness:
 - `CERTIFICATION_FIX_REQUIRED=true` en remoto.
 
 Posición exacta: Bloque 3 conserva la retirada física pendiente; Bloque 4 tiene la corrección local de certificación y la retirada restrictiva preparadas, pero ninguna está aplicada. El siguiente gate es revisar 005/006 y autorizar por separado un precheck remoto read-only y su aplicación secuencial. Eso no autoriza todavía el primer ciclo real.
+
+## 42. Revisión adversarial local de 005/006 — 2026-07-30
+
+Texto 3.2-0004 comenzó en `main`, HEAD
+`88732b037551ffcb491e0f1833d4f8b632834e79`, 48 commits delante/0 detrás de la
+referencia local `origin/main`, worktree limpio y baseline 352/352.
+
+La revisión encontró defectos reales en los borradores 005/006 y los corrigió
+sin ejecutar SQL. Los candidatos pasan de un límite de 4.096 a 1.024 bytes por
+JSON, admiten únicamente claves cerradas y llevan un SHA-256 del tuple exacto.
+Regular enlaza el listing validado; PS Plus enlaza además la cola exacta
+consumida. El techo textual conjunto para 32.890 filas baja de unos 257 MiB a
+64,24 MiB; las muestras miden 588 y 750 bytes, unos 41,97 MiB combinados si
+todos los items poblaran ambos slots, antes de overhead.
+
+SQL y JavaScript calculan el porcentaje sobre importes de dos decimales/cents
+con tolerancia cero. El límite 20:1 se repite en v3: 99% puede ser
+matemáticamente coherente, pero no certificable. Solo `game/game` y
+`bundle/bundle` certifican. `dlc/addon` queda fail-closed porque la evidencia
+local muestra que agrupa Add-On, Season Pass, Avatar, Costume, Character,
+Vehicle, Weapons, Soundtrack, Theme, Map e Item. Plataformas admitidas:
+`["PS4"]`, `["PS5"]` y `["PS5","PS4"]`.
+
+005 exige owner de aplicación `postgres`, fija timeouts, conserva v1/v2 solo
+para `postgres`, expone v3 únicamente a `service_role`/`postgres` y no cambia
+003/004. V3 conserva receipts, idempotencia, advisory lock, rollback,
+monotonicidad y first seen. El modelo 004 no tiene campos actor/intent
+separados; la autorización demostrable es ACL + action kind + parent receipt +
+idempotency/request/input/manifest hashes.
+
+006 ahora verifica owner, estructura exacta de los cuatro índices, superficie
+cerrada de 28 grants y ausencia de grantees adicionales. Tras
+`DROP TABLE ... RESTRICT` ejecuta una postcondición dentro de la misma
+transacción. Conserva lock timeout 5 s y statement timeout 60 s; no contiene
+`CASCADE`, DML por filas, `TRUNCATE`, `VACUUM`, copia, exportación ni backfill.
+
+Se añadieron precheck y postcheck 005 estrictamente read-only bajo
+`sql/validation/`. Deben usarse junto a los ya existentes de 006 en cuatro
+operaciones separadas. La secuencia futura obliga a aplicar y verificar 005,
+reconfirmar producción, ejecutar precheck 006 y solo después autorizar 006. No
+debe ejecutarse un ciclo entre ambas.
+
+Vercel read-only identificó producción `READY` en deployment
+`dpl_6Ua5HpBGWf1GczzzzZdE7AL3vHBr`, SHA
+`4f826ac873850d3e61ceb68721512099625f1515`, creado
+`2026-07-27T05:38:08.090Z`, con aliases públicos esperados. El SHA existe en
+Git local. Su árbol exacto no contiene consumers de
+`psdeals_stage_price_history`: `PRODUCTION_HISTORY_CONSUMERS_COUNT=0`,
+`PRODUCTION_HISTORY_CONSUMERS=[]` y `PRODUCTION_SAFE_AFTER_006=true`.
+
+La validación aprobó 358/358 pruebas, 63/63 enfocadas, todos los node checks,
+`git diff --check` y lint con cero errores/las mismas seis advertencias
+preexistentes. No se ejecutó build.
+
+Readiness demostrado:
+
+- `CERTIFICATION_MIGRATION_LOCAL_APPROVED=true`;
+- `HISTORY_RETIREMENT_MIGRATION_LOCAL_APPROVED=true`;
+- `PRODUCTION_SAFE_AFTER_006=true`;
+- `REMOTE_005_READY_TO_APPLY=false` hasta repetir precheck remoto actual;
+- `REMOTE_006_READY_TO_APPLY=false` hasta aplicar/verificar 005 y aprobar el
+  precheck 006;
+- `STORAGE_READY=false`;
+- `COMPACT_MINIMA_READY=false`;
+- `HISTORY_RETIRED=false`;
+- `LIVE_CYCLE_READY=false`;
+- `CERTIFICATION_FIX_REQUIRED=true` remotamente.
+
+El dossier reproducible es
+`docs/audit/lobodeals-3-005-006-adversarial-review-2026-07-30.md`.
+El commit técnico es `3b89f1e`
+(`Harden PSDeals certification and history retirement`).
+Ninguna migración fue aplicada, history continúa presente y el Bloque 4 no
+está cerrado. El siguiente paso es una sesión separada para ejecutar únicamente
+el precheck remoto read-only de 005; no autoriza aplicar 005/006 ni iniciar un
+ciclo.

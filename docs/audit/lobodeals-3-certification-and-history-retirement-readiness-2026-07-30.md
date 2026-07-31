@@ -4,6 +4,11 @@ Fecha local: 2026-07-30 (America/Lima)
 
 Resultado local: `PREPARED_NOT_APPLIED`
 
+> Nota posterior: los límites de 4.096 bytes, la allowlist `dlc/addon` y las
+> ACL descritas abajo fueron reemplazados por la revisión adversarial del
+> commit `3b89f1e`. El contrato vigente está en
+> `lobodeals-3-005-006-adversarial-review-2026-07-30.md`.
+
 ## Baseline
 
 - rama: `main`;

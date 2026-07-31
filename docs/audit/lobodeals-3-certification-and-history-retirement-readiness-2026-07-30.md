@@ -274,3 +274,30 @@ Readiness:
 
 La siguiente tarea debe repetir exclusivamente el precheck remoto read-only
 con los archivos corregidos. No existe autorización para aplicar 006.
+
+## Resolución del error 42803 del precheck — 2026-07-31
+
+Texto 3.2-0011 confirmó nuevamente toda la superficie esperada de history,
+ACL, dependencias, producción y datos, pero terminó `NO-GO` porque la consulta
+canónica 14 agrupaba el alias `grantee` sin materializar primero la expresión
+basada en `grantee_role.rolname`. PostgreSQL 17 devolvió `42803`. No se aplicó
+006 ni se realizó ninguna mutación.
+
+Texto 3.2-0012 materializó las entradas en un CTE `effective_acl` y el SELECT
+exterior agrupa ahora por `effective_acl.grantee`. El resultado conserva el
+conteo y evidencia ordenada de los ocho privilegios, incluido `MAINTAIN`, así
+como grantor, grant option y PUBLIC. Las 20 consultas canónicas permanecen
+estrictamente read-only.
+
+El commit técnico es `50d244c9d1eb0e82082992f9ea3e82708966b044`
+(`Fix PostgreSQL 17 ACL precheck grouping`). La migración 006 no cambió y
+mantiene SHA-256
+`e754bbd0beb5f1790f72d8e219fca239477bd25853fdee61758139fec9d96c34`.
+La validación aprobó 377/377 pruebas y 83/83 enfocadas; lint conservó cero
+errores y seis advertencias preexistentes.
+
+`HISTORY_RETIREMENT_MIGRATION_LOCAL_APPROVED=true`, pero
+`REMOTE_006_READY_TO_APPLY=false`, `STORAGE_READY=false`,
+`HISTORY_RETIRED=false` y `LIVE_CYCLE_READY=false`. Debe repetirse el precheck
+remoto DB READ-ONLY completo antes de considerar una autorización DB WRITE
+separada.

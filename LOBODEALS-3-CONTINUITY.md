@@ -2074,3 +2074,56 @@ El Bloque 3 conserva pendiente la retirada física de history y el Bloque 4 no
 está cerrado. El siguiente paso seguro es repetir exclusivamente el precheck
 remoto DB READ-ONLY de 006 usando los archivos corregidos. Eso no autoriza
 aplicar 006 ni iniciar la prueba de 30 días.
+
+## 46. Corrección final del agrupamiento ACL del precheck 006 — 2026-07-31
+
+Texto 3.2-0011 repitió las 20 consultas canónicas del precheck remoto
+read-only. Diecinueve ejecutaron correctamente y toda la evidencia sustantiva
+de 006 volvió a coincidir: identidad, estructura, dependencias, ACL efectivo
+de 32 entradas con `MAINTAIN`, policy, producción, runtime, datos, capacidad y
+locks. La consulta 14 falló con PostgreSQL `42803` porque agrupaba mediante el
+alias de salida `grantee` aunque la expresión proyectada dependía de
+`grantee_role.rolname`. El resultado permaneció `NO-GO`; no se aplicó 006.
+
+Texto 3.2-0012 corrigió exclusivamente ese defecto local. La consulta 14
+materializa ahora en un CTE `effective_acl` el grantee, privilege type, grant
+option y grantor; el SELECT exterior agrupa por
+`effective_acl.grantee`. Además devuelve arrays ordenados de privilegios,
+grantors y grant options, por lo que PUBLIC, roles o privilegios inesperados,
+duplicados y drift de identidad continúan visibles. Las 20 consultas siguen
+presentes y son únicamente `SELECT`/`WITH`.
+
+No se encontró otro alias equivalente defectuoso en los prechecks,
+postchecks o validadores relacionados. La migración 006 no cambió y conserva
+SHA-256
+`e754bbd0beb5f1790f72d8e219fca239477bd25853fdee61758139fec9d96c34`,
+`DROP TABLE ... RESTRICT`, ACL exacto de 32 entradas, `MAINTAIN` para los cuatro
+roles y assertions fail-closed.
+
+Commit técnico:
+
+- `50d244c9d1eb0e82082992f9ea3e82708966b044` —
+  `Fix PostgreSQL 17 ACL precheck grouping`.
+
+Validación local: 377/377 pruebas globales, 83/83 enfocadas, 19/19 de
+retirement, `node --check`, diff checks y lint con cero errores y las seis
+advertencias preexistentes. No hubo SQL remoto, Supabase, build, collector,
+importer, runner, ciclo, certificación, caché, monthly, push ni deploy.
+
+Readiness local:
+
+- `PRECHECK_006_STRICTLY_READ_ONLY=true`;
+- `DEPENDENCY_QUERY_POSTGRES17_VALID=true`;
+- `ACL_GROUPING_QUERY_POSTGRES17_VALID=true`;
+- `MIGRATION_006_LOCAL_HASH_MATCH=true`;
+- `MIGRATION_006_DESTRUCTIVE_SCOPE_EXACT=true`;
+- `MIGRATION_006_FAIL_CLOSED=true`;
+- `POSTCHECK_006_COMPLETE=true`;
+- `HISTORY_RETIREMENT_MIGRATION_LOCAL_APPROVED=true`;
+- `REMOTE_006_READY_TO_APPLY=false`;
+- `STORAGE_READY=false`;
+- `HISTORY_RETIRED=false`;
+- `LIVE_CYCLE_READY=false`.
+
+El siguiente paso es repetir íntegramente el precheck remoto DB READ-ONLY de
+006. No existe autorización DB WRITE y 006 continúa sin aplicar.

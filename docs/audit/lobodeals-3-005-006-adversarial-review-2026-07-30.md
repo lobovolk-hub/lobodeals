@@ -490,3 +490,28 @@ Readiness exclusivamente local:
 
 Debe repetirse el precheck remoto read-only. 006 sigue sin aplicar y no existe
 autorización DB WRITE.
+
+## Corrección final del precheck ACL — 2026-07-31
+
+Texto 3.2-0011 ejecutó las 20 consultas canónicas corregidas. Toda la evidencia
+material de retirada pasó, pero la consulta 14 terminó con PostgreSQL `42803`:
+el alias proyectado `grantee` no materializaba para `GROUP BY` la expresión
+dependiente de `grantee_role.rolname`. El precheck completo permaneció
+`NO-GO` y 006 no fue aplicada.
+
+El commit `50d244c9d1eb0e82082992f9ea3e82708966b044`
+(`Fix PostgreSQL 17 ACL precheck grouping`) corrige la consulta mediante un CTE
+`effective_acl`. El SELECT exterior agrupa y ordena por
+`effective_acl.grantee` y conserva arrays deterministas de privilege type,
+grantor e is_grantable. Las 20 consultas siguen siendo read-only y no se
+encontraron otros aliases equivalentes defectuosos.
+
+006 no cambió: SHA-256
+`e754bbd0beb5f1790f72d8e219fca239477bd25853fdee61758139fec9d96c34`,
+`DROP TABLE ... RESTRICT`, sin `CASCADE`, ACL exacto 32 y fail-closed.
+Validación local: 377/377 pruebas, 83/83 enfocadas y lint con cero errores/seis
+advertencias preexistentes.
+
+`ACL_GROUPING_QUERY_POSTGRES17_VALID=true`, pero
+`REMOTE_006_READY_TO_APPLY=false` hasta repetir íntegramente el precheck remoto
+DB READ-ONLY. No existe autorización DB WRITE.

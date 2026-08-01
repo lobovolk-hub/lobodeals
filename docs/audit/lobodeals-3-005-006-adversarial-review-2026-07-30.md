@@ -570,3 +570,31 @@ errores/seis advertencias preexistentes.
 La autorización destructiva anterior no se traslada al archivo corregido.
 `REMOTE_006_READY_TO_APPLY=false`; el siguiente paso es repetir solo el
 certificado remoto read-only y detenerse.
+
+## 20. Corrección del array de nombres del certificado — 2026-07-31
+
+El certificado posterior con SHA
+`a374d12f337cbe9c2cd80bc6cf1cfe65ee838e26c021fbafcf88876f18a92df`
+terminó `NO-GO`: PostgreSQL 17 devolvió `42883` al comparar
+`actual.key_columns = expected.key_columns`, porque el valor real era
+`name[]` y el contrato era `text[]`. No produjo filas ni mutaciones y 006 no
+fue aplicada.
+
+La auditoría completa encontró cuatro construcciones afectadas: keys e
+INCLUDE en el certificado y en el precheck diagnóstico. Todas convierten
+ahora `attribute.attname::text` antes de `array_agg`; el postcheck no estaba
+afectado. Los arrays vacíos permanecen `array[]::text[]` y el contrato de los
+cuatro índices no se redujo.
+
+Commit: `1c0186fff4ad85d1743d1d77817a38cfeb4d11ef` (`Fix history
+certificate index array types`). Nuevo certificado: SHA-256
+`986efa7ef4948329c3d08e2df5d0632c9a2dbb1afcc34ed4e45b5f09a8475f1a`,
+39.632 bytes. 006 permanece intacta con SHA-256
+`e825a88ef811873f16cc48da5685d8e87eb699b5d903bd29ad34025a9630f5e4`,
+16.757 bytes.
+
+La validación aprobó 394/394 pruebas globales, 36/36 de retirement y 100/100
+de migraciones enfocadas; lint mantiene cero errores y seis advertencias
+preexistentes. No hubo acceso a Supabase ni SQL remoto en esta corrección.
+`REMOTE_006_READY_TO_APPLY=false`; debe repetirse únicamente el certificado
+read-only con el SHA nuevo antes de considerar otra autorización.

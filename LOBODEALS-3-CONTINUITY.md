@@ -2235,3 +2235,71 @@ remoto.
 El siguiente paso permitido es exclusivamente repetir el certificado remoto
 read-only corregido y detenerse. No debe aplicarse 006 sin una nueva
 autorización expresa que identifique el SHA vigente.
+
+## 48. Corrección local del certificado tras PostgreSQL 42883 — 2026-07-31
+
+Texto 3.2-0018 ejecutó exclusivamente el certificado remoto read-only con
+SHA-256
+`a374d12f337cbe9c2cd80bc6cf1cfe65ee838e26c021fbafcf88876f18a92df`.
+El único statement fue rechazado antes de devolver filas con PostgreSQL
+`42883`: `operator does not exist: name[] = text[]`. El resultado fue cero
+result sets útiles, cero filas y cero mutaciones; 006 no fue aplicada.
+
+La causa quedó localizada en el check 5 `indexes_exact`.
+`pg_attribute.attname` es `name`, por lo que
+`array_agg(attribute.attname)` construía `name[]` aunque el contrato esperado
+y los arrays vacíos fueran `text[]`. El mismo defecto existía en
+`key_columns` e `include_columns` tanto en el certificado como en el precheck
+diagnóstico. El postcheck no construye esos arrays y no estaba afectado.
+
+Texto 3.2-0019 corrigió localmente las cuatro construcciones convirtiendo
+cada elemento mediante `attribute.attname::text` antes de `array_agg`. Los
+arrays de keys, INCLUDE, direcciones y null ordering conservan orden ordinal,
+contratos compuestos y vacíos canónicos `array[]::text[]`. El check 5 sigue
+exigiendo exactamente cuatro índices btree valid/ready, sus flags, claves,
+direcciones, null ordering, cero INCLUDE, cero expresiones y cero predicado.
+
+Commit técnico:
+
+- `1c0186fff4ad85d1743d1d77817a38cfeb4d11ef` —
+  `Fix history certificate index array types`.
+
+El certificado corregido tiene SHA-256
+`986efa7ef4948329c3d08e2df5d0632c9a2dbb1afcc34ed4e45b5f09a8475f1a`
+y tamaño 39.632 bytes. El SHA anterior queda obsoleto. La migración 006 no
+cambió: SHA-256
+`e825a88ef811873f16cc48da5685d8e87eb699b5d903bd29ad34025a9630f5e4`
+y tamaño 16.757 bytes.
+
+Validación local: 394/394 pruebas globales, 36/36 de retirement, 100/100 en
+las suites enfocadas de migraciones, `node --check`, diff checks y lint con
+cero errores y las seis advertencias preexistentes. La búsqueda estructural
+encontró cero `array_agg(attribute.attname)` sin cast, cuatro construcciones
+con `attname::text`, cero arrays vacíos sin tipo, cero mutaciones top-level y
+cero patrones de secretos en los archivos modificados.
+
+No se accedió a Supabase durante Texto 3.2-0019. No hubo SQL remoto,
+mutaciones, aplicación de 006, ciclo, candidates, mínimos, caché, monthly,
+collector, importer, runner, push ni deploy. No existe autorización
+destructiva vigente.
+
+- `MIGRATION_006_LOCAL_HASH_MATCH=true`;
+- `MIGRATION_006_UNCHANGED=true`;
+- `PRECHECK_CERTIFICATE_SINGLE_STATEMENT=true`;
+- `PRECHECK_CERTIFICATE_STRICTLY_READ_ONLY=true`;
+- `PRECHECK_CERTIFICATE_INDEX_ARRAY_TYPES_SAFE=true`;
+- `PRECHECK_CERTIFICATE_INDEX_CONTRACT_COMPLETE=true`;
+- `POSTCHECK_006_COMPLETE=true`;
+- `HISTORY_RETIREMENT_MIGRATION_LOCAL_APPROVED=true`;
+- `REMOTE_006_READY_TO_APPLY=false`;
+- `MIGRATION_005_APPLIED=true`;
+- `MIGRATION_005_POSTCHECK_PASSED=true`;
+- `COMPACT_MINIMA_SCHEMA_READY=true`;
+- `HISTORY_RETIRED=false`;
+- `STORAGE_READY=false`;
+- `COMPACT_MINIMA_READY=false`;
+- `LIVE_CYCLE_READY=false`.
+
+El siguiente paso es ejecutar exclusivamente el certificado remoto read-only
+corregido, comprobar veinte filas, veinte PASS y cero blockers, y detenerse.
+Eso no autoriza aplicar 006.

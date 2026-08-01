@@ -362,3 +362,48 @@ Estado: `HISTORY_RETIRED=false`, `STORAGE_READY=false`,
 `REMOTE_006_READY_TO_APPLY=false`. La próxima operación debe ser solo el
 certificado remoto read-only corregido. No existe autorización para aplicar
 este nuevo SHA.
+
+## Corrección local posterior al error PostgreSQL 42883 — 2026-07-31
+
+El certificado read-only con SHA
+`a374d12f337cbe9c2cd80bc6cf1cfe65ee838e26c021fbafcf88876f18a92df`
+fue rechazado antes de devolver sus veinte filas: `pg_attribute.attname`
+produjo `name[]` mediante `array_agg`, mientras el check 5 comparaba contra
+contratos `text[]`. La corrida no mutó datos y no aplicó 006.
+
+La corrección local usa `attribute.attname::text` en keys e INCLUDE tanto en
+el certificado como en el precheck diagnóstico. Mantiene arrays vacíos
+`array[]::text[]`, los cuatro contratos compuestos y todas las gates del
+check 5. El postcheck no contenía la incompatibilidad.
+
+- commit técnico: `1c0186fff4ad85d1743d1d77817a38cfeb4d11ef`;
+- certificado nuevo: SHA-256
+  `986efa7ef4948329c3d08e2df5d0632c9a2dbb1afcc34ed4e45b5f09a8475f1a`,
+  39.632 bytes;
+- migración 006 intacta: SHA-256
+  `e825a88ef811873f16cc48da5685d8e87eb699b5d903bd29ad34025a9630f5e4`,
+  16.757 bytes;
+- pruebas: 394/394 globales, 36/36 retirement y 100/100 migraciones
+  enfocadas;
+- lint: cero errores y seis advertencias preexistentes;
+- Supabase/SQL remoto durante la corrección: ninguno.
+
+Readiness local:
+
+- `PRECHECK_CERTIFICATE_SINGLE_STATEMENT=true`;
+- `PRECHECK_CERTIFICATE_STRICTLY_READ_ONLY=true`;
+- `PRECHECK_CERTIFICATE_INDEX_ARRAY_TYPES_SAFE=true`;
+- `PRECHECK_CERTIFICATE_INDEX_CONTRACT_COMPLETE=true`;
+- `MIGRATION_006_LOCAL_HASH_MATCH=true`;
+- `MIGRATION_006_UNCHANGED=true`;
+- `POSTCHECK_006_COMPLETE=true`;
+- `HISTORY_RETIREMENT_MIGRATION_LOCAL_APPROVED=true`;
+- `REMOTE_006_READY_TO_APPLY=false`;
+- `HISTORY_RETIRED=false`;
+- `STORAGE_READY=false`;
+- `COMPACT_MINIMA_READY=false`;
+- `LIVE_CYCLE_READY=false`.
+
+La siguiente operación debe ejecutar exclusivamente el certificado remoto
+read-only con el SHA nuevo y detenerse. No existe autorización destructiva
+vigente.

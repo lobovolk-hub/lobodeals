@@ -1,5 +1,8 @@
 # LoboDeals 3.2 — Readiness de retención compacta de precios
 
+> Historical reference only. Do not use for current operations. El `NO-GO`
+> documentado aquí es un checkpoint anterior a las migraciones ya aplicadas.
+
 Fecha local: 2026-07-30 (America/Lima)
 
 Resultado: `NO-GO`

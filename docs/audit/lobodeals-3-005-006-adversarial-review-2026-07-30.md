@@ -1,5 +1,8 @@
 # LoboDeals 3.2 — Revisión adversarial de migraciones 005 y 006
 
+> Historical reference only. Do not use for current operations. Los estados
+> intermedios de este dossier no sustituyen `LOBODEALS-CURRENT-STATUS.md`.
+
 Fecha local: 2026-07-30 (America/Lima)
 
 Resultado de la revisión local del 2026-07-30:

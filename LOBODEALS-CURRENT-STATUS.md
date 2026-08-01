@@ -10,9 +10,10 @@ Fecha de corte: 2026-08-01, America/Lima
   local `origin/main`.
 - Worktree al inicio: limpio.
 - Los commits locales recientes no están desplegados.
-- Último deployment productivo previamente documentado:
-  `dpl_FHhLSmHv6C1m1GYCtk3TwPXeCWz4`, SHA
-  `d81418b35c41a8950a3d3d639ba43a73090d78c7`. Requiere revalidación read-only.
+- Deployment productivo observado read-only:
+  `dpl_6Ua5HpBGWf1GczzzzZdE7AL3vHBr`, SHA
+  `4f826ac873850d3e61ceb68721512099625f1515`, READY en `iad1`.
+- Aliases: `lobodeals.com`, `www.lobodeals.com` y tres `.vercel.app`.
 
 ## Datos y migraciones
 
@@ -26,10 +27,14 @@ Fecha de corte: 2026-08-01, America/Lima
 
 ## Código y operación
 
-- Baseline: 452/452 pruebas; 45/45 enfocadas de Bloque 4; 107 archivos pasan
-  `node --check`; lint con 0 errores y 6 warnings preexistentes.
+- Baseline inicial: 452/452 pruebas; 45/45 enfocadas de Bloque 4; 107 archivos
+  pasan `node --check`; lint con 0 errores y 6 warnings preexistentes.
 - `BLOCK_4_CODE_READY=true`, incluido el orquestador offline sin efectos.
-- Los runners reales están detenidos y no se han revalidado post-006.
+- El flujo histórico está mapeado, pero los wrappers son incompatibles con los
+  contratos de ciclo actuales y el runner certificado no ejecuta adaptadores
+  reales.
+- Safe demotion v2 está endurecida y probada localmente en la migración 007,
+  aún no aplicada ni integrada a un runner.
 - No existe un ciclo remoto real, certificación real, mínimo inicializado ni
   runner diario certificado.
 
@@ -42,9 +47,12 @@ Métricas aportadas por Johan para los últimos 30 días al 2026-08-01:
 - ISR Reads: 233K / 1M;
 - Function Invocations: 160K / 1M.
 
-ISR Writes está sobre la cuota visible y Active CPU está cerca del límite. La
-causa y la seguridad de un refresh diario siguen bajo auditoría; no debe
-ejecutarse un refresh de recuperación antes de cerrar esas gates.
+La auditoría atribuye ISR Writes principalmente a la generación/regeneración
+individual de `/us/playstation/[slug]` y Active CPU a catalog/deals dinámicos
+más generaciones de slug. Un refresh Supabase no invalida ISR ni escribe ISR
+por sí solo. Aun así, la operación diaria no se declara segura mientras la
+ventana visible esté sobre la cuota. El deployment actual no registra errores
+de runtime en la ventana de cinco días consultada.
 
 ## Gates
 
@@ -62,6 +70,18 @@ ejecutarse un refresh de recuperación antes de cerrar esas gates.
 - `THIRTY_DAY_TRIAL_READY=false`
 - `PUBLIC_DATA_CURRENT=false`
 - `DAILY_RUNNER_READY=false`
+- `DAILY_REFRESH_FLOW_MAPPED=true`
+- `SAFE_DEMOTION_AUDITED=true`
+- `SAFE_DEMOTION_CODE_READY=true`
+- `SAFE_DEMOTION_RUNNER_INTEGRATED=false`
+- `HOLLOW_KNIGHT_CLASS_FAILURE_PREVENTED=false`
+- `PUBLIC_CACHE_REFRESH_AUDITED=true`
+- `ISR_WRITE_SOURCE_IDENTIFIED=true`
+- `ACTIVE_CPU_SOURCE_IDENTIFIED=true`
+- `DAILY_REFRESH_SAFE_FOR_VERCEL=false`
+- `CACHE_STRATEGY_APPROVED_LOCALLY=true`
+- `DEPLOY_FIX_REQUIRED_BEFORE_REFRESH=false`
 
-Siguiente prioridad: terminar la auditoría del refresh diario y de Vercel y
-dejar el refresh de recuperación preparado, sin ejecutarlo.
+Siguiente prioridad: integrar y probar el runner diario real; después cerrar
+los NO-GO de Vercel, migración 007 y cache v16 antes de pedir autorización para
+un refresh de recuperación.

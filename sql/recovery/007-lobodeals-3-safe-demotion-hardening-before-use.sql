@@ -39,4 +39,3 @@ grant execute on function public.apply_psdeals_ended_deals_v1(
 ) to service_role;
 
 commit;
-

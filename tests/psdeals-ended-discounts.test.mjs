@@ -134,4 +134,3 @@ test('one invalid listing identity blocks every absence-based demotion', () => {
   assert.equal(value.candidates.length, 0)
   assert.ok(value.blocked_candidates[0].demotion_blockers.includes('listing_identity_invalid'))
 })
-

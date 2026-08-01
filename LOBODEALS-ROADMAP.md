@@ -8,12 +8,12 @@ Fecha de vigencia: 2026-08-01
    de contradicciones y preservación mínima de evidencia.
 2. **Auditoría del refresh.** Reconstruir el flujo de mayo y evaluar runners,
    fast refresh, retry, ended deals, safe demotion y caché.
-3. **Vercel.** Identificar ISR Writes y Active CPU; aprobar una estrategia de
-   caché de bajo coste.
-4. **Refresh de recuperación.** Preparar y, solo con autorización futura,
+3. **Runner diario.** Integrar adapters reales, safe demotion v2, receipts,
+   certificación, cache v16, reconciliación y pruebas end-to-end.
+4. **Vercel.** Observar la ventana posterior al fix; mantener cero warm-up y
+   preparar el desacople entre shell SEO y precio diario.
+5. **Refresh de recuperación.** Preparar y, solo con autorización futura,
    recuperar datos públicos con gates y observación de Vercel.
-5. **Runner diario.** Integrar el camino certificado, idempotente, reanudable y
-   observable; una ejecución al día.
 6. **Mejoras públicas.** Secciones dinámicas, DLC/Editions, Unicode, Monthly,
    slugs y Google Sign-In.
 7. **Mínimos.** Mostrar lowest regular y lowest PS Plus prospectivos y explicar
@@ -27,6 +27,9 @@ Fecha de vigencia: 2026-08-01
 ## Gates actuales
 
 - Bloque 4 tiene código local listo, pero operación real incompleta.
+- Safe demotion v2 está lista localmente, no aplicada ni integrada.
+- ISR Writes y Active CPU tienen fuentes identificadas; la estrategia local de
+  caché está aprobada, pero la operación no es segura aún bajo la cuota visible.
 - Datos públicos siguen desactualizados.
 - El refresh de recuperación no está autorizado.
 - La prueba de 30 días no ha empezado.

@@ -18,7 +18,9 @@ Fecha de corte: 2026-08-01
 - **Autenticación:** Supabase Auth, email/password y Google OAuth; callback en la
   app. Google Sign-In sigue como prioridad visible pendiente.
 - **Vercel/deploy:** producción se despliega desde GitHub `main`. El local está
-  adelantado y no equivale a producción.
+  adelantado y no equivale a producción. El SHA productivo observado es
+  `4f826ac`: home es ISR 1h; catalog/deals son dinámicos; slugs son estáticos
+  bajo demanda con TTL 24h; sitemap contiene tres URLs.
 - **Analítica:** metadata, sitemap/robots y la instrumentación visible en el
   repositorio; el detalle remoto debe verificarse antes de afirmar cobertura.
 
@@ -71,3 +73,8 @@ paridad completa con wrappers históricos ni operación real post-006.
 La relación esencial es: listing completo → detalles/retry → ended deals →
 certificación → caché → validación pública. Ningún paso posterior debe abrirse
 si la evidencia anterior es parcial o incompatible.
+
+Supabase y Vercel no comparten invalidación: actualizar
+`catalog_public_cache` no regenera páginas. Catalog/deals leen en sus requests;
+home y cada slug cambian cuando una visita provoca su regeneración. Está
+prohibido calentar o invalidar masivamente los slugs durante una recuperación.

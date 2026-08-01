@@ -76,4 +76,3 @@ test('before-use recovery is bounded, non-cascading and refuses used cycles', ()
   assert.doesNotMatch(recovery, /\bcascade\b/i)
   assert.doesNotMatch(recovery, /^\s*(?:delete|truncate)\b/im)
 })
-

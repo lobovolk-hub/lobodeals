@@ -10,7 +10,8 @@
     "test": "node --test --test-isolation=none tests/*.test.mjs",
     "dry-run:updater": "node scripts/dry-run-psdeals-updater-local.mjs",
     "simulate:updater-cycle": "node scripts/run-psdeals-updater-orchestrator-local.mjs",
-    "preflight:block4": "node scripts/preflight-psdeals-block4-local.mjs"
+    "preflight:block4": "node scripts/preflight-psdeals-block4-local.mjs",
+    "refresh:daily": "node scripts/run-psdeals-daily-refresh-v3.mjs"
   },
   "dependencies": {
     "@supabase/ssr": "^0.10.2",

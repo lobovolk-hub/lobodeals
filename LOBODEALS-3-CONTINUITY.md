@@ -2166,3 +2166,72 @@ retirar history.
 - `COMPACT_MINIMA_READY=false`;
 - `HISTORY_RETIRED=false`;
 - `LIVE_CYCLE_READY=false`.
+
+## 47. Rollback de 006 y corrección estructural de índices — 2026-07-31
+
+Texto 3.2-0016 ejecutó primero el certificado remoto inmediato sobre el
+proyecto `vlxkoprpobfevxefizwr`. Los veinte checks devolvieron `PASS`, con
+backend PID `2484064`, snapshot `296312:296312:` y timestamp
+`2026-07-31 21:33:45.465253+00`. Ese certificado solo comparaba los cuatro
+nombres de índice y sus definiciones legibles; no evaluaba `pg_index`.
+
+La única aplicación autorizada de 006, con SHA-256
+`e754bbd0beb5f1790f72d8e219fca239477bd25853fdee61758139fec9d96c34`,
+abortó con `PSDEALS_006_HISTORY_INDEXES_MISMATCH` y PostgreSQL revirtió toda
+la transacción. El postcheck read-only de rollback a
+`2026-07-31 21:35:26.706905+00` confirmó history presente con 841.549 filas,
+273.907.712 bytes, una policy, 32 ACL y cero registro de 006. Stage conservó
+32.890 filas; cycles, receipts, mínimos y candidates continuaron en cero;
+monthly quedó en 7/4 y cache en 32.890 filas con el mismo `max(updated_at)`.
+Producción siguió `READY` y no hubo efecto parcial.
+
+La causa local quedó demostrada: `item_idx` y `kind_idx` son índices btree
+compuestos, pero 006 exigía `indnkeyatts = 1` y comprobaba solo su primera
+columna. El contrato real verificado es:
+
+| Índice | Claves en orden | Orden | NULLS | Flags |
+| --- | --- | --- | --- | --- |
+| `psdeals_stage_price_history_pkey` | `id` | `ASC` | `LAST` | primary, unique |
+| `psdeals_stage_price_history_unique_point` | `item_id`, `price_kind`, `observed_at`, `price_amount` | todo `ASC` | todo `LAST` | unique, no primary |
+| `psdeals_stage_price_history_item_idx` | `item_id`, `observed_at` | `ASC`, `DESC` | `LAST`, `FIRST` | no unique, no primary |
+| `psdeals_stage_price_history_kind_idx` | `price_kind`, `observed_at` | `ASC`, `DESC` | `LAST`, `FIRST` | no unique, no primary |
+
+Los cuatro exigen `btree`, valid/ready, cero `INCLUDE`, cero expresiones y
+cero predicado. 006 compara `indnatts`, `indnkeyatts`, `indkey` e
+`indoption`, conserva conteo exacto de cuatro y falla cerrado ante índices
+faltantes, extra o con drift.
+
+El precheck diagnóstico conserva veinte statements y expone
+`pg_get_indexdef` más `HISTORY_INDEXES_EXPECTED_COUNT`,
+`HISTORY_INDEXES_ACTUAL_COUNT`, `HISTORY_INDEX_DEFINITIONS_MATCH`,
+`HISTORY_UNEXPECTED_INDEXES_COUNT` y `HISTORY_MISSING_INDEXES_COUNT`. El
+certificado de un único result set aplica el mismo contrato en su check 5 y
+conserva veinte filas. El postcheck comprueba además ausencia de los cuatro
+nombres y de definiciones residuales.
+
+Commit técnico:
+
+- `462e7a343e762179fd39a74f69f60e9dabf1770a` —
+  `Fix restrictive history index validation`.
+
+El SHA-256 local vigente de 006 es
+`e825a88ef811873f16cc48da5685d8e87eb699b5d903bd29ad34025a9630f5e4`
+(16.757 bytes). El SHA anterior queda obsoleto y su autorización destructiva
+fue consumida por el intento revertido; no autoriza el archivo corregido. La
+validación local aprobó 392/392 pruebas y 34/34 de retirement; lint conservó
+cero errores y seis advertencias preexistentes. Esta corrección no ejecutó SQL
+remoto.
+
+- `MIGRATION_006_LOCAL_INDEX_CONTRACT_FIXED=true`;
+- `PRECHECK_006_INDEX_DEFINITIONS_EXACT=true`;
+- `PRECHECK_CERTIFICATE_INDEX_DEFINITIONS_EXACT=true`;
+- `POSTCHECK_006_INDEX_ABSENCE_EXACT=true`;
+- `REMOTE_006_READY_TO_APPLY=false`;
+- `HISTORY_RETIRED=false`;
+- `STORAGE_READY=false`;
+- `COMPACT_MINIMA_READY=false`;
+- `LIVE_CYCLE_READY=false`.
+
+El siguiente paso permitido es exclusivamente repetir el certificado remoto
+read-only corregido y detenerse. No debe aplicarse 006 sin una nueva
+autorización expresa que identifique el SHA vigente.

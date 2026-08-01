@@ -542,3 +542,31 @@ read-only y todavía no autoriza DB WRITE.
 - `PRECHECK_CERTIFICATE_SINGLE_RESULT_SET=true`;
 - `HISTORY_RETIREMENT_MIGRATION_LOCAL_APPROVED=true`;
 - `REMOTE_006_READY_TO_APPLY=false`.
+
+## 19. Corrección adversarial posterior al rollback de 006 — 2026-07-31
+
+El certificado remoto previo aprobó 20/20, pero su check 5 validaba solamente
+nombres. La aplicación exacta de 006 con SHA
+`e754bbd0beb5f1790f72d8e219fca239477bd25853fdee61758139fec9d96c34`
+abortó con `PSDEALS_006_HISTORY_INDEXES_MISMATCH` y quedó completamente
+revertida. El postcheck confirmó history intacta: 841.549 filas,
+273.907.712 bytes, policy y 32 ACL; 006 no fue registrada.
+
+La aserción errónea esperaba una sola key en los índices `item_idx` y
+`kind_idx`. Ambos son btree compuestos: `(item_id, observed_at DESC)` y
+`(price_kind, observed_at DESC)`. La corrección local exige exactamente los
+cuatro índices, método, flags primary/unique/valid/ready, key count total y
+clave, columnas ordenadas, dirección, orden de nulls, cero INCLUDE, cero
+expresiones y cero predicado. El precheck diagnóstico y el certificado
+machine-readable comparten ese contrato; el postcheck verifica ausencia de
+los cuatro nombres y definiciones residuales.
+
+Commit: `462e7a343e762179fd39a74f69f60e9dabf1770a` (`Fix restrictive
+history index validation`). Nuevo SHA-256 de 006:
+`e825a88ef811873f16cc48da5685d8e87eb699b5d903bd29ad34025a9630f5e4`
+(16.757 bytes). Validación: 392/392 globales, 34/34 enfocadas y lint con cero
+errores/seis advertencias preexistentes.
+
+La autorización destructiva anterior no se traslada al archivo corregido.
+`REMOTE_006_READY_TO_APPLY=false`; el siguiente paso es repetir solo el
+certificado remoto read-only y detenerse.

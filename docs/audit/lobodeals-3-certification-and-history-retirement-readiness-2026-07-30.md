@@ -330,3 +330,35 @@ certificado permanece pendiente en este checkpoint documental.
 - `COMPACT_MINIMA_READY=false`;
 - `HISTORY_RETIRED=false`;
 - `LIVE_CYCLE_READY=false`.
+
+## Corrección estructural de los índices 006 — 2026-07-31
+
+La corrida remota posterior demostró un falso positivo del certificado por
+nombres. Sus 20 checks aprobaron, pero 006 abortó dentro de la transacción con
+`PSDEALS_006_HISTORY_INDEXES_MISMATCH`; el rollback dejó las 841.549 filas y
+273.907.712 bytes de history intactos, junto con policy, 32 ACL y cero registro
+de 006.
+
+La causa era local: los índices de búsqueda son compuestos y la migración
+solo esperaba su primera key. El contrato corregido exige:
+
+- pkey btree sobre `id`, primary/unique, `ASC NULLS LAST`;
+- unique btree sobre `item_id`, `price_kind`, `observed_at`, `price_amount`,
+  todo `ASC NULLS LAST`;
+- item btree sobre `item_id ASC NULLS LAST`, `observed_at DESC NULLS FIRST`;
+- kind btree sobre `price_kind ASC NULLS LAST`,
+  `observed_at DESC NULLS FIRST`;
+- todos valid/ready, sin INCLUDE, expresiones ni predicado.
+
+El commit `462e7a343e762179fd39a74f69f60e9dabf1770a` protege la migración,
+prechecks, certificado, postcheck y fixtures de drift. El SHA nuevo de 006 es
+`e825a88ef811873f16cc48da5685d8e87eb699b5d903bd29ad34025a9630f5e4`
+y reemplaza completamente el SHA autorizado anteriormente. La validación
+local aprobó 392/392 y 34/34; lint mantuvo cero errores y seis advertencias
+preexistentes.
+
+Estado: `HISTORY_RETIRED=false`, `STORAGE_READY=false`,
+`COMPACT_MINIMA_READY=false`, `LIVE_CYCLE_READY=false` y
+`REMOTE_006_READY_TO_APPLY=false`. La próxima operación debe ser solo el
+certificado remoto read-only corregido. No existe autorización para aplicar
+este nuevo SHA.

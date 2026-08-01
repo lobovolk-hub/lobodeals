@@ -23,7 +23,17 @@ test('verified remote facts remain MIGRATION_NOT_APPLIED after read-only revalid
   assert.equal(result.classification, 'MIGRATION_NOT_APPLIED')
   assert.equal(result.migration_status, 'MIGRATION_NOT_APPLIED')
   assert.ok(result.reason_codes.includes('PREFLIGHT_MIGRATION_NOT_APPLIED'))
+  assert.ok(result.reason_codes.includes('PREFLIGHT_HISTORY_NOT_RETIRED'))
   assert.ok(result.warnings.some((entry) => entry.code === 'PREFLIGHT_LEGACY_ITEM_PRICE_SNAPSHOTS_ABSENT'))
+})
+
+test('active required contracts expect retired history instead of the removed table', async () => {
+  const value = await facts()
+  value.objects.psdeals_stage_price_history.exists = false
+  const result = evaluatePsdealsRemotePreflight(value, { now: value.checked_at })
+  assert.equal(result.missing_objects.includes('psdeals_stage_price_history'), false)
+  assert.ok(result.verified_contracts.includes('history_retired'))
+  assert.equal(result.reason_codes.includes('PREFLIGHT_HISTORY_NOT_RETIRED'), false)
 })
 
 test('preflight fails closed on project, function, mutation, and credential drift', async () => {

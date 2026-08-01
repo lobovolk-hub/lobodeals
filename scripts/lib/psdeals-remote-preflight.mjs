@@ -35,9 +35,6 @@ export const PSDEALS_REMOTE_REQUIRED_CONTRACTS = Object.freeze({
     'ps_plus_price_amount', 'has_deal', 'has_ps_plus_deal',
     'is_ps_plus_monthly_game', 'updated_at',
   ],
-  psdeals_stage_price_history: [
-    'id', 'item_id', 'price_kind', 'observed_at', 'price_amount', 'currency_code',
-  ],
 })
 
 const REQUIRED_FUNCTIONS = Object.freeze({
@@ -178,6 +175,11 @@ export function evaluatePsdealsRemotePreflight(factsInput, { now } = {}) {
   }
   if (facts.objects?.item_price_snapshots?.exists !== true) {
     warnings.push(issue('PREFLIGHT_LEGACY_ITEM_PRICE_SNAPSHOTS_ABSENT', 'objects.item_price_snapshots'))
+  }
+  if (facts.objects?.psdeals_stage_price_history?.exists === true) {
+    blockers.push(issue('PREFLIGHT_HISTORY_NOT_RETIRED', 'objects.psdeals_stage_price_history'))
+  } else {
+    verifiedContracts.push('history_retired')
   }
   if ((facts.history_dependencies?.direct_consumers || []).length > 0) {
     blockers.push(issue('PREFLIGHT_HISTORY_DIRECT_CONSUMERS_FOUND', 'history_dependencies.direct_consumers'))

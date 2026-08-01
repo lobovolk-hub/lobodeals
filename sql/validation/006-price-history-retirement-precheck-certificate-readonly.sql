@@ -154,25 +154,169 @@ constraint_summary as materialized (
   from history_constraints
   cross join history_relation as history
 ),
+expected_history_indexes(
+  indexname,
+  access_method,
+  is_primary,
+  is_unique,
+  key_columns,
+  sort_directions,
+  null_ordering
+) as (
+  values
+    (
+      'psdeals_stage_price_history_pkey', 'btree', true, true,
+      array['id']::text[], array['ASC']::text[],
+      array['NULLS LAST']::text[]
+    ),
+    (
+      'psdeals_stage_price_history_unique_point', 'btree', false, true,
+      array['item_id', 'price_kind', 'observed_at', 'price_amount']::text[],
+      array['ASC', 'ASC', 'ASC', 'ASC']::text[],
+      array['NULLS LAST', 'NULLS LAST', 'NULLS LAST', 'NULLS LAST']::text[]
+    ),
+    (
+      'psdeals_stage_price_history_item_idx', 'btree', false, false,
+      array['item_id', 'observed_at']::text[],
+      array['ASC', 'DESC']::text[],
+      array['NULLS LAST', 'NULLS FIRST']::text[]
+    ),
+    (
+      'psdeals_stage_price_history_kind_idx', 'btree', false, false,
+      array['price_kind', 'observed_at']::text[],
+      array['ASC', 'DESC']::text[],
+      array['NULLS LAST', 'NULLS FIRST']::text[]
+    )
+),
 history_indexes as materialized (
   select
-    index_row.indexname,
-    index_row.indexdef
-  from pg_catalog.pg_indexes as index_row
-  where index_row.schemaname = 'public'
-    and index_row.tablename = 'psdeals_stage_price_history'
+    index_relation.relname as indexname,
+    access_method.amname as access_method,
+    index_catalog.indisprimary as is_primary,
+    index_catalog.indisunique as is_unique,
+    index_catalog.indisvalid as is_valid,
+    index_catalog.indisready as is_ready,
+    index_catalog.indnatts,
+    index_catalog.indnkeyatts,
+    coalesce((
+      select array_agg(attribute.attname order by ordinal.position)
+      from generate_series(
+        0,
+        index_catalog.indnkeyatts::integer - 1
+      ) as ordinal(position)
+      left join pg_catalog.pg_attribute as attribute
+        on attribute.attrelid = history.history_oid
+       and attribute.attnum = index_catalog.indkey[ordinal.position]
+    ), array[]::text[]) as key_columns,
+    coalesce((
+      select array_agg(
+        case
+          when (index_catalog.indoption[ordinal.position] & 1) = 1
+            then 'DESC'
+          else 'ASC'
+        end
+        order by ordinal.position
+      )
+      from generate_series(
+        0,
+        index_catalog.indnkeyatts::integer - 1
+      ) as ordinal(position)
+    ), array[]::text[]) as sort_directions,
+    coalesce((
+      select array_agg(
+        case
+          when (index_catalog.indoption[ordinal.position] & 2) = 2
+            then 'NULLS FIRST'
+          else 'NULLS LAST'
+        end
+        order by ordinal.position
+      )
+      from generate_series(
+        0,
+        index_catalog.indnkeyatts::integer - 1
+      ) as ordinal(position)
+    ), array[]::text[]) as null_ordering,
+    coalesce((
+      select array_agg(attribute.attname order by ordinal.position)
+      from generate_series(
+        index_catalog.indnkeyatts::integer,
+        index_catalog.indnatts::integer - 1
+      ) as ordinal(position)
+      left join pg_catalog.pg_attribute as attribute
+        on attribute.attrelid = history.history_oid
+       and attribute.attnum = index_catalog.indkey[ordinal.position]
+    ), array[]::text[]) as include_columns,
+    pg_catalog.pg_get_expr(
+      index_catalog.indexprs,
+      index_catalog.indrelid
+    ) as expressions,
+    pg_catalog.pg_get_expr(
+      index_catalog.indpred,
+      index_catalog.indrelid
+    ) as predicate,
+    pg_catalog.pg_get_indexdef(index_catalog.indexrelid) as indexdef
+  from pg_catalog.pg_index as index_catalog
+  join pg_catalog.pg_class as index_relation
+    on index_relation.oid = index_catalog.indexrelid
+  join pg_catalog.pg_am as access_method
+    on access_method.oid = index_relation.relam
+  cross join history_relation as history
+  where index_catalog.indrelid = history.history_oid
 ),
-expected_index_names(indexname) as (
-  values
-    ('psdeals_stage_price_history_pkey'),
-    ('psdeals_stage_price_history_unique_point'),
-    ('psdeals_stage_price_history_item_idx'),
-    ('psdeals_stage_price_history_kind_idx')
+evaluated_history_indexes as materialized (
+  select
+    coalesce(expected.indexname, actual.indexname) as indexname,
+    expected.indexname is not null as expected_present,
+    actual.indexname is not null as actual_present,
+    actual.access_method,
+    actual.is_primary,
+    actual.is_unique,
+    actual.is_valid,
+    actual.is_ready,
+    actual.indnatts,
+    actual.indnkeyatts,
+    actual.key_columns,
+    actual.sort_directions,
+    actual.null_ordering,
+    actual.include_columns,
+    actual.expressions,
+    actual.predicate,
+    actual.indexdef,
+    expected.indexname is not null
+      and actual.indexname is not null
+      and actual.access_method = expected.access_method
+      and actual.is_primary = expected.is_primary
+      and actual.is_unique = expected.is_unique
+      and actual.is_valid
+      and actual.is_ready
+      and actual.indnatts = cardinality(expected.key_columns)
+      and actual.indnkeyatts = cardinality(expected.key_columns)
+      and actual.key_columns = expected.key_columns
+      and actual.sort_directions = expected.sort_directions
+      and actual.null_ordering = expected.null_ordering
+      and actual.include_columns = array[]::text[]
+      and actual.expressions is null
+      and actual.predicate is null
+      as contract_matches
+  from expected_history_indexes as expected
+  full join history_indexes as actual using (indexname)
 ),
-index_drift as (
-  (select indexname from expected_index_names except select indexname from history_indexes)
-  union all
-  (select indexname from history_indexes except select indexname from expected_index_names)
+history_index_summary as materialized (
+  select
+    (select count(*) from expected_history_indexes)::integer
+      as expected_count,
+    (select count(*) from history_indexes)::integer
+      as actual_count,
+    count(*) filter (where contract_matches)::integer
+      as matching_count,
+    count(*) filter (where expected_present and not actual_present)::integer
+      as missing_count,
+    count(*) filter (where not expected_present and actual_present)::integer
+      as unexpected_count,
+    count(*) filter (
+      where expected_present and actual_present and not contract_matches
+    )::integer as definition_mismatch_count
+  from evaluated_history_indexes
 ),
 all_history_dependencies as materialized (
   select
@@ -575,18 +719,39 @@ checks(check_id, check_name, passed, severity, observed, expected) as (
 
   union all
   select 5, 'indexes_exact',
-    (select count(*) from history_indexes) = 4
-      and not exists (select 1 from index_drift),
+    summary.expected_count = 4
+      and summary.actual_count = 4
+      and summary.matching_count = 4
+      and summary.missing_count = 0
+      and summary.unexpected_count = 0
+      and summary.definition_mismatch_count = 0,
     'blocker',
     jsonb_build_object(
-      'count', (select count(*) from history_indexes),
-      'drift_count', (select count(*) from index_drift),
-      'indexes', coalesce((select jsonb_agg(to_jsonb(history_indexes) order by indexname) from history_indexes), '[]'::jsonb)
+      'expected_count', summary.expected_count,
+      'actual_count', summary.actual_count,
+      'matching_count', summary.matching_count,
+      'missing_count', summary.missing_count,
+      'unexpected_count', summary.unexpected_count,
+      'definition_mismatch_count', summary.definition_mismatch_count,
+      'indexes', coalesce((
+        select jsonb_agg(
+          to_jsonb(evaluated_history_indexes)
+          order by indexname
+        )
+        from evaluated_history_indexes
+      ), '[]'::jsonb)
     ),
     jsonb_build_object(
       'count', 4,
-      'names', (select jsonb_agg(indexname order by indexname) from expected_index_names)
+      'indexes', (
+        select jsonb_agg(
+          to_jsonb(expected_history_indexes)
+          order by indexname
+        )
+        from expected_history_indexes
+      )
     )
+  from history_index_summary as summary
 
   union all
   select 6, 'internal_dependencies',

@@ -162,17 +162,21 @@ begin
   from pg_catalog.pg_index as index_row
   join pg_catalog.pg_class as index_relation
     on index_relation.oid = index_row.indexrelid
+  join pg_catalog.pg_am as access_method
+    on access_method.oid = index_relation.relam
   where index_row.indrelid = history_oid
     and index_row.indisvalid
     and index_row.indisready
     and index_row.indexprs is null
     and index_row.indpred is null
+    and access_method.amname = 'btree'
     and (
       (
         index_relation.relname =
           'psdeals_stage_price_history_pkey'
         and index_row.indisprimary
         and index_row.indisunique
+        and index_row.indnatts = 1
         and index_row.indnkeyatts = 1
         and index_row.indkey[0] = (
           select attnum
@@ -180,12 +184,14 @@ begin
           where attrelid = history_oid
             and attname = 'id'
         )
+        and index_row.indoption[0] = 0
       )
       or (
         index_relation.relname =
           'psdeals_stage_price_history_unique_point'
         and not index_row.indisprimary
         and index_row.indisunique
+        and index_row.indnatts = 4
         and index_row.indnkeyatts = 4
         and index_row.indkey[0] = (
           select attnum
@@ -211,32 +217,54 @@ begin
           where attrelid = history_oid
             and attname = 'price_amount'
         )
+        and index_row.indoption[0] = 0
+        and index_row.indoption[1] = 0
+        and index_row.indoption[2] = 0
+        and index_row.indoption[3] = 0
       )
       or (
         index_relation.relname =
           'psdeals_stage_price_history_item_idx'
         and not index_row.indisprimary
         and not index_row.indisunique
-        and index_row.indnkeyatts = 1
+        and index_row.indnatts = 2
+        and index_row.indnkeyatts = 2
         and index_row.indkey[0] = (
           select attnum
           from pg_catalog.pg_attribute
           where attrelid = history_oid
             and attname = 'item_id'
         )
+        and index_row.indkey[1] = (
+          select attnum
+          from pg_catalog.pg_attribute
+          where attrelid = history_oid
+            and attname = 'observed_at'
+        )
+        and index_row.indoption[0] = 0
+        and index_row.indoption[1] = 3
       )
       or (
         index_relation.relname =
           'psdeals_stage_price_history_kind_idx'
         and not index_row.indisprimary
         and not index_row.indisunique
-        and index_row.indnkeyatts = 1
+        and index_row.indnatts = 2
+        and index_row.indnkeyatts = 2
         and index_row.indkey[0] = (
           select attnum
           from pg_catalog.pg_attribute
           where attrelid = history_oid
             and attname = 'price_kind'
         )
+        and index_row.indkey[1] = (
+          select attnum
+          from pg_catalog.pg_attribute
+          where attrelid = history_oid
+            and attname = 'observed_at'
+        )
+        and index_row.indoption[0] = 0
+        and index_row.indoption[1] = 3
       )
     );
 

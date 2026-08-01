@@ -103,6 +103,77 @@ function exactAclMatches(expected, actual) {
   )
 }
 
+const expectedHistoryIndexes = [
+  {
+    name: 'psdeals_stage_price_history_pkey',
+    primary: true,
+    unique: true,
+    keys: ['id'],
+    directions: ['ASC'],
+    nulls: ['NULLS LAST'],
+  },
+  {
+    name: 'psdeals_stage_price_history_unique_point',
+    primary: false,
+    unique: true,
+    keys: ['item_id', 'price_kind', 'observed_at', 'price_amount'],
+    directions: ['ASC', 'ASC', 'ASC', 'ASC'],
+    nulls: ['NULLS LAST', 'NULLS LAST', 'NULLS LAST', 'NULLS LAST'],
+  },
+  {
+    name: 'psdeals_stage_price_history_item_idx',
+    primary: false,
+    unique: false,
+    keys: ['item_id', 'observed_at'],
+    directions: ['ASC', 'DESC'],
+    nulls: ['NULLS LAST', 'NULLS FIRST'],
+  },
+  {
+    name: 'psdeals_stage_price_history_kind_idx',
+    primary: false,
+    unique: false,
+    keys: ['price_kind', 'observed_at'],
+    directions: ['ASC', 'DESC'],
+    nulls: ['NULLS LAST', 'NULLS FIRST'],
+  },
+]
+
+function indexContractKey(index) {
+  return JSON.stringify({
+    name: index.name,
+    method: index.method,
+    primary: index.primary,
+    unique: index.unique,
+    valid: index.valid,
+    ready: index.ready,
+    keys: index.keys,
+    directions: index.directions,
+    nulls: index.nulls,
+    include: index.include,
+    expression: index.expression,
+    predicate: index.predicate,
+  })
+}
+
+function exactHistoryIndexesMatch(actual) {
+  const expected = expectedHistoryIndexes.map((index) => ({
+    ...index,
+    method: 'btree',
+    valid: true,
+    ready: true,
+    include: [],
+    expression: null,
+    predicate: null,
+  }))
+  return (
+    actual.length === expected.length &&
+    new Set(actual.map(indexContractKey)).size === expected.length &&
+    expected.every((index) =>
+      actual.some((candidate) => indexContractKey(candidate) === indexContractKey(index))
+    )
+  )
+}
+
 test('migration 006 is transactional, locked, fail-closed and restrictive', () => {
   assert.match(retirement, /^begin;/m)
   assert.match(retirement, /^commit;/m)
@@ -139,6 +210,67 @@ test('migration 006 asserts the exact verified object surface', () => {
     /indkey\[3\]/,
   ]) {
     assert.match(retirement, evidence)
+  }
+})
+
+test('migration 006 requires the exact four PostgreSQL index contracts', () => {
+  for (const evidence of [
+    /join pg_catalog\.pg_am as access_method/,
+    /access_method\.amname = 'btree'/,
+    /index_row\.indnatts = 4/,
+    /index_row\.indnkeyatts = 4/,
+    /index_row\.indnatts = 2/g,
+    /index_row\.indnkeyatts = 2/g,
+    /attname = 'observed_at'/g,
+    /index_row\.indoption\[0\] = 0/,
+    /index_row\.indoption\[1\] = 3/g,
+    /index_row\.indexprs is null/,
+    /index_row\.indpred is null/,
+  ]) {
+    assert.match(retirement, evidence)
+  }
+  assert.equal((retirement.match(/index_row\.indnatts = 2/g) ?? []).length, 2)
+  assert.equal((retirement.match(/index_row\.indnkeyatts = 2/g) ?? []).length, 2)
+  assert.equal((retirement.match(/index_row\.indoption\[1\] = 3/g) ?? []).length, 2)
+})
+
+test('exact index fixtures fail closed on missing, extra and structural drift', () => {
+  const valid = expectedHistoryIndexes.map((index) => ({
+    ...index,
+    method: 'btree',
+    valid: true,
+    ready: true,
+    include: [],
+    expression: null,
+    predicate: null,
+  }))
+  assert.equal(exactHistoryIndexesMatch(valid), true)
+  assert.equal(exactHistoryIndexesMatch(valid.slice(0, 3)), false)
+  assert.equal(
+    exactHistoryIndexesMatch([
+      ...valid,
+      { ...valid[0], name: 'psdeals_stage_price_history_extra_idx' },
+    ]),
+    false
+  )
+  for (const mutation of [
+    { method: 'hash' },
+    { primary: true },
+    { unique: true },
+    { valid: false },
+    { ready: false },
+    { keys: ['item_id'] },
+    { keys: ['item_id', 'observed_at', 'price_amount'] },
+    { directions: ['ASC', 'ASC'] },
+    { nulls: ['NULLS LAST', 'NULLS LAST'] },
+    { include: ['price_amount'] },
+    { expression: 'lower(price_kind)' },
+    { predicate: 'price_amount > 0' },
+  ]) {
+    const drifted = valid.map((index, position) =>
+      position === 2 ? { ...index, ...mutation } : index
+    )
+    assert.equal(exactHistoryIndexesMatch(drifted), false)
   }
 })
 
@@ -214,6 +346,31 @@ test('future precheck and postcheck files are strictly read-only', () => {
     /to_regclass\('public\.psdeals_stage_price_history'\)/
   )
   assert.match(postcheck, /catalog_public_cache/)
+})
+
+test('diagnostic precheck exposes exact index structure and aggregate gates', () => {
+  for (const evidence of [
+    /pg_catalog\.pg_index/,
+    /pg_catalog\.pg_attribute/,
+    /pg_catalog\.pg_am/,
+    /pg_catalog\.pg_get_indexdef/,
+    /indnatts/,
+    /indnkeyatts/,
+    /key_columns/,
+    /sort_directions/,
+    /null_ordering/,
+    /include_columns/,
+    /expressions/,
+    /predicate/,
+    /contract_matches/,
+    /"HISTORY_INDEXES_EXPECTED_COUNT"/,
+    /"HISTORY_INDEXES_ACTUAL_COUNT"/,
+    /"HISTORY_INDEX_DEFINITIONS_MATCH"/,
+    /"HISTORY_UNEXPECTED_INDEXES_COUNT"/,
+    /"HISTORY_MISSING_INDEXES_COUNT"/,
+  ]) {
+    assert.match(precheck, evidence)
+  }
 })
 
 test('precheck dependency queries are deterministic and PostgreSQL 17 safe', () => {
@@ -370,6 +527,8 @@ test('postcheck proves retirement and migration 006 registration', () => {
     /remaining_history_columns/,
     /remaining_history_constraints/,
     /remaining_history_indexes/,
+    /remaining_named_history_indexes/,
+    /remaining_history_index_definitions/,
     /remaining_history_triggers/,
     /remaining_history_policies/,
     /remaining_history_acl_entries/,
@@ -540,7 +699,26 @@ test('certificate covers exact history columns, constraints and indexes', () => 
   ]) {
     assert.match(certificate, new RegExp(indexName))
   }
-  assert.match(certificate, /index_drift/)
+  for (const evidence of [
+    /expected_history_indexes/,
+    /evaluated_history_indexes/,
+    /history_index_summary/,
+    /access_method/,
+    /indnatts/,
+    /indnkeyatts/,
+    /key_columns/,
+    /sort_directions/,
+    /null_ordering/,
+    /include_columns/,
+    /expressions/,
+    /predicate/,
+    /definition_mismatch_count/,
+    /matching_count = 4/,
+    /missing_count = 0/,
+    /unexpected_count = 0/,
+  ]) {
+    assert.match(certificate, evidence)
+  }
 })
 
 test('certificate covers dependency, trigger, routine and view blockers', () => {
@@ -622,9 +800,9 @@ test('certificate severity values are closed and every blocker is observable', (
   assert.equal((certificate.match(/expected/g) ?? []).length >= 2, true)
 })
 
-test('migration 006 remains byte-for-byte unchanged', () => {
+test('migration 006 has a pinned reviewed SHA-256', () => {
   assert.equal(
     crypto.createHash('sha256').update(retirement).digest('hex'),
-    'e754bbd0beb5f1790f72d8e219fca239477bd25853fdee61758139fec9d96c34'
+    'e825a88ef811873f16cc48da5685d8e87eb699b5d903bd29ad34025a9630f5e4'
   )
 })

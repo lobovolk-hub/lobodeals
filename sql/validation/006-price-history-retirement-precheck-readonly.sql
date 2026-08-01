@@ -46,11 +46,182 @@ where constraint_row.conrelid =
     'public.psdeals_stage_price_history'::regclass
 order by constraint_row.conname;
 
-select indexname, indexdef
-from pg_catalog.pg_indexes
-where schemaname = 'public'
-  and tablename = 'psdeals_stage_price_history'
-order by indexname;
+with expected_history_indexes(
+  index_name,
+  access_method,
+  is_primary,
+  is_unique,
+  key_columns,
+  sort_directions,
+  null_ordering
+) as (
+  values
+    (
+      'psdeals_stage_price_history_pkey', 'btree', true, true,
+      array['id']::text[], array['ASC']::text[],
+      array['NULLS LAST']::text[]
+    ),
+    (
+      'psdeals_stage_price_history_unique_point', 'btree', false, true,
+      array['item_id', 'price_kind', 'observed_at', 'price_amount']::text[],
+      array['ASC', 'ASC', 'ASC', 'ASC']::text[],
+      array['NULLS LAST', 'NULLS LAST', 'NULLS LAST', 'NULLS LAST']::text[]
+    ),
+    (
+      'psdeals_stage_price_history_item_idx', 'btree', false, false,
+      array['item_id', 'observed_at']::text[],
+      array['ASC', 'DESC']::text[],
+      array['NULLS LAST', 'NULLS FIRST']::text[]
+    ),
+    (
+      'psdeals_stage_price_history_kind_idx', 'btree', false, false,
+      array['price_kind', 'observed_at']::text[],
+      array['ASC', 'DESC']::text[],
+      array['NULLS LAST', 'NULLS FIRST']::text[]
+    )
+),
+history_relation as (
+  select relation.oid as history_oid
+  from pg_catalog.pg_class as relation
+  join pg_catalog.pg_namespace as namespace
+    on namespace.oid = relation.relnamespace
+  where namespace.nspname = 'public'
+    and relation.relname = 'psdeals_stage_price_history'
+    and relation.relkind = 'r'
+),
+actual_history_indexes as (
+  select
+    index_relation.relname as index_name,
+    index_catalog.indexrelid as index_oid,
+    access_method.amname as access_method,
+    index_catalog.indisprimary as is_primary,
+    index_catalog.indisunique as is_unique,
+    index_catalog.indisvalid as is_valid,
+    index_catalog.indisready as is_ready,
+    index_catalog.indnatts,
+    index_catalog.indnkeyatts,
+    coalesce((
+      select array_agg(attribute.attname order by ordinal.position)
+      from generate_series(0, index_catalog.indnkeyatts::integer - 1)
+        as ordinal(position)
+      left join pg_catalog.pg_attribute as attribute
+        on attribute.attrelid = history.history_oid
+       and attribute.attnum = index_catalog.indkey[ordinal.position]
+    ), array[]::text[]) as key_columns,
+    coalesce((
+      select array_agg(
+        case when (index_catalog.indoption[ordinal.position] & 1) = 1
+          then 'DESC' else 'ASC' end
+        order by ordinal.position
+      )
+      from generate_series(0, index_catalog.indnkeyatts::integer - 1)
+        as ordinal(position)
+    ), array[]::text[]) as sort_directions,
+    coalesce((
+      select array_agg(
+        case when (index_catalog.indoption[ordinal.position] & 2) = 2
+          then 'NULLS FIRST' else 'NULLS LAST' end
+        order by ordinal.position
+      )
+      from generate_series(0, index_catalog.indnkeyatts::integer - 1)
+        as ordinal(position)
+    ), array[]::text[]) as null_ordering,
+    coalesce((
+      select array_agg(attribute.attname order by ordinal.position)
+      from generate_series(
+        index_catalog.indnkeyatts::integer,
+        index_catalog.indnatts::integer - 1
+      ) as ordinal(position)
+      left join pg_catalog.pg_attribute as attribute
+        on attribute.attrelid = history.history_oid
+       and attribute.attnum = index_catalog.indkey[ordinal.position]
+    ), array[]::text[]) as include_columns,
+    pg_catalog.pg_get_expr(
+      index_catalog.indexprs,
+      index_catalog.indrelid
+    ) as expressions,
+    pg_catalog.pg_get_expr(
+      index_catalog.indpred,
+      index_catalog.indrelid
+    ) as predicate,
+    pg_catalog.pg_get_indexdef(index_catalog.indexrelid) as index_definition
+  from pg_catalog.pg_index as index_catalog
+  join pg_catalog.pg_class as index_relation
+    on index_relation.oid = index_catalog.indexrelid
+  join pg_catalog.pg_am as access_method
+    on access_method.oid = index_relation.relam
+  cross join history_relation as history
+  where index_catalog.indrelid = history.history_oid
+),
+evaluated_history_indexes as (
+  select
+    coalesce(expected.index_name, actual.index_name) as index_name,
+    expected.index_name is not null as expected_present,
+    actual.index_name is not null as actual_present,
+    actual.index_oid,
+    actual.access_method,
+    actual.is_primary,
+    actual.is_unique,
+    actual.is_valid,
+    actual.is_ready,
+    actual.indnatts,
+    actual.indnkeyatts,
+    actual.key_columns,
+    actual.sort_directions,
+    actual.null_ordering,
+    actual.include_columns,
+    actual.expressions,
+    actual.predicate,
+    actual.index_definition,
+    expected.index_name is not null
+      and actual.index_name is not null
+      and actual.access_method = expected.access_method
+      and actual.is_primary = expected.is_primary
+      and actual.is_unique = expected.is_unique
+      and actual.is_valid
+      and actual.is_ready
+      and actual.indnatts = cardinality(expected.key_columns)
+      and actual.indnkeyatts = cardinality(expected.key_columns)
+      and actual.key_columns = expected.key_columns
+      and actual.sort_directions = expected.sort_directions
+      and actual.null_ordering = expected.null_ordering
+      and actual.include_columns = array[]::text[]
+      and actual.expressions is null
+      and actual.predicate is null
+      as contract_matches
+  from expected_history_indexes as expected
+  full join actual_history_indexes as actual using (index_name)
+),
+history_index_summary as (
+  select
+    (select count(*) from expected_history_indexes)::integer
+      as expected_count,
+    (select count(*) from actual_history_indexes)::integer
+      as actual_count,
+    count(*) filter (where contract_matches)::integer
+      as matching_count,
+    count(*) filter (where expected_present and not actual_present)::integer
+      as missing_count,
+    count(*) filter (where not expected_present and actual_present)::integer
+      as unexpected_count,
+    count(*) filter (
+      where expected_present and actual_present and not contract_matches
+    )::integer as definition_mismatch_count
+  from evaluated_history_indexes
+)
+select
+  evaluated.*,
+  summary.expected_count as "HISTORY_INDEXES_EXPECTED_COUNT",
+  summary.actual_count as "HISTORY_INDEXES_ACTUAL_COUNT",
+  (
+    summary.matching_count = summary.expected_count
+    and summary.definition_mismatch_count = 0
+  ) as "HISTORY_INDEX_DEFINITIONS_MATCH",
+  summary.unexpected_count as "HISTORY_UNEXPECTED_INDEXES_COUNT",
+  summary.missing_count as "HISTORY_MISSING_INDEXES_COUNT"
+from evaluated_history_indexes as evaluated
+cross join history_index_summary as summary
+order by evaluated.index_name;
 
 select *
 from (

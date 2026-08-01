@@ -51,6 +51,23 @@ history_residue as (
     )::integer as remaining_history_indexes,
     (
       select count(*)
+      from pg_catalog.pg_indexes
+      where schemaname = 'public'
+        and indexname in (
+          'psdeals_stage_price_history_pkey',
+          'psdeals_stage_price_history_unique_point',
+          'psdeals_stage_price_history_item_idx',
+          'psdeals_stage_price_history_kind_idx'
+        )
+    )::integer as remaining_named_history_indexes,
+    (
+      select count(*)
+      from pg_catalog.pg_indexes
+      where schemaname = 'public'
+        and indexdef ilike '%psdeals_stage_price_history%'
+    )::integer as remaining_history_index_definitions,
+    (
+      select count(*)
       from pg_catalog.pg_trigger
       where tgrelid in (select oid from history_relation)
     )::integer as remaining_history_triggers,
@@ -84,6 +101,8 @@ select
     and remaining_history_columns = 0
     and remaining_history_constraints = 0
     and remaining_history_indexes = 0
+    and remaining_named_history_indexes = 0
+    and remaining_history_index_definitions = 0
     and remaining_history_triggers = 0
     and remaining_history_policies = 0
     and remaining_history_acl_entries = 0

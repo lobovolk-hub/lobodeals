@@ -7,7 +7,8 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
-    "test": "node --test --test-isolation=none tests/*.test.mjs"
+    "test": "node --test --test-isolation=none tests/*.test.mjs",
+    "dry-run:updater": "node scripts/dry-run-psdeals-updater-local.mjs"
   },
   "dependencies": {
     "@supabase/ssr": "^0.10.2",

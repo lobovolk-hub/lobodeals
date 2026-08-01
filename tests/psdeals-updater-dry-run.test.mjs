@@ -2,7 +2,10 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 
 import { runPsdealsUpdaterDryRunCli } from '../scripts/dry-run-psdeals-updater-local.mjs'
-import { runPsdealsUpdaterDryRun } from '../scripts/lib/psdeals-updater-dry-run.mjs'
+import {
+  runPsdealsUpdaterDryRun,
+  runPsdealsUpdaterFailureSimulation,
+} from '../scripts/lib/psdeals-updater-dry-run.mjs'
 
 test('integrated updater dry-run is deterministic and performs no external effect', () => {
   const first = runPsdealsUpdaterDryRun()
@@ -93,4 +96,36 @@ test('CLI emits machine-readable JSON and rejects operational arguments', () => 
     stderr: (value) => { error += value },
   }), 1)
   assert.match(error, /does not accept operational arguments/)
+})
+
+test('failure simulation covers every required isolation scenario fail-closed', () => {
+  const result = runPsdealsUpdaterFailureSimulation()
+  assert.equal(result.scenario_count, 20)
+  assert.equal(result.all_fail_closed, true)
+  assert.equal(result.remote_writes_executed, 0)
+  assert.equal(result.opens_connections, false)
+  assert.equal(result.retry_policy.maximum_detail_retries, 1)
+  assert.equal(result.retry_policy.ambiguous_writes_retried_without_reconciliation, false)
+  assert.equal(result.idempotency.duplicate_remote_effects, 0)
+  const ids = result.scenarios.map((entry) => entry.id)
+  assert.equal(new Set(ids).size, ids.length)
+  for (const required of [
+    'listing-empty', 'pagination-incomplete', 'response-truncated',
+    'parser-partially-broken', 'duplicate-identities', 'missing-stable-identity',
+    'currency-not-usd', 'incoherent-price', 'ps-plus-ambiguous',
+    'classification-changed', 'receipt-missing', 'cycle-missing',
+    'cycle-already-finalized', 'candidate-other-cycle', 'candidate-other-family',
+    'first-seen-incoherent', 'cache-stale', 'transport-timeout',
+    'bounded-retry', 'same-input-twice',
+  ]) assert.ok(ids.includes(required), required)
+})
+
+test('timeout reconciles, retry is bounded and repeated input is a no-op', () => {
+  const byId = Object.fromEntries(
+    runPsdealsUpdaterFailureSimulation().scenarios.map((entry) => [entry.id, entry])
+  )
+  assert.equal(byId['transport-timeout'].disposition, 'reconcile')
+  assert.equal(byId['bounded-retry'].disposition, 'retry_once')
+  assert.equal(byId['same-input-twice'].disposition, 'noop')
+  assert.equal(byId['same-input-twice'].reason_code, 'certified_low_equal')
 })

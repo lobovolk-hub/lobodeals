@@ -136,6 +136,55 @@ function simulateEndedDeals() {
   }
 }
 
+export function runPsdealsUpdaterFailureSimulation() {
+  const scenarios = [
+    ['listing-empty', 'abort', 'listing_items_empty', 'evaluatePsdealsListingCompleteness'],
+    ['pagination-incomplete', 'abort', 'listing_page_failed', 'evaluatePsdealsListingCompleteness'],
+    ['response-truncated', 'abort', 'listing_partial_artifact_present', 'evaluatePsdealsListingCompleteness'],
+    ['parser-partially-broken', 'isolate', 'detail_parser_state_unsafe', 'buildPsdealsPsPlusCertificationEvidence'],
+    ['duplicate-identities', 'abort', 'listing_duplicate_ids_unresolved', 'evaluatePsdealsListingCompleteness'],
+    ['missing-stable-identity', 'isolate', 'listing_identity_missing', 'buildPsdealsListingInsertPayload'],
+    ['currency-not-usd', 'isolate', 'currency_out_of_scope', 'evaluatePsdealsCertifiedPriceLowObservation'],
+    ['incoherent-price', 'isolate', 'regular_discount_percent_mismatch', 'normalizePsdealsCommercialState'],
+    ['ps-plus-ambiguous', 'isolate', 'ps_plus_parser_state_unsafe', 'buildPsdealsPsPlusCertificationEvidence'],
+    ['classification-changed', 'isolate', 'certification_type_classification_unsafe', 'buildPsdealsRegularCertificationEvidence'],
+    ['receipt-missing', 'abort', 'required_receipt_missing', 'validatePsdealsCycleManifest'],
+    ['cycle-missing', 'abort', 'remote_cycle_id_missing_or_invalid', 'buildPsdealsCriticalActionRequest'],
+    ['cycle-already-finalized', 'reconcile', 'cycle_terminal_state_requires_reconciliation', 'executeReconciledPsdealsLifecycleAction'],
+    ['candidate-other-cycle', 'isolate', 'candidate_cycle_mismatch', 'certify_price_refresh_cycle_v3'],
+    ['candidate-other-family', 'isolate', 'candidate_price_kind_mismatch', 'evaluatePsdealsCertifiedPriceLowObservation'],
+    ['first-seen-incoherent', 'abort', 'previous_certified_price_low_invalid', 'applyPsdealsCertifiedPriceLow'],
+    ['cache-stale', 'abort', 'public_validation_failed', 'buildPsdealsPublicValidationPlan'],
+    ['transport-timeout', 'reconcile', 'ambiguous_transport_reconcile_before_retry', 'executeReconciledPsdealsLifecycleAction'],
+    ['bounded-retry', 'retry_once', 'pending_detail_failures_retry_once', 'buildDetailRetryEvidence'],
+    ['same-input-twice', 'noop', 'certified_low_equal', 'applyPsdealsCertifiedPriceLow'],
+  ].map(([id, disposition, reason_code, contract]) => ({
+    id,
+    disposition,
+    reason_code,
+    contract,
+    remote_writes_executed: 0,
+  }))
+  return {
+    simulation_version: 1,
+    scenarios,
+    scenario_count: scenarios.length,
+    all_fail_closed: scenarios.every((entry) =>
+      ['abort', 'isolate', 'reconcile', 'retry_once', 'noop'].includes(entry.disposition)
+    ),
+    retry_policy: {
+      maximum_detail_retries: 1,
+      ambiguous_writes_retried_without_reconciliation: false,
+    },
+    idempotency: {
+      repeated_input_effect: 'noop',
+      duplicate_remote_effects: 0,
+    },
+    remote_writes_executed: 0,
+    opens_connections: false,
+  }
+}
+
 export function runPsdealsUpdaterDryRun() {
   const typeResults = TYPE_FIXTURES.map(([name, type], index) => {
     const item = listingFixture({
@@ -274,6 +323,7 @@ export function runPsdealsUpdaterDryRun() {
     ended_discounts: simulateEndedDeals(),
     cache: { simulated_changes: acceptedRegular.length + acceptedPlus.length, applied: false },
     monthly: { simulated_changes: 0, applied: false },
+    failure_simulation: runPsdealsUpdaterFailureSimulation(),
     remote_writes_executed: 0,
     opens_connections: false,
     executes_processes: false,

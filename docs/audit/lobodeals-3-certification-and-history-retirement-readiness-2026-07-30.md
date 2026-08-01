@@ -407,3 +407,44 @@ Readiness local:
 La siguiente operación debe ejecutar exclusivamente el certificado remoto
 read-only con el SHA nuevo y detenerse. No existe autorización destructiva
 vigente.
+
+## Retirada de history completada — 2026-07-31
+
+El certificado remoto con SHA-256
+`986efa7ef4948329c3d08e2df5d0632c9a2dbb1afcc34ed4e45b5f09a8475f1a`
+aprobó exactamente 20/20 checks y cero bloqueos. La migración 006 exacta,
+SHA-256
+`e825a88ef811873f16cc48da5685d8e87eb699b5d903bd29ad34025a9630f5e4`,
+fue aplicada al proyecto `vlxkoprpobfevxefizwr` y registrada como versión
+`20260801030244`.
+
+El postcheck remoto final aprobó sus 13 statements de solo lectura después de
+corregir en el commit
+`422926a3cc7ed8a3c764779c9cb4807cd305d1d2` la representación PostgreSQL 17
+`search_path=""`. Confirmó:
+
+- history y todos sus residuos ausentes;
+- 005 y sus ACL intactos;
+- stage 32.890; cycles 0; receipts 0; candidates 0; mínimos 0;
+- monthly 7/4 y cache 32.890 sin cambios;
+- baseline preservado;
+- Database Size 166.841.491 bytes.
+
+Readiness actualizado:
+
+- `MIGRATION_005_APPLIED=true`;
+- `MIGRATION_005_POSTCHECK_PASSED=true`;
+- `MIGRATION_006_APPLIED=true`;
+- `MIGRATION_006_POSTCHECK_PASSED=true`;
+- `HISTORY_RETIRED=true`;
+- `COMPACT_MINIMA_SCHEMA_READY=true`;
+- `COMPACT_MINIMA_READY=false`;
+- `STORAGE_READY=false`;
+- `LIVE_CYCLE_READY=false`;
+- `BLOCK_4_COMPLETE=false`;
+- `THIRTY_DAY_TRIAL_STARTED=false`.
+
+No se ejecutaron ciclos, collectors, importers, runners, certificación de
+precios, candidates, mínimos, monthly, cache, otras migraciones, push o
+deploy. El siguiente trabajo seguro es una auditoría local read-only de las
+gates posteriores al retiro; no un ciclo real.

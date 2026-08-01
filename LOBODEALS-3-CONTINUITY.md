@@ -2303,3 +2303,73 @@ destructiva vigente.
 El siguiente paso es ejecutar exclusivamente el certificado remoto read-only
 corregido, comprobar veinte filas, veinte PASS y cero blockers, y detenerse.
 Eso no autoriza aplicar 006.
+
+## 49. Retirada remota del histórico mediante 006 — 2026-07-31
+
+La autorización expresa de Johan identificó el proyecto
+`vlxkoprpobfevxefizwr`, el archivo exacto
+`sql/006-lobodeals-3-restrictive-price-history-retirement.sql` y su
+SHA-256
+`e825a88ef811873f16cc48da5685d8e87eb699b5d903bd29ad34025a9630f5e4`.
+
+Antes de la mutación, el certificado remoto corregido con SHA-256
+`986efa7ef4948329c3d08e2df5d0632c9a2dbb1afcc34ed4e45b5f09a8475f1a`
+devolvió exactamente 20/20 `PASS`, cero bloqueos, backend PID `2507650`,
+snapshot `296314:296314:` y timestamp
+`2026-08-01 03:01:49.959989+00`. Confirmó 841.549 filas,
+273.907.712 bytes, cuatro índices exactos, cero dependencias externas y cero
+estado operativo nuevo.
+
+La migración 006 exacta fue aplicada una sola vez y terminó
+`success: true`. Quedó registrada como
+`lobodeals_3_restrictive_price_history_retirement`, versión
+`20260801030244`. Eliminó exclusivamente la policy y ACL de history y
+`public.psdeals_stage_price_history` mediante
+`DROP TABLE ... RESTRICT`; no usó `CASCADE`.
+
+El postcheck completo ejecutó sus 13 statements read-only. La primera corrida
+demostró la retirada y la preservación, pero detectó un falso negativo local:
+PostgreSQL 17 representa el `proconfig` vacío como `search_path=""`, no
+como `search_path=`. El commit
+`422926a3cc7ed8a3c764779c9cb4807cd305d1d2`
+(`Fix PostgreSQL 17 history postcheck settings`) corrigió únicamente el
+postcheck read-only y su prueba. La migración 006 permaneció intacta.
+
+La repetición completa terminó 13/13 sin errores:
+
+- cero relaciones, columnas, constraints, índices, triggers, policies, ACL o
+  dependencias residuales de history;
+- `history_retirement_postcheck_passed=true`;
+- exactamente un registro de 006;
+- ocho columnas, cuatro constraints, dos FKs `RESTRICT` y dos índices
+  parciales de 005 intactos;
+- helper SHA, certificación v3 y ACL exactos;
+- stage 32.890; cycles 0; receipts 0; candidates 0; mínimos 0;
+- monthly 7 filas, 4 activas;
+- cache 32.890 filas y
+  `max(updated_at)=2026-06-06 21:52:17.916997+00`;
+- `preserved_data_matches_authorized_baseline=true`;
+- Database Size 440.741.011 → 166.841.491 bytes, diferencia
+  -273.899.520 bytes.
+
+Validación local posterior: 394/394 pruebas globales, 36/36 de retirement y
+`git diff --check`. No hubo ciclos, collectors, importers, runners,
+certificación de precios, candidates, mínimos, writes de monthly, refresh de
+cache, otra migración, push ni deploy.
+
+Estado demostrado:
+
+- `MIGRATION_006_APPLIED=true`;
+- `MIGRATION_006_POSTCHECK_PASSED=true`;
+- `HISTORY_RETIRED=true`;
+- `COMPACT_MINIMA_SCHEMA_READY=true`;
+- `COMPACT_MINIMA_READY=false`;
+- `STORAGE_READY=false`;
+- `LIVE_CYCLE_READY=false`;
+- `BLOCK_4_COMPLETE=false`;
+- `THIRTY_DAY_TRIAL_STARTED=false`.
+
+La retirada física del histórico queda cerrada. El siguiente paso local seguro
+es auditar, sin ejecutar, las gates posteriores a history y actualizar los
+preflights/readiness que todavía esperan `MIGRATION_NOT_APPLIED`. No debe
+iniciarse un ciclo ni la prueba de 30 días sin la autorización correspondiente.

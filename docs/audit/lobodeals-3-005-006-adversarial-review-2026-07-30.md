@@ -598,3 +598,29 @@ de migraciones enfocadas; lint mantiene cero errores y seis advertencias
 preexistentes. No hubo acceso a Supabase ni SQL remoto en esta corrección.
 `REMOTE_006_READY_TO_APPLY=false`; debe repetirse únicamente el certificado
 read-only con el SHA nuevo antes de considerar otra autorización.
+
+## 21. Aplicación y postcheck remoto de 006 — 2026-07-31
+
+El certificado corregido aprobó 20/20 en el proyecto
+`vlxkoprpobfevxefizwr` con cero bloqueos. La migración exacta con SHA-256
+`e825a88ef811873f16cc48da5685d8e87eb699b5d903bd29ad34025a9630f5e4`
+fue aplicada una vez y registrada como versión `20260801030244`.
+
+El resultado remoto fue:
+
+- `public.psdeals_stage_price_history` ausente;
+- cero residuos de relación, columnas, constraints, índices, triggers,
+  policy, ACL o dependencias;
+- 841.549 filas retiradas mediante `DROP TABLE ... RESTRICT`;
+- objetos y ACL de 005 intactos;
+- baseline de stage, ciclos, receipts, mínimos, candidates, monthly y cache
+  intacto;
+- Database Size: 440.741.011 → 166.841.491 bytes.
+
+El postcheck requirió una corrección read-only porque PostgreSQL 17 devuelve
+`proconfig = {search_path=""}`. El commit
+`422926a3cc7ed8a3c764779c9cb4807cd305d1d2` corrige esa representación sin
+alterar 006. La repetición completa aprobó 13/13 statements.
+
+`HISTORY_RETIRED=true` y `MIGRATION_006_POSTCHECK_PASSED=true`. Esto no
+declara listos los mínimos compactos, el updater, un ciclo real ni el Bloque 4.

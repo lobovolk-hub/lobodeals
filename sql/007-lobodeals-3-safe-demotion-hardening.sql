@@ -9,11 +9,21 @@ begin;
 set local lock_timeout = '5s';
 set local statement_timeout = '120s';
 
+-- Serializes the zero-cycle precondition with create-cycle. Without this lock,
+-- a cycle could be inserted after the count below and before the ACL switch.
+lock table public.price_refresh_cycles in access exclusive mode;
+
 do $preflight$
 declare
   current_v1_sha256 text;
+  v1_oid oid;
+  v1_owner text;
+  v1_security_definer boolean;
+  v1_proconfig text[];
   cycle_count bigint;
+  receipt_count bigint;
   missing_stage_columns integer;
+  missing_monthly_columns integer;
 begin
   if current_user <> 'postgres' then
     raise exception 'PSDEALS_007_POSTGRES_OWNER_REQUIRED';
@@ -32,6 +42,10 @@ begin
     raise exception 'PSDEALS_007_V1_FUNCTION_MISSING';
   end if;
 
+  v1_oid := to_regprocedure(
+    'public.apply_psdeals_ended_deals_v1(uuid,uuid,text,text,text,text,text,bigint[],integer,timestamp with time zone)'
+  );
+
   if to_regprocedure(
     'public.apply_psdeals_ended_deals_v2(uuid,uuid,text,text,text,text,text,bigint[],integer,timestamp with time zone)'
   ) is not null then
@@ -42,9 +56,7 @@ begin
     pg_catalog.sha256(
       pg_catalog.convert_to(
         pg_catalog.pg_get_functiondef(
-          to_regprocedure(
-            'public.apply_psdeals_ended_deals_v1(uuid,uuid,text,text,text,text,text,bigint[],integer,timestamp with time zone)'
-          )
+          v1_oid
         ),
         'UTF8'
       )
@@ -57,9 +69,34 @@ begin
     raise exception 'PSDEALS_007_V1_FUNCTION_HASH_MISMATCH';
   end if;
 
+  select
+    owner_role.rolname,
+    procedure.prosecdef,
+    coalesce(procedure.proconfig, array[]::text[])
+  into v1_owner, v1_security_definer, v1_proconfig
+  from pg_catalog.pg_proc as procedure
+  join pg_catalog.pg_roles as owner_role
+    on owner_role.oid = procedure.proowner
+  where procedure.oid = v1_oid;
+
+  if v1_owner <> 'postgres'
+    or v1_security_definer is distinct from true
+    or v1_proconfig <> array['search_path=""']::text[]
+    or not pg_catalog.has_function_privilege('service_role', v1_oid, 'EXECUTE')
+    or pg_catalog.has_function_privilege('anon', v1_oid, 'EXECUTE')
+    or pg_catalog.has_function_privilege('authenticated', v1_oid, 'EXECUTE') then
+    raise exception 'PSDEALS_007_V1_SECURITY_CONTRACT_MISMATCH';
+  end if;
+
   select count(*) into cycle_count from public.price_refresh_cycles;
   if cycle_count <> 0 then
     raise exception 'PSDEALS_007_REQUIRES_ZERO_CYCLES';
+  end if;
+
+  select count(*) into receipt_count
+  from public.psdeals_cycle_action_receipts;
+  if receipt_count <> 0 then
+    raise exception 'PSDEALS_007_REQUIRES_ZERO_RECEIPTS';
   end if;
 
   select count(*)::integer
@@ -78,7 +115,10 @@ begin
       ('original_price_amount'),
       ('discount_percent'),
       ('deal_ends_at'),
-      ('is_ps_plus_discount')
+      ('is_ps_plus_discount'),
+      ('raw_detail_json'),
+      ('source_note'),
+      ('updated_at')
   ) as required(column_name)
   where not exists (
     select 1
@@ -92,14 +132,27 @@ begin
     raise exception 'PSDEALS_007_REQUIRED_STAGE_COLUMN_MISSING';
   end if;
 
-  if not exists (
+  select count(*)::integer
+  into missing_monthly_columns
+  from (
+    values
+      ('item_id'),
+      ('is_active'),
+      ('active_from'),
+      ('active_until'),
+      ('active_from_at'),
+      ('active_until_at')
+  ) as required(column_name)
+  where not exists (
     select 1
-    from information_schema.columns
-    where table_schema = 'public'
-      and table_name = 'ps_plus_monthly_games'
-      and column_name = 'item_id'
-  ) then
-    raise exception 'PSDEALS_007_MONTHLY_ITEM_ID_MISSING';
+    from information_schema.columns as actual
+    where actual.table_schema = 'public'
+      and actual.table_name = 'ps_plus_monthly_games'
+      and actual.column_name = required.column_name
+  );
+
+  if missing_monthly_columns <> 0 then
+    raise exception 'PSDEALS_007_REQUIRED_MONTHLY_COLUMN_MISSING';
   end if;
 end;
 $preflight$;

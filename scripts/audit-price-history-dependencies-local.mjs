@@ -19,9 +19,10 @@ export async function runPriceHistoryAuditCli(argv, io = {}) {
     else {
       stdout(`LOCAL_PRICE_HISTORY_AUDIT\nFiles scanned: ${result.files_scanned}\nReferences: ${result.reference_count}\n`)
       for (const [key, count] of Object.entries(result.counts)) stdout(`${key}: ${count}\n`)
+      stdout(`runtime_violations: ${result.runtime_violations.length}\n`)
       stdout('No writes, SQL, connections, or destructive actions were performed.\n')
     }
-    return 0
+    return result.runtime_violations.length === 0 ? 0 : 2
   } catch (error) {
     stderr(`LOCAL_PRICE_HISTORY_AUDIT error: ${error instanceof Error ? error.message : String(error)}\n`)
     return 1

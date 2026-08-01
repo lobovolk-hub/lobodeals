@@ -82,6 +82,7 @@ de runtime en la ventana de cinco días consultada.
 - `CACHE_STRATEGY_APPROVED_LOCALLY=true`
 - `DEPLOY_FIX_REQUIRED_BEFORE_REFRESH=false`
 
-Siguiente prioridad: integrar y probar el runner diario real; después cerrar
-los NO-GO de Vercel, migración 007 y cache v16 antes de pedir autorización para
-un refresh de recuperación.
+El plan exacto del recovery está documentado como NO-GO en
+`LOBODEALS-OPERATIONS.md`. Siguiente prioridad: integrar y probar el runner
+diario real; después cerrar los NO-GO de Vercel, migración 007 y cache v16 antes
+de pedir autorización para un refresh de recuperación.

@@ -31,7 +31,8 @@ Fecha de vigencia: 2026-08-01
 - ISR Writes y Active CPU tienen fuentes identificadas; la estrategia local de
   caché está aprobada, pero la operación no es segura aún bajo la cuota visible.
 - Datos públicos siguen desactualizados.
-- El refresh de recuperación no está autorizado.
+- El refresh de recuperación está planificado, pero tiene NO-GO de runner,
+  migración 007, integración de demotion y Vercel; no está autorizado.
 - La prueba de 30 días no ha empezado.
 
 No adelantar arquitectura avanzada, automatización o monetización a costa de

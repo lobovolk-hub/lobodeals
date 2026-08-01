@@ -8,7 +8,9 @@ import {
 } from '../scripts/run-psdeals-daily-refresh-v3.mjs'
 import {
   createPsdealsDailyOperationalExecutor,
+  evaluatePsdealsCaptchaGate,
   evaluatePsdealsDailyLiveGates,
+  evaluatePsdealsEdgeCdpGate,
   inspectPsdealsDailyRefreshCode,
   PSDEALS_DAILY_LIVE_ACTION,
   PSDEALS_DAILY_OPERATIONAL_STAGES,
@@ -222,8 +224,21 @@ function completeLiveInput(migrationSha) {
       blockers: [],
     },
     vercel: { safe_margin: true, approved_capacity: true, checked_at: TIMESTAMP },
-    edge_cdp: { ready: true, region: 'us', storefront: 'playstation' },
-    captcha: { resolved: true, confirmed_by: 'Johan', checked_at: TIMESTAMP },
+    edge_cdp: {
+      ready: true,
+      port: 9222,
+      port_status: 'listening',
+      connection_state: 'connected',
+      tab_url: 'https://psdeals.net/us-store/discounts',
+      region: 'us',
+      storefront: 'playstation',
+    },
+    captcha: {
+      resolved: true,
+      confirmed_by: 'Johan',
+      checked_at: TIMESTAMP,
+      challenge_present_after_confirmation: false,
+    },
     migration_007_sha256: migrationSha,
     certificate_007_sha256: 'a'.repeat(64),
     code_head: 'abc1234',
@@ -254,6 +269,34 @@ test('live fails before executor on every missing critical gate', async () => {
     assert.ok(result.gates.blockers.includes(expected), name)
     assert.equal(result.executed_writes, 0)
   }
+})
+
+test('Edge CDP and captcha fakes distinguish every required failure class', () => {
+  const base = completeLiveInput('a'.repeat(64))
+  const edgeCases = [
+    ['edge absent', (value) => { value.ready = false }, 'edge_cdp_not_ready'],
+    ['port occupied', (value) => { value.port_status = 'occupied_by_other_process' }, 'edge_cdp_port_invalid'],
+    ['wrong tab', (value) => { value.tab_url = 'https://example.com/' }, 'edge_cdp_tab_invalid'],
+    ['wrong region', (value) => { value.region = 'ca' }, 'edge_cdp_region_invalid'],
+    ['disconnection', (value) => { value.connection_state = 'disconnected' }, 'edge_cdp_disconnected'],
+  ]
+  for (const [name, mutate, blocker] of edgeCases) {
+    const value = structuredClone(base.edge_cdp)
+    mutate(value)
+    assert.ok(evaluatePsdealsEdgeCdpGate(value).blockers.includes(blocker), name)
+  }
+  assert.equal(evaluatePsdealsEdgeCdpGate(base.edge_cdp).valid, true)
+
+  const unresolved = structuredClone(base.captcha)
+  unresolved.resolved = false
+  unresolved.challenge_present_after_confirmation = true
+  assert.deepEqual(evaluatePsdealsCaptchaGate(unresolved, { now: TIMESTAMP }).blockers, [
+    'captcha_challenge_persists', 'captcha_not_visibly_resolved',
+  ])
+  const persistent = structuredClone(base.captcha)
+  persistent.challenge_present_after_confirmation = true
+  assert.deepEqual(evaluatePsdealsCaptchaGate(persistent, { now: TIMESTAMP }).blockers, ['captcha_challenge_persists'])
+  assert.equal(evaluatePsdealsCaptchaGate(base.captcha, { now: TIMESTAMP }).valid, true)
 })
 
 test('live code HEAD comes from the local git identity without spawning git', async () => {

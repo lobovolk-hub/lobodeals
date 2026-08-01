@@ -490,8 +490,8 @@ export function evaluatePsdealsDailyLiveGates({
   if (!HASH_PATTERN.test(String(remote_preflight?.certificate_sha256 || ''))) blockers.push('remote_certificate_sha_invalid')
   if (remote_preflight?.certificate_sha256 !== certificate_007_sha256) blockers.push('remote_certificate_sha_mismatch')
   if (vercel?.safe_margin !== true || vercel?.approved_capacity !== true || !isFresh(vercel?.checked_at, now, 30)) blockers.push('vercel_margin_not_approved')
-  if (edge_cdp?.ready !== true || edge_cdp?.region !== 'us' || edge_cdp?.storefront !== 'playstation') blockers.push('edge_cdp_not_ready')
-  if (captcha?.resolved !== true || captcha?.confirmed_by !== 'Johan' || !isFresh(captcha?.checked_at, now, 30)) blockers.push('captcha_not_visibly_resolved')
+  blockers.push(...evaluatePsdealsEdgeCdpGate(edge_cdp).blockers)
+  blockers.push(...evaluatePsdealsCaptchaGate(captcha, { now }).blockers)
   if (Array.isArray(remote_preflight?.blockers) && remote_preflight.blockers.length > 0) blockers.push('remote_preflight_has_blockers')
   return {
     valid: blockers.length === 0,
@@ -504,6 +504,30 @@ export function evaluatePsdealsDailyLiveGates({
     opens_edge: false,
     executes_writes: false,
   }
+}
+
+export function evaluatePsdealsEdgeCdpGate(edgeCdp = {}) {
+  const blockers = []
+  if (edgeCdp.ready !== true) blockers.push('edge_cdp_not_ready')
+  if (edgeCdp.port !== 9222 || edgeCdp.port_status !== 'listening') blockers.push('edge_cdp_port_invalid')
+  if (edgeCdp.connection_state !== 'connected') blockers.push('edge_cdp_disconnected')
+  let tabUrl = null
+  try { tabUrl = new URL(edgeCdp.tab_url) } catch { blockers.push('edge_cdp_tab_invalid') }
+  if (tabUrl && (tabUrl.protocol !== 'https:' || tabUrl.hostname !== 'psdeals.net' || !tabUrl.pathname.startsWith('/us-store/'))) {
+    blockers.push('edge_cdp_tab_invalid')
+  }
+  if (edgeCdp.region !== 'us') blockers.push('edge_cdp_region_invalid')
+  if (edgeCdp.storefront !== 'playstation') blockers.push('edge_cdp_storefront_invalid')
+  return { valid: blockers.length === 0, blockers: unique(blockers).sort() }
+}
+
+export function evaluatePsdealsCaptchaGate(captcha = {}, { now = new Date().toISOString() } = {}) {
+  const blockers = []
+  if (captcha.resolved !== true || captcha.confirmed_by !== 'Johan' || !isFresh(captcha.checked_at, now, 30)) {
+    blockers.push('captcha_not_visibly_resolved')
+  }
+  if (captcha.challenge_present_after_confirmation !== false) blockers.push('captcha_challenge_persists')
+  return { valid: blockers.length === 0, blockers: unique(blockers).sort() }
 }
 
 export async function runPsdealsDailyLiveGate({ live_executor, ...input } = {}) {

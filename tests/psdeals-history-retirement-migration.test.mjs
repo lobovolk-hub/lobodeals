@@ -373,6 +373,38 @@ test('diagnostic precheck exposes exact index structure and aggregate gates', ()
   }
 })
 
+test('index column arrays normalize PostgreSQL name values to text at construction', () => {
+  const unsafeNameArray = /array_agg\(\s*attribute\.attname(?!::text)/gi
+  const normalizedNameArray =
+    /array_agg\(\s*attribute\.attname::text\s+order by ordinal\.position\s*\)/gi
+
+  for (const source of [precheck, certificate]) {
+    assert.doesNotMatch(source, unsafeNameArray)
+    assert.equal((source.match(normalizedNameArray) ?? []).length, 2)
+    assert.match(
+      source,
+      /\),\s*array\[\]::text\[\]\) as key_columns/i
+    )
+    assert.match(
+      source,
+      /\),\s*array\[\]::text\[\]\) as include_columns/i
+    )
+  }
+})
+
+test('index contracts compare only explicitly typed text arrays', () => {
+  for (const source of [precheck, certificate]) {
+    assert.match(source, /actual\.key_columns = expected\.key_columns/)
+    assert.match(source, /actual\.sort_directions = expected\.sort_directions/)
+    assert.match(source, /actual\.null_ordering = expected\.null_ordering/)
+    assert.match(source, /actual\.include_columns = array\[\]::text\[\]/)
+    assert.doesNotMatch(source, /::name\[\]/i)
+
+    const emptyTextArrays = source.match(/array\[\]::text\[\]/gi) ?? []
+    assert.equal(emptyTextArrays.length, 5)
+  }
+})
+
 test('precheck dependency queries are deterministic and PostgreSQL 17 safe', () => {
   assert.doesNotMatch(
     precheck,

@@ -199,7 +199,10 @@ history_indexes as materialized (
     index_catalog.indnatts,
     index_catalog.indnkeyatts,
     coalesce((
-      select array_agg(attribute.attname order by ordinal.position)
+      select array_agg(
+        attribute.attname::text
+        order by ordinal.position
+      )
       from generate_series(
         0,
         index_catalog.indnkeyatts::integer - 1
@@ -237,7 +240,10 @@ history_indexes as materialized (
       ) as ordinal(position)
     ), array[]::text[]) as null_ordering,
     coalesce((
-      select array_agg(attribute.attname order by ordinal.position)
+      select array_agg(
+        attribute.attname::text
+        order by ordinal.position
+      )
       from generate_series(
         index_catalog.indnkeyatts::integer,
         index_catalog.indnatts::integer - 1

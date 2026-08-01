@@ -101,7 +101,10 @@ actual_history_indexes as (
     index_catalog.indnatts,
     index_catalog.indnkeyatts,
     coalesce((
-      select array_agg(attribute.attname order by ordinal.position)
+      select array_agg(
+        attribute.attname::text
+        order by ordinal.position
+      )
       from generate_series(0, index_catalog.indnkeyatts::integer - 1)
         as ordinal(position)
       left join pg_catalog.pg_attribute as attribute
@@ -127,7 +130,10 @@ actual_history_indexes as (
         as ordinal(position)
     ), array[]::text[]) as null_ordering,
     coalesce((
-      select array_agg(attribute.attname order by ordinal.position)
+      select array_agg(
+        attribute.attname::text
+        order by ordinal.position
+      )
       from generate_series(
         index_catalog.indnkeyatts::integer,
         index_catalog.indnatts::integer - 1

@@ -41,7 +41,7 @@ export function evaluatePsdealsControlledLiveReadiness({
       'upsert safe listing-owned fields in psdeals_stage_items',
       'read and update selected detail rows and psdeals_import_runs',
       'record an authorized monthly-games review receipt without changing monthly rows',
-      'apply one exact bounded ended-deal set through apply_psdeals_ended_deals_v1',
+      'apply one exact bounded ended-deal set through apply_psdeals_ended_deals_v2',
       'mark one cycle succeeded through the receipt-bound v1 transition',
       'invoke certify_price_refresh_cycle_v3 once',
       'invoke refresh_catalog_public_cache_v16 once',

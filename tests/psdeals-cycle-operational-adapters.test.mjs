@@ -152,9 +152,13 @@ test('lifecycle readiness requires every migrated receipt-bound RPC', () => {
     'mark_psdeals_price_refresh_cycle_succeeded_v1',
     'certify_price_refresh_cycle_v3',
     'refresh_catalog_public_cache_v16',
-    'apply_psdeals_ended_deals_v1',
+    'apply_psdeals_ended_deals_v2',
     'record_psdeals_monthly_check_v1',
   ].map((name) => [name, { definition_verified: true }]))
+  functions.apply_psdeals_ended_deals_v1 = {
+    definition_verified: true,
+    service_role_execute: false,
+  }
   const ready = assessPsdealsLifecycleContracts({
     objects: {
       price_refresh_cycles: { exists: true },

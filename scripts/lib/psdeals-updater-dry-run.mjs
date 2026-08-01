@@ -113,12 +113,17 @@ function psPlusDetail({ id, plus = 4.99, current = 9.99, monthly = false, consis
 function simulateEndedDeals() {
   const activeListing = [{ psdeals_id: 7002 }]
   const previousRows = [
-    { psdeals_id: 7001, title: 'Ended safe', current_price_amount: 5, original_price_amount: 10, discount_percent: 50, updated_at: '2026-07-01T00:00:00.000Z' },
-    { psdeals_id: 7002, title: 'Still active', current_price_amount: 5, original_price_amount: 10, discount_percent: 50, updated_at: '2026-07-02T00:00:00.000Z' },
-    { psdeals_id: 7003, title: 'Ended unverifiable', current_price_amount: null, original_price_amount: 10, discount_percent: 50, updated_at: '2026-07-03T00:00:00.000Z' },
+    { id: 7001, psdeals_id: 7001, psdeals_slug: 'ended-safe', psdeals_url: 'https://psdeals.net/us-store/game/7001/ended-safe', region_code: 'us', storefront: 'playstation', content_type: 'game', item_type_label: 'game', is_ps_plus_discount: false, title: 'Ended safe', current_price_amount: 5, original_price_amount: 10, discount_percent: 50, updated_at: '2026-07-01T00:00:00.000Z' },
+    { id: 7002, psdeals_id: 7002, psdeals_slug: 'still-active', psdeals_url: 'https://psdeals.net/us-store/game/7002/still-active', region_code: 'us', storefront: 'playstation', content_type: 'game', item_type_label: 'game', is_ps_plus_discount: false, title: 'Still active', current_price_amount: 5, original_price_amount: 10, discount_percent: 50, updated_at: '2026-07-02T00:00:00.000Z' },
+    { id: 7003, psdeals_id: 7003, psdeals_slug: 'ended-unverifiable', psdeals_url: 'https://psdeals.net/us-store/game/7003/ended-unverifiable', region_code: 'us', storefront: 'playstation', content_type: 'game', item_type_label: 'game', is_ps_plus_discount: false, title: 'Ended unverifiable', current_price_amount: null, original_price_amount: 10, discount_percent: 50, updated_at: '2026-07-03T00:00:00.000Z' },
   ]
-  const selection = selectEndedDiscountCandidatesFromListing(activeListing, previousRows)
-  const decisions = selection.candidates.map((row) => {
+  const selection = selectEndedDiscountCandidatesFromListing(activeListing, previousRows, {
+    listing_complete: true,
+    monthly_evidence_verified: true,
+    monthly_item_ids: [],
+    observed_at: OBSERVED_AT,
+  })
+  const decisions = [...selection.candidates, ...selection.blocked_candidates].map((row) => {
     const safe = typeof row.current_price_amount === 'number' && row.current_price_amount > 0 &&
       typeof row.original_price_amount === 'number' && row.original_price_amount > row.current_price_amount &&
       Number.isInteger(row.discount_percent) && row.discount_percent >= 1 && row.discount_percent <= 99

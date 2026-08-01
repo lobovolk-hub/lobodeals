@@ -205,7 +205,7 @@ async function main() {
   const shouldApply = applyToken === 'YES_I_UNDERSTAND'
   if (shouldApply) {
     throw new Error(
-      'LEGACY_DIRECT_DEMOTION_DISABLED: use the receipt-bound apply_psdeals_ended_deals_v1 lifecycle path.'
+      'LEGACY_DIRECT_DEMOTION_DISABLED: use the hardened receipt-bound apply_psdeals_ended_deals_v2 lifecycle path.'
     )
   }
 

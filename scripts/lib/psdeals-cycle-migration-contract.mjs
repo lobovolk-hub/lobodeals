@@ -3,7 +3,7 @@ import {
   stablePsdealsEvidenceJson,
 } from './psdeals-evidence-envelope.mjs'
 
-export const PSDEALS_CYCLE_MIGRATION_VERSION = 4
+export const PSDEALS_CYCLE_MIGRATION_VERSION = 5
 
 export const PSDEALS_CYCLE_MIGRATION_STATES = Object.freeze([
   'MIGRATION_NOT_APPLIED',
@@ -33,6 +33,7 @@ export const PSDEALS_CYCLE_RECEIPT_KINDS = Object.freeze([
 
 export const PSDEALS_CYCLE_MIGRATION_CONTRACT = Object.freeze({
   migration_file: 'sql/004-lobodeals-3-reconciliable-cycle-actions.sql',
+  safe_demotion_hardening_file: 'sql/007-lobodeals-3-safe-demotion-hardening.sql',
   audited_function_sha256: Object.freeze({
     certify_price_refresh_cycle: '3dfa2232903c014039f070f48d4044ffe0b329e38cb86615b9bdbc20c4f9aa88',
     refresh_catalog_public_cache_v15: '1c6e71d26e6554e6f8fdf2e6ed0388db959419db4ee64132d8ddd5761b3996dc',
@@ -90,6 +91,8 @@ export const PSDEALS_CYCLE_MIGRATION_CONTRACT = Object.freeze({
     record_psdeals_monthly_check_v1:
       'p_cycle_id uuid, p_idempotency_key text, p_request_hash text, p_checked_at timestamp with time zone, p_source_type text, p_source_reference text, p_procedure text, p_procedure_version text, p_evidence_hash text, p_result text, p_proposed_changes_count integer, p_application_performed boolean, p_started_at timestamp with time zone, p_finished_at timestamp with time zone',
     apply_psdeals_ended_deals_v1:
+      'p_cycle_id uuid, p_ended_analysis_receipt_id uuid, p_idempotency_key text, p_request_hash text, p_listing_artifact_hash text, p_analysis_evidence_hash text, p_candidate_set_hash text, p_candidate_psdeals_ids bigint[], p_expected_count integer, p_applied_at timestamp with time zone',
+    apply_psdeals_ended_deals_v2:
       'p_cycle_id uuid, p_ended_analysis_receipt_id uuid, p_idempotency_key text, p_request_hash text, p_listing_artifact_hash text, p_analysis_evidence_hash text, p_candidate_set_hash text, p_candidate_psdeals_ids bigint[], p_expected_count integer, p_applied_at timestamp with time zone',
     mark_psdeals_price_refresh_cycle_succeeded_v1:
       'p_cycle_id uuid, p_demotion_receipt_id uuid, p_required_receipt_ids uuid[], p_idempotency_key text, p_request_hash text, p_manifest_hash text, p_details_completed_at timestamp with time zone, p_validation_completed_at timestamp with time zone, p_finished_at timestamp with time zone, p_items_updated integer, p_items_failed integer, p_new_items_detected integer, p_metrics jsonb',
@@ -241,7 +244,7 @@ export function evaluatePsdealsCycleMigrationFacts(facts = {}) {
       fn.search_path_empty !== true ||
       fn.anon_execute !== false ||
       fn.authenticated_execute !== false ||
-      fn.service_role_execute !== true ||
+      fn.service_role_execute !== (name !== 'apply_psdeals_ended_deals_v1') ||
       fn.definition_verified !== true
     ) {
       incompatible = true
@@ -334,6 +337,7 @@ export function validatePsdealsCycleMigrationSql(sqlInput) {
     }
   }
   for (const functionName of Object.keys(PSDEALS_CYCLE_MIGRATION_CONTRACT.functions)) {
+    if (functionName === 'apply_psdeals_ended_deals_v2') continue
     requireText(`create function public.${functionName}(`, `migration_function_missing:${functionName}`)
     requireText(`grant execute on function public.${functionName}(`, `migration_function_service_grant_missing:${functionName}`)
   }

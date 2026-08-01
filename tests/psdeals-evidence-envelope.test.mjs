@@ -673,6 +673,27 @@ test('ended-deals evidence cannot represent an applied demotion', () => {
   assert.equal(value.status, 'partial')
 })
 
+test('ended-deals evidence remains partial while candidates need revalidation', () => {
+  const value = buildEndedDealsAnalysisEvidence({
+    identity: identity(),
+    producer: producer('ended-analyzer'),
+    timestamps: timestamps(),
+    context: context(),
+    inputs: [artifacts.listing],
+    outputs: [artifacts.ended],
+    result: {
+      listing_complete_confirmed: true,
+      candidates: 1,
+      application_performed: false,
+      blockers: ['ended_candidates_require_detail_revalidation'],
+    },
+  })
+  assert.equal(value.status, 'partial')
+  assert.ok(
+    value.reason_codes.includes('ENDED_DEALS_BLOCKED_CANDIDATES_REQUIRE_REVALIDATION')
+  )
+})
+
 test('atomic evidence writer verifies bytes and refuses overwrite', async () => {
   const outputPath = path.join(temporaryDirectory, 'evidence.json')
   const value = validListing()

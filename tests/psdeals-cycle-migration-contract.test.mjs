@@ -49,7 +49,7 @@ async function migratedFacts() {
       search_path_empty: true,
       anon_execute: false,
       authenticated_execute: false,
-      service_role_execute: true,
+      service_role_execute: name !== 'apply_psdeals_ended_deals_v1',
     }
   }
   return facts

@@ -515,6 +515,7 @@ export function buildMonthlyGamesCheckEvidence(input = {}) {
 
 function assessEndedDeals(input) {
   const result = input.result || {}
+  const blockers = uniqueStrings(result.blockers)
   const listingLinked = hasArtifact(input.inputs, 'listing_json', 'final')
   const analysisPresent = hasArtifact(
     input.outputs,
@@ -527,6 +528,7 @@ function assessEndedDeals(input) {
     result.listing_complete_confirmed === true &&
     isNonNegativeInteger(result.candidates) &&
     result.application_performed === false &&
+    blockers.length === 0 &&
     normalizeErrors(input.errors).length === 0
   const status = safe
     ? 'succeeded'
@@ -544,6 +546,9 @@ function assessEndedDeals(input) {
   if (result.application_performed !== false) {
     reasonCodes.push('ENDED_DEALS_APPLICATION_NOT_ALLOWED')
   }
+  if (blockers.length > 0) {
+    reasonCodes.push('ENDED_DEALS_BLOCKED_CANDIDATES_REQUIRE_REVALIDATION')
+  }
 
   return {
     status,
@@ -552,7 +557,7 @@ function assessEndedDeals(input) {
       listing_complete_confirmed: result.listing_complete_confirmed,
       candidates: result.candidates,
       application_performed: false,
-      blockers: uniqueStrings(result.blockers),
+      blockers,
       analysis_result: safe ? 'complete' : 'incomplete',
     },
   }

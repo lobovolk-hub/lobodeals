@@ -1,6 +1,6 @@
 # LoboDeals 3.2 — Auditoría del refresh diario
 
-Fecha de corte: 2026-08-01, America/Lima  
+Fecha de corte: 2026-08-01, America/Lima
 Alcance: reconstrucción local y read-only; no se ejecutaron collectors,
 importadores, runners, Edge/CDP, captcha, SQL ni operaciones remotas.
 

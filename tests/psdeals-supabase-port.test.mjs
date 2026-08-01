@@ -69,8 +69,13 @@ test('write port rejects arbitrary conflict targets and direct legacy lifecycle 
   await assert.rejects(port.write.invokeAllowedRpc('arbitrary_rpc'), /RPC_NOT_ALLOWLISTED/)
   await assert.rejects(port.write.invokeAllowedRpc('certify_price_refresh_cycle'), /RPC_NOT_ALLOWLISTED/)
   await assert.rejects(port.write.invokeAllowedRpc('refresh_catalog_public_cache_v15'), /RPC_NOT_ALLOWLISTED/)
+  await assert.rejects(port.write.invokeAllowedRpc('apply_psdeals_ended_deals_v1'), /RPC_NOT_ALLOWLISTED/)
   assert.deepEqual(
     await port.write.invokeAllowedRpc('refresh_catalog_public_cache_v16', { p_cycle_id: 'fixture' }),
+    [{ ok: true }]
+  )
+  assert.deepEqual(
+    await port.write.invokeAllowedRpc('apply_psdeals_ended_deals_v2', { p_cycle_id: 'fixture' }),
     [{ ok: true }]
   )
 })

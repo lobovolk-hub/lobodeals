@@ -223,7 +223,8 @@ export function assessPsdealsLifecycleContracts(remoteFacts) {
       reconciliation: 'read_committed_cache_refresh_receipt_linked_to_certification',
     },
     apply_demotion: {
-      ready: receiptReady && functions.apply_psdeals_ended_deals_v1?.definition_verified === true,
+      ready: receiptReady && functions.apply_psdeals_ended_deals_v2?.definition_verified === true &&
+        functions.apply_psdeals_ended_deals_v1?.service_role_execute === false,
       reconciliation: 'read_committed_exact_candidate_set_receipt',
     },
     monthly: {

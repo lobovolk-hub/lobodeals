@@ -129,6 +129,16 @@ function summarizeBy(rows, keyFn) {
   return Object.fromEntries([...map.entries()].sort())
 }
 
+function summarizeBlockers(rows) {
+  const counts = new Map()
+  for (const row of rows) {
+    for (const reason of row?.demotion_blockers || []) {
+      counts.set(reason, (counts.get(reason) || 0) + 1)
+    }
+  }
+  return Object.fromEntries([...counts.entries()].sort())
+}
+
 export function buildEndedDealsEvidenceForAnalyzer({
   identity,
   producer,
@@ -224,6 +234,54 @@ async function fetchDiscountSignalStageItems(admin) {
   return allRows
 }
 
+function monthlyBoundary(value, { end = false } = {}) {
+  if (!value) return null
+  const text = String(value)
+  const parsed = new Date(/^\d{4}-\d{2}-\d{2}$/.test(text) ? `${text}T00:00:00.000Z` : text)
+  if (Number.isNaN(parsed.getTime())) return null
+  if (end && /^\d{4}-\d{2}-\d{2}$/.test(text)) {
+    parsed.setUTCDate(parsed.getUTCDate() + 1)
+  }
+  return parsed
+}
+
+async function fetchActiveMonthlyItemIds(admin, observedAtInput) {
+  const observedAt = new Date(observedAtInput)
+  if (Number.isNaN(observedAt.getTime())) {
+    throw new Error('ENDED_DEALS_MONTHLY_OBSERVATION_TIMESTAMP_INVALID')
+  }
+  const activeIds = new Set()
+  const pageSize = 1000
+
+  for (let from = 0; ; from += pageSize) {
+    const { data, error } = await admin
+      .from('ps_plus_monthly_games')
+      .select('item_id,active_from,active_until,active_from_at,active_until_at,is_active')
+      .eq('is_active', true)
+      .range(from, from + pageSize - 1)
+
+    if (error) throw error
+
+    for (const row of data || []) {
+      const activeFrom = monthlyBoundary(row.active_from_at || row.active_from)
+      const activeUntil = monthlyBoundary(
+        row.active_until_at || row.active_until,
+        { end: !row.active_until_at }
+      )
+      if (
+        (!activeFrom || activeFrom <= observedAt) &&
+        (!activeUntil || activeUntil > observedAt)
+      ) {
+        activeIds.add(String(row.item_id))
+      }
+    }
+
+    if (!data || data.length < pageSize) break
+  }
+
+  return activeIds
+}
+
 async function main() {
   const evidenceOptions = getPsdealsEvidenceCliOptions(process.argv)
   const evidenceStartedAt = new Date().toISOString()
@@ -248,6 +306,7 @@ async function main() {
   let parentEvidence = null
   let trackedListingInput = null
   let listingEvidenceReference = null
+  let listingComplete = false
   if (evidenceOptions.tracked) {
     const projectRoot = process.cwd()
     parentEvidence = await requireLinkedPsdealsEvidence({
@@ -276,6 +335,9 @@ async function main() {
       local_cycle_id: evidenceOptions.local_cycle_id,
       run_token: evidenceOptions.run_token,
     })
+    listingComplete =
+      parentEvidence.envelope.status === 'succeeded' &&
+      parentEvidence.envelope.payload?.collection_result === 'complete'
   }
 
   await loadKeyValueFile(path.resolve(process.cwd(), '.env.local'))
@@ -308,19 +370,31 @@ async function main() {
   const discountsItems = Array.isArray(discountsPayload.items) ? discountsPayload.items : []
 
   const discountSignalStageItems = await fetchDiscountSignalStageItems(admin)
+  const activeMonthlyItemIds = await fetchActiveMonthlyItemIds(admin, evidenceStartedAt)
 
   const endedSelection = selectEndedDiscountCandidatesFromListing(
     discountsItems,
-    discountSignalStageItems
+    discountSignalStageItems,
+    {
+      listing_complete: listingComplete,
+      monthly_evidence_verified: true,
+      monthly_item_ids: [...activeMonthlyItemIds],
+      observed_at: evidenceStartedAt,
+    }
   )
   const endedCandidates = endedSelection.candidates
+  const blockedCandidates = endedSelection.blocked_candidates
 
   const summary = {
     discounts_json_file: discountsJsonPath,
     discounts_json_items: discountsItems.length,
     discounts_json_unique_ids: endedSelection.active_discount_ids.length,
     stage_items_with_discount_signal: discountSignalStageItems.length,
+    absent_discount_candidates: endedSelection.absent_candidates.length,
     ended_discount_candidates: endedCandidates.length,
+    blocked_discount_candidates: blockedCandidates.length,
+    blocked_candidates_by_reason: summarizeBlockers(blockedCandidates),
+    active_monthly_item_ids_checked: activeMonthlyItemIds.size,
     candidates_by_content_type: summarizeBy(endedCandidates, (row) => row.content_type),
     candidates_by_item_type_label: summarizeBy(endedCandidates, (row) => row.item_type_label),
     candidates_by_is_ps_plus_discount: summarizeBy(endedCandidates, (row) =>
@@ -370,6 +444,7 @@ async function main() {
         {
           summary,
           ended_discount_candidates: endedCandidates,
+          blocked_discount_candidates: blockedCandidates,
         },
         null,
         2
@@ -388,9 +463,14 @@ async function main() {
       artifact_kind: 'ended_deals_analysis',
     })
     const evidenceFinishedAt = new Date().toISOString()
-    const listingComplete =
-      parentEvidence.envelope.status === 'succeeded' &&
-      parentEvidence.envelope.payload?.collection_result === 'complete'
+    const blockers = []
+    if (!listingComplete) blockers.push('listing_not_strongly_complete')
+    if (endedSelection.invalid_listing_items.length > 0) {
+      blockers.push('listing_contains_invalid_psdeals_ids')
+    }
+    if (blockedCandidates.length > 0) {
+      blockers.push('ended_candidates_require_detail_revalidation')
+    }
     const evidence = buildEndedDealsEvidenceForAnalyzer({
       identity: buildPsdealsRuntimeIdentity(evidenceOptions),
       producer: buildPsdealsRuntimeProducer(
@@ -407,7 +487,7 @@ async function main() {
       outputs: [outputReference],
       listing_complete_confirmed: listingComplete,
       candidates: endedCandidates.length,
-      blockers: listingComplete ? [] : ['listing_not_strongly_complete'],
+      blockers,
     })
     await emitPsdealsProducerEvidence({
       output_path: path.resolve(projectRoot, evidenceOptions.evidence_output),

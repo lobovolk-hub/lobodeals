@@ -417,7 +417,16 @@ export function runPsdealsUpdaterOrchestratorLocal(inputValue) {
   if (machine.state === 'candidates_planned' && blockers.length === 0) machine.transition('certification_planned')
   if (machine.state === 'certification_planned') machine.transition('minima_planned')
 
-  const endedSelection = selectEndedDiscountCandidatesFromListing(listing.items, input.initial_stage)
+  const endedSelection = selectEndedDiscountCandidatesFromListing(
+    listing.items,
+    input.initial_stage,
+    {
+      listing_complete: listing.complete,
+      monthly_evidence_verified: input.monthly?.checked === true,
+      monthly_item_ids: input.monthly?.active_item_ids || [],
+      observed_at: input.logical_timestamp,
+    }
+  )
   const endedDeals = []
   for (const row of endedSelection.candidates.filter((entry) => entry.is_active_discount === true)) {
     const verifiable = listing.complete && Number(row.original_price_amount) > 0 &&

@@ -4,7 +4,7 @@ const WRITE_RPC_ALLOWLIST = new Set([
   'create_or_reconcile_price_refresh_cycle_v1',
   'record_psdeals_listing_completion_v1',
   'record_psdeals_monthly_check_v1',
-  'apply_psdeals_ended_deals_v1',
+  'apply_psdeals_ended_deals_v2',
   'mark_psdeals_price_refresh_cycle_succeeded_v1',
   'certify_price_refresh_cycle_v3',
   'refresh_catalog_public_cache_v16',

@@ -44,6 +44,10 @@ function summarizeError(error) {
 }
 
 async function main() {
+  throw new Error(
+    'LEGACY_CACHE_REFRESH_V15_DISABLED: use the receipt-bound refresh_catalog_public_cache_v16 lifecycle path.'
+  )
+
   await loadKeyValueFile(path.resolve(process.cwd(), '.env.local'))
   await loadKeyValueFile(
     path.resolve(process.cwd(), '..', 'worker-playstation-ingest', '.dev.vars')

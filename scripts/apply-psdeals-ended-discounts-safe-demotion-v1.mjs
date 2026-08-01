@@ -202,6 +202,13 @@ async function main() {
     throw new Error('Missing --candidates-json argument.')
   }
 
+  const shouldApply = applyToken === 'YES_I_UNDERSTAND'
+  if (shouldApply) {
+    throw new Error(
+      'LEGACY_DIRECT_DEMOTION_DISABLED: use the receipt-bound apply_psdeals_ended_deals_v1 lifecycle path.'
+    )
+  }
+
   await loadKeyValueFile(path.resolve(process.cwd(), '.env.local'))
   await loadKeyValueFile(
     path.resolve(process.cwd(), '..', 'worker-playstation-ingest', '.dev.vars')
@@ -218,7 +225,6 @@ async function main() {
     throw new Error('Missing SUPABASE_SECRET_KEY')
   }
 
-  const shouldApply = applyToken === 'YES_I_UNDERSTAND'
   const demotionAt = new Date().toISOString()
 
   const raw = await fs.readFile(path.resolve(process.cwd(), candidatesJsonPath), 'utf8')
@@ -257,7 +263,7 @@ async function main() {
   const skippedRows = currentRows.filter((row) => !isSafeCandidate(row))
 
   const summary = {
-    mode: shouldApply ? 'APPLY' : 'DRY_RUN',
+    mode: 'REMOTE_READ_ONLY_PREVIEW',
     candidates_json_file: candidatesJsonPath,
     candidates_from_file: candidates.length,
     unique_candidate_ids_from_file: candidateIds.length,
@@ -294,7 +300,7 @@ async function main() {
   }
 
   if (!shouldApply) {
-    console.log('DRY_RUN_ONLY: no database rows were changed.')
+    console.log('REMOTE_READ_ONLY_PREVIEW: no database rows were changed.')
     return
   }
 
@@ -361,4 +367,3 @@ main().catch((error) => {
   console.error(error instanceof Error ? error.message : String(error))
   process.exit(1)
 })
-

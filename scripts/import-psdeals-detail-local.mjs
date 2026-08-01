@@ -27,6 +27,7 @@ import {
   referencePsdealsFile,
   requireLinkedPsdealsEvidence,
 } from './lib/psdeals-evidence-runtime.mjs'
+import { assertPsdealsRemoteExecutionIntent } from './lib/psdeals-remote-execution-gate.mjs'
 
 function nowIso() {
   return new Date().toISOString()
@@ -1110,6 +1111,21 @@ if (
 ) {
   throw new Error('REMOTE_CYCLE_ID_INVALID')
 }
+
+assertPsdealsRemoteExecutionIntent({
+  execution_intent_version: 1,
+  action: evidenceKindArg === 'detail_retry' ? 'detail_retry' : 'import_details',
+  execution_mode: getPsdealsCliArg(process.argv, 'execution-mode'),
+  project_ref: getPsdealsCliArg(process.argv, 'project-ref'),
+  confirmation: getPsdealsCliArg(process.argv, 'confirm-remote-action'),
+  authorization_id: getPsdealsCliArg(process.argv, 'authorization-id'),
+  local_cycle_id: evidenceOptions.local_cycle_id,
+  remote_cycle_id: remoteCycleIdArg,
+  dry_run: false,
+}, {
+  env_confirmation: process.env.LOBODEALS_REMOTE_EXECUTION,
+  node_env: process.env.NODE_ENV,
+})
 
 await loadKeyValueFile(path.resolve(process.cwd(), '.env.local'))
 await loadKeyValueFile(

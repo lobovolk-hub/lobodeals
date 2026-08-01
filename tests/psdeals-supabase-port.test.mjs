@@ -1,7 +1,10 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 
-import { createPsdealsSupabaseJsPort } from '../scripts/lib/psdeals-supabase-port.mjs'
+import {
+  createPsdealsSupabaseJsPort,
+  loadPsdealsSupabaseOperationalPortFromEnvironment,
+} from '../scripts/lib/psdeals-supabase-port.mjs'
 
 function fakeClient() {
   const calls = []
@@ -69,5 +72,17 @@ test('write port rejects arbitrary conflict targets and direct legacy lifecycle 
   assert.deepEqual(
     await port.write.invokeAllowedRpc('refresh_catalog_public_cache_v16', { p_cycle_id: 'fixture' }),
     [{ ok: true }]
+  )
+})
+
+test('environment loader fails before client creation without explicit remote intent', async () => {
+  await assert.rejects(
+    loadPsdealsSupabaseOperationalPortFromEnvironment({
+      env: {
+        SUPABASE_URL: 'https://example.invalid',
+        SUPABASE_SECRET_KEY: 'not-used',
+      },
+    }),
+    /PSDEALS_REMOTE_EXECUTION_BLOCKED/
   )
 })

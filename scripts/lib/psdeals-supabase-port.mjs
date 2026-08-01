@@ -179,7 +179,12 @@ export function createPsdealsSupabaseJsPort({ client, timeout_ms = 30000 } = {})
 export async function loadPsdealsSupabaseOperationalPortFromEnvironment({
   env = process.env,
   timeout_ms = 30000,
+  execution_intent,
 } = {}) {
+  assertPsdealsRemoteExecutionIntent(execution_intent, {
+    env_confirmation: env.LOBODEALS_REMOTE_EXECUTION,
+    node_env: env.NODE_ENV,
+  })
   const url = env.SUPABASE_URL || env.NEXT_PUBLIC_SUPABASE_URL
   const key = env.SUPABASE_SECRET_KEY
   if (!nonEmpty(url)) throw new Error('SUPABASE_URL_MISSING')
@@ -194,3 +199,4 @@ export async function loadPsdealsSupabaseOperationalPortFromEnvironment({
   })
   return createPsdealsSupabaseJsPort({ client, timeout_ms })
 }
+import { assertPsdealsRemoteExecutionIntent } from './psdeals-remote-execution-gate.mjs'

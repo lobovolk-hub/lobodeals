@@ -172,7 +172,7 @@ export const PSDEALS_BLOCK4_CAPABILITIES = Object.freeze([
   }),
   capability({
     id: 'ended_discounts', status: 'PARTIAL',
-    files: ['scripts/analyze-psdeals-ended-discounts-from-listing-v1.mjs', 'sql/004-lobodeals-3-reconciliable-cycle-actions.sql'],
+    files: ['scripts/analyze-psdeals-ended-discounts-from-listing-v1.mjs', 'scripts/lib/psdeals-ended-discounts.mjs', 'sql/004-lobodeals-3-reconciliable-cycle-actions.sql'],
     functions: ['buildEndedDealsEvidenceForAnalyzer', 'apply_psdeals_ended_deals_v1'],
     input: 'exact complete listing and bounded canonical candidate IDs',
     output: 'analysis evidence and future committed demotion receipt',

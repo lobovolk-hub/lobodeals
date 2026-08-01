@@ -12,6 +12,7 @@ export function evaluatePsdealsBlock4LocalReadiness({
   execution_gates,
   tests,
   remote_simulation_contracts,
+  offline_orchestrator,
 } = {}) {
   const blockers = []
   const warnings = []
@@ -28,6 +29,23 @@ export function evaluatePsdealsBlock4LocalReadiness({
     blockers.push('local_test_attestation_missing')
   }
   if (remote_simulation_contracts?.validated !== true) blockers.push('remote_simulation_contracts_not_validated')
+  const requiredPipelineStates = [
+    'listing_validated', 'details_processed', 'cycle_planned',
+    'receipts_reconciled', 'candidates_planned', 'certification_planned',
+    'minima_planned', 'ended_deals_planned', 'cache_planned',
+    'monthly_planned', 'ready_to_finalize', 'succeeded',
+  ]
+  const orchestratorReady =
+    offline_orchestrator?.manifest_validation?.valid === true &&
+    offline_orchestrator?.overall_status === 'simulated_success' &&
+    offline_orchestrator?.executed_writes === 0 &&
+    offline_orchestrator?.opens_connections === false &&
+    offline_orchestrator?.executes_processes === false &&
+    offline_orchestrator?.uses_supabase === false &&
+    offline_orchestrator?.static_remote_imports_absent === true &&
+    offline_orchestrator?.integration_map_count >= 9 &&
+    requiredPipelineStates.every((state) => offline_orchestrator?.pipeline_states?.includes(state))
+  if (!orchestratorReady) blockers.push('offline_orchestrator_not_code_ready')
 
   const mapIncomplete = (block4_map?.status_counts?.PARTIAL || 0) > 0 ||
     (block4_map?.status_counts?.BLOCKED || 0) > 0 ||
@@ -47,13 +65,14 @@ export function evaluatePsdealsBlock4LocalReadiness({
     !blockers.includes('failure_simulation_not_fail_closed')
   const remoteSimulationReady = dryRunReady &&
     !blockers.includes('remote_simulation_contracts_not_validated')
+  const codeReady = localFoundationReady && dryRunReady && orchestratorReady
 
   return {
     readiness_version: PSDEALS_BLOCK4_READINESS_VERSION,
     valid: blockers.length === 0,
     classification: blockers.length > 0
       ? 'LOCAL_PREFLIGHT_BLOCKED'
-      : 'LOCAL_SIMULATION_READY',
+      : codeReady ? 'LOCAL_CODE_READY' : 'LOCAL_SIMULATION_READY',
     blockers: unique(blockers),
     warnings: unique(warnings),
     states: {
@@ -61,7 +80,7 @@ export function evaluatePsdealsBlock4LocalReadiness({
       STORAGE_READY: post_006?.storage_ready === true,
       HISTORY_RUNTIME_CLEAN: (history_audit?.runtime_violations || []).length === 0,
       BLOCK_4_LOCAL_FOUNDATION_READY: localFoundationReady,
-      BLOCK_4_CODE_READY: localFoundationReady && !mapIncomplete,
+      BLOCK_4_CODE_READY: codeReady,
       BLOCK_4_DRY_RUN_READY: dryRunReady,
       BLOCK_4_REMOTE_SIMULATION_READY: remoteSimulationReady,
       BLOCK_4_COMPLETE: false,

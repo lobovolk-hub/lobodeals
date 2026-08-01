@@ -14,6 +14,11 @@ import {
   evaluatePsdealsPost006Checkpoint,
 } from './lib/psdeals-post-006-state.mjs'
 import { runPsdealsUpdaterDryRun } from './lib/psdeals-updater-dry-run.mjs'
+import {
+  PSDEALS_UPDATER_ORCHESTRATOR_INTEGRATION_MAP,
+  runPsdealsUpdaterOrchestratorLocal,
+} from './lib/psdeals-updater-orchestrator-local.mjs'
+import { getPsdealsUpdaterSimulationFixture } from './lib/psdeals-updater-simulation-fixtures.mjs'
 
 function argValue(argv, name) {
   const prefix = `--${name}=`
@@ -67,6 +72,15 @@ export async function collectPsdealsBlock4LocalReadiness({ test_count = 0 } = {}
     'scripts/lib/psdeals-cycle-fixture-adapters.mjs',
   ]
   const remoteSimulationValidated = (await Promise.all(remoteSimulationFiles.map(fileExists))).every(Boolean)
+  const [orchestratorSource, cliSource, endedPureSource] = await Promise.all([
+    fs.readFile('scripts/lib/psdeals-updater-orchestrator-local.mjs', 'utf8'),
+    fs.readFile('scripts/run-psdeals-updater-orchestrator-local.mjs', 'utf8'),
+    fs.readFile('scripts/lib/psdeals-ended-discounts.mjs', 'utf8'),
+  ])
+  const forbiddenOfflineImport = /@supabase|createClient|child_process|\bfetch\s*\(|\bspawn\s*\(|\bexec\s*\(/
+  const orchestratorResult = runPsdealsUpdaterOrchestratorLocal(
+    getPsdealsUpdaterSimulationFixture('happy-path')
+  )
 
   return evaluatePsdealsBlock4LocalReadiness({
     post_006: evaluatePsdealsPost006Checkpoint(checkpoint),
@@ -76,6 +90,12 @@ export async function collectPsdealsBlock4LocalReadiness({ test_count = 0 } = {}
     execution_gates: await staticExecutionGateCheck(),
     tests: { passed: Number.isSafeInteger(test_count) && test_count > 0, count: test_count },
     remote_simulation_contracts: { validated: remoteSimulationValidated },
+    offline_orchestrator: {
+      ...orchestratorResult,
+      static_remote_imports_absent: [orchestratorSource, cliSource, endedPureSource]
+        .every((source) => !forbiddenOfflineImport.test(source)),
+      integration_map_count: PSDEALS_UPDATER_ORCHESTRATOR_INTEGRATION_MAP.length,
+    },
   })
 }
 

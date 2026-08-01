@@ -3,6 +3,7 @@ import { applyPsdealsCertifiedPriceLow } from './psdeals-compact-minima.mjs'
 import { normalizePsdealsCommercialState } from './psdeals-commercial-state.mjs'
 import { buildPsdealsDailyCyclePlan, PSDEALS_DAILY_CYCLE_STEPS } from './psdeals-cycle-plan.mjs'
 import { classifyFastRefreshItem, selectFastRefreshQueues } from './psdeals-fast-refresh.mjs'
+import { selectEndedDiscountCandidatesFromListing } from './psdeals-ended-discounts.mjs'
 import { classifyPsdealsItemType, normalizePsdealsPlatforms } from './psdeals-item-classification.mjs'
 import { buildPsdealsDetailUpsertPayload, buildPsdealsListingInsertPayload, buildPsdealsListingUpdatePayload } from './psdeals-stage-payload.mjs'
 import {
@@ -14,7 +15,6 @@ import {
   validatePsdealsUpdaterSimulationInput,
   validatePsdealsUpdaterSimulationManifest,
 } from './psdeals-updater-orchestration-core.mjs'
-import { selectEndedDiscountCandidatesFromListing } from '../analyze-psdeals-ended-discounts-from-listing-v1.mjs'
 
 export const PSDEALS_UPDATER_ORCHESTRATOR_VERSION = 1
 

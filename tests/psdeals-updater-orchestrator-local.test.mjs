@@ -225,3 +225,14 @@ test('importing the offline entrypoint initializes no remote client or main proc
   assert.equal(typeof runPsdealsUpdaterOrchestratorCli, 'function')
   assert.equal(JSON.stringify(run()).includes('SUPABASE_SECRET_KEY'), false)
 })
+
+test('offline dependency graph uses the extracted pure ended-deals selector', async () => {
+  const [orchestrator, ended] = await Promise.all([
+    import('node:fs/promises').then((fs) => fs.readFile('scripts/lib/psdeals-updater-orchestrator-local.mjs', 'utf8')),
+    import('node:fs/promises').then((fs) => fs.readFile('scripts/lib/psdeals-ended-discounts.mjs', 'utf8')),
+  ])
+  assert.match(orchestrator, /psdeals-ended-discounts\.mjs/)
+  for (const source of [orchestrator, ended]) {
+    assert.doesNotMatch(source, /@supabase|createClient|child_process|\bfetch\s*\(/)
+  }
+})

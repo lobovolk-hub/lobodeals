@@ -82,6 +82,17 @@ de runtime en la ventana de cinco días consultada.
 - `CACHE_STRATEGY_APPROVED_LOCALLY=true`
 - `DEPLOY_FIX_REQUIRED_BEFORE_REFRESH=false`
 
+## Validación final local
+
+- `npm test`: 464/464.
+- Recheck final Bloque 4 + ended/demotion: 14/14.
+- Suites enfocadas de runners, fast refresh, ended/demotion y cache: todas
+  aprobadas.
+- `node --check`: 107/107 archivos `.mjs`.
+- Lint: 0 errores y los mismos 6 warnings conocidos.
+- Secret scan, referencias activas, paths documentales y diff checks: limpios.
+- Build no ejecutado porque no cambió Next.js/TypeScript de producción.
+
 El plan exacto del recovery está documentado como NO-GO en
 `LOBODEALS-OPERATIONS.md`. Siguiente prioridad: integrar y probar el runner
 diario real; después cerrar los NO-GO de Vercel, migración 007 y cache v16 antes

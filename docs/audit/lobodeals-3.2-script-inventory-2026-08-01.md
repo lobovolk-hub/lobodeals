@@ -14,7 +14,7 @@ evaluó también su valor operativo, diagnóstico, de seguridad o recovery.
 | `analyze-psdeals-discounts-fast-refresh-v1.mjs` | CONSERVADO | Llamado por el wrapper discounts y cubierto por suites de fast refresh | vigente para colas acotadas; requiere integración certificada |
 | `analyze-psdeals-ended-discounts-from-listing-v1.mjs` | CONSERVADO | Productor actual de evidencia ended; usa selector puro probado | integrar obligatoriamente en el runner |
 | `analyze-psdeals-listing-new-v2.mjs` | CONSERVADO | Llamado por recently-added | vigente, pendiente de revalidación real |
-| `apply-psdeals-ended-discounts-safe-demotion-v1.mjs` | CONSERVADO | Contrato de seguridad y preview; apply legacy bloqueado y probado | RPC receipt-bound `apply_psdeals_ended_deals_v1` |
+| `apply-psdeals-ended-discounts-safe-demotion-v1.mjs` | CONSERVADO | Superficie histórica de preview; apply directo bloqueado y probado | RPC endurecido `apply_psdeals_ended_deals_v2`; v1 queda interno |
 | `audit-price-history-dependencies-local.mjs` | CONSERVADO | Auditoría local reproducible de una decisión irreversible | `price-history-dependency-audit.mjs` |
 | `audit-psdeals-listing-classification-local.mjs` | CONSERVADO | Diagnóstico offline de familias/plataformas | clasificadores compartidos actuales |
 | `backfill-metacritic-score-v2.mjs` | CONSERVADO | Llamado por el PowerShell semanal; flujo separado de precios | `run-metacritic-weekly-14d.ps1` |

@@ -172,7 +172,7 @@ export const PSDEALS_BLOCK4_CAPABILITIES = Object.freeze([
   }),
   capability({
     id: 'ended_discounts', status: 'PARTIAL',
-    files: ['scripts/analyze-psdeals-ended-discounts-from-listing-v1.mjs', 'scripts/lib/psdeals-ended-discounts.mjs', 'sql/004-lobodeals-3-reconciliable-cycle-actions.sql'],
+    files: ['scripts/analyze-psdeals-ended-discounts-from-listing-v1.mjs', 'scripts/lib/psdeals-ended-discounts.mjs', 'sql/004-lobodeals-3-reconciliable-cycle-actions.sql', 'sql/007-lobodeals-3-safe-demotion-hardening.sql'],
     functions: ['buildEndedDealsEvidenceForAnalyzer', 'apply_psdeals_ended_deals_v2'],
     input: 'exact complete listing and bounded canonical candidate IDs',
     output: 'analysis evidence and future committed demotion receipt',
@@ -181,8 +181,8 @@ export const PSDEALS_BLOCK4_CAPABILITIES = Object.freeze([
     idempotency: 'candidate set hash, expected count and receipt',
     retry_policy: 'reconcile receipt; never repeat ambiguous write',
     safety_gate: 'complete listing, can_demote, max 500 and stage authorization',
-    tests: ['tests/psdeals-cycle-migration-sql-contract.test.mjs', 'tests/psdeals-migrated-lifecycle-rehearsal.test.mjs'],
-    gap: 'no real demotion has been authorized or executed',
+    tests: ['tests/psdeals-ended-discounts.test.mjs', 'tests/psdeals-safe-demotion-migration.test.mjs', 'tests/psdeals-cycle-migration-sql-contract.test.mjs', 'tests/psdeals-migrated-lifecycle-rehearsal.test.mjs'],
+    gap: 'migration 007 is not applied and v2 is not integrated into a real runner',
   }),
   capability({
     id: 'remote_cycle_creation', status: 'PARTIAL',

@@ -65,6 +65,12 @@ detalle forense usar `docs/audit/**` y Git.
 - `422926a`, `6de4743`, `193aa33`: retirada 006 y consolidación post-006.
 - `d5a7277`, `e2bd081`, `f0ec189`: dry-run, orquestación offline y documentación
   del updater.
+- `b97485f`: documentación canónica 3.2.
+- `fe2b2c2`: eliminación de fuentes operativas obsoletas.
+- `7110174`: auditoría histórica del refresh diario.
+- `81c012a`: safe demotion v2 local y migración 007 no aplicada.
+- `a92e8fd`: diagnóstico Vercel y estrategia de cache.
+- `21e6358`: plan de recovery NO-GO, sin ejecución.
 
 ## Estado al iniciar este paquete
 
@@ -88,5 +94,23 @@ detalle forense usar `docs/audit/**` y Git.
   `docs/audit/lobodeals-3-migration-004-scoped-recovery-2026-07-30/README.md`.
 - Inventario documental:
   `docs/audit/lobodeals-3.2-document-inventory-2026-08-01.md`.
+- Auditoría del flujo diario:
+  `docs/audit/lobodeals-3.2-daily-refresh-audit-2026-08-01.md`.
+- Safe demotion:
+  `docs/audit/lobodeals-3.2-safe-demotion-audit-2026-08-01.md`.
+- Vercel/ISR:
+  `docs/audit/lobodeals-3.2-vercel-cache-audit-2026-08-01.md`.
+- Validación final:
+  `docs/audit/lobodeals-3.2-final-validation-2026-08-01.md`.
 
 Git conserva los documentos eliminados; no recrearlos como fuentes activas.
+
+## Punto de continuación después del paquete
+
+- Producción observada: deployment `dpl_6Ua5HpBGWf1GczzzzZdE7AL3vHBr`, SHA
+  `4f826ac873850d3e61ceb68721512099625f1515`.
+- Datos públicos siguen en 2026-06-06; no se ejecutó el recovery.
+- Safe demotion v2 está lista localmente, no aplicada ni integrada.
+- El recovery tiene NO-GO de runner, migración 007, demotion y Vercel.
+- Próxima tarea: integrar el runner operacional completo con fakes y gates;
+  no ejecutar aún un ciclo real ni iniciar la prueba de 30 días.

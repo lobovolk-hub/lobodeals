@@ -10,6 +10,7 @@ const files = {
   precheck: 'sql/validation/007-safe-demotion-precheck-readonly.sql',
   certificate: 'sql/validation/007-safe-demotion-precheck-certificate-readonly.sql',
   postcheck: 'sql/validation/007-safe-demotion-postcheck-readonly.sql',
+  postCertificate: 'sql/validation/007-safe-demotion-postcheck-certificate-readonly.sql',
 }
 const loaded = Object.fromEntries(await Promise.all(Object.entries(files).map(async ([key, file]) => [
   key,
@@ -40,8 +41,8 @@ test('recovery locks identity tables and refuses drift or any prior use', () => 
   assert.doesNotMatch(loaded.recovery, /\bcascade\b/i)
 })
 
-test('diagnostic precheck and postcheck contain no top-level mutation', () => {
-  for (const value of [loaded.precheck, loaded.postcheck]) {
+test('diagnostic checks and certificates contain no top-level mutation', () => {
+  for (const value of [loaded.precheck, loaded.postcheck, loaded.certificate, loaded.postCertificate]) {
     assert.doesNotMatch(value, /^\s*(?:begin|commit|insert|update|delete|alter|drop|truncate|vacuum|grant|revoke|create|call|do|lock)\b/im)
     assert.doesNotMatch(value, /\bpg_advisory_|\bpg_terminate_backend\b/i)
   }
@@ -67,6 +68,20 @@ test('certificate emits the full machine-readable contract and covers required s
     'monthly_and_cache_observable', 'no_target_lock_waiters',
     'no_relevant_active_clients', 'migration_007_compatibility',
   ]) assert.match(loaded.certificate, new RegExp(token))
+})
+
+test('post-application certificate pins the exact 007 footprint in one snapshot', () => {
+  assert.equal(splitSqlStatements(loaded.postCertificate).length, 1)
+  const ids = [...loaded.postCertificate.matchAll(/(?:select|union all select)\s+(\d+),\s*'[^']+'/gi)].map((match) => Number(match[1]))
+  assert.deepEqual(ids, Array.from({ length: 23 }, (_, index) => index + 1))
+  assert.equal((loaded.postCertificate.match(/pg_current_snapshot\(\)/g) || []).length, 1)
+  assert.equal((loaded.postCertificate.match(/statement_timestamp\(\)/g) || []).length, 1)
+  for (const token of [
+    'migration_007_registered_once', 'v1_revoked_security_contract',
+    'v2_exact_definition', '6d1c5266784bc309eb3f06e49648875e668a89bef5c9c500cc61349a002cf07a',
+    'v2_security_acl_and_comment', '\\{postgres=X/postgres,service_role=X/postgres\\}',
+    'migration_007_post_application_contract',
+  ]) assert.match(loaded.postCertificate, new RegExp(token))
 })
 
 test('migration 007 exposes an immutable local SHA for authorization packaging', () => {

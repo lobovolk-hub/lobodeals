@@ -21,15 +21,16 @@ invalidación de caché.
   para actualizar Supabase y, en el estado actual, puede recrear cachés. Esta
   gate no autoriza el refresh: permanecen NO-GO de runner, demotion y cuota.
 
-La fuente más probable de los 304K ISR Writes es la ruta de detalle
+La fuente más probable de los 304K ISR Write Units es la ruta de detalle
 `/us/playstation/[slug]`: es estática bajo demanda, acepta slugs no
-pregenerados y mantiene una entrada de caché por path. Un slug nuevo para un
-deployment produce su primera generación al recibir una solicitud; un slug ya
-generado puede regenerarse, también por solicitud, después de 86.400 segundos.
-El catálogo conocido contiene 32.890 filas, por lo que crawling amplio,
-revisitas después del TTL y nuevos deployments multiplican entradas y
-regeneraciones. La ventana de 30 días incluye el periodo previo a las últimas
-mitigaciones y al fix Unicode.
+pregenerados y mantiene una entrada de caché por path. La primera solicitud a
+un path todavía ausente de la caché ISR durable produce su generación; un slug
+ya generado puede regenerarse, también por solicitud, después de 86.400
+segundos. El catálogo conocido contiene 32.890 filas, por lo que crawling
+amplio y revisitas después del TTL multiplican entradas y regeneraciones. No es
+correcto añadir automáticamente un multiplicador por deploy: Vercel conserva
+las páginas ISR entre deployments y rollbacks. La ventana de 30 días incluye
+el periodo previo a las últimas mitigaciones y al fix Unicode.
 
 `/catalog` y `/deals` no son ISR en el deployment observado: el build las
 clasifica dinámicas. Sus consultas server-side por cada request, junto con las
@@ -50,7 +51,7 @@ no se verificaron independientemente:
 | Edge Requests | 336K / 1M | 33,6% |
 | Edge Request CPU | 31s / 1h | amplio margen |
 | ISR Reads | 233K / 1M | 23,3% |
-| ISR Writes | 304K / 200K | 152%; sobre la cuota visible |
+| ISR Writes | 304K / 200K | 152%; sobre la cuota visible; son unidades de 8 KB, no número de regeneraciones |
 | Function Invocations | 160K / 1M | 16% |
 | Fluid Active CPU | 3h22m / 4h | 84,2% |
 | Fluid Provisioned Memory | 27,9 / 360 GB-h | amplio margen |
@@ -74,7 +75,8 @@ requests. No deben compararse numéricamente con 304K.
 
 El deployment restauró el build cache del deployment anterior
 `dpl_FHhLSmHv6C1m1GYCtk3TwPXeCWz4`, pero desplegó el SHA posterior `4f826ac`.
-Los cambios locales de este paquete no están desplegados.
+Ese build cache no demuestra purga ni creación de la caché ISR. Los cambios
+locales de este paquete no están desplegados.
 
 ## Clasificación real del build productivo
 
@@ -115,11 +117,13 @@ encontraron `generateStaticParams`, `revalidatePath`, `revalidateTag`,
 
 ## Evidencia de runtime
 
-Para el deployment productivo y los cinco días posteriores se observaron 42
-eventos con ruta entre los grupos visibles: 30 en slugs, 8 en catálogo y 4 en
-deals. Por source se observaron 30 eventos `cache` y 40 `function` entre los
-grupos visibles. Son muestras de logs, no totales de uso, pero confirman que la
-superficie slug domina el tráfico de caché observado.
+La lectura agrupada desde la creación del deployment productivo
+(`2026-07-27T05:38:08Z`) hasta este corte mostró 130 eventos en `/deals`, 85 en
+`/catalog`, 3 en `/` y 2 en `/us/playstation/[slug]`. Por source mostró 224
+eventos `function` y 5 `cache`; el conector indicó además un quinto grupo de
+ruta y un tercer source sin mostrarlos. Son eventos retenidos, no totales de
+uso ni segundos de CPU. La muestra posterior al fix confirma el peso operativo
+de catalog/deals, pero no permite repartir las 304K ISR Write Units por ruta.
 
 En la consulta histórica de errores, el cluster principal fue:
 
@@ -146,8 +150,8 @@ cinco días posteriores devolvió cero errores de runtime. Por ello:
 | Entrada/regeneración ISR individual por slug | `PROVEN` | Configuración local, build productivo y eventos cache de la ruta |
 | Crawling/revisitas sobre un universo de 32.890 slugs | `HIGH_CONFIDENCE` | cardinalidad, `dynamicParams=true`, logs con muchos paths únicos; faltan UA/host |
 | TTL de 24h de slugs | `PROVEN` | `revalidate=86400`; requiere una visita posterior al vencimiento |
-| Primer request de un slug tras deployment | `PROVEN` | no hay `generateStaticParams`; la ruta se genera bajo demanda |
-| Deployments como multiplicador de primeras generaciones | `POSSIBLE` | cada deployment tiene outputs/cachés propios; no hay desglose facturable |
+| Primer request de un slug aún ausente de ISR | `PROVEN` | no hay `generateStaticParams`; la ruta se genera bajo demanda |
+| Cada deployment vacía ISR y multiplica primeras generaciones | `RULED_OUT` | Vercel conserva páginas ISR entre deployments y rollbacks |
 | Errores Unicode previos como multiplicador | `POSSIBLE` | error probado; cantidad de ISR Writes inducidos no observable |
 | Home como fuente principal de 304K | `RULED_OUT` | una sola ruta, TTL 1h y un evento de ruta observado |
 | Sitemap actual como fuente principal | `RULED_OUT` | solo `/`, `/catalog`, `/deals`; TTL diario |
@@ -157,22 +161,24 @@ cinco días posteriores devolvió cero errores de runtime. Por ello:
 | Crawling específico de aliases `.vercel.app` | `NOT_OBSERVABLE` | aliases existen, pero los logs disponibles no exponen Host/User-Agent |
 | Catalog/deals como Active CPU | `PROVEN` | build dinámico y queries server-side por request |
 | Generación ISR de slug como Active CPU | `PROVEN` | generación server-side y hasta seis lecturas Supabase |
-| Slugs como mayor componente exacto de CPU | `HIGH_CONFIDENCE` | dominan eventos observados, sin segundos CPU por ruta |
+| Slugs como mayor componente exacto de CPU | `NOT_OBSERVABLE` | la muestra post-fix está dominada por catalog/deals y no expone segundos CPU por ruta |
 | Proxy público como fuente principal de CPU | `RULED_OUT` | matcher excluye rutas públicas |
 
 ## Respuestas obligatorias
 
-1. **Fuente de 304K:** slugs ISR individuales, amplificados por crawling,
-   revisitas después de 24h y deployments; `HIGH_CONFIDENCE`.
+1. **Fuente de 304K:** slugs ISR individuales, amplificados por crawling y
+   revisitas después de 24h; `HIGH_CONFIDENCE`. Son Write Units de 8 KB, por lo
+   que 304K no equivale a 304K regeneraciones.
 2. **Rutas:** principalmente `/us/playstation/[slug]`; home y sitemap aportan
    poco. Catalog/deals no escriben ISR en el build observado.
-3. **Qué activa un write:** primera visita a un path no generado o
-   regeneración iniciada por una visita después del TTL; un deploy crea un
-   nuevo conjunto de outputs.
+3. **Qué activa un write:** primera visita a un path ausente de ISR o
+   regeneración iniciada por una visita después del TTL. El tamaño del output
+   determina cuántas unidades de 8 KB factura una escritura.
 4. **Slugs individuales:** sí, una entrada por path solicitado.
-5. **Frecuencia:** primera solicitud por deployment y, luego, como máximo una
-   regeneración tras cada ventana de 24h cuando exista otra solicitud; no es un
-   cron autónomo.
+5. **Frecuencia:** primera solicitud mientras el path no exista en ISR y,
+   después, como máximo una regeneración tras cada ventana de 24h cuando exista
+   otra solicitud. No es una primera generación automática por deployment ni
+   un cron autónomo.
 6. **Active CPU:** renders dinámicos de catalog/deals/auth y generaciones de
    slugs con varias queries; el peso exacto no es observable.
 7. **Refresh Supabase invalida páginas:** no.

@@ -197,7 +197,7 @@ directamente.
 | 1 | `AUTOMATIC` | `create_or_reconcile_price_refresh_cycle_v1` | cycle ID + receipt ligados a identidad local | permiso `allow_create_remote_cycle`; timeout se reconcilia |
 | 2 | `JOHAN` | Abrir Edge visible con CDP; cargar PSDeals y resolver challenge | endpoint CDP utilizable | captcha nunca automático |
 | 3 | `AUTOMATIC` | `collect-psdeals-listing-edge-live-cdp.mjs` con URL recently-added | listing + evidence en workspace | cap/stop y 0 páginas fallidas |
-| 4 | `AUTOMATIC` | `analyze-psdeals-recently-added-new-v1.mjs` | set nuevo hash-linked | más de 200 = revisión manual |
+| 4 | `AUTOMATIC` | `analyze-psdeals-listing-new-v2.mjs` | set nuevo hash-linked | más de 200 = revisión manual |
 | 5 | `AUTOMATIC` | `import-psdeals-detail-local.mjs` para nuevos | summary, receipt y failures | ciclo/parent evidence/autorización obligatorios |
 | 6 | `MANUAL GATE` | Reconciliar import recently-added | 0 pendientes o decisión fail-closed | no cache intermedia por defecto |
 | 7 | `AUTOMATIC` | `collect-psdeals-listing-edge-live-cdp.mjs` con URL discounts y cap 1000 | listing discounts final | completitud fuerte obligatoria |

@@ -54,7 +54,7 @@ ejecutarlos.
 | 2 | Abrir Edge con CDP | Edge visible, puerto 9222 | URL canónica | Endpoint `/json/version` o `DevToolsActivePort` | Edge visible y perfil correcto | Edge | `PARTIAL` |
 | 3 | Resolver challenge | Intervención de Johan | Pestaña visible | Sesión apta para PSDeals | Nunca automatizar captcha | Edge/captcha | `UNKNOWN` |
 | 4 | Recolectar recently-added | `run-psdeals-edge-live-recently-added.ps1` → `collect-psdeals-listing-edge-live-cdp.mjs` | URL recently-added; cap 100; stop 3 páginas sin nuevos | Listing JSON/TXT local | Collector con stop incremental; sesión no verificada | Edge/CDP, PSDeals | `PARTIAL` |
-| 5 | Detectar nuevos | `analyze-psdeals-recently-added-new-v1.mjs` | Listing + stage actual | Lista de URLs nuevas | Bloquea más de 200 faltantes | Supabase read-only | `PARTIAL` |
+| 5 | Detectar nuevos | `analyze-psdeals-listing-new-v2.mjs` | Listing + stage actual | Lista de URLs nuevas | Bloquea más de 200 faltantes | Supabase read-only | `PARTIAL` |
 | 6 | Importar nuevos | `import-psdeals-detail-local.mjs` | Lista de URLs | Escrituras de detalle/stage | Hoy exige ciclo, parent evidence y autorización | Edge/Playwright, Supabase write | `BROKEN` en el wrapper |
 | 7 | Caché intermedia histórica | Refresh v15 impreso por el wrapper | Stage actualizado | Mutación de `catalog_public_cache` | v15 directo está bloqueado; v16 exige receipt | Supabase write | `REPLACED` |
 | 8 | Recolectar discounts | `run-psdeals-edge-live-discounts-fast-refresh.ps1` → collector | URL discounts; cap 1000 | Listing completo JSON/TXT | Debe producir evidencia fuerte de completitud | Edge/CDP, PSDeals | `PARTIAL` |

@@ -8,12 +8,12 @@ Fecha de vigencia: 2026-08-01
    de contradicciones y preservación mínima de evidencia.
 2. **Auditoría del refresh.** Reconstruir el flujo de mayo y evaluar runners,
    fast refresh, retry, ended deals, safe demotion y caché.
-3. **Runner diario.** Integrar adapters reales, safe demotion v2, receipts,
-   certificación, cache v16, reconciliación y pruebas end-to-end.
-4. **Vercel.** Observar la ventana posterior al fix; mantener cero warm-up y
+3. **Vercel.** Observar la ventana posterior al fix; mantener cero warm-up y
    preparar el desacople entre shell SEO y precio diario.
-5. **Refresh de recuperación.** Preparar y, solo con autorización futura,
+4. **Refresh de recuperación.** Preparar y, solo con autorización futura,
    recuperar datos públicos con gates y observación de Vercel.
+5. **Runner diario.** Integrar adapters reales, safe demotion v2, receipts,
+   certificación, cache v16, reconciliación y pruebas end-to-end.
 6. **Mejoras públicas.** Secciones dinámicas, DLC/Editions, Unicode, Monthly,
    slugs y Google Sign-In.
 7. **Mínimos.** Mostrar lowest regular y lowest PS Plus prospectivos y explicar

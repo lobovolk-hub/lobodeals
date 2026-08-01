@@ -24,7 +24,7 @@ Supabase, refresh de cache, navegación de producción, push ni deploy.
 | Patrones de secretos en archivos tracked | 0 matches |
 | Referencias activas a archivos eliminados | 0 fuera de inventarios históricos |
 | Paths citados por documentación activa | 0 rotos |
-| `MIGRATION_006_APPLIED=false` | 0 matches tracked |
+| Valor falso del gate de migración 006 | 0 matches tracked |
 | Build | no ejecutado: no cambió Next.js/TypeScript de producción |
 
 Las suites enfocadas pueden compartir algún archivo con otra categoría; sus
@@ -70,3 +70,28 @@ preexistentes.
 
 La suite completa prueba código local y fakes. No convierte migración 007 en
 aplicada, no demuestra un runner real y no autoriza un ciclo.
+
+## Recheck correctivo posterior a `e2e7ae8`
+
+Una revisión final corrigió tres inconsistencias documentales sin cambiar
+código productivo: el nombre fantasma del analyzer recently-added se sustituyó
+por `scripts/analyze-psdeals-listing-new-v2.mjs`, el roadmap recuperó el orden
+Vercel → recovery → runner y la auditoría ISR dejó de tratar cada deployment
+como una purga automática. También precisó que ISR Writes se factura en
+unidades de 8 KB y actualizó la muestra read-only posterior al deployment.
+
+- `npm test`: 464/464.
+- Bloque 4: 18/18.
+- Runners y fast refresh: 58/58.
+- Ended deals y safe demotion: 11/11.
+- Cache y certificación: 61/61.
+- `node --check`: 107/107 archivos `.mjs`.
+- Lint: 0 errores y 6 warnings conocidos.
+- Secret scan tracked: 0 archivos.
+- Paths literales en los ocho documentos activos: 0 inexistentes.
+- Referencias activas al analyzer fantasma: 0.
+- Valor falso del gate de migración 006: 0 matches tracked.
+
+El inventario conserva deliberadamente nombres de archivos eliminados para
+explicar su clasificación; esas menciones históricas no son enlaces operativos
+ni referencias entrantes desde las fuentes activas.

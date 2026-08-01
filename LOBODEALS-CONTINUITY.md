@@ -71,6 +71,7 @@ detalle forense usar `docs/audit/**` y Git.
 - `81c012a`: safe demotion v2 local y migración 007 no aplicada.
 - `a92e8fd`: diagnóstico Vercel y estrategia de cache.
 - `21e6358`: plan de recovery NO-GO, sin ejecución.
+- `e2e7ae8`: validación global del paquete, sin operación remota.
 
 ## Estado al iniciar este paquete
 

@@ -18,7 +18,7 @@ Fecha de corte: 2026-08-01, America/Lima
 - Vercel conserva el deployment productivo conocido en `READY`, con el SHA
   productivo esperado y 0 errores runtime observados en 24 h. La API consultada
   no demuestra margen/capacidad explícitamente aprobado; ese gate sigue cerrado.
-- Baseline actual: 486/486 pruebas; 113/113 `.mjs` pasan `node --check`; lint
+- Baseline actual: 487/487 pruebas; 113/113 `.mjs` pasan `node --check`; lint
   con 0 errores y los mismos 6 warnings preexistentes; 15/15 replays y 0 writes.
 
 ## Git y producción
@@ -111,7 +111,7 @@ de runtime en la ventana de cinco días consultada.
 
 ## Validación final local
 
-- `npm test`: 486/486.
+- `npm test`: 487/487.
 - Recheck final Bloque 4 + ended/demotion: 14/14.
 - Suites enfocadas de runners, fast refresh, ended/demotion y cache: todas
   aprobadas.

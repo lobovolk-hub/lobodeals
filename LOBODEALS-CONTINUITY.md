@@ -75,6 +75,8 @@ detalle forense usar `docs/audit/**` y Git.
 - `03ed523`: endurecimiento 007, recovery y validadores read-only completos.
 - `dcf04b6`: runner diario único, 22 adapters y 15 replays integrales.
 - `1912f29`: HEAD real y SHA canónico del certificado fijados en los gates live.
+- `d1bae03`: gates Edge/CDP y captcha distinguen puerto, pestaña, región,
+  challenge y desconexión antes de cualquier adapter.
 
 ## Estado al iniciar este paquete
 
@@ -118,7 +120,7 @@ Git conserva los documentos eliminados; no recrearlos como fuentes activas.
   `d2ac2c231dd5ad18d9fc675d66fac6a19389cdc0864c9632ee601b62e5581766`.
 - Certificado 007 read-only aprobado 23/23, 0 blockers; SHA del certificado:
   `b6ebbc3f46b2ee052a02bfea52bbfc811be38786a4e993f4d51e8996ef277e73`.
-- Runner: `npm run refresh:daily`; 486/486 pruebas, 15/15 replays, 0 writes.
+- Runner: `npm run refresh:daily`; 487/487 pruebas, 15/15 replays, 0 writes.
 - El recovery mantiene NO-GO de aplicación 007, capacidad Vercel explícita,
   Edge/captcha y autorización live separada.
 - Próxima tarea exacta: recibir la Autorización A, aplicar solo 007, ejecutar su

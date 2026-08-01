@@ -75,7 +75,7 @@ Artefactos:
   5.531/5.552 bloqueado.
 - Hollow Knight y PS Plus ambiguo no entran en candidates de demotion.
 - Timeout exige reconciliación; duplicación y restart son deterministas.
-- `npm test`: 486/486.
+- `npm test`: 487/487.
 - `node --check`: 113/113 `.mjs`.
 - Lint: 0 errores, 6 warnings preexistentes.
 - Build omitido: no cambió Next.js/TypeScript de producción.

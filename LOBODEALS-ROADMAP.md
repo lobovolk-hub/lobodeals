@@ -32,7 +32,7 @@ Fecha de vigencia: 2026-08-01
 - ISR Writes y Active CPU tienen fuentes identificadas; la estrategia local de
   caché está aprobada, pero la operación no es segura aún bajo la cuota visible.
 - Datos públicos siguen desactualizados.
-- El runner único pasa 486 pruebas y 15 replays con cero efectos. El refresh de
+- El runner único pasa 487 pruebas y 15 replays con cero efectos. El refresh de
   recuperación conserva NO-GO de 007, aprobación de capacidad Vercel,
   Edge/captcha y autorización live; no está autorizado.
 - La prueba de 30 días no ha empezado.

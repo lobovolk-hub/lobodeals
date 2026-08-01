@@ -10,8 +10,8 @@ Fecha de vigencia: 2026-08-01
    fast refresh, retry, ended deals, safe demotion y caché.
 3. **Vercel.** Observar la ventana posterior al fix; mantener cero warm-up y
    preparar el desacople entre shell SEO y precio diario.
-4. **Migración 007.** Aplicar únicamente con Autorización A explícita, ejecutar
-   postcheck y repetir certificado/preflight read-only.
+4. **Migración 007 — completada.** Aplicada una sola vez con Autorización A;
+   postcheck, certificado posterior y preflight read-only aprobados.
 5. **Refresh de recuperación.** Con capacidad Vercel aprobada y Autorización B
    independiente, ejecutar una sola recuperación supervisada mediante el
    runner diario ya integrado en código.
@@ -28,13 +28,14 @@ Fecha de vigencia: 2026-08-01
 ## Gates actuales
 
 - Bloque 4 tiene código local listo, pero operación real incompleta.
-- Safe demotion v2 está lista e integrada localmente; 007 no está aplicada.
+- Safe demotion v2 está lista, integrada y aplicada mediante 007; v1 ya no es
+  ejecutable por `service_role`.
 - ISR Writes y Active CPU tienen fuentes identificadas; la estrategia local de
   caché está aprobada, pero la operación no es segura aún bajo la cuota visible.
 - Datos públicos siguen desactualizados.
-- El runner único pasa 487 pruebas y 15 replays con cero efectos. El refresh de
-  recuperación conserva NO-GO de 007, aprobación de capacidad Vercel,
-  Edge/captcha y autorización live; no está autorizado.
+- El runner único pasa 488 pruebas y 15 replays con cero efectos. El refresh de
+  recuperación conserva NO-GO por capacidad Vercel, Edge/captcha y autorización
+  live independiente; no está autorizado.
 - La prueba de 30 días no ha empezado.
 
 No adelantar arquitectura avanzada, automatización o monetización a costa de

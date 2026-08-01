@@ -11,7 +11,9 @@ Fecha de corte: 2026-08-01
 - **Supabase:** base de datos, Auth/RLS y RPCs. `psdeals_stage_items` conserva
   el estado comercial; `catalog_public_cache` alimenta la app; tablas de ciclos,
   receipts y candidates protegen el flujo certificado; `ps_plus_monthly_games`
-  separa Monthly de ofertas comerciales.
+  separa Monthly de ofertas comerciales. La migración 007 está aplicada:
+  `apply_psdeals_ended_deals_v2` es el único entrypoint de demotion ejecutable
+  por `service_role`; v1 quedó interno a `postgres`.
 - **Caché pública:** materialización de stage y datos relacionados. El camino
   legacy directo v15 está bloqueado en código; el futuro camino v16 exige ciclo,
   certificación y receipt.
@@ -61,9 +63,9 @@ producción. Los PowerShell son wrappers del collector, analyzers e importer.
   acepta el receipt anterior exacto y una acción externa sin receipt válido
   termina fail-closed o en reconciliación.
 
-Este tooling prueba contratos, orden y replays integrales. No demuestra una
-operación live: 007 no está aplicada, Edge/captcha no fueron abiertos y no se
-ejecutó ningún collector, import, RPC mutable o cache.
+Este tooling prueba contratos, orden y replays integrales. La aplicación
+aislada de 007 no demuestra una operación live: Edge/captcha no fueron abiertos
+y no se ejecutó ningún collector, import, RPC operacional mutable o cache.
 
 ## Componentes históricos
 

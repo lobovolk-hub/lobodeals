@@ -34,8 +34,12 @@ detalle forense usar `docs/audit/**` y Git.
   `20260801030244`; SHA-256
   `e825a88ef811873f16cc48da5685d8e87eb699b5d903bd29ad34025a9630f5e4`;
   postcheck 13/13.
+- 007: safe demotion v2 aplicada una sola vez; versión `20260801220321`;
+  SHA-256 `d2ac2c231dd5ad18d9fc675d66fac6a19389cdc0864c9632ee601b62e5581766`;
+  postcheck 7/7 y certificado posterior 23/23, 0 blockers. V1 ya no es
+  ejecutable por `service_role`; v2 sí, con ACL exacta.
 - Database Size: 440.741.011 → 166.841.491 bytes.
-- No modificar las migraciones aplicadas 005 o 006.
+- No modificar las migraciones aplicadas 005, 006 o 007.
 
 ## Incidentes que no deben repetirse
 
@@ -77,6 +81,7 @@ detalle forense usar `docs/audit/**` y Git.
 - `1912f29`: HEAD real y SHA canónico del certificado fijados en los gates live.
 - `d1bae03`: gates Edge/CDP y captcha distinguen puerto, pestaña, región,
   challenge y desconexión antes de cualquier adapter.
+- `302a97e`: certificado read-only posterior a 007 y su contrato local.
 
 ## Estado al iniciar este paquete
 
@@ -104,6 +109,8 @@ detalle forense usar `docs/audit/**` y Git.
   `docs/audit/lobodeals-3.2-daily-refresh-audit-2026-08-01.md`.
 - Safe demotion:
   `docs/audit/lobodeals-3.2-safe-demotion-audit-2026-08-01.md`.
+- Aplicación 007:
+  `docs/audit/lobodeals-3.2-migration-007-application-2026-08-01.md`.
 - Vercel/ISR:
   `docs/audit/lobodeals-3.2-vercel-cache-audit-2026-08-01.md`.
 - Validación final:
@@ -116,13 +123,15 @@ Git conserva los documentos eliminados; no recrearlos como fuentes activas.
 - Producción observada: deployment `dpl_6Ua5HpBGWf1GczzzzZdE7AL3vHBr`, SHA
   `4f826ac873850d3e61ceb68721512099625f1515`.
 - Datos públicos siguen en 2026-06-06; no se ejecutó el recovery.
-- Safe demotion v2 está lista e integrada; 007 sigue no aplicada. SHA final:
-  `d2ac2c231dd5ad18d9fc675d66fac6a19389cdc0864c9632ee601b62e5581766`.
-- Certificado 007 read-only aprobado 23/23, 0 blockers; SHA del certificado:
+- Safe demotion v2 está lista, integrada y aplicada mediante la única 007
+  `20260801220321`; 0 ciclos y 0 receipts después de aplicar.
+- Certificado previo 007 aprobado 23/23, 0 blockers; SHA del certificado:
   `b6ebbc3f46b2ee052a02bfea52bbfc811be38786a4e993f4d51e8996ef277e73`.
-- Runner: `npm run refresh:daily`; 487/487 pruebas, 15/15 replays, 0 writes.
-- El recovery mantiene NO-GO de aplicación 007, capacidad Vercel explícita,
-  Edge/captcha y autorización live separada.
-- Próxima tarea exacta: recibir la Autorización A, aplicar solo 007, ejecutar su
-  postcheck y repetir certificado/preflight. No ejecutar todavía el refresh ni
+- Certificado posterior 007 aprobado 23/23, 0 blockers; SHA del certificado:
+  `42cdef8220310d3b396685103aeb54d6881000d5b45dfb710c7c650b67c61a35`.
+- Runner: `npm run refresh:daily`; 488/488 pruebas, 15/15 replays, 0 writes.
+- El recovery no está autorizado. El refresh mantiene NO-GO por capacidad
+  Vercel explícita, Edge/captcha y autorización live separada.
+- Próxima tarea exacta: cerrar capacidad Vercel y Edge/captcha read-only/humano;
+  después solicitar una Autorización B nueva. No ejecutar todavía el refresh ni
   iniciar la prueba de 30 días.

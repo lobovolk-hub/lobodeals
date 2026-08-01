@@ -2,7 +2,7 @@
 
 Fecha de corte: 2026-08-01
 
-Estado general: `CODE READY — MIGRATION 007 AND LIVE EXECUTION NOT AUTHORIZED`.
+Estado general: `CODE READY — MIGRATION 007 APPLIED — LIVE EXECUTION NOT AUTHORIZED`.
 
 Este documento contiene el único procedimiento operativo vigente. Hasta una
 autorización visible posterior, todos los comandos reales son referencia
@@ -87,7 +87,7 @@ fuerte ni integra ended deals/safe demotion; su refresh v15 final está obsoleto
 
 ## Recovery Refresh — Code Ready, Awaiting Authorization
 
-Estado: `CODE_READY_AWAITING_MIGRATION_AND_LIVE_AUTHORIZATION`.
+Estado: `CODE_READY_AWAITING_LIVE_PREREQUISITES_AND_AUTHORIZATION`.
 
 - `RECOVERY_REFRESH_GO=false`
 - `RECOVERY_REFRESH_EXECUTED=false`
@@ -97,14 +97,16 @@ Estado: `CODE_READY_AWAITING_MIGRATION_AND_LIVE_AUTHORIZATION`.
 - `SAFE_DEMOTION_RUNNER_INTEGRATED=true`
 - `HOLLOW_KNIGHT_CLASS_FAILURE_PREVENTED=true`
 - `MIGRATION_007_REMOTE_CERTIFIED=true`
-- `MIGRATION_007_APPLIED=false`
+- `MIGRATION_007_APPLIED=true`
+- `MIGRATION_007_POSTCHECK_PASSED=true`
+- `MIGRATION_007_POSTCERTIFIED=true`
 - `RECOVERY_REFRESH_REMOTE_PREFLIGHT_READY=false`
 - `DAILY_REFRESH_SAFE_FOR_VERCEL=false`
 
 Este plan no es autorización. El runner y sus contratos están probados
-localmente, pero los comandos live no deben ejecutarse hasta aplicar 007 con
-permiso separado, repetir postcheck/preflight, aprobar capacidad Vercel y recibir
-la autorización visible y acotada del refresh.
+localmente y 007 ya está aplicada/certificada, pero los comandos live no deben
+ejecutarse hasta aprobar capacidad Vercel y recibir una autorización visible,
+nueva y acotada del refresh.
 
 ### Identidad e inputs fijos
 
@@ -190,15 +192,17 @@ ciclo actual e imprimen `refresh_catalog_public_cache_v15()`.
 | 4 | `CHATGPT REVIEW` | Read-only de Supabase: project ref, esquema, RPCs, ACL, counts, cycles/receipts y cache | Ninguna escritura | proyecto/esquema dudoso = abort |
 | 5 | `CODEX` | Evaluar facts redactados con `preflight-psdeals-remote-readonly.mjs` | JSON local `wx` | clasificación distinta de ready = abort |
 | 6 | `CHATGPT REVIEW` | Read-only de Vercel: uso, errores, rutas y deployment | Ningún cambio Vercel | riesgo inmediato de pausa = abort |
-| 7 | `MANUAL GATE` | Revisar/aplicar migración 007, si sigue siendo before-use | Cambio de esquema aditivo, solo con autorización separada | ciclos/receipts existentes o drift = abort |
+| 7 | `CHATGPT REVIEW` | Confirmar que 007 sigue registrada exactamente una vez | Lectura; no reaplicar | ausencia, duplicado o drift = abort |
 | 8 | `CHATGPT REVIEW` | Confirmar v2 y que `service_role` no ejecuta v1 | Read-only | ACL incorrecta = abort |
 | 9 | `JOHAN` | Emitir autorización stage-specific con expiración | Permiso, no efecto remoto por sí solo | falta/ambigüedad/expiración = abort |
 
-La aplicación futura de 007 usa exclusivamente
-`sql/007-lobodeals-3-safe-demotion-hardening.sql`. Su único recovery permitido
-es `sql/recovery/007-lobodeals-3-safe-demotion-hardening-before-use.sql`, solo
-si siguen vacías las tablas de ciclos y receipts. No usa `CASCADE`. Después de
-uso, no existe rollback destructivo autorizado.
+La 007 aplicada corresponde exclusivamente a
+`sql/007-lobodeals-3-safe-demotion-hardening.sql`, versión remota
+`20260801220321`, SHA-256
+`d2ac2c231dd5ad18d9fc675d66fac6a19389cdc0864c9632ee601b62e5581766`.
+No debe reaplicarse. El recovery before-use preservado en
+`sql/recovery/007-lobodeals-3-safe-demotion-hardening-before-use.sql` no está
+autorizado. Después de uso, no existe rollback destructivo autorizado.
 
 ### Secuencia exacta del recovery futuro
 
@@ -323,7 +327,7 @@ import inseguro; pendientes después de retry; demotion no integrada; cache
 incompatible; proyecto/esquema dudoso; operación no idempotente; timeout sin
 reconciliar; falta de recovery aplicable o autorización.
 
-Al 2026-08-01 los NO-GO de runner y safe demotion están cerrados en código. Los
-HARD STOP restantes son: migración 007 no aplicada, capacidad/margen Vercel no
-aprobado explícitamente, Edge/captcha real no verificado y ausencia de
-Autorización B. El recovery no debe ejecutarse.
+Al 2026-08-01 los NO-GO de runner, safe demotion y migración 007 están cerrados.
+Los HARD STOP restantes son: capacidad/margen Vercel no aprobado explícitamente,
+Edge/captcha real no verificado y ausencia de Autorización B. El recovery no
+debe ejecutarse.

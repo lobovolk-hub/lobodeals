@@ -2,7 +2,7 @@
 
 Fecha de corte: 2026-08-01
 
-Estado general: `AUDITED_BUT_NOT_REAUTHORIZED`.
+Estado general: `CODE READY — MIGRATION 007 AND LIVE EXECUTION NOT AUTHORIZED`.
 
 Este documento contiene el único procedimiento operativo vigente. Hasta una
 autorización visible posterior, todos los comandos reales son referencia
@@ -85,18 +85,26 @@ fuerte ni integra ended deals/safe demotion; su refresh v15 final está obsoleto
   fallida, detenerse y conservar evidencia; no avanzar por fecha o proximidad
   de nombres.
 
-## Recovery Refresh — Awaiting Authorization
+## Recovery Refresh — Code Ready, Awaiting Authorization
 
-Estado: `NO_GO_AWAITING_INTEGRATION_AND_AUTHORIZATION`.
+Estado: `CODE_READY_AWAITING_MIGRATION_AND_LIVE_AUTHORIZATION`.
 
 - `RECOVERY_REFRESH_GO=false`
 - `RECOVERY_REFRESH_EXECUTED=false`
 - `DAILY_RUNNER_READY=false`
+- `DAILY_RUNNER_CODE_READY=true`
+- `RECOVERY_REFRESH_COMMAND_READY=true`
+- `SAFE_DEMOTION_RUNNER_INTEGRATED=true`
+- `HOLLOW_KNIGHT_CLASS_FAILURE_PREVENTED=true`
+- `MIGRATION_007_REMOTE_CERTIFIED=true`
+- `MIGRATION_007_APPLIED=false`
+- `RECOVERY_REFRESH_REMOTE_PREFLIGHT_READY=false`
 - `DAILY_REFRESH_SAFE_FOR_VERCEL=false`
 
-Este plan no es autorización. Los comandos y targets remotos son referencias
-auditadas; no deben ejecutarse hasta que exista un runner operacional probado,
-se cierren todas las gates y Johan emita permisos visibles y acotados.
+Este plan no es autorización. El runner y sus contratos están probados
+localmente, pero los comandos live no deben ejecutarse hasta aplicar 007 con
+permiso separado, repetir postcheck/preflight, aprobar capacidad Vercel y recibir
+la autorización visible y acotada del refresh.
 
 ### Identidad e inputs fijos
 
@@ -138,6 +146,8 @@ demotion, certificación o caché. Solo podrán usarse como preparación local
 cuando el alcance futuro lo autorice:
 
 ```powershell
+npm run refresh:daily -- validate --json
+npm run refresh:daily -- replay --scenario=all --timestamp=<ISO> --json
 node scripts/run-psdeals-cycle.mjs init --cycles-root=data/cycles --code-revision=<REVIEWED_SHA> --mode=plan
 node scripts/run-psdeals-cycle.mjs plan --workspace=<WORKSPACE>
 node scripts/run-psdeals-cycle.mjs status --workspace=<WORKSPACE>
@@ -152,13 +162,17 @@ fixture:
 .\scripts\run-psdeals-certified-cycle.ps1 -Mode Plan -Workspace <WORKSPACE>
 ```
 
-No existe `-Mode Operational`. `run-psdeals-cycle.mjs` declara expresamente que
-ningún comando ejecuta red, collectors o efectos remotos. Por tanto, el
-comando exacto del recovery productivo es hoy:
+No existe `-Mode Operational` en el wrapper histórico. La única superficie
+live es el nuevo entrypoint:
 
-```text
-BLOCKED — NO OPERATIONAL COMMAND EXISTS
+```powershell
+$env:LOBODEALS_REMOTE_EXECUTION='EXPLICITLY_AUTHORIZED'
+npm run refresh:daily -- live --authorization-file=<AUTHORIZATION_JSON> --remote-preflight-file=<REMOTE_PREFLIGHT_JSON> --vercel-file=<VERCEL_JSON> --edge-file=<EDGE_JSON> --captcha-file=<CAPTCHA_JSON>
 ```
+
+Este bloque documenta el comando; no autoriza ejecutarlo. El CLI lee el HEAD
+real y los SHA canónicos de 007/certificado, y aborta antes de enlazar adapters
+si falta cualquier gate.
 
 Queda prohibido sustituirlo por
 `run-psdeals-edge-live-recently-added.ps1` o
@@ -172,7 +186,7 @@ ciclo actual e imprimen `refresh_catalog_public_cache_v15()`.
 | 0 | `CHATGPT REVIEW` | Revisar este plan, migración 007 y estrategia Vercel | Ninguno | abortar si el alcance cambia |
 | 1 | `CODEX` | Confirmar HEAD, rama, divergencia y worktree sin fetch | Lectura local | worktree inesperado = abort |
 | 2 | `CODEX` | Ejecutar baseline y suites enfocadas | Archivos temporales locales de test | cualquier fallo = abort |
-| 3 | `CODEX` | Integrar el runner real y adapters faltantes | Código local; commit separado | no operación hasta tests end-to-end |
+| 3 | `CODEX` | Verificar el runner único y sus 22 adapters | Lectura y tests locales | no operación si cualquier contrato falla |
 | 4 | `CHATGPT REVIEW` | Read-only de Supabase: project ref, esquema, RPCs, ACL, counts, cycles/receipts y cache | Ninguna escritura | proyecto/esquema dudoso = abort |
 | 5 | `CODEX` | Evaluar facts redactados con `preflight-psdeals-remote-readonly.mjs` | JSON local `wx` | clasificación distinta de ready = abort |
 | 6 | `CHATGPT REVIEW` | Read-only de Vercel: uso, errores, rutas y deployment | Ningún cambio Vercel | riesgo inmediato de pausa = abort |
@@ -206,7 +220,7 @@ directamente.
 | 10 | `AUTOMATIC` | `analyze-psdeals-discounts-fast-refresh-v1.mjs` | must, PS Plus, stale, skipped, combined + evidence | mismo listing/hash/ciclo |
 | 11 | `AUTOMATIC` | `import-psdeals-detail-local.mjs` sobre combined | summary + failures + receipt | permiso `allow_detail_import` |
 | 12 | `AUTOMATIC` | mismo importer, una sola vez, sobre failures | retry summary + pendientes | pendientes > 0 = ciclo no successful |
-| 13 | `AUTOMATIC` | adapter Monthly aún faltante | evidence/receipt Monthly del mismo ciclo | ausencia o ambigüedad = no demotion |
+| 13 | `AUTOMATIC` | rama Monthly aislada | evidence/receipt Monthly del mismo ciclo o `not_due` explícito | write sin evidencia/autorización = abort |
 | 14 | `AUTOMATIC` | `analyze-psdeals-ended-discounts-from-listing-v1.mjs` | seguros + bloqueados + evidence | blockers fuerzan `partial` |
 | 15 | `AUTOMATIC` | detail refresh de bloqueados con importer | detalle actualizado | no convierte candidato automáticamente |
 | 16 | `AUTOMATIC` | volver a ejecutar ended analyzer sobre el mismo listing | set final canónico, hash y count | blockers restantes = no demotion/certificación |
@@ -309,6 +323,7 @@ import inseguro; pendientes después de retry; demotion no integrada; cache
 incompatible; proyecto/esquema dudoso; operación no idempotente; timeout sin
 reconciliar; falta de recovery aplicable o autorización.
 
-Al 2026-08-01 existen cuatro NO-GO independientes: runner operacional ausente,
-migración 007 no aplicada, safe demotion no integrada y Vercel sin gate de
-seguridad. El recovery no debe ejecutarse.
+Al 2026-08-01 los NO-GO de runner y safe demotion están cerrados en código. Los
+HARD STOP restantes son: migración 007 no aplicada, capacidad/margen Vercel no
+aprobado explícitamente, Edge/captcha real no verificado y ausencia de
+Autorización B. El recovery no debe ejecutarse.

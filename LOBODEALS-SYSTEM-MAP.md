@@ -15,6 +15,11 @@ Fecha de corte: 2026-08-01
 - **Caché pública:** materialización de stage y datos relacionados. El camino
   legacy directo v15 está bloqueado en código; el futuro camino v16 exige ciclo,
   certificación y receipt.
+- **Runner diario único:** `scripts/run-psdeals-daily-refresh-v3.mjs`, expuesto
+  solo como `npm run refresh:daily`. `validate` y `replay` son offline; `live`
+  valida simultáneamente proyecto, acción, autorización, cycle, entorno, HEAD,
+  SHA de 007, SHA del certificado, preflight, Vercel, Edge y captcha antes de
+  enlazar cualquier adapter.
 - **Autenticación:** Supabase Auth, email/password y Google OAuth; callback en la
   app. Google Sign-In sigue como prioridad visible pendiente.
 - **Vercel/deploy:** producción se despliega desde GitHub `main`. El local está
@@ -41,7 +46,7 @@ Fecha de corte: 2026-08-01
 para atravesar el challenge con intervención humana; no es un servicio de
 producción. Los PowerShell son wrappers del collector, analyzers e importer.
 
-## Tooling offline actual
+## Tooling y runner actual
 
 - Validadores de manifest y evidence envelopes.
 - Workspace, ledger y state machine de ciclo.
@@ -49,9 +54,16 @@ producción. Los PowerShell son wrappers del collector, analyzers e importer.
 - Builders de payload, clasificación, normalización comercial y mínimos.
 - Puertos fake/operativos separados y gates explícitas de ejecución remota.
 - Selector puro de ended deals compartido con el analyzer real.
+- State machine diaria de 22 etapas con recently-added, discounts, retry,
+  Monthly aislado, doble análisis ended, safe demotion v2, candidates,
+  certificación v3, mínimos, cache v16 y finalización.
+- Contrato operacional y fakes comparten las mismas 22 firmas; toda etapa
+  acepta el receipt anterior exacto y una acción externa sin receipt válido
+  termina fail-closed o en reconciliación.
 
-Este tooling prueba contratos y orden, pero no demuestra conectividad,
-paridad completa con wrappers históricos ni operación real post-006.
+Este tooling prueba contratos, orden y replays integrales. No demuestra una
+operación live: 007 no está aplicada, Edge/captcha no fueron abiertos y no se
+ejecutó ningún collector, import, RPC mutable o cache.
 
 ## Componentes históricos
 
@@ -64,15 +76,15 @@ paridad completa con wrappers históricos ni operación real post-006.
 
 ## Componentes futuros
 
-- Runner diario certificado y reanudable conectado a los adaptadores reales.
-- Safe demotion obligatoria y receipt-bound dentro del runner.
 - Caché final v16 y validación pública ligada al ciclo.
 - Mínimos prospectivos poblados por ciclos certificados.
 - Automatización diaria, alertas, analítica comercial y monetización.
 
-La relación esencial es: listing completo → detalles/retry → ended deals →
-certificación → caché → validación pública. Ningún paso posterior debe abrirse
-si la evidencia anterior es parcial o incompatible.
+La relación esencial es: recently-added → discounts completo → detalles/retry
+→ Monthly aislado → ended → detail revalidation → ended reanalysis → safe
+demotion → candidates/certificación/mínimos → cache v16 → validación pública.
+Ningún paso posterior se abre si la evidencia o el receipt anterior es parcial,
+ambiguo o incompatible.
 
 Supabase y Vercel no comparten invalidación: actualizar
 `catalog_public_cache` no regenera páginas. Catalog/deals leen en sus requests;

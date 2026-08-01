@@ -72,6 +72,9 @@ detalle forense usar `docs/audit/**` y Git.
 - `a92e8fd`: diagnóstico Vercel y estrategia de cache.
 - `21e6358`: plan de recovery NO-GO, sin ejecución.
 - `e2e7ae8`: validación global del paquete, sin operación remota.
+- `03ed523`: endurecimiento 007, recovery y validadores read-only completos.
+- `dcf04b6`: runner diario único, 22 adapters y 15 replays integrales.
+- `1912f29`: HEAD real y SHA canónico del certificado fijados en los gates live.
 
 ## Estado al iniciar este paquete
 
@@ -111,7 +114,13 @@ Git conserva los documentos eliminados; no recrearlos como fuentes activas.
 - Producción observada: deployment `dpl_6Ua5HpBGWf1GczzzzZdE7AL3vHBr`, SHA
   `4f826ac873850d3e61ceb68721512099625f1515`.
 - Datos públicos siguen en 2026-06-06; no se ejecutó el recovery.
-- Safe demotion v2 está lista localmente, no aplicada ni integrada.
-- El recovery tiene NO-GO de runner, migración 007, demotion y Vercel.
-- Próxima tarea: integrar el runner operacional completo con fakes y gates;
-  no ejecutar aún un ciclo real ni iniciar la prueba de 30 días.
+- Safe demotion v2 está lista e integrada; 007 sigue no aplicada. SHA final:
+  `d2ac2c231dd5ad18d9fc675d66fac6a19389cdc0864c9632ee601b62e5581766`.
+- Certificado 007 read-only aprobado 23/23, 0 blockers; SHA del certificado:
+  `b6ebbc3f46b2ee052a02bfea52bbfc811be38786a4e993f4d51e8996ef277e73`.
+- Runner: `npm run refresh:daily`; 486/486 pruebas, 15/15 replays, 0 writes.
+- El recovery mantiene NO-GO de aplicación 007, capacidad Vercel explícita,
+  Edge/captcha y autorización live separada.
+- Próxima tarea exacta: recibir la Autorización A, aplicar solo 007, ejecutar su
+  postcheck y repetir certificado/preflight. No ejecutar todavía el refresh ni
+  iniciar la prueba de 30 días.

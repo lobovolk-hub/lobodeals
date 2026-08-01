@@ -596,7 +596,7 @@ test('postcheck proves all migration 005 objects remain exact', () => {
     /certify_price_refresh_cycle_v3/,
     /certification_v3_definition_matches/,
     /certification_function_acl_matches/,
-    /array\['search_path='\]/,
+    /array\['search_path=""'\]/,
   ]) {
     assert.match(postcheck, evidence)
   }

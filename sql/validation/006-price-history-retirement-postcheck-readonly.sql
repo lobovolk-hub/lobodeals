@@ -507,7 +507,7 @@ select
       and procedure.provolatile = 'i'
       and procedure.proisstrict
       and procedure.proparallel = 's'
-      and procedure.proconfig = array['search_path=']::text[]
+      and procedure.proconfig = array['search_path=""']::text[]
       and position(
         'pg_catalog.sha256'
         in lower(pg_catalog.pg_get_functiondef(procedure.oid))
@@ -534,7 +534,7 @@ select
   (
     select owner_role.rolname = 'postgres'
       and procedure.prosecdef
-      and procedure.proconfig = array['search_path=']::text[]
+      and procedure.proconfig = array['search_path=""']::text[]
       and position(
         'source.candidate_percent between 1 and 99'
         in lower(pg_catalog.pg_get_functiondef(procedure.oid))

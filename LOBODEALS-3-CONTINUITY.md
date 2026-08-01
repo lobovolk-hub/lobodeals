@@ -107,11 +107,13 @@ postchecks aprobaron; el histórico detallado fue retirado con `RESTRICT` y
 los mínimos compactos permanecen vacíos hasta un ciclo futuro certificado.
 
 Bloque 4 — Actualizador diario de precios:
-preparación local avanzada. Existen normalización, clasificación, payloads,
-evidencia, workspace, ledger, manifiesto, gates, adaptadores, simulación del
-lifecycle, dry-run comercial integrado y preflight local. Nueve de veinticinco
-capacidades son `READY`, quince `PARTIAL` y el runner diario real está
-`BLOCKED`. No existe ciclo real, mínimo certificado ni updater productivo.
+código local integral preparado. El orquestador offline conecta listing,
+paginación, clasificación, payloads, fast refresh, detalles, ciclo, receipts,
+candidates, certificación, mínimos, ended deals, caché, monthly y finalización
+en una simulación determinista con cero efectos. `BLOCK_4_CODE_READY=true`,
+pero quince capacidades operativas siguen `PARTIAL` y el runner diario real
+continúa `BLOCKED`. No existe ciclo real, mínimo certificado ni updater
+productivo.
 
 Bloque 5 — Automatización de Windows: pendiente.
 
@@ -2558,3 +2560,116 @@ orquestación del runner diario sobre los adaptadores existentes, comenzando por
 el tramo listing → validación → payload → upsert simulado y manteniendo todas
 las mutaciones detrás de las gates explícitas. No debe ejecutarse todavía un
 runner real ni conectarse a Supabase.
+
+## 51. Orquestación integral offline del updater — 2026-08-01
+
+La sesión comenzó en `main`, HEAD
+`d692e5232e27bf3ddf0814e04e88665980ed0972`, con worktree limpio y 73 commits
+por delante de la referencia local `origin/main`. El baseline aprobó 424/424
+pruebas. No se hizo fetch.
+
+Commits técnicos previos al checkpoint documental:
+
+- `20e5a1f` — `Add offline updater orchestration ports`;
+- `e2bd081` — `Integrate offline updater cycle simulation`;
+- `5dcdf5d` — `Evaluate Block 4 code readiness`.
+
+### 51.1. Arquitectura local
+
+El flujo tiene cuatro capas:
+
+1. núcleo puro: canonicalización, SHA-256, identidad determinista, validación
+   de entrada, ledger in-memory, state machine y schema del manifiesto;
+2. orquestador puro: compone las funciones reales de normalización,
+   clasificación, payloads, fast refresh, candidates, mínimos, ended deals y
+   cycle plan;
+3. fixtures deterministas: happy path, listing adversarial, retry, ended deals
+   y mezcla regular/PS Plus;
+4. CLI local: acepta solo escenario, timestamp lógico, JSON y un output
+   opcional restringido a `data/simulations`.
+
+El selector de ended deals fue extraído a
+`scripts/lib/psdeals-ended-discounts.mjs`. Producción y simulación usan esa
+misma función, pero el grafo offline ya no importa el entrypoint que contiene
+`createClient`.
+
+### 51.2. Ledger, state machine y manifiesto
+
+Cada operación planificada contiene `operation_id`, tipo, target, key,
+before/after, razón, ciclo, familia, observación fuente, idempotency key,
+`allowed`, blocker y `executed=false`. El ledger admite cycle, receipts,
+stage, candidates, certificación, mínimos, `first_seen`, democión, caché,
+monthly y finalización. Nunca ejecuta SQL ni escrituras.
+
+El happy path recorre:
+
+`initialized → preflight_passed → listing_collected → listing_validated → details_processed → cycle_planned → receipts_reconciled → candidates_planned → certification_planned → minima_planned → ended_deals_planned → cache_planned → monthly_planned → ready_to_finalize → succeeded`.
+
+`failed` y `requires_reconciliation` son terminales fail-closed. Saltar etapas,
+finalizar temprano o repetir una transición inválida se rechaza.
+
+El manifiesto versión 1 conserva run ID, ciclo simulado, hashes, timestamp,
+fixture, estados, ledger, blockers, warnings, planes, contadores e invariants de
+cero efectos. Misma entrada y timestamp producen exactamente el mismo
+manifiesto, operation IDs e idempotency key.
+
+### 51.3. Resultado demostrado
+
+Comando:
+
+`npm run simulate:updater-cycle -- --scenario=happy-path --timestamp=2026-08-01T12:00:00.000Z`
+
+Resultado del happy path:
+
+- `run_id=simulation-c4dd1adcac3c3b5fd2fdbe31`;
+- 33 operaciones planificadas y 0 ejecutadas;
+- 4 observaciones/candidates aceptados: tres regulares y uno PS Plus;
+- 2 observaciones rechazadas de forma item-local;
+- 4 decisiones de certificación;
+- 2 inicializaciones y 1 reducción de mínimos;
+- igualdad y aumento conservan el mínimo anterior;
+- 1 democión verificable planificada;
+- 4 cambios de caché planificados después de certificación;
+- 0 cambios monthly;
+- estado `simulated_success` y cero blockers.
+
+El CLI también validó listing truncado con exit no cero, retry resuelto en un
+único segundo intento, ended deals y mezcla regular/PS Plus. Duplicados
+equivalentes se deduplican; duplicados conflictivos, páginas ausentes,
+detalles pendientes, mismatch de ciclo, receipt faltante, caché prematura y
+timeout bloquean o exigen reconciliación.
+
+### 51.4. Readiness
+
+`npm run preflight:block4 -- --tests-passed=452` devolvió:
+
+- clasificación `LOCAL_CODE_READY`;
+- cero blockers;
+- warning `block4_operational_capabilities_incomplete`;
+- `BLOCK_4_CODE_READY=true`;
+- `BLOCK_4_DRY_RUN_READY=true`;
+- `BLOCK_4_REMOTE_SIMULATION_READY=true`;
+- `BLOCK_4_COMPLETE=false`;
+- `COMPACT_MINIMA_READY=false`;
+- `LIVE_CYCLE_READY=false`;
+- `THIRTY_DAY_TRIAL_READY=false`.
+
+El mapa operativo no cambió su realidad: 9 `READY`, 15 `PARTIAL`, 0 `MISSING`
+y el runner real `BLOCKED`. Code-ready significa exclusivamente que el flujo
+offline integral es determinista, observable, probado y fail-closed.
+
+### 51.5. Validación y siguiente paso
+
+La validación aprobó 452/452 pruebas globales, 39/39 suites enfocadas de
+orquestación/readiness, `node --check`, cinco escenarios CLI, auditoría history
+con 0 violaciones runtime, `git diff --check` y lint con 0 errores y las seis
+advertencias preexistentes. No correspondía build.
+
+No hubo red, Supabase, SQL remoto, migraciones, collector, analyzer operativo,
+importer, runner, certificación, mínimos, democión, caché, monthly, push,
+deploy, scheduler ni prueba de 30 días.
+
+La siguiente tarea segura es una auditoría local de paridad entre cada
+operación planificada por el orquestador y el request/receipt exacto de los
+adaptadores operativos existentes. No debe ejecutarse simulación remota ni un
+ciclo real sin una autorización futura separada.

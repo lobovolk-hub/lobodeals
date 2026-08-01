@@ -1,6 +1,6 @@
 # LoboDeals 3.2 — Readiness del actualizador del Bloque 4
 
-Fecha: 2026-07-31
+Fecha: 2026-08-01
 
 Este documento resume el estado local demostrado después de la migración 006.
 No declara implementado el runner diario, no autoriza operaciones remotas y no
@@ -49,6 +49,10 @@ inicia la prueba de 30 días.
 
 Resumen: 9 `READY`, 15 `PARTIAL`, 0 `MISSING`, 1 `BLOCKED`.
 
+El mapa anterior describe readiness operacional. De forma independiente, la
+orquestación integral offline está cerrada y permite
+`BLOCK_4_CODE_READY=true`; no cambia ningún `PARTIAL/BLOCKED` remoto.
+
 ## Gates de ejecución
 
 Toda futura mutación remota debe presentar un execution intent válido con:
@@ -75,17 +79,48 @@ futura caché debe recorrer el contrato v16 enlazado a recibos.
   - 13 señales rechazadas;
   - 20 escenarios de fallo cerrados;
   - cero escrituras, conexiones o procesos.
-- `npm run preflight:block4 -- --tests-passed=424`
-  - resultado `LOCAL_SIMULATION_READY`;
+- `npm run simulate:updater-cycle -- --scenario=happy-path --timestamp=2026-08-01T12:00:00.000Z`
+  - 33 operaciones planificadas;
+  - 0 operaciones ejecutadas;
+  - 4 candidates y 4 decisiones de certificación;
+  - 2 mínimos inicializados y 1 reducido;
+  - 1 ended deal y 4 cambios de caché planificados;
+  - 0 cambios monthly.
+- `npm run preflight:block4 -- --tests-passed=452`
+  - resultado `LOCAL_CODE_READY`;
   - cero blockers locales;
   - warning por capacidades operativas incompletas.
-- `npm test`: 424/424.
+- `npm test`: 452/452.
 - lint: cero errores; seis warnings preexistentes.
+
+## Orquestador offline
+
+Arquitectura:
+
+- `psdeals-updater-orchestration-core.mjs`: hashes, identidad, ledger, state
+  machine y schema;
+- `psdeals-updater-orchestrator-local.mjs`: composición de contratos reales;
+- `psdeals-updater-simulation-fixtures.mjs`: cinco escenarios deterministas;
+- `run-psdeals-updater-orchestrator-local.mjs`: CLI sin red;
+- `psdeals-ended-discounts.mjs`: selector puro compartido con producción.
+
+Invariants:
+
+- modo exacto `simulation`;
+- project ref ficticio y nunca productivo;
+- timestamp y seed explícitos;
+- SHA-256 e IDs deterministas;
+- máximo un retry de detalle;
+- candidate, receipt, familia e item coherentes;
+- mínimos prospective-only, positivos y monotónicos;
+- caché solo después de certificación simulada;
+- monthly sin aplicación;
+- `executed_writes=0` siempre;
+- cero red, Supabase o procesos hijos.
 
 ## Próximo cambio local seguro
 
-Implementar offline la orquestación del tramo listing → validación → payload →
-upsert simulado, reutilizando los adaptadores, evidence receipts, ledger y
-gates ya existentes. Debe producir un plan y evidencia reproducibles sin abrir
-red ni ejecutar productores reales. La integración remota, certificación,
-democión y caché seguirán bloqueadas hasta una autorización futura específica.
+Auditar localmente la paridad entre las 33 operaciones del ledger de simulación
+y los requests/receipts que producirían los adaptadores operativos. La
+integración remota, certificación, democión y caché seguirán bloqueadas hasta
+una autorización futura específica.

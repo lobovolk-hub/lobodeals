@@ -45,7 +45,9 @@ No asumir nombres de:
 
 Verificar primero mediante código, esquema o consultas de solo lectura.
 
-No realizar escrituras técnicas sin autorización explícita.
+Las lecturas, ediciones, pruebas y commits locales de alcance acordado están
+autorizados por `AGENTS.md`. Las escrituras remotas, procesos operativos,
+push y deploy exigen autorización explícita.
 
 No ejecutar collectors, importadores, runners, SQL de modificación, tareas, builds, pushes o deploys sin autorización.
 
@@ -100,10 +102,16 @@ Bloque 1 — Congelación del alcance 3.0: cerrado.
 Bloque 2 — Detener escritura del historial detallado: implementado y desplegado.
 
 Bloque 3 — Retirar consumo del historial y crear mínimos compactos:
-infraestructura aplicada; eliminación física del historial pendiente.
+cerrado en infraestructura. Las migraciones 005 y 006 están aplicadas y sus
+postchecks aprobaron; el histórico detallado fue retirado con `RESTRICT` y
+los mínimos compactos permanecen vacíos hasta un ciclo futuro certificado.
 
 Bloque 4 — Actualizador diario de precios:
-auditoría avanzada; existen correcciones locales del parser PS Plus, normalización comercial compartida y colas fast refresh endurecidas, pero el runner diario certificado todavía no está implementado.
+preparación local avanzada. Existen normalización, clasificación, payloads,
+evidencia, workspace, ledger, manifiesto, gates, adaptadores, simulación del
+lifecycle, dry-run comercial integrado y preflight local. Nueve de veinticinco
+capacidades son `READY`, quince `PARTIAL` y el runner diario real está
+`BLOCKED`. No existe ciclo real, mínimo certificado ni updater productivo.
 
 Bloque 5 — Automatización de Windows: pendiente.
 
@@ -122,6 +130,27 @@ La reactivación inicial de catálogo y ofertas no necesita esperar comunidad, r
 ## 5. Estado Git
 
 Commits principales:
+
+- bbb31ae61dd6d1ecaae03acdbaf33697dcfc7469
+  Add Block 4 local readiness preflight
+
+- a5211caed1b4a9f57167c8579447b9eb17f9b274
+  Test updater failure isolation
+
+- d5a7277c525436ce27e2ddc76c603e51b9cf2a3b
+  Add integrated updater dry run
+
+- a92f59978aa84957b8b48ec1556767db42169fe1
+  Harden updater execution gates
+
+- 0a97ca62a7dd7714c755131ff87bae7dd1bd903a
+  Map Block 4 updater readiness
+
+- e249282fd61fcfeb2cb3393b03a696cd6234080b
+  Remove stale runtime history assumptions
+
+- 193aa33832f58ce28f535fe6c8a3ab56f5beac4c
+  Consolidate post-006 repository state
 
 - cf5e4bed398e5f9a6d2db6dd20655cfbf820b3c9
   Plan certified PSDeals cycle transitions
@@ -177,15 +206,18 @@ Commits principales:
 - d81418b35c41a8950a3d3d639ba43a73090d78c7
   Fix Unicode slug metadata
 
-HEAD técnico local confirmado inmediatamente antes del commit documental de esta actualización:
+HEAD técnico local confirmado inmediatamente antes del commit documental de
+la preparación post-006:
 
-cf5e4bed398e5f9a6d2db6dd20655cfbf820b3c9
+bbb31ae61dd6d1ecaae03acdbaf33697dcfc7469
 
 origin/main confirmado:
 
 4f826ac873850d3e61ceb68721512099625f1515
 
-La rama local main estaba doce commits por delante y cero por detrás de origin/main antes del commit documental que contiene esta actualización.
+La rama local `main` estaba 72 commits por delante y cero por detrás de la
+referencia local `origin/main` antes del commit documental que contiene esta
+actualización. No se hizo fetch.
 
 Ningún commit local posterior a origin/main se ha enviado.
 
@@ -276,21 +308,22 @@ Estado observado:
 
 healthy
 
-Tamaño aproximado:
+Tamaño verificado después de 006:
 
-420 MB
+166.841.491 bytes. Antes de 006 eran 440.741.011 bytes; se liberaron
+273.899.520 bytes lógicos medidos por el postcheck.
 
 Conteos conocidos:
 
 - psdeals_stage_items: 32,890
 - catalog_public_cache: 32,890
-- psdeals_stage_price_history: 841,549
+- psdeals_stage_price_history: ausente; 841.549 filas fueron retiradas por 006
 - relaciones: 21,671
 - cola: 16,473
 - usuarios/perfiles: 5
 - tracked: 6
 
-El historial detallado ocupa aproximadamente 261 MB.
+El histórico detallado ya no ocupa espacio como relación activa.
 
 Los precios están desactualizados desde el 6 de junio de 2026.
 
@@ -306,7 +339,11 @@ No crear:
 - ZIP;
 - pg_dump.
 
-El historial todavía no debe eliminarse durante una sesión local. Su retirada física es una operación remota futura y separada.
+La retirada física ya terminó. La migración 006 exacta, SHA-256
+`e825a88ef811873f16cc48da5685d8e87eb699b5d903bd29ad34025a9630f5e4`,
+quedó registrada como versión `20260801030244`; eliminó exclusivamente la
+superficie autorizada y la tabla mediante `DROP TABLE ... RESTRICT`. El
+postcheck final aprobó 13/13 y encontró cero residuos.
 
 Decisiones definitivas de LoboDeals 3.2:
 
@@ -314,17 +351,19 @@ Decisiones definitivas de LoboDeals 3.2:
 - no reconstruir ni backfillear mínimos certificados desde sus 841.549 filas;
 - los cuatro mínimos compactos comienzan vacíos;
 - únicamente observaciones válidas de ciclos futuros certificados pueden inicializarlos o reducirlos;
-- el histórico debe retirarse físicamente antes del primer ciclo real por el límite de capacidad comunicado (`0,456/0,5 GB`);
-- la retirada será sin backup y sin `CASCADE`.
+- el histórico fue retirado antes del primer ciclo real por el límite de
+  capacidad comunicado (`0,456/0,5 GB`);
+- la retirada se hizo sin backup y sin `CASCADE`.
 
-Orden obligatorio:
+Orden cerrado para history:
 
-1. cerrar y probar localmente el contrato de mínimos futuros;
-2. auditar en remoto, solo lectura, cero writers, consumidores y dependencias actuales;
-3. revisar y aprobar una migración exacta de retirada sin backup ni `CASCADE`;
-4. ejecutar esa migración únicamente con autorización crítica separada;
-5. verificar capacidad y ausencia del histórico;
-6. solo después permitir el primer ciclo real controlado.
+1. contrato de mínimos futuros: cerrado localmente;
+2. auditoría remota de dependencias: cerrada;
+3. migración restrictiva exacta: revisada;
+4. aplicación con autorización crítica: cerrada;
+5. capacidad y ausencia: verificadas;
+6. el primer ciclo real continúa bloqueado por las gates independientes del
+   Bloque 4.
 
 ## 11. Mínimos compactos
 
@@ -2373,3 +2412,149 @@ La retirada física del histórico queda cerrada. El siguiente paso local seguro
 es auditar, sin ejecutar, las gates posteriores a history y actualizar los
 preflights/readiness que todavía esperan `MIGRATION_NOT_APPLIED`. No debe
 iniciarse un ciclo ni la prueba de 30 días sin la autorización correspondiente.
+
+## 50. Preparación local post-006 del actualizador — 2026-07-31
+
+La sesión comenzó en `main`, HEAD
+`6de47433af454419ded8dfc7fd3d00559c8c198b`, con worktree limpio y 65 commits
+por delante de la referencia local `origin/main`. El baseline aprobó 394/394
+pruebas. No se hizo fetch.
+
+Se crearon siete checkpoints locales:
+
+- `193aa33832f58ce28f535fe6c8a3ab56f5beac4c` —
+  `Consolidate post-006 repository state`;
+- `e249282fd61fcfeb2cb3393b03a696cd6234080b` —
+  `Remove stale runtime history assumptions`;
+- `0a97ca62a7dd7714c755131ff87bae7dd1bd903a` —
+  `Map Block 4 updater readiness`;
+- `a92f59978aa84957b8b48ec1556767db42169fe1` —
+  `Harden updater execution gates`;
+- `d5a7277c525436ce27e2ddc76c603e51b9cf2a3b` —
+  `Add integrated updater dry run`;
+- `a5211caed1b4a9f57167c8579447b9eb17f9b274` —
+  `Test updater failure isolation`;
+- `bbb31ae61dd6d1ecaae03acdbaf33697dcfc7469` —
+  `Add Block 4 local readiness preflight`.
+
+### 50.1. Estado canónico post-006
+
+`config/psdeals-post-006-checkpoint.json` conserva el checkpoint verificable:
+
+- 005 aplicada y postcheck aprobado;
+- 006 aplicada como versión `20260801030244`;
+- SHA-256 exacto de 006:
+  `e825a88ef811873f16cc48da5685d8e87eb699b5d903bd29ad34025a9630f5e4`;
+- retirada mediante `RESTRICT`, sin `CASCADE`;
+- 841.549 filas retiradas y cero objetos residuales;
+- tamaño antes/después: 440.741.011 / 166.841.491 bytes;
+- reducción verificada: 273.899.520 bytes.
+
+`STORAGE_READY=true` significa exclusivamente que la retirada y la capacidad
+post-006 están demostradas. No implica que existan mínimos, ciclo vivo,
+certificación, caché renovada ni prueba operativa.
+
+El preflight remoto local ya no exige que la tabla histórica exista. Su
+presencia se considera ahora el bloqueo `PREFLIGHT_HISTORY_NOT_RETIRED`; su
+ausencia confirma la superficie post-006 esperada.
+
+### 50.2. Ausencia de dependencias runtime del histórico
+
+El auditor local recorrió 215 archivos y clasificó 425 referencias:
+
+- 160 referencias al histórico detallado;
+- 25 al snapshot v1;
+- 132 a mínimos compactos;
+- 14 al resumen legacy;
+- 94 referencias genéricas.
+
+Resultado: cero readers runtime, cero writers runtime y cero violaciones. Las
+referencias restantes pertenecen a migraciones, postchecks, pruebas,
+documentación, recuperación o contratos de seguridad permitidos.
+`hasPriceHistory` permanece como señal del parser HTML; no es una referencia a
+la tabla retirada.
+
+### 50.3. Mapa del Bloque 4 y gates de ejecución
+
+El mapa ejecutable contiene 25 capacidades: 9 `READY`, 15 `PARTIAL`, 0
+`MISSING` y 1 `BLOCKED`. El único bloqueo total es el runner diario integrado;
+las etapas remotas conservan piezas locales pero aún no constituyen una ruta
+operativa completa.
+
+Toda futura mutación remota debe pasar por un execution intent explícito que
+valida modo operativo, proyecto exacto, acción concreta, confirmación por
+acción, autorización identificada, `local_cycle_id`, UUID remoto cuando
+corresponda, `dry_run=false` y ausencia de entorno de pruebas. El importador
+valida ese intent antes de leer credenciales o crear un cliente. La democión
+directa legacy y el refresh directo de caché v15 quedaron deshabilitados antes
+de abrir conexiones; la futura caché debe usar la ruta v16 enlazada a recibos.
+
+### 50.4. Dry-run integrado y aislamiento de fallos
+
+`npm run dry-run:updater` ejecuta únicamente lógica local sobre 24 fixtures
+deterministas. Importa las funciones reales de collector, normalización
+comercial, clasificación, fast refresh, evidencia de certificación, mínimos
+compactos y selección de ofertas terminadas.
+
+La corrida validada produjo:
+
+- 4 candidatos aceptados: 3 regulares y 1 PS Plus;
+- 13 observaciones comerciales rechazadas con razones explícitas;
+- descuentos regulares 1%, 50% y 99% aceptados;
+- 0%, 100%, `FREE`, cero ambiguo, negativos, precios ausentes, fórmula
+  incoherente y señal mensual excluidos de certificación regular;
+- inicialización y reducción estricta de mínimos simuladas; igualdad y aumento
+  no los modifican;
+- colas new/same/lower/higher ejercitadas;
+- una restauración de oferta terminada segura y un caso no verificable
+  bloqueado;
+- caché simulada con cuatro filas y monthly con cero mutaciones;
+- cero escrituras, conexiones o procesos hijos.
+
+Además, veinte escenarios adversos fallaron de forma cerrada. Incluyen listing
+vacío, paginación incompleta, truncamiento, parser partial, duplicados,
+identidad ausente, moneda incorrecta, precio incoherente, PS Plus ambiguo,
+cambio de clasificación, recibo o ciclo ausente, ciclo finalizado, candidate
+incompatible, `first_seen` inválido, caché stale y timeout. El timeout exige
+reconciliación antes de un único retry; repetir la misma entrada produce noop.
+
+### 50.5. Preflight local de readiness
+
+El comando seguro es:
+
+`npm run preflight:block4 -- --tests-passed=424`
+
+Su resultado validado fue `LOCAL_SIMULATION_READY`, sin blockers y con una
+advertencia explícita por capacidades operativas incompletas. Estados:
+
+- `POST_006_READY=true`;
+- `STORAGE_READY=true`;
+- `HISTORY_RUNTIME_CLEAN=true`;
+- `BLOCK_4_LOCAL_FOUNDATION_READY=true`;
+- `BLOCK_4_CODE_READY=false`;
+- `BLOCK_4_DRY_RUN_READY=true`;
+- `BLOCK_4_REMOTE_SIMULATION_READY=true`;
+- `BLOCK_4_COMPLETE=false`;
+- `COMPACT_MINIMA_READY=false`;
+- `LIVE_CYCLE_READY=false`;
+- `THIRTY_DAY_TRIAL_READY=false`.
+
+El preflight verifica el checkpoint, el SHA real de 006, referencias al
+histórico, mapa de capacidades, rutas, dry-run, gates estáticas y disponibilidad
+del lifecycle con archivos falsos. No autoriza ni ejecuta operaciones.
+
+### 50.6. Validación y posición exacta
+
+La validación final aprobó 424/424 pruebas, `node --check` para todos los MJS
+modificados, suites enfocadas, `git diff --check` y lint con cero errores. Lint
+mantiene exactamente seis advertencias preexistentes y no introdujo nuevas.
+
+Posición exacta: Bloque 3 cerrado; Bloque 4 con foundation local, dry-run y
+simulación remota preparados, pero con integración operativa incompleta. No se
+ha ejecutado un ciclo real y los mínimos siguen vacíos.
+
+La siguiente tarea local segura es implementar y probar offline la
+orquestación del runner diario sobre los adaptadores existentes, comenzando por
+el tramo listing → validación → payload → upsert simulado y manteniendo todas
+las mutaciones detrás de las gates explícitas. No debe ejecutarse todavía un
+runner real ni conectarse a Supabase.

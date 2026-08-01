@@ -53,6 +53,34 @@ async function readBoundedJson(file, label) {
   return JSON.parse(await fs.readFile(path.resolve(file), 'utf8'))
 }
 
+export async function readPsdealsLocalGitHead(projectRoot = process.cwd()) {
+  const gitPath = path.join(path.resolve(projectRoot), '.git')
+  const gitStat = await fs.stat(gitPath)
+  let gitDirectory = gitPath
+  if (gitStat.isFile()) {
+    const pointer = (await fs.readFile(gitPath, 'utf8')).trim()
+    if (!pointer.startsWith('gitdir: ')) throw new Error('git_directory_pointer_invalid')
+    gitDirectory = path.resolve(path.dirname(gitPath), pointer.slice('gitdir: '.length))
+  }
+  const head = (await fs.readFile(path.join(gitDirectory, 'HEAD'), 'utf8')).trim()
+  let revision = head
+  if (head.startsWith('ref: ')) {
+    const ref = head.slice('ref: '.length)
+    if (!/^refs\/[A-Za-z0-9._\/-]+$/.test(ref) || ref.includes('..')) throw new Error('git_head_ref_invalid')
+    try {
+      revision = (await fs.readFile(path.join(gitDirectory, ...ref.split('/')), 'utf8')).trim()
+    } catch (error) {
+      if (error?.code !== 'ENOENT') throw error
+      const packed = await fs.readFile(path.join(gitDirectory, 'packed-refs'), 'utf8')
+      revision = packed.split(/\r?\n/)
+        .map((line) => line.trim().split(' '))
+        .find((parts) => parts.length === 2 && parts[1] === ref)?.[0] || ''
+    }
+  }
+  if (!/^[a-f0-9]{40}$/.test(revision)) throw new Error('git_head_revision_invalid')
+  return revision
+}
+
 export async function runPsdealsDailyRefreshCli(argv, io = {}, dependencies = {}) {
   const stdout = io.stdout || ((value) => process.stdout.write(value))
   const stderr = io.stderr || ((value) => process.stderr.write(value))
@@ -98,6 +126,9 @@ export async function runPsdealsDailyRefreshCli(argv, io = {}, dependencies = {}
       const vercel = await readBoundedJson(options.get('vercel-file'), 'vercel')
       const edge = await readBoundedJson(options.get('edge-file'), 'edge')
       const captcha = await readBoundedJson(options.get('captcha-file'), 'captcha')
+      const actualCodeHead = dependencies.code_head || await readPsdealsLocalGitHead(
+        dependencies.project_root || process.cwd()
+      )
       const liveExecutor = dependencies.live_executor ||
         (dependencies.operational_adapters
           ? createPsdealsDailyOperationalExecutor({ adapters: dependencies.operational_adapters })
@@ -109,7 +140,8 @@ export async function runPsdealsDailyRefreshCli(argv, io = {}, dependencies = {}
         edge_cdp: edge,
         captcha,
         migration_007_sha256: inspection.migration_007_sha256,
-        code_head: dependencies.code_head || authorization.code_head,
+        certificate_007_sha256: inspection.certificate_007_sha256,
+        code_head: actualCodeHead,
         env: dependencies.env || process.env,
         now: dependencies.now || new Date().toISOString(),
         live_executor: liveExecutor,

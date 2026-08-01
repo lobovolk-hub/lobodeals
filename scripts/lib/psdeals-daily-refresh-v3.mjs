@@ -121,9 +121,11 @@ function sourceFiles(projectRoot) {
 export async function inspectPsdealsDailyRefreshCode({ project_root = process.cwd() } = {}) {
   const root = path.resolve(project_root)
   const migrationPath = path.join(root, 'sql', '007-lobodeals-3-safe-demotion-hardening.sql')
+  const certificatePath = path.join(root, 'sql', 'validation', '007-safe-demotion-precheck-certificate-readonly.sql')
   const packagePath = path.join(root, 'package.json')
-  const [migration, packageJson] = await Promise.all([
+  const [migration, certificate, packageJson] = await Promise.all([
     fs.readFile(migrationPath),
+    fs.readFile(certificatePath),
     fs.readFile(packagePath, 'utf8').then(JSON.parse),
   ])
   const files = sourceFiles(root)
@@ -132,6 +134,7 @@ export async function inspectPsdealsDailyRefreshCode({ project_root = process.cw
     try { await fs.access(file) } catch { missing.push(path.relative(root, file).replaceAll('\\', '/')) }
   }
   const migrationSha = crypto.createHash('sha256').update(migration).digest('hex')
+  const certificateSha = crypto.createHash('sha256').update(certificate).digest('hex')
   const stageNames = PSDEALS_DAILY_OPERATIONAL_STAGES.map((value) => value.state)
   const legacyCacheInPath = PSDEALS_DAILY_OPERATIONAL_STAGES.some((value) =>
     String(value.component).includes('refresh_catalog_public_cache_v15') ||
@@ -160,6 +163,8 @@ export async function inspectPsdealsDailyRefreshCode({ project_root = process.cw
     replay_scenario_count: PSDEALS_DAILY_REPLAY_SCENARIOS.length,
     migration_007_sha256: migrationSha,
     migration_007_bytes: migration.length,
+    certificate_007_sha256: certificateSha,
+    certificate_007_bytes: certificate.length,
     required_files: files.map((value) => path.relative(root, value).replaceAll('\\', '/')),
     missing_files: missing,
     legacy_cache_v15_blocked: !legacyCacheInPath,
@@ -463,6 +468,7 @@ export function evaluatePsdealsDailyLiveGates({
   edge_cdp,
   captcha,
   migration_007_sha256,
+  certificate_007_sha256,
   code_head,
   env = process.env,
   now = new Date().toISOString(),
@@ -482,6 +488,7 @@ export function evaluatePsdealsDailyLiveGates({
   if (remote_preflight?.migration_007_applied !== true) blockers.push('migration_007_not_applied')
   if (remote_preflight?.certificate_passed !== true || Number(remote_preflight?.blocker_failures) !== 0) blockers.push('remote_preflight_not_certified')
   if (!HASH_PATTERN.test(String(remote_preflight?.certificate_sha256 || ''))) blockers.push('remote_certificate_sha_invalid')
+  if (remote_preflight?.certificate_sha256 !== certificate_007_sha256) blockers.push('remote_certificate_sha_mismatch')
   if (vercel?.safe_margin !== true || vercel?.approved_capacity !== true || !isFresh(vercel?.checked_at, now, 30)) blockers.push('vercel_margin_not_approved')
   if (edge_cdp?.ready !== true || edge_cdp?.region !== 'us' || edge_cdp?.storefront !== 'playstation') blockers.push('edge_cdp_not_ready')
   if (captcha?.resolved !== true || captcha?.confirmed_by !== 'Johan' || !isFresh(captcha?.checked_at, now, 30)) blockers.push('captcha_not_visibly_resolved')

@@ -2,7 +2,10 @@ import assert from 'node:assert/strict'
 import fs from 'node:fs/promises'
 import test from 'node:test'
 
-import { runPsdealsDailyRefreshCli } from '../scripts/run-psdeals-daily-refresh-v3.mjs'
+import {
+  readPsdealsLocalGitHead,
+  runPsdealsDailyRefreshCli,
+} from '../scripts/run-psdeals-daily-refresh-v3.mjs'
 import {
   createPsdealsDailyOperationalExecutor,
   evaluatePsdealsDailyLiveGates,
@@ -222,6 +225,7 @@ function completeLiveInput(migrationSha) {
     edge_cdp: { ready: true, region: 'us', storefront: 'playstation' },
     captcha: { resolved: true, confirmed_by: 'Johan', checked_at: TIMESTAMP },
     migration_007_sha256: migrationSha,
+    certificate_007_sha256: 'a'.repeat(64),
     code_head: 'abc1234',
     env: { LOBODEALS_REMOTE_EXECUTION: 'EXPLICITLY_AUTHORIZED', NODE_ENV: 'production' },
     now: TIMESTAMP,
@@ -235,6 +239,7 @@ test('live fails before executor on every missing critical gate', async () => {
     ['project', (value) => { value.authorization.project_ref = 'wrong' }, 'live_project_mismatch'],
     ['sha', (value) => { value.authorization.migration_007_sha256 = 'b'.repeat(64) }, 'authorized_migration_007_sha_mismatch'],
     ['migration', (value) => { value.remote_preflight.migration_007_applied = false }, 'migration_007_not_applied'],
+    ['certificate', (value) => { value.remote_preflight.certificate_sha256 = 'b'.repeat(64) }, 'remote_certificate_sha_mismatch'],
     ['vercel', (value) => { value.vercel.safe_margin = false }, 'vercel_margin_not_approved'],
     ['edge', (value) => { value.edge_cdp.ready = false }, 'edge_cdp_not_ready'],
     ['captcha', (value) => { value.captcha.resolved = false }, 'captcha_not_visibly_resolved'],
@@ -249,6 +254,12 @@ test('live fails before executor on every missing critical gate', async () => {
     assert.ok(result.gates.blockers.includes(expected), name)
     assert.equal(result.executed_writes, 0)
   }
+})
+
+test('live code HEAD comes from the local git identity without spawning git', async () => {
+  const head = await readPsdealsLocalGitHead(process.cwd())
+  assert.match(head, /^[a-f0-9]{40}$/)
+  assert.notEqual(head, '532fd107d2460180d7f501bea0e1b847a8a2af43')
 })
 
 test('live binds an injected executor only after every gate passes', async () => {

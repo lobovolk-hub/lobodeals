@@ -2,6 +2,32 @@
 
 Fecha de corte: 2026-08-02, America/Lima
 
+## Checkpoint Texto 3.2-0027
+
+- HEAD inicial: `b00517aa8fed4c0652c9ce017b3f3c8458803fd6`, rama `main`,
+  worktree limpio y divergencia local 97 delante / 0 detrás sin fetch.
+- El registry productivo enlaza exactamente 23/23 adapters concretos a scripts,
+  funciones y RPC canónicos; el factory fija inputs y puertos productivos, los
+  writes exigen autorización de etapa y v1/v15 permanecen bloqueados.
+- El launcher Edge/CDP admite handoff de PID, reentrada exclusiva al perfil
+  dedicado ya verificado y fallback seguro 9223-9232 cuando 9222 pertenece a
+  un perfil ajeno. Nunca termina ni se adjunta a Edge personal.
+- Prueba runtime real: PID 16820, puerto 9222, perfil
+  `data/edge/recovery-profile`, `/json/version` y `/json/list` válidos, pestaña
+  canonical recently-added, PlayStation US y 36 cards. Estado `page_ready`,
+  espera final 34 ms, confirmación por chat deshabilitada y cero collectors,
+  imports o writes.
+- Supabase read-only a las 17:02 UTC: proyecto `ACTIVE_HEALTHY`, 007 registrada
+  una vez, postcheck aprobado y certificado post-007 23/23, con cero cycles,
+  receipts, candidates, mínimos, locks y sesiones operacionales; sin drift.
+- Vercel read-only: proyecto enlazado y último deployment productivo
+  `dpl_6Ua5HpBGWf1GczzzzZdE7AL3vHBr` en `READY`. El conector no expone Usage;
+  la evidencia manual de las 00:41 PET está vencida y no se renueva por código.
+- `live-preflight` alcanzó `captcha_resolved` y se detuvo antes de
+  `create_remote_cycle`: `RECOVERY_REFRESH_COMMAND_READY=true` y
+  `RECOVERY_REFRESH_REMOTE_PREFLIGHT_READY=pending_manual_vercel_refresh`.
+  No existe autorización operativa vigente y el refresh no se ejecutó.
+
 ## Checkpoint Texto 3.2-0026
 
 - HEAD inicial autorizado: `15bb44538c7109a27c8a3a8fe74d3b4c1bd5a917`.
@@ -129,17 +155,21 @@ de runtime en la ventana de cinco días consultada.
 - `THIRTY_DAY_TRIAL_READY=false`
 - `PUBLIC_DATA_CURRENT=false`
 - `DAILY_RUNNER_READY=false`
-- `DAILY_RUNNER_CODE_READY=false`
+- `DAILY_RUNNER_CODE_READY=true`
 - `LIVE_ADAPTER_CONTRACTS_READY=true`
-- `LIVE_EXECUTOR_BOUND=false`
+- `LIVE_EXECUTOR_BOUND=true`
+- `PRODUCTION_ADAPTERS_TOTAL=23`
+- `PRODUCTION_ADAPTERS_BOUND=23`
+- `PRODUCTION_ADAPTERS_MISSING=0`
 - `REMOTE_CYCLE_IDENTITY_ALIGNED=true`
 - `EDGE_CDP_POWERSHELL_LAUNCH_READY=true`
 - `CAPTCHA_AUTOMATIC_WAIT_READY=true`
 - `CHAT_CONFIRMATION_REQUIRED=false`
-- `EDGE_CDP_RUNTIME_PREFLIGHT_PASSED=false`
-- `VERCEL_MANUAL_EVIDENCE_ACCEPTED=true` para la ventana observada; renovar antes de live
-- `VERCEL_CAPACITY_WITHIN_THRESHOLD=true` para la medición 211/240
-- `RECOVERY_REFRESH_COMMAND_READY=false`
+- `EDGE_CDP_RUNTIME_PREFLIGHT_PASSED=true`
+- `CDP_PROCESS_HANDOFF_HANDLED=true`
+- `VERCEL_MANUAL_EVIDENCE_ACCEPTED=false` porque la evidencia observada venció
+- `VERCEL_CAPACITY_WITHIN_THRESHOLD=false` hasta renovar el dashboard
+- `RECOVERY_REFRESH_COMMAND_READY=true`
 - `DAILY_REFRESH_FLOW_MAPPED=true`
 - `SAFE_DEMOTION_AUDITED=true`
 - `SAFE_DEMOTION_CODE_READY=true`
@@ -151,7 +181,7 @@ de runtime en la ventana de cinco días consultada.
 - `MIGRATION_007_APPLIED=true`
 - `MIGRATION_007_POSTCHECK_PASSED=true`
 - `MIGRATION_007_POSTCERTIFIED=true`
-- `RECOVERY_REFRESH_REMOTE_PREFLIGHT_READY=false`
+- `RECOVERY_REFRESH_REMOTE_PREFLIGHT_READY=pending_manual_vercel_refresh`
 - `RECOVERY_REFRESH_EXECUTED=false`
 - `PUBLIC_CACHE_REFRESH_AUDITED=true`
 - `ISR_WRITE_SOURCE_IDENTIFIED=true`
@@ -171,8 +201,7 @@ de runtime en la ventana de cinco días consultada.
 - Secret scan, referencias activas, paths documentales y diff checks: limpios.
 - Build no ejecutado porque no cambió Next.js/TypeScript de producción.
 
-El recovery sigue en NO-GO live en `LOBODEALS-OPERATIONS.md`. La Autorización A
-se consumió exclusivamente en 007 y no habilita ningún refresh. Siguiente paso:
-ejecutar Edge/PowerShell fuera de la colisión de puerto del entorno Codex y
-conectar adapters de producción verificables; después repetir el preflight
-Supabase/Vercel/Edge y recién entonces solicitar una Autorización B nueva.
+El recovery no está autorizado y no se ha ejecutado. La Autorización A se
+consumió exclusivamente en 007. La única acción pendiente de Johan antes de
+considerar la nueva Autorización B propuesta es renovar los cinco valores del
+dashboard Vercel en el template canónico y mantenerlos dentro del umbral.

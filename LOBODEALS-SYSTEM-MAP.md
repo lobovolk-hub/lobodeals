@@ -60,9 +60,9 @@ producción. Los PowerShell son wrappers del collector, analyzers e importer.
   Monthly aislado, doble análisis ended, safe demotion v2, candidates,
   certificación v3, mínimos, cache v16 y finalización.
 - Los 23 contratos tienen schemas, idempotencia, receipt, timeout,
-  reconciliación y clasificación de errores. Los fakes recorren esas firmas,
-  pero no prueban binding de producción: ese executor permanece ausente y
-  fail-closed. Toda etapa
+  reconciliación y clasificación de errores. El registry productivo enlaza
+  23/23 adapters concretos; el factory fija los inputs y puertos operativos y
+  los replays usan los mismos targets con puertos in-memory. Toda etapa
   acepta el receipt anterior exacto y una acción externa sin receipt válido
   termina fail-closed o en reconciliación.
 
@@ -73,10 +73,11 @@ evidence chain y requests posteriores. Solo un resume verificado puede aportar
 un UUID existente.
 
 El transporte Edge vigente es exclusivamente PowerShell + `msedge.exe` + CDP
-`127.0.0.1:9222` con perfil dedicado. El challenge nunca se automatiza ni se
-confirma por chat: el proceso espera y detecta automáticamente la página válida.
-La prueba runtime del 2 de agosto no pasó por una colisión/aislamiento del
-entorno Codex, por lo que no existe evidencia CDP real reutilizable.
+en 9222 o fallback 9223-9232, con perfil `data/edge/recovery-profile`. La
+identidad combina perfil, puerto, executable, command line, `/json/version`,
+`/json/list` y pestaña canonical, no el PID inicial. El challenge nunca se
+automatiza ni se confirma por chat. La prueba runtime del 2 de agosto pasó en
+9222 con PID dedicado 16820, `page_ready` y 36 cards, sin collector.
 
 Este tooling prueba contratos, orden y replays integrales. La aplicación
 aislada de 007 no demuestra una operación live: Edge/captcha no fueron abiertos

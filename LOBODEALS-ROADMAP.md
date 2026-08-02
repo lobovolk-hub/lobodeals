@@ -12,9 +12,9 @@ Fecha de vigencia: 2026-08-02
    preparar el desacople entre shell SEO y precio diario.
 4. **Migración 007 — completada.** Aplicada una sola vez con Autorización A;
    postcheck, certificado posterior y preflight read-only aprobados.
-5. **Conexión live y Edge runtime.** Implementar los adapters de producción
-   verificables detrás de los 23 contratos y repetir Edge/CDP desde un entorno
-   que permita a `msedge.exe` visible conservar `127.0.0.1:9222`.
+5. **Conexión live y Edge runtime — completada en preejecución.** Registry
+   productivo 23/23, executor enlazado y Edge/CDP real certificado con perfil
+   dedicado, descubrimiento por endpoints y handoff/reentrada segura.
 6. **Refresh de recuperación.** Solo después de `live-preflight` sin blockers,
    evidencia Vercel renovada y una Autorización B independiente, ejecutar una
    sola recuperación supervisada.
@@ -36,12 +36,12 @@ Fecha de vigencia: 2026-08-02
 - ISR Writes y Active CPU tienen fuentes identificadas; la estrategia local de
   caché está aprobada, pero la operación no es segura aún bajo la cuota visible.
 - Datos públicos siguen desactualizados.
-- El runner único pasa 507 pruebas y 15 replays con cero efectos. Sus 23
-  contratos están completos, pero el executor de producción no está enlazado.
+- El runner único pasa 520 pruebas y 15 replays con cero efectos; registry y
+  executor productivos están enlazados 23/23.
 - La evidencia manual Vercel 211/240 pasa el umbral con 29 minutos de margen,
-  aunque debe renovarse antes de live. Edge PowerShell y captcha automático
-  pasan pruebas locales; el runtime CDP real quedó bloqueado por el entorno.
-- El refresh conserva NO-GO y no existe Autorización B vigente.
+  aunque ya venció y debe renovarse antes de live. Edge PowerShell, CDP runtime
+  y captcha automático pasan; `live-preflight` queda pendiente solo de Vercel.
+- El refresh no está autorizado ni ejecutado; no existe Autorización B vigente.
 - La prueba de 30 días no ha empezado.
 
 No adelantar arquitectura avanzada, automatización o monetización a costa de

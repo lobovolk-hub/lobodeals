@@ -2,7 +2,7 @@
 
 Fecha de corte: 2026-08-02
 
-Estado general: `MIGRATION 007 APPLIED — LIVE PREFLIGHT HARD STOP`.
+Estado general: `PREEXECUTION READY — PENDING MANUAL VERCEL REFRESH`.
 
 Este documento contiene el único procedimiento operativo vigente. Hasta una
 autorización visible posterior, todos los comandos reales son referencia
@@ -21,11 +21,12 @@ listing parcial o falta de rollback/reconciliación.
 
 ## Edge/CDP y captcha
 
-Estado: `LOCAL_CONTRACT_READY_RUNTIME_NOT_PASSED`.
+Estado: `RUNTIME_PASSED`.
 
-- Usar Microsoft Edge con remote debugging en `127.0.0.1:9222`.
+- Usar Microsoft Edge con remote debugging en `127.0.0.1:9222`; si pertenece
+  a un perfil ajeno, seleccionar 9223-9232 sin terminar ni adjuntarse al dueño.
 - El launcher obligatorio es `scripts/start-psdeals-edge-cdp.ps1`; usa
-  `msedge.exe`, PowerShell, `--remote-debugging-port=9222`,
+  `msedge.exe`, PowerShell, `--remote-debugging-port=<puerto>`,
   `--remote-allow-origins=*` y `data/edge/recovery-profile`.
 - Johan resuelve el challenge/captcha en la pestaña visible; el proceso espera,
   detecta su desaparición y continúa automáticamente. No pedir `LISTO`.
@@ -91,36 +92,39 @@ fuerte ni integra ended deals/safe demotion; su refresh v15 final está obsoleto
 
 ## Recovery Refresh — Code Ready, Awaiting Authorization
 
-Estado: `CODE_READY_AWAITING_LIVE_PREREQUISITES_AND_AUTHORIZATION`.
+Estado: `CODE_READY_AWAITING_VERCEL_RENEWAL_AND_AUTHORIZATION`.
 
 - `RECOVERY_REFRESH_GO=false`
 - `RECOVERY_REFRESH_EXECUTED=false`
 - `DAILY_RUNNER_READY=false`
-- `DAILY_RUNNER_CODE_READY=false`
+- `DAILY_RUNNER_CODE_READY=true`
 - `LIVE_ADAPTER_CONTRACTS_READY=true`
-- `LIVE_EXECUTOR_BOUND=false`
+- `LIVE_EXECUTOR_BOUND=true`
+- `PRODUCTION_ADAPTERS_TOTAL=23`
+- `PRODUCTION_ADAPTERS_BOUND=23`
+- `PRODUCTION_ADAPTERS_MISSING=0`
 - `REMOTE_CYCLE_IDENTITY_ALIGNED=true`
 - `EDGE_CDP_POWERSHELL_LAUNCH_READY=true`
 - `CAPTCHA_AUTOMATIC_WAIT_READY=true`
 - `CHAT_CONFIRMATION_REQUIRED=false`
-- `EDGE_CDP_RUNTIME_PREFLIGHT_PASSED=false`
-- `VERCEL_MANUAL_EVIDENCE_ACCEPTED=true` para la medición vigente
-- `VERCEL_CAPACITY_WITHIN_THRESHOLD=true` para 211/240
-- `RECOVERY_REFRESH_COMMAND_READY=false`
+- `EDGE_CDP_RUNTIME_PREFLIGHT_PASSED=true`
+- `CDP_PROCESS_HANDOFF_HANDLED=true`
+- `VERCEL_MANUAL_EVIDENCE_ACCEPTED=false` hasta renovar la medición
+- `VERCEL_CAPACITY_WITHIN_THRESHOLD=false` hasta renovar la medición
+- `RECOVERY_REFRESH_COMMAND_READY=true`
 - `SAFE_DEMOTION_RUNNER_INTEGRATED=true`
 - `HOLLOW_KNIGHT_CLASS_FAILURE_PREVENTED=true`
 - `MIGRATION_007_REMOTE_CERTIFIED=true`
 - `MIGRATION_007_APPLIED=true`
 - `MIGRATION_007_POSTCHECK_PASSED=true`
 - `MIGRATION_007_POSTCERTIFIED=true`
-- `RECOVERY_REFRESH_REMOTE_PREFLIGHT_READY=false`
+- `RECOVERY_REFRESH_REMOTE_PREFLIGHT_READY=pending_manual_vercel_refresh`
 - `DAILY_REFRESH_SAFE_FOR_VERCEL=true` solo durante la ventana de evidencia manual
 
-Este plan no es autorización. Los contratos y replays están probados y 007 está
-aplicada/certificada. El comando live permanece bloqueado porque un dispatcher
-delegado no equivale a adapters de producción y porque no pasó el preflight
-runtime de Edge. La evidencia Vercel debe renovarse inmediatamente antes de
-cualquier futura autorización.
+Este plan no es autorización. Los contratos, adapters, replays, 007 y Edge/CDP
+están probados. `live-preflight` se detuvo antes de crear ciclo y conserva cero
+writes. La evidencia Vercel debe renovarse inmediatamente antes de cualquier
+futura autorización.
 
 ### Identidad e inputs fijos
 
@@ -343,8 +347,7 @@ import inseguro; pendientes después de retry; demotion no integrada; cache
 incompatible; proyecto/esquema dudoso; operación no idempotente; timeout sin
 reconciliar; falta de recovery aplicable o autorización.
 
-Al 2026-08-02 safe demotion, migración 007, identidad del ciclo, contrato
-Vercel manual y polling de captcha están corregidos. Permanecen dos bloqueos:
-adapters de producción no enlazados y Edge/CDP runtime no verificado por la
-colisión/aislamiento del entorno Codex. No existe Autorización B utilizable y el
-recovery no debe ejecutarse.
+Al 2026-08-02 safe demotion, migración 007, identidad del ciclo, registry 23/23,
+Edge/CDP runtime y polling de captcha están corregidos. Solo falta renovar la
+evidencia manual Vercel y recibir una Autorización B nueva. El recovery no debe
+ejecutarse con este documento.

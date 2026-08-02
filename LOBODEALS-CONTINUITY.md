@@ -155,3 +155,26 @@ Git conserva los documentos eliminados; no recrearlos como fuentes activas.
   Próxima tarea exacta: completar adapters de producción y ejecutar el wrapper
   PowerShell en un contexto sin colisión de puerto; luego repetir
   `live-preflight` hasta `READY_FOR_AUTHORIZATION_B`.
+
+## Punto de continuación después del Texto 3.2-0027
+
+- HEAD inicial: `b00517aa8fed4c0652c9ce017b3f3c8458803fd6` en `main`,
+  97 delante / 0 detrás de `origin/main` local, sin fetch.
+- Registry productivo y executor: 23/23 adapters, 0 missing, con bindings de
+  scripts/RPC, autorización por etapa, receipts, idempotencia y reconciliación.
+- Edge runtime real: PID 16820, puerto 9222, perfil dedicado exacto,
+  `/json/version` y `/json/list` válidos, canonical recently-added, PlayStation
+  US, 36 cards y `page_ready`; 0 collectors, imports y writes.
+- Supabase read-only 17:02 UTC: `ACTIVE_HEALTHY`, única migración 007,
+  postcheck aprobado, certificado post-007 23/23 y cero cycles, receipts,
+  candidates, mínimos, locks o sesiones operativas.
+- Vercel: proyecto y deployment productivo `READY`; el conector no expone Usage.
+  La evidencia 211/240 de las 00:41 PET venció y solo Johan puede renovarla.
+- `live-preflight`: último estado `captcha_resolved`, siguiente
+  `cycle_created`, `RECOVERY_REFRESH_COMMAND_READY=true` y remoto
+  `pending_manual_vercel_refresh`; no autoriza el siguiente estado.
+- Run intent reservado para una autorización futura:
+  `local-cycle-recovery-20260802-0027`; idempotency key
+  `create-cycle:local-cycle-recovery-20260802-0027`.
+- No se creó ciclo, receipt, collector, import, demotion, candidate,
+  certificación, mínimo, cache o finalización. No hubo push ni deploy.

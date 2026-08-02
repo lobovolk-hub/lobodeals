@@ -36,6 +36,58 @@ function requiredFiltersPresent(url) {
     ['games', 'bundles', 'dlc'].every((value) => contentTypes.includes(value))
 }
 
+export function selectPsdealsEdgeCdpPort({
+  preferred_port = 9222,
+  fallback_start = 9223,
+  fallback_end = 9232,
+  occupied_ports = [],
+} = {}) {
+  if (!Number.isSafeInteger(preferred_port) || preferred_port < 1024 || preferred_port > 65535 ||
+      !Number.isSafeInteger(fallback_start) || !Number.isSafeInteger(fallback_end) ||
+      fallback_start > fallback_end || fallback_end - fallback_start > 9) {
+    return { valid: false, selected_port: null, blockers: ['edge_cdp_port_range_invalid'] }
+  }
+  const occupied = new Set(occupied_ports)
+  const candidates = preferred_port === 9222
+    ? [preferred_port, ...Array.from({ length: fallback_end - fallback_start + 1 }, (_, index) => fallback_start + index)]
+    : [preferred_port]
+  const selected = candidates.find((port) => !occupied.has(port)) ?? null
+  return {
+    valid: selected !== null,
+    selected_port: selected,
+    preferred_port,
+    fallback_selected: selected !== null && selected !== preferred_port,
+    blockers: selected === null ? ['edge_cdp_no_free_operational_port'] : [],
+  }
+}
+
+export function validatePsdealsEdgeLauncherEvidence(
+  evidence = {},
+  { expected_url = DEFAULT_URL, expected_profile } = {}
+) {
+  const blockers = []
+  const port = Number(evidence.port)
+  if (evidence.launcher_version !== 2) blockers.push('edge_launcher_version_invalid')
+  if (evidence.launch_method !== 'powershell_start_process' || evidence.visible !== true) blockers.push('edge_launcher_visibility_invalid')
+  if (!Number.isSafeInteger(port) || port < 9222 || port > 9232) blockers.push('edge_launcher_port_invalid')
+  if (evidence.operational_profile_verified !== true || evidence.terminated_existing_process !== false) blockers.push('edge_launcher_profile_contract_invalid')
+  if (expected_profile && pathValue(evidence.user_data_dir) !== pathValue(expected_profile)) blockers.push('edge_launcher_profile_mismatch')
+  if (evidence.version_endpoint !== `http://127.0.0.1:${port}/json/version`) blockers.push('edge_launcher_version_endpoint_invalid')
+  if (evidence.list_endpoint !== `http://127.0.0.1:${port}/json/list`) blockers.push('edge_launcher_list_endpoint_invalid')
+  const target = parseUrl(evidence.canonical_tab_url)
+  const expected = parseUrl(expected_url)
+  if (!target || !expected || target.hostname !== 'psdeals.net' || target.pathname !== expected.pathname || !requiredFiltersPresent(target)) {
+    blockers.push('edge_launcher_canonical_tab_invalid')
+  }
+  if (!Array.isArray(evidence.compatible_process_ids) || evidence.compatible_process_ids.length < 1) blockers.push('edge_launcher_compatible_process_missing')
+  if (evidence.launch_process_exited === true && evidence.process_handoff_observed !== true) blockers.push('edge_launcher_exit_without_handoff')
+  return { valid: blockers.length === 0, blockers: [...new Set(blockers)] }
+}
+
+function pathValue(value) {
+  return typeof value === 'string' ? value.replaceAll('/', '\\').toLowerCase() : ''
+}
+
 export function classifyPsdealsEdgeSnapshot(snapshot = {}, { expected_url = DEFAULT_URL } = {}) {
   if (snapshot.browser_closed === true) return { state: 'browser_closed', ready: false }
   if (snapshot.cdp_available !== true) return { state: 'cdp_unavailable', ready: false }
@@ -162,7 +214,9 @@ export function createPsdealsEdgeCdpInspector({
   fetch_impl = globalThis.fetch,
   command_timeout_ms = 15_000,
 } = {}) {
-  if (port !== 9222) throw new Error('EDGE_CDP_PORT_MUST_BE_9222')
+  if (!Number.isSafeInteger(port) || port < 1024 || port > 65535) {
+    throw new Error('EDGE_CDP_PORT_INVALID')
+  }
   if (typeof fetch_impl !== 'function') throw new Error('EDGE_CDP_FETCH_PORT_REQUIRED')
   return async function inspectPsdealsEdgePage() {
     let targets
@@ -179,7 +233,8 @@ export function createPsdealsEdgeCdpInspector({
     const pages = (Array.isArray(targets) ? targets : []).filter((target) => target.type === 'page')
     const target = pages.find((entry) => {
       const url = parseUrl(entry.url)
-      return url?.hostname === 'psdeals.net' && url.pathname === expected?.pathname
+      return url?.hostname === 'psdeals.net' && url.pathname === expected?.pathname &&
+        requiredFiltersPresent(url)
     })
     if (!target?.webSocketDebuggerUrl) return { cdp_available: true, tab_found: false }
     const client = websocketClient(target.webSocketDebuggerUrl, command_timeout_ms)

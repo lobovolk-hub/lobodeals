@@ -5,6 +5,7 @@ import { fileURLToPath } from 'node:url'
 import {
   createPsdealsEdgeCdpInspector,
   PSDEALS_EDGE_RECENTLY_ADDED_URL,
+  validatePsdealsEdgeLauncherEvidence,
   waitForPsdealsChallengeClear,
 } from './lib/psdeals-edge-cdp-preflight.mjs'
 
@@ -48,7 +49,7 @@ export async function runPsdealsEdgeCdpPreflight(argv, io = {}, dependencies = {
   const stdout = io.stdout || ((value) => process.stdout.write(value))
   const stderr = io.stderr || ((value) => process.stderr.write(value))
   const options = parse(argv)
-  const port = Number(options.get('port') || 9222)
+  const preferredPort = Number(options.get('port') || 9222)
   const timeoutMs = Number(options.get('timeout-ms') || 15 * 60 * 1000)
   const pollMs = Number(options.get('poll-ms') || 2000)
   const url = String(options.get('url') || PSDEALS_EDGE_RECENTLY_ADDED_URL)
@@ -61,9 +62,21 @@ export async function runPsdealsEdgeCdpPreflight(argv, io = {}, dependencies = {
     const script = path.join(projectRoot, 'scripts', 'start-psdeals-edge-cdp.ps1')
     const raw = await (dependencies.run_process || runBoundedProcess)(powershell, [
       '-NoLogo', '-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass',
-      '-File', script, '-Url', url, '-Port', String(port), '-Json',
+      '-File', script, '-Url', url, '-Port', String(preferredPort), '-Json',
     ], { cwd: projectRoot })
     launch = JSON.parse(raw)
+  }
+  const port = Number(launch?.port || preferredPort)
+  if (!Number.isSafeInteger(port) || port < 1024 || port > 65535) {
+    throw new Error('EDGE_CDP_SELECTED_PORT_INVALID')
+  }
+  if (launch) {
+    const projectRoot = dependencies.project_root || process.cwd()
+    const launcher = validatePsdealsEdgeLauncherEvidence(launch, {
+      expected_url: url,
+      expected_profile: path.join(projectRoot, 'data', 'edge', 'recovery-profile'),
+    })
+    if (!launcher.valid) throw new Error(`EDGE_LAUNCH_EVIDENCE_INVALID:${launcher.blockers.join(',')}`)
   }
   const inspectPage = dependencies.inspect_page || createPsdealsEdgeCdpInspector({ port, expected_url: url })
   let waitingMessageShown = false
@@ -76,7 +89,10 @@ export async function runPsdealsEdgeCdpPreflight(argv, io = {}, dependencies = {
     expected_url: url,
     on_state: async (state) => {
       if (state.state === 'challenge_present' && !waitingMessageShown) {
-        stderr('Waiting for Johan to complete the PSDeals challenge in Edge...\n')
+        stderr('\n============================================================\n')
+        stderr('PSDeals challenge detected. Complete it manually in Edge.\n')
+        stderr('The runner will continue automatically.\n')
+        stderr('============================================================\n\u0007')
         waitingMessageShown = true
       }
     },
@@ -87,7 +103,9 @@ export async function runPsdealsEdgeCdpPreflight(argv, io = {}, dependencies = {
     launcher: launch,
     ...result,
     port,
+    preferred_port: preferredPort,
     expected_url: url,
+    checked_at: new Date().toISOString(),
     collector_executed: false,
     listing_saved: false,
     imports_executed: false,

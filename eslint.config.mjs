@@ -12,6 +12,9 @@ const eslintConfig = defineConfig([
     "out/**",
     "build/**",
     "next-env.d.ts",
+    // Runtime Edge profiles contain third-party extension code and are already
+    // outside version control. Lint only repository-owned sources.
+    "data/**",
   ]),
 ]);
 

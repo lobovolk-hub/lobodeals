@@ -1,13 +1,48 @@
 # LoboDeals 3.2 — Estado actual
 
-Fecha de corte: 2026-08-01, America/Lima
+Fecha de corte: 2026-08-02, America/Lima
+
+## Checkpoint Texto 3.2-0026
+
+- HEAD inicial autorizado: `15bb44538c7109a27c8a3a8fe74d3b4c1bd5a917`.
+- La auditoría corrigió el falso positivo de readiness: 23 contratos de etapa
+  están definidos y probados, pero el repositorio no contiene todavía los 23
+  adapters de producción. Un dispatcher delegado o un fake ya no puede hacer
+  `LIVE_EXECUTOR_BOUND=true` ni `RECOVERY_REFRESH_COMMAND_READY=true`.
+- El runner separa `run_intent_id=local-cycle-*` del UUID remoto. El UUID solo
+  se acepta tras `create_or_reconcile_price_refresh_cycle_v1`, se propaga a
+  receipts y etapas posteriores, y una respuesta perdida exige reconciliación
+  exacta por identidad e idempotency key antes de continuar.
+- El launcher dedicado usa PowerShell, `msedge.exe`, perfil
+  `data/edge/recovery-profile`, `127.0.0.1:9222` y la URL canónica. El detector
+  de challenge hace polling acotado, muestra
+  `Waiting for Johan to complete the PSDeals challenge in Edge...` y continúa
+  automáticamente; no existe confirmación `LISTO` por chat.
+- La prueba real de Edge/CDP alcanzó un HARD STOP del entorno: Edge visible no
+  pudo exponer CDP desde el sandbox y la elevación usada por la aplicación ocupó
+  temporalmente el mismo puerto con otro perfil. El launcher rechazó adjuntarse
+  o matar ese proceso. No se abrió collector ni se leyó un listing completo.
+- Evidencia manual Vercel de Johan observada a las 00:41 PET: CPU 211/240,
+  margen 29 minutos, ISR Writes 301K, invocations 172K, FOT 5.02 GB y Edge
+  Requests 348K. El contrato la acepta por hasta 180 minutos y exige renovarla
+  inmediatamente antes de cualquier ejecución live.
+- Vercel read-only confirmó proyecto, aliases y deployment productivo
+  `dpl_6Ua5HpBGWf1GczzzzZdE7AL3vHBr` en `READY`, sin errores runtime devueltos
+  ni deployment concurrente observado.
+- Supabase read-only confirmó `ACTIVE_HEALTHY`, migraciones 005/006/007, 007
+  registrada una vez, postcheck completo y certificado posterior 23/23; cycles,
+  receipts, candidates y mínimos siguen en cero, sin locks o actividad
+  operacional relevante.
+- Baseline del checkpoint: 507/507 pruebas; 122/122 `.mjs` pasan
+  `node --check`; lint termina con 0 errores y 6 warnings conocidos. El refresh no se ejecutó y no se
+  emite una nueva Autorización B mientras fallen Edge runtime y executor live.
 
 ## Checkpoint Texto 3.2-0024-R1
 
 - HEAD inicial: `532fd107d2460180d7f501bea0e1b847a8a2af43`; checkpoint de
   código anterior a esta actualización documental: `1912f29`.
-- Runner único: `npm run refresh:daily`, con modos `validate`, `replay` y
-  `live`; 22 adapters obligatorios y receipt chain estricta.
+- Runner único: `npm run refresh:daily`, con modos `validate`, `replay`,
+  `live-preflight` y `live`; 23 contratos obligatorios y receipt chain estricta.
 - Migración 007 final local: 9.977 bytes; SHA-256
   `d2ac2c231dd5ad18d9fc675d66fac6a19389cdc0864c9632ee601b62e5581766`.
 - Certificado previo canónico 007: 18.144 bytes; SHA-256
@@ -22,7 +57,7 @@ Fecha de corte: 2026-08-01, America/Lima
 - Vercel conserva el deployment productivo conocido en `READY`, con el SHA
   productivo esperado y 0 errores runtime observados en 24 h. La API consultada
   no demuestra margen/capacidad explícitamente aprobado; ese gate sigue cerrado.
-- Baseline actual: 488/488 pruebas; 113/113 `.mjs` pasan `node --check`; lint
+- Baseline del checkpoint anterior: 488/488 pruebas; 113/113 `.mjs` pasan `node --check`; lint
   con 0 errores y los mismos 6 warnings preexistentes; 15/15 replays y 0 writes.
 
 ## Git y producción
@@ -94,8 +129,17 @@ de runtime en la ventana de cinco días consultada.
 - `THIRTY_DAY_TRIAL_READY=false`
 - `PUBLIC_DATA_CURRENT=false`
 - `DAILY_RUNNER_READY=false`
-- `DAILY_RUNNER_CODE_READY=true`
-- `RECOVERY_REFRESH_COMMAND_READY=true`
+- `DAILY_RUNNER_CODE_READY=false`
+- `LIVE_ADAPTER_CONTRACTS_READY=true`
+- `LIVE_EXECUTOR_BOUND=false`
+- `REMOTE_CYCLE_IDENTITY_ALIGNED=true`
+- `EDGE_CDP_POWERSHELL_LAUNCH_READY=true`
+- `CAPTCHA_AUTOMATIC_WAIT_READY=true`
+- `CHAT_CONFIRMATION_REQUIRED=false`
+- `EDGE_CDP_RUNTIME_PREFLIGHT_PASSED=false`
+- `VERCEL_MANUAL_EVIDENCE_ACCEPTED=true` para la ventana observada; renovar antes de live
+- `VERCEL_CAPACITY_WITHIN_THRESHOLD=true` para la medición 211/240
+- `RECOVERY_REFRESH_COMMAND_READY=false`
 - `DAILY_REFRESH_FLOW_MAPPED=true`
 - `SAFE_DEMOTION_AUDITED=true`
 - `SAFE_DEMOTION_CODE_READY=true`
@@ -112,11 +156,11 @@ de runtime en la ventana de cinco días consultada.
 - `PUBLIC_CACHE_REFRESH_AUDITED=true`
 - `ISR_WRITE_SOURCE_IDENTIFIED=true`
 - `ACTIVE_CPU_SOURCE_IDENTIFIED=true`
-- `DAILY_REFRESH_SAFE_FOR_VERCEL=false`
+- `DAILY_REFRESH_SAFE_FOR_VERCEL=true` solo para la evidencia temporal observada
 - `CACHE_STRATEGY_APPROVED_LOCALLY=true`
 - `DEPLOY_FIX_REQUIRED_BEFORE_REFRESH=false`
 
-## Validación final local
+## Validación final local del checkpoint anterior
 
 - `npm test`: 488/488.
 - Recheck final Bloque 4 + ended/demotion: 14/14.
@@ -129,6 +173,6 @@ de runtime en la ventana de cinco días consultada.
 
 El recovery sigue en NO-GO live en `LOBODEALS-OPERATIONS.md`. La Autorización A
 se consumió exclusivamente en 007 y no habilita ningún refresh. Siguiente paso:
-cerrar por separado la aprobación explícita de capacidad Vercel y la
-intervención visible de Johan en Edge/captcha; solo después corresponde una
-Autorización B nueva para un único refresh supervisado.
+ejecutar Edge/PowerShell fuera de la colisión de puerto del entorno Codex y
+conectar adapters de producción verificables; después repetir el preflight
+Supabase/Vercel/Edge y recién entonces solicitar una Autorización B nueva.

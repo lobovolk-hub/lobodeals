@@ -1,6 +1,6 @@
 # LoboDeals 3.2 — Mapa del sistema
 
-Fecha de corte: 2026-08-01
+Fecha de corte: 2026-08-02
 
 ## Sistema productivo actual
 
@@ -18,10 +18,10 @@ Fecha de corte: 2026-08-01
   legacy directo v15 está bloqueado en código; el futuro camino v16 exige ciclo,
   certificación y receipt.
 - **Runner diario único:** `scripts/run-psdeals-daily-refresh-v3.mjs`, expuesto
-  solo como `npm run refresh:daily`. `validate` y `replay` son offline; `live`
-  valida simultáneamente proyecto, acción, autorización, cycle, entorno, HEAD,
-  SHA de 007, SHA del certificado, preflight, Vercel, Edge y captcha antes de
-  enlazar cualquier adapter.
+  solo como `npm run refresh:daily`. `validate` y `replay` son offline;
+  `live-preflight` es read-only y se detiene antes de `cycle_created`; `live`
+  valida proyecto, autorización, entorno, HEAD, 007, certificado, Supabase,
+  Vercel, Edge y captcha antes de poder llamar a un executor.
 - **Autenticación:** Supabase Auth, email/password y Google OAuth; callback en la
   app. Google Sign-In sigue como prioridad visible pendiente.
 - **Vercel/deploy:** producción se despliega desde GitHub `main`. El local está
@@ -56,12 +56,27 @@ producción. Los PowerShell son wrappers del collector, analyzers e importer.
 - Builders de payload, clasificación, normalización comercial y mínimos.
 - Puertos fake/operativos separados y gates explícitas de ejecución remota.
 - Selector puro de ended deals compartido con el analyzer real.
-- State machine diaria de 22 etapas con recently-added, discounts, retry,
+- State machine diaria de 23 etapas, incluida `cycle_created`, con recently-added, discounts, retry,
   Monthly aislado, doble análisis ended, safe demotion v2, candidates,
   certificación v3, mínimos, cache v16 y finalización.
-- Contrato operacional y fakes comparten las mismas 22 firmas; toda etapa
+- Los 23 contratos tienen schemas, idempotencia, receipt, timeout,
+  reconciliación y clasificación de errores. Los fakes recorren esas firmas,
+  pero no prueban binding de producción: ese executor permanece ausente y
+  fail-closed. Toda etapa
   acepta el receipt anterior exacto y una acción externa sin receipt válido
   termina fail-closed o en reconciliación.
+
+La identidad se divide deliberadamente en `run_intent_id` local y
+`remote_cycle_id` UUID. La autorización de una ejecución nueva no prefija el
+UUID; el RPC canónico lo devuelve y su receipt lo fija para el manifest,
+evidence chain y requests posteriores. Solo un resume verificado puede aportar
+un UUID existente.
+
+El transporte Edge vigente es exclusivamente PowerShell + `msedge.exe` + CDP
+`127.0.0.1:9222` con perfil dedicado. El challenge nunca se automatiza ni se
+confirma por chat: el proceso espera y detecta automáticamente la página válida.
+La prueba runtime del 2 de agosto no pasó por una colisión/aislamiento del
+entorno Codex, por lo que no existe evidencia CDP real reutilizable.
 
 Este tooling prueba contratos, orden y replays integrales. La aplicación
 aislada de 007 no demuestra una operación live: Edge/captcha no fueron abiertos

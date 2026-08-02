@@ -1,8 +1,8 @@
 # LoboDeals 3.2 — Operaciones
 
-Fecha de corte: 2026-08-01
+Fecha de corte: 2026-08-02
 
-Estado general: `CODE READY — MIGRATION 007 APPLIED — LIVE EXECUTION NOT AUTHORIZED`.
+Estado general: `MIGRATION 007 APPLIED — LIVE PREFLIGHT HARD STOP`.
 
 Este documento contiene el único procedimiento operativo vigente. Hasta una
 autorización visible posterior, todos los comandos reales son referencia
@@ -21,11 +21,15 @@ listing parcial o falta de rollback/reconciliación.
 
 ## Edge/CDP y captcha
 
-Estado: `AUDITED_BUT_NOT_REAUTHORIZED`.
+Estado: `LOCAL_CONTRACT_READY_RUNTIME_NOT_PASSED`.
 
 - Usar Microsoft Edge con remote debugging en `127.0.0.1:9222`.
-- Johan resuelve el challenge/captcha en la pestaña visible.
-- El runner descubre `/json/version` o `DevToolsActivePort`.
+- El launcher obligatorio es `scripts/start-psdeals-edge-cdp.ps1`; usa
+  `msedge.exe`, PowerShell, `--remote-debugging-port=9222`,
+  `--remote-allow-origins=*` y `data/edge/recovery-profile`.
+- Johan resuelve el challenge/captcha en la pestaña visible; el proceso espera,
+  detecta su desaparición y continúa automáticamente. No pedir `LISTO`.
+- El runner consulta `/json/version` y `/json/list` por CDP.
 - No automatizar captcha ni usar un perfil oculto alternativo.
 - Cerrar una instancia anterior solo dentro de una operación autorizada y
   advertida previamente.
@@ -92,8 +96,17 @@ Estado: `CODE_READY_AWAITING_LIVE_PREREQUISITES_AND_AUTHORIZATION`.
 - `RECOVERY_REFRESH_GO=false`
 - `RECOVERY_REFRESH_EXECUTED=false`
 - `DAILY_RUNNER_READY=false`
-- `DAILY_RUNNER_CODE_READY=true`
-- `RECOVERY_REFRESH_COMMAND_READY=true`
+- `DAILY_RUNNER_CODE_READY=false`
+- `LIVE_ADAPTER_CONTRACTS_READY=true`
+- `LIVE_EXECUTOR_BOUND=false`
+- `REMOTE_CYCLE_IDENTITY_ALIGNED=true`
+- `EDGE_CDP_POWERSHELL_LAUNCH_READY=true`
+- `CAPTCHA_AUTOMATIC_WAIT_READY=true`
+- `CHAT_CONFIRMATION_REQUIRED=false`
+- `EDGE_CDP_RUNTIME_PREFLIGHT_PASSED=false`
+- `VERCEL_MANUAL_EVIDENCE_ACCEPTED=true` para la medición vigente
+- `VERCEL_CAPACITY_WITHIN_THRESHOLD=true` para 211/240
+- `RECOVERY_REFRESH_COMMAND_READY=false`
 - `SAFE_DEMOTION_RUNNER_INTEGRATED=true`
 - `HOLLOW_KNIGHT_CLASS_FAILURE_PREVENTED=true`
 - `MIGRATION_007_REMOTE_CERTIFIED=true`
@@ -101,12 +114,13 @@ Estado: `CODE_READY_AWAITING_LIVE_PREREQUISITES_AND_AUTHORIZATION`.
 - `MIGRATION_007_POSTCHECK_PASSED=true`
 - `MIGRATION_007_POSTCERTIFIED=true`
 - `RECOVERY_REFRESH_REMOTE_PREFLIGHT_READY=false`
-- `DAILY_REFRESH_SAFE_FOR_VERCEL=false`
+- `DAILY_REFRESH_SAFE_FOR_VERCEL=true` solo durante la ventana de evidencia manual
 
-Este plan no es autorización. El runner y sus contratos están probados
-localmente y 007 ya está aplicada/certificada, pero los comandos live no deben
-ejecutarse hasta aprobar capacidad Vercel y recibir una autorización visible,
-nueva y acotada del refresh.
+Este plan no es autorización. Los contratos y replays están probados y 007 está
+aplicada/certificada. El comando live permanece bloqueado porque un dispatcher
+delegado no equivale a adapters de producción y porque no pasó el preflight
+runtime de Edge. La evidencia Vercel debe renovarse inmediatamente antes de
+cualquier futura autorización.
 
 ### Identidad e inputs fijos
 
@@ -114,7 +128,7 @@ nueva y acotada del refresh.
 - Supabase project ref esperado: `vlxkoprpobfevxefizwr`.
 - Vercel project: `prj_xi25eHLsj4DNb9zy7P0v64xM4W1I`.
 - Edge/CDP esperado: `http://127.0.0.1:9222/json/version` o el archivo
-  `DevToolsActivePort` del perfil visible de Edge.
+  endpoint `/json/list` del perfil visible dedicado.
 - Recently-added:
 
 ```text
@@ -150,6 +164,7 @@ cuando el alcance futuro lo autorice:
 ```powershell
 npm run refresh:daily -- validate --json
 npm run refresh:daily -- replay --scenario=all --timestamp=<ISO> --json
+npm run refresh:daily -- live-preflight --remote-preflight-file=<REMOTE_PREFLIGHT_JSON> --vercel-file=<VERCEL_JSON> --run-intent-id=<local-cycle-...> --launch-edge
 node scripts/run-psdeals-cycle.mjs init --cycles-root=data/cycles --code-revision=<REVIEWED_SHA> --mode=plan
 node scripts/run-psdeals-cycle.mjs plan --workspace=<WORKSPACE>
 node scripts/run-psdeals-cycle.mjs status --workspace=<WORKSPACE>
@@ -169,12 +184,13 @@ live es el nuevo entrypoint:
 
 ```powershell
 $env:LOBODEALS_REMOTE_EXECUTION='EXPLICITLY_AUTHORIZED'
-npm run refresh:daily -- live --authorization-file=<AUTHORIZATION_JSON> --remote-preflight-file=<REMOTE_PREFLIGHT_JSON> --vercel-file=<VERCEL_JSON> --edge-file=<EDGE_JSON> --captcha-file=<CAPTCHA_JSON>
+npm run refresh:daily -- live --authorization-file=<AUTHORIZATION_JSON> --remote-preflight-file=<REMOTE_PREFLIGHT_JSON> --vercel-file=<VERCEL_JSON> --edge-file=<EDGE_JSON>
 ```
 
-Este bloque documenta el comando; no autoriza ejecutarlo. El CLI lee el HEAD
-real y los SHA canónicos de 007/certificado, y aborta antes de enlazar adapters
-si falta cualquier gate.
+Este bloque documenta el comando; no autoriza ejecutarlo. El argumento
+`--captcha-file` ya no existe: el mismo reporte Edge contiene el estado del
+challenge y la espera automática. El CLI lee el HEAD real y los SHA canónicos,
+y aborta sin executor cuando no existen adapters de producción verificables.
 
 Queda prohibido sustituirlo por
 `run-psdeals-edge-live-recently-added.ps1` o
@@ -188,7 +204,7 @@ ciclo actual e imprimen `refresh_catalog_public_cache_v15()`.
 | 0 | `CHATGPT REVIEW` | Revisar este plan, migración 007 y estrategia Vercel | Ninguno | abortar si el alcance cambia |
 | 1 | `CODEX` | Confirmar HEAD, rama, divergencia y worktree sin fetch | Lectura local | worktree inesperado = abort |
 | 2 | `CODEX` | Ejecutar baseline y suites enfocadas | Archivos temporales locales de test | cualquier fallo = abort |
-| 3 | `CODEX` | Verificar el runner único y sus 22 adapters | Lectura y tests locales | no operación si cualquier contrato falla |
+| 3 | `CODEX` | Verificar el runner único, sus 23 contratos y adapters de producción | Lectura y tests locales | un contrato/fake/delegado no prueba binding live |
 | 4 | `CHATGPT REVIEW` | Read-only de Supabase: project ref, esquema, RPCs, ACL, counts, cycles/receipts y cache | Ninguna escritura | proyecto/esquema dudoso = abort |
 | 5 | `CODEX` | Evaluar facts redactados con `preflight-psdeals-remote-readonly.mjs` | JSON local `wx` | clasificación distinta de ready = abort |
 | 6 | `CHATGPT REVIEW` | Read-only de Vercel: uso, errores, rutas y deployment | Ningún cambio Vercel | riesgo inmediato de pausa = abort |
@@ -327,7 +343,8 @@ import inseguro; pendientes después de retry; demotion no integrada; cache
 incompatible; proyecto/esquema dudoso; operación no idempotente; timeout sin
 reconciliar; falta de recovery aplicable o autorización.
 
-Al 2026-08-01 los NO-GO de runner, safe demotion y migración 007 están cerrados.
-Los HARD STOP restantes son: capacidad/margen Vercel no aprobado explícitamente,
-Edge/captcha real no verificado y ausencia de Autorización B. El recovery no
-debe ejecutarse.
+Al 2026-08-02 safe demotion, migración 007, identidad del ciclo, contrato
+Vercel manual y polling de captcha están corregidos. Permanecen dos bloqueos:
+adapters de producción no enlazados y Edge/CDP runtime no verificado por la
+colisión/aislamiento del entorno Codex. No existe Autorización B utilizable y el
+recovery no debe ejecutarse.

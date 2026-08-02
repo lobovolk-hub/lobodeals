@@ -1,6 +1,6 @@
 # LoboDeals 3.2 — Continuidad
 
-Fecha de corte: 2026-08-01
+Fecha de corte: 2026-08-02
 
 Este documento permite continuar tras perder un chat. No es un diario. Para
 detalle forense usar `docs/audit/**` y Git.
@@ -82,6 +82,12 @@ detalle forense usar `docs/audit/**` y Git.
 - `d1bae03`: gates Edge/CDP y captcha distinguen puerto, pestaña, región,
   challenge y desconexión antes de cualquier adapter.
 - `302a97e`: certificado read-only posterior a 007 y su contrato local.
+- `b3cf38b`: launcher PowerShell/CDP dedicado y preflight automático de
+  challenge, sin Computer Use ni confirmación por chat.
+- `d87bda6`: preflight live fail-closed, contratos de 23 etapas, identidad
+  intent/UUID, reconciliación create-cycle y evidencia Vercel manual.
+- `56c6798`: ownership exacto de ejecutable/perfil/puerto Edge y aislamiento de
+  artifacts runtime respecto del lint.
 
 ## Estado al iniciar este paquete
 
@@ -118,7 +124,7 @@ detalle forense usar `docs/audit/**` y Git.
 
 Git conserva los documentos eliminados; no recrearlos como fuentes activas.
 
-## Punto de continuación después del paquete
+## Punto de continuación después del Texto 3.2-0026
 
 - Producción observada: deployment `dpl_6Ua5HpBGWf1GczzzzZdE7AL3vHBr`, SHA
   `4f826ac873850d3e61ceb68721512099625f1515`.
@@ -129,9 +135,23 @@ Git conserva los documentos eliminados; no recrearlos como fuentes activas.
   `b6ebbc3f46b2ee052a02bfea52bbfc811be38786a4e993f4d51e8996ef277e73`.
 - Certificado posterior 007 aprobado 23/23, 0 blockers; SHA del certificado:
   `42cdef8220310d3b396685103aeb54d6881000d5b45dfb710c7c650b67c61a35`.
-- Runner: `npm run refresh:daily`; 488/488 pruebas, 15/15 replays, 0 writes.
-- El recovery no está autorizado. El refresh mantiene NO-GO por capacidad
-  Vercel explícita, Edge/captcha y autorización live separada.
-- Próxima tarea exacta: cerrar capacidad Vercel y Edge/captcha read-only/humano;
-  después solicitar una Autorización B nueva. No ejecutar todavía el refresh ni
-  iniciar la prueba de 30 días.
+- Supabase repetido read-only: proyecto `ACTIVE_HEALTHY`, 007 una vez,
+  postcheck y certificado posterior aprobados 23/23; cycles, receipts,
+  candidates y mínimos en cero, sin drift observable.
+- Vercel read-only: deployment productivo `READY`, sin error runtime devuelto ni
+  deploy concurrente observado. Evidencia manual de Johan a las 00:41 PET:
+  211/240 minutos de CPU y margen 29; válida máximo 180 minutos y de renovación
+  obligatoria antes de live.
+- Runner: `npm run refresh:daily`; cuatro modos, 23 contratos, 507/507 pruebas,
+  15/15 replays y 0 writes. `LIVE_ADAPTER_CONTRACTS_READY=true`, pero
+  `LIVE_EXECUTOR_BOUND=false`: los handlers de producción no están en el repo.
+- Identidad corregida: `run_intent_id=local-cycle-*` antes del RPC; UUID remoto
+  solo después del create/reconcile y ligado a receipts posteriores. No se
+  permite prefijar un UUID para una ejecución nueva ni crear un segundo ciclo.
+- Edge launcher/captcha están listos en código. La prueba real quedó en HARD
+  STOP porque Edge dentro del sandbox no publicó CDP y la elevación de Codex
+  ocupó temporalmente 9222 con otro perfil; el launcher abortó de forma segura.
+- No se ejecutó el recovery, no se creó ciclo y no se emite Autorización B.
+  Próxima tarea exacta: completar adapters de producción y ejecutar el wrapper
+  PowerShell en un contexto sin colisión de puerto; luego repetir
+  `live-preflight` hasta `READY_FOR_AUTHORIZATION_B`.

@@ -95,6 +95,32 @@ test('fake create-cycle reconciles an existing cycle and committed remote receip
   assert.equal(invocations, 0)
 })
 
+test('healthy create binds a remote UUID distinct from the local intent after exact post-read', async () => {
+  const value = request()
+  let committed = false
+  let invocations = 0
+  const result = await executeIdempotentPsdealsCreateCycle(value, {
+    find_cycles: async () => committed ? [remoteRow(value)] : [],
+    find_receipt: async () => committed ? remoteReceipt(value) : null,
+    invoke_create_cycle: async () => {
+      invocations += 1
+      committed = true
+      return {
+        cycle_id: remoteId,
+        receipt_id: receiptId,
+        receipt_status: 'committed',
+        reconciled: false,
+      }
+    },
+    write_receipt: async (receipt) => receipt,
+  })
+  assert.equal(result.status, 'succeeded')
+  assert.equal(result.remote_cycle_id, remoteId)
+  assert.notEqual(result.remote_cycle_id, value.local_cycle_id)
+  assert.equal(result.reconciled, true)
+  assert.equal(invocations, 1)
+})
+
 test('timeout after simulated RPC commit reconciles exactly once from cycle and receipt', async () => {
   const value = request()
   let committed = false
@@ -117,12 +143,16 @@ test('timeout after simulated RPC commit reconciles exactly once from cycle and 
 test('ambiguous or absent reconciliation after timeout stays blocked or indeterminate', async () => {
   const value = request()
   let reads = 0
+  let receiptReads = 0
   const ambiguous = await executeIdempotentPsdealsCreateCycle(value, {
     find_cycles: async () => {
       reads += 1
       return reads === 1 ? [] : [remoteRow(value), { ...remoteRow(value), id: '22222222-2222-4222-8222-222222222222' }]
     },
-    find_receipt: async () => remoteReceipt(value),
+    find_receipt: async () => {
+      receiptReads += 1
+      return receiptReads === 1 ? null : remoteReceipt(value)
+    },
     invoke_create_cycle: async () => { throw new Error('SIMULATED_TIMEOUT') },
     write_receipt: async (receipt) => receipt,
   })
@@ -135,6 +165,54 @@ test('ambiguous or absent reconciliation after timeout stays blocked or indeterm
     write_receipt: async (receipt) => receipt,
   })
   assert.equal(absent.status, 'indeterminate')
+})
+
+test('foreign cycle, orphan receipt, invalid RPC UUID and second create all fail closed', async () => {
+  const value = request()
+  let invocations = 0
+  const foreign = await executeIdempotentPsdealsCreateCycle(value, {
+    find_cycles: async () => [{ ...remoteRow(value), manifest_hash: 'foreign' }],
+    find_receipt: async () => null,
+    invoke_create_cycle: async () => { invocations += 1 },
+    write_receipt: async (receipt) => receipt,
+  })
+  assert.equal(foreign.status, 'blocked')
+  assert.deepEqual(foreign.blockers, ['create_cycle_foreign_identity_conflict'])
+  assert.equal(invocations, 0)
+
+  const orphan = await executeIdempotentPsdealsCreateCycle(value, {
+    find_cycles: async () => [],
+    find_receipt: async () => remoteReceipt(value),
+    invoke_create_cycle: async () => { invocations += 1 },
+    write_receipt: async (receipt) => receipt,
+  })
+  assert.equal(orphan.status, 'indeterminate')
+  assert.equal(invocations, 0)
+
+  const invalid = await executeIdempotentPsdealsCreateCycle(value, {
+    find_cycles: async () => [],
+    find_receipt: async () => null,
+    invoke_create_cycle: async () => ({
+      cycle_id: 'local-cycle-not-a-uuid',
+      receipt_status: 'committed',
+    }),
+    write_receipt: async (receipt) => receipt,
+  })
+  assert.equal(invalid.status, 'indeterminate')
+  assert.deepEqual(invalid.blockers, ['create_cycle_rpc_response_mismatch'])
+
+  const duplicate = await executeIdempotentPsdealsCreateCycle(value, {
+    find_cycles: async () => [
+      remoteRow(value),
+      { ...remoteRow(value), id: '22222222-2222-4222-8222-222222222222' },
+    ],
+    find_receipt: async () => remoteReceipt(value),
+    invoke_create_cycle: async () => { invocations += 1 },
+    write_receipt: async (receipt) => receipt,
+  })
+  assert.equal(duplicate.status, 'blocked')
+  assert.deepEqual(duplicate.blockers, ['create_cycle_reconciliation_ambiguous'])
+  assert.equal(invocations, 0)
 })
 
 test('lifecycle readiness requires every migrated receipt-bound RPC', () => {

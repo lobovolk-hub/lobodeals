@@ -10,6 +10,8 @@ import {
   runPsdealsDailyReplay,
   stringifyPsdealsDailyResult,
 } from './lib/psdeals-daily-refresh-v3.mjs'
+import { evaluatePsdealsRecoveryLivePreflight } from './lib/psdeals-daily-live-preflight.mjs'
+import { runPsdealsEdgeCdpPreflight } from './preflight-psdeals-edge-cdp.mjs'
 
 export const PSDEALS_DAILY_CLI_EXIT_CODES = Object.freeze({
   success: 0,
@@ -21,13 +23,14 @@ export const PSDEALS_DAILY_CLI_EXIT_CODES = Object.freeze({
 
 function parse(argv) {
   const values = [...argv]
-  const mode = values.shift() || 'help'
+  let mode = values[0]?.startsWith('--') ? null : values.shift()
   const options = new Map()
   for (const value of values) {
     if (!value.startsWith('--')) continue
     const split = value.indexOf('=')
     options.set(split < 0 ? value.slice(2) : value.slice(2, split), split < 0 ? true : value.slice(split + 1))
   }
+  mode ||= typeof options.get('mode') === 'string' ? options.get('mode') : 'help'
   return { mode, options }
 }
 
@@ -37,12 +40,14 @@ function help() {
 Modes:
   validate [--json]
   replay --scenario=<name|all> --timestamp=<iso> [--json]
-  live --authorization-file=<json> --remote-preflight-file=<json> --vercel-file=<json> --edge-file=<json> --captcha-file=<json>
+  live-preflight --remote-preflight-file=<json> --vercel-file=<json> --run-intent-id=<local-cycle-...> [--launch-edge|--edge-file=<json>]
+  live --authorization-file=<json> --remote-preflight-file=<json> --vercel-file=<json> --edge-file=<json>
 
 Replay scenarios: ${PSDEALS_DAILY_REPLAY_SCENARIOS.join(', ')}
 
 validate and replay never use network, Supabase, Edge or child processes.
-live fails closed before binding an executor unless every authorization gate passes.
+live-preflight performs only local/read-only gates and stops before create_cycle.
+live binds the production stage executor before evaluating authorization gates.
 `
 }
 
@@ -90,7 +95,10 @@ export async function runPsdealsDailyRefreshCli(argv, io = {}, dependencies = {}
     return PSDEALS_DAILY_CLI_EXIT_CODES.success
   }
   try {
-    const inspection = await inspectPsdealsDailyRefreshCode({ project_root: dependencies.project_root || process.cwd() })
+    const inspection = await inspectPsdealsDailyRefreshCode({
+      project_root: dependencies.project_root || process.cwd(),
+      production_adapters: dependencies.operational_adapters,
+    })
     if (mode === 'validate') {
       stdout(stringifyPsdealsDailyResult({ mode, ...inspection }))
       return inspection.DAILY_RUNNER_CODE_READY ? 0 : PSDEALS_DAILY_CLI_EXIT_CODES.blocked
@@ -120,25 +128,59 @@ export async function runPsdealsDailyRefreshCli(argv, io = {}, dependencies = {}
       stdout(stringifyPsdealsDailyResult(scenario === 'all' ? report : results[0]))
       return report.passed ? 0 : PSDEALS_DAILY_CLI_EXIT_CODES.blocked
     }
+    if (mode === 'live-preflight') {
+      const remotePreflight = await readBoundedJson(options.get('remote-preflight-file'), 'remote_preflight')
+      const vercel = await readBoundedJson(options.get('vercel-file'), 'vercel')
+      const actualCodeHead = dependencies.code_head || await readPsdealsLocalGitHead(
+        dependencies.project_root || process.cwd()
+      )
+      let edge
+      if (typeof options.get('edge-file') === 'string') {
+        edge = await readBoundedJson(options.get('edge-file'), 'edge')
+      } else {
+        let edgeOutput = ''
+        let edgeError = ''
+        const edgeExit = await (dependencies.run_edge_preflight || runPsdealsEdgeCdpPreflight)([
+          ...(options.has('launch-edge') ? ['--launch'] : []),
+          `--timeout-ms=${options.get('edge-timeout-ms') || 15 * 60 * 1000}`,
+          `--poll-ms=${options.get('edge-poll-ms') || 2000}`,
+        ], {
+          stdout: (value) => { edgeOutput += value },
+          stderr: (value) => { edgeError += value; stderr(value) },
+        }, dependencies.edge_dependencies || {})
+        if (edgeExit !== 0) throw new Error(`edge_runtime_preflight_failed: ${edgeError.trim() || edgeExit}`)
+        edge = JSON.parse(edgeOutput)
+      }
+      const result = evaluatePsdealsRecoveryLivePreflight({
+        inspection,
+        remote_preflight: remotePreflight,
+        vercel_evidence: vercel,
+        edge_runtime: edge,
+        run_intent_id: options.get('run-intent-id'),
+        code_head: actualCodeHead,
+        now: dependencies.now || new Date().toISOString(),
+      })
+      stdout(stringifyPsdealsDailyResult(result))
+      return result.ready ? 0 : PSDEALS_DAILY_CLI_EXIT_CODES.blocked
+    }
     if (mode === 'live') {
       const authorization = await readBoundedJson(options.get('authorization-file'), 'authorization')
       const remotePreflight = await readBoundedJson(options.get('remote-preflight-file'), 'remote_preflight')
       const vercel = await readBoundedJson(options.get('vercel-file'), 'vercel')
       const edge = await readBoundedJson(options.get('edge-file'), 'edge')
-      const captcha = await readBoundedJson(options.get('captcha-file'), 'captcha')
       const actualCodeHead = dependencies.code_head || await readPsdealsLocalGitHead(
         dependencies.project_root || process.cwd()
       )
-      const liveExecutor = dependencies.live_executor ||
-        (dependencies.operational_adapters
+      const liveExecutor = dependencies.live_executor || (
+        inspection.LIVE_EXECUTOR_BOUND
           ? createPsdealsDailyOperationalExecutor({ adapters: dependencies.operational_adapters })
-          : null)
+          : undefined
+      )
       const result = await runPsdealsDailyLiveGate({
         authorization,
         remote_preflight: remotePreflight,
         vercel,
         edge_cdp: edge,
-        captcha,
         migration_007_sha256: inspection.migration_007_sha256,
         certificate_007_sha256: inspection.certificate_007_sha256,
         code_head: actualCodeHead,

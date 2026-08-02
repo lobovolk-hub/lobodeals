@@ -9,6 +9,11 @@ import {
 } from './psdeals-updater-orchestration-core.mjs'
 import { runPsdealsUpdaterOrchestratorLocal } from './psdeals-updater-orchestrator-local.mjs'
 import { getPsdealsUpdaterSimulationFixture } from './psdeals-updater-simulation-fixtures.mjs'
+import {
+  PSDEALS_DAILY_LIVE_BINDINGS,
+  validatePsdealsDailyLiveBindings,
+} from './psdeals-daily-live-bindings.mjs'
+import { evaluatePsdealsVercelManualEvidence } from './psdeals-vercel-manual-evidence.mjs'
 
 export const PSDEALS_DAILY_REFRESH_VERSION = 3
 export const PSDEALS_DAILY_REFRESH_SCHEMA_VERSION = 3
@@ -24,6 +29,7 @@ export const PSDEALS_DAILY_REFRESH_STATES = Object.freeze([
   'remote_preflight_passed',
   'edge_ready',
   'captcha_resolved',
+  'cycle_created',
   'recently_added_collected',
   'recently_added_imported',
   'discounts_collected',
@@ -46,30 +52,7 @@ export const PSDEALS_DAILY_REFRESH_STATES = Object.freeze([
   'requires_reconciliation',
 ])
 
-export const PSDEALS_DAILY_OPERATIONAL_STAGES = Object.freeze([
-  { state: 'local_preflight_passed', adapter: 'run_local_preflight', kind: 'local', component: 'scripts/preflight-psdeals-block4-local.mjs', parent: 'initialized' },
-  { state: 'remote_preflight_passed', adapter: 'verify_remote_preflight', kind: 'read_only', component: 'sql/validation/007-safe-demotion-precheck-certificate-readonly.sql', parent: 'local_preflight_passed' },
-  { state: 'edge_ready', adapter: 'probe_edge_cdp', kind: 'local_probe', component: 'scripts/probe-edge-live-cdp.mjs', parent: 'remote_preflight_passed' },
-  { state: 'captcha_resolved', adapter: 'confirm_captcha_resolved', kind: 'manual_gate', component: 'JOHAN_VISIBLE_CONFIRMATION', parent: 'edge_ready' },
-  { state: 'recently_added_collected', adapter: 'collect_recently_added', kind: 'process', component: 'scripts/collect-psdeals-listing-edge-live-cdp.mjs', parent: 'captcha_resolved', url: PSDEALS_RECENTLY_ADDED_URL },
-  { state: 'recently_added_imported', adapter: 'import_recently_added', kind: 'process_chain', component: 'scripts/analyze-psdeals-listing-new-v2.mjs -> scripts/import-psdeals-detail-local.mjs', parent: 'recently_added_collected', receipt: 'recently_added_import' },
-  { state: 'discounts_collected', adapter: 'collect_discounts', kind: 'process', component: 'scripts/collect-psdeals-listing-edge-live-cdp.mjs', parent: 'recently_added_imported', url: PSDEALS_DISCOUNTS_URL },
-  { state: 'discounts_certified', adapter: 'certify_discounts_listing', kind: 'local', component: 'strong_listing_completeness_v3', parent: 'discounts_collected', receipt: 'listing_validation' },
-  { state: 'details_refreshed', adapter: 'refresh_discount_details', kind: 'process_chain', component: 'scripts/analyze-psdeals-discounts-fast-refresh-v1.mjs -> scripts/import-psdeals-detail-local.mjs', parent: 'discounts_certified', receipt: 'detail_import' },
-  { state: 'retry_reconciled', adapter: 'reconcile_detail_retry', kind: 'process', component: 'scripts/import-psdeals-detail-local.mjs', parent: 'details_refreshed', receipt: 'detail_retry', max_attempts: 1 },
-  { state: 'monthly_reconciled', adapter: 'reconcile_monthly_branch', kind: 'branch', component: 'scripts/record-psdeals-monthly-evidence-offline.mjs', parent: 'retry_reconciled', receipt: 'monthly_check_record' },
-  { state: 'ended_analyzed', adapter: 'analyze_ended_discounts', kind: 'process', component: 'scripts/analyze-psdeals-ended-discounts-from-listing-v1.mjs', parent: 'monthly_reconciled', receipt: 'ended_deals_analysis' },
-  { state: 'ambiguous_revalidated', adapter: 'revalidate_ambiguous_details', kind: 'process', component: 'scripts/import-psdeals-detail-local.mjs', parent: 'ended_analyzed', receipt: 'detail_revalidation' },
-  { state: 'ended_reanalyzed', adapter: 'reanalyze_ended_discounts', kind: 'process', component: 'scripts/analyze-psdeals-ended-discounts-from-listing-v1.mjs', parent: 'ambiguous_revalidated', receipt: 'ended_deals_reanalysis' },
-  { state: 'demotions_planned', adapter: 'plan_safe_demotions', kind: 'local', component: 'scripts/lib/psdeals-ended-discounts.mjs', parent: 'ended_reanalyzed' },
-  { state: 'demotions_reconciled', adapter: 'apply_safe_demotions_v2', kind: 'rpc', component: 'apply_psdeals_ended_deals_v2', parent: 'demotions_planned', receipt: 'demotion_apply' },
-  { state: 'candidates_prepared', adapter: 'prepare_certification_candidates', kind: 'local', component: 'scripts/lib/psdeals-certification-evidence.mjs', parent: 'demotions_reconciled' },
-  { state: 'certification_reconciled', adapter: 'certify_price_cycle_v3', kind: 'rpc', component: 'certify_price_refresh_cycle_v3', parent: 'candidates_prepared', receipt: 'certify' },
-  { state: 'minima_reconciled', adapter: 'reconcile_compact_minima', kind: 'receipt_result', component: 'certify_price_refresh_cycle_v3', parent: 'certification_reconciled' },
-  { state: 'cache_reconciled', adapter: 'refresh_public_cache_v16', kind: 'rpc', component: 'refresh_catalog_public_cache_v16', parent: 'minima_reconciled', receipt: 'cache_refresh' },
-  { state: 'ready_to_finalize', adapter: 'run_cycle_public_postchecks', kind: 'read_only', component: 'cycle_and_public_postchecks_v3', parent: 'cache_reconciled' },
-  { state: 'succeeded', adapter: 'finalize_manifest', kind: 'local', component: 'manifest_finalization_v3', parent: 'ready_to_finalize' },
-])
+export const PSDEALS_DAILY_OPERATIONAL_STAGES = PSDEALS_DAILY_LIVE_BINDINGS
 
 export const PSDEALS_DAILY_REPLAY_SCENARIOS = Object.freeze([
   'may-18-healthy',
@@ -91,6 +74,7 @@ export const PSDEALS_DAILY_REPLAY_SCENARIOS = Object.freeze([
 
 const HASH_PATTERN = /^[a-f0-9]{64}$/
 const LOCAL_CYCLE_PATTERN = /^local-cycle-[a-z0-9][a-z0-9_-]{7,}$/
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
 const LIVE_STAGE_NAMES = new Set(PSDEALS_DAILY_OPERATIONAL_STAGES.map((value) => value.state))
 const LIVE_ADAPTER_STATUSES = new Set([
   'succeeded',
@@ -118,10 +102,13 @@ function sourceFiles(projectRoot) {
     .map((value) => path.resolve(projectRoot, value)))
 }
 
-export async function inspectPsdealsDailyRefreshCode({ project_root = process.cwd() } = {}) {
+export async function inspectPsdealsDailyRefreshCode({
+  project_root = process.cwd(),
+  production_adapters,
+} = {}) {
   const root = path.resolve(project_root)
   const migrationPath = path.join(root, 'sql', '007-lobodeals-3-safe-demotion-hardening.sql')
-  const certificatePath = path.join(root, 'sql', 'validation', '007-safe-demotion-precheck-certificate-readonly.sql')
+  const certificatePath = path.join(root, 'sql', 'validation', '007-safe-demotion-postcheck-certificate-readonly.sql')
   const packagePath = path.join(root, 'package.json')
   const [migration, certificate, packageJson] = await Promise.all([
     fs.readFile(migrationPath),
@@ -145,7 +132,12 @@ export async function inspectPsdealsDailyRefreshCode({ project_root = process.cw
   const duplicateAdapters = adapterNames.length !== new Set(adapterNames).size
   const invalidParents = PSDEALS_DAILY_OPERATIONAL_STAGES.filter((value) =>
     value.parent !== 'initialized' && !LIVE_STAGE_NAMES.has(value.parent))
-  const modes = ['validate', 'replay', 'live']
+  const modes = ['validate', 'replay', 'live-preflight', 'live']
+  const bindingValidation = validatePsdealsDailyLiveBindings()
+  const productionAdapterValidation = validatePsdealsDailyOperationalAdapters(
+    production_adapters,
+    { require_production: true }
+  )
   const blockers = [
     ...(missing.length ? ['daily_runner_component_missing'] : []),
     ...(packageJson.scripts?.['refresh:daily'] !== 'node scripts/run-psdeals-daily-refresh-v3.mjs'
@@ -155,6 +147,8 @@ export async function inspectPsdealsDailyRefreshCode({ project_root = process.cw
     ...(missingAdapterNames.length ? ['daily_runner_adapter_name_missing'] : []),
     ...(duplicateAdapters ? ['daily_runner_duplicate_adapter'] : []),
     ...(invalidParents.length ? ['daily_runner_parent_state_invalid'] : []),
+    ...bindingValidation.blockers,
+    ...(!productionAdapterValidation.valid ? ['live_executor_not_bound'] : []),
   ]
   return {
     runner_version: PSDEALS_DAILY_REFRESH_VERSION,
@@ -170,7 +164,12 @@ export async function inspectPsdealsDailyRefreshCode({ project_root = process.cw
     legacy_cache_v15_blocked: !legacyCacheInPath,
     blockers,
     DAILY_RUNNER_CODE_READY: blockers.length === 0,
-    RECOVERY_REFRESH_COMMAND_READY: blockers.length === 0,
+    RECOVERY_REFRESH_COMMAND_READY: false,
+    RECOVERY_REFRESH_COMMAND_REQUIRES_LIVE_PREFLIGHT: true,
+    LIVE_ADAPTER_CONTRACTS_READY: bindingValidation.LIVE_ADAPTER_CONTRACTS_READY,
+    LIVE_EXECUTOR_BOUND: productionAdapterValidation.valid,
+    production_adapter_validation: productionAdapterValidation,
+    REMOTE_CYCLE_IDENTITY_ALIGNED: stageNames.includes('cycle_created'),
     SAFE_DEMOTION_RUNNER_INTEGRATED:
       stageNames.includes('ended_analyzed') &&
       stageNames.includes('ambiguous_revalidated') &&
@@ -183,23 +182,40 @@ export async function inspectPsdealsDailyRefreshCode({ project_root = process.cw
   }
 }
 
-export function validatePsdealsDailyOperationalAdapters(adapters = {}) {
+export function validatePsdealsDailyOperationalAdapters(
+  adapters = {},
+  { require_production = false } = {}
+) {
   const required = PSDEALS_DAILY_OPERATIONAL_STAGES.map((stage) => stage.adapter)
   const missing = required.filter((name) => typeof adapters?.[name] !== 'function')
   const unknown = Object.keys(adapters || {}).filter((name) => !required.includes(name))
+  const unbound = required.filter((name) => {
+    const adapter = adapters?.[name]
+    if (typeof adapter !== 'function') return false
+    if (adapter.psdeals_implementation_status === 'stub') return true
+    return /not[_ ]?implemented|\bstub\b/i.test(String(adapter.psdeals_implementation_status || ''))
+  })
+  const nonProduction = require_production
+    ? required.filter((name) =>
+        typeof adapters?.[name] === 'function' &&
+        adapters[name].psdeals_implementation_status !== 'production')
+    : []
   return {
-    valid: missing.length === 0 && unknown.length === 0,
+    valid: missing.length === 0 && unknown.length === 0 && unbound.length === 0 && nonProduction.length === 0,
     required,
     missing,
     unknown,
+    unbound,
+    non_production: nonProduction,
   }
 }
 
-function dailyStageReceipt({ authorizationId, cycleId, stage, order, parentReceiptId, adapterResult }) {
+function dailyStageReceipt({ authorizationId, runIntentId, remoteCycleId, stage, order, parentReceiptId, adapterResult }) {
   const body = {
     schema_version: PSDEALS_DAILY_REFRESH_SCHEMA_VERSION,
     authorization_id: authorizationId,
-    cycle_id: cycleId,
+    run_intent_id: runIntentId,
+    remote_cycle_id: remoteCycleId,
     state: stage.state,
     order,
     parent_receipt_id: parentReceiptId,
@@ -231,9 +247,17 @@ export function createPsdealsDailyOperationalExecutor({ adapters } = {}) {
     const receipts = []
     let executedWrites = 0
     let previousReceiptId = null
+    let remoteCycleId = UUID_PATTERN.test(String(authorization.resume_remote_cycle_id || ''))
+      ? authorization.resume_remote_cycle_id
+      : null
+    const createStageIndex = PSDEALS_DAILY_OPERATIONAL_STAGES.findIndex((value) => value.state === 'cycle_created')
     for (const [index, stage] of PSDEALS_DAILY_OPERATIONAL_STAGES.entries()) {
       const result = await adapters[stage.adapter]({
         ...input,
+        run_identity: {
+          run_intent_id: authorization.run_intent_id,
+          remote_cycle_id: remoteCycleId,
+        },
         stage: { ...stage },
         order: index + 1,
         previous_stage_receipt_id: previousReceiptId,
@@ -242,6 +266,27 @@ export function createPsdealsDailyOperationalExecutor({ adapters } = {}) {
       if (!LIVE_ADAPTER_STATUSES.has(result?.status)) {
         return {
           mode: 'live', classification: 'FAILED', blockers: ['operational_adapter_status_invalid'],
+          failed_state: stage.state, receipts, executed_writes: executedWrites, adapter_calls: index + 1,
+        }
+      }
+      if (stage.state === 'cycle_created' && ['succeeded', 'skipped'].includes(result.status)) {
+        if (!UUID_PATTERN.test(String(result.remote_cycle_id || ''))) {
+          return {
+            mode: 'live', classification: 'REQUIRES_RECONCILIATION', blockers: ['create_cycle_remote_uuid_invalid'],
+            failed_state: stage.state, receipts, executed_writes: executedWrites, adapter_calls: index + 1,
+          }
+        }
+        if (remoteCycleId && result.remote_cycle_id !== remoteCycleId) {
+          return {
+            mode: 'live', classification: 'REQUIRES_RECONCILIATION', blockers: ['resume_cycle_identity_mismatch'],
+            failed_state: stage.state, receipts, executed_writes: executedWrites, adapter_calls: index + 1,
+          }
+        }
+        remoteCycleId = result.remote_cycle_id
+      }
+      if (index > createStageIndex && remoteCycleId === null) {
+        return {
+          mode: 'live', classification: 'FAILED', blockers: ['remote_cycle_identity_not_bound'],
           failed_state: stage.state, receipts, executed_writes: executedWrites, adapter_calls: index + 1,
         }
       }
@@ -259,7 +304,9 @@ export function createPsdealsDailyOperationalExecutor({ adapters } = {}) {
         }
       }
       if (result.external_action_performed === true &&
-          (!result.action_receipt?.receipt_id || result.action_receipt?.cycle_id !== authorization.cycle_id)) {
+          (!result.action_receipt?.receipt_id ||
+            !UUID_PATTERN.test(String(remoteCycleId || '')) ||
+            result.action_receipt?.cycle_id !== remoteCycleId)) {
         return {
           mode: 'live', classification: 'REQUIRES_RECONCILIATION', blockers: ['external_action_receipt_invalid'],
           failed_state: stage.state, receipts, executed_writes: executedWrites, adapter_calls: index + 1,
@@ -268,7 +315,8 @@ export function createPsdealsDailyOperationalExecutor({ adapters } = {}) {
       executedWrites += writes
       const stageReceipt = dailyStageReceipt({
         authorizationId: authorization.authorization_id,
-        cycleId: authorization.cycle_id,
+        runIntentId: authorization.run_intent_id,
+        remoteCycleId,
         stage,
         order: index + 1,
         parentReceiptId: previousReceiptId,
@@ -293,6 +341,8 @@ export function createPsdealsDailyOperationalExecutor({ adapters } = {}) {
       classification: 'GO',
       blockers: [],
       final_state: 'succeeded',
+      run_intent_id: authorization.run_intent_id,
+      remote_cycle_id: remoteCycleId,
       receipts,
       executed_writes: executedWrites,
       adapter_calls: PSDEALS_DAILY_OPERATIONAL_STAGES.length,
@@ -466,7 +516,6 @@ export function evaluatePsdealsDailyLiveGates({
   remote_preflight,
   vercel,
   edge_cdp,
-  captcha,
   migration_007_sha256,
   certificate_007_sha256,
   code_head,
@@ -477,7 +526,12 @@ export function evaluatePsdealsDailyLiveGates({
   if (authorization?.action !== PSDEALS_DAILY_LIVE_ACTION) blockers.push('live_action_mismatch')
   if (authorization?.project_ref !== PSDEALS_DAILY_PROJECT_REF) blockers.push('live_project_mismatch')
   if (!authorization?.authorization_id || authorization?.approved_by !== 'Johan') blockers.push('visible_authorization_missing')
-  if (!LOCAL_CYCLE_PATTERN.test(String(authorization?.cycle_id || ''))) blockers.push('live_cycle_id_invalid')
+  if (!LOCAL_CYCLE_PATTERN.test(String(authorization?.run_intent_id || ''))) blockers.push('live_run_intent_id_invalid')
+  if (authorization?.remote_cycle_id != null) blockers.push('fresh_authorization_cannot_prefix_remote_uuid')
+  if (authorization?.resume_remote_cycle_id != null &&
+      !UUID_PATTERN.test(String(authorization.resume_remote_cycle_id))) {
+    blockers.push('resume_remote_cycle_id_invalid')
+  }
   if (authorization?.dry_run !== false) blockers.push('live_dry_run_must_be_false')
   if (authorization?.migration_007_sha256 !== migration_007_sha256) blockers.push('authorized_migration_007_sha_mismatch')
   if (authorization?.code_head !== code_head) blockers.push('authorized_code_head_mismatch')
@@ -489,45 +543,72 @@ export function evaluatePsdealsDailyLiveGates({
   if (remote_preflight?.certificate_passed !== true || Number(remote_preflight?.blocker_failures) !== 0) blockers.push('remote_preflight_not_certified')
   if (!HASH_PATTERN.test(String(remote_preflight?.certificate_sha256 || ''))) blockers.push('remote_certificate_sha_invalid')
   if (remote_preflight?.certificate_sha256 !== certificate_007_sha256) blockers.push('remote_certificate_sha_mismatch')
-  if (vercel?.safe_margin !== true || vercel?.approved_capacity !== true || !isFresh(vercel?.checked_at, now, 30)) blockers.push('vercel_margin_not_approved')
+  const vercelEvidence = evaluatePsdealsVercelManualEvidence(vercel, { now })
+  blockers.push(...vercelEvidence.blockers)
   blockers.push(...evaluatePsdealsEdgeCdpGate(edge_cdp).blockers)
-  blockers.push(...evaluatePsdealsCaptchaGate(captcha, { now }).blockers)
+  blockers.push(...evaluatePsdealsCaptchaGate(edge_cdp, { now }).blockers)
   if (Array.isArray(remote_preflight?.blockers) && remote_preflight.blockers.length > 0) blockers.push('remote_preflight_has_blockers')
   return {
     valid: blockers.length === 0,
     blockers: unique(blockers).sort(),
     project_ref: authorization?.project_ref || null,
-    cycle_id: authorization?.cycle_id || null,
+    run_intent_id: authorization?.run_intent_id || null,
+    resume_remote_cycle_id: authorization?.resume_remote_cycle_id || null,
     authorized_migration_007_sha256: authorization?.migration_007_sha256 || null,
     authorized_code_head: authorization?.code_head || null,
     creates_client: false,
     opens_edge: false,
     executes_writes: false,
+    vercel_evidence: vercelEvidence,
   }
 }
 
 export function evaluatePsdealsEdgeCdpGate(edgeCdp = {}) {
   const blockers = []
+  const terminalStateBlocker = {
+    browser_starting: 'edge_browser_starting',
+    cdp_unavailable: 'edge_cdp_unavailable',
+    wrong_tab: 'edge_cdp_wrong_tab',
+    wrong_domain: 'edge_cdp_wrong_domain',
+    wrong_storefront: 'edge_cdp_wrong_storefront',
+    challenge_present: 'edge_cdp_challenge_present',
+    timeout: 'edge_cdp_timeout',
+    browser_closed: 'edge_browser_closed',
+  }[edgeCdp.state]
+  if (terminalStateBlocker) {
+    return { valid: false, blockers: [terminalStateBlocker] }
+  }
   if (edgeCdp.ready !== true) blockers.push('edge_cdp_not_ready')
-  if (edgeCdp.port !== 9222 || edgeCdp.port_status !== 'listening') blockers.push('edge_cdp_port_invalid')
-  if (edgeCdp.connection_state !== 'connected') blockers.push('edge_cdp_disconnected')
+  if (edgeCdp.port !== 9222) blockers.push('edge_cdp_port_invalid')
+  if (edgeCdp.port_status && edgeCdp.port_status !== 'listening') blockers.push('edge_cdp_port_invalid')
+  if (edgeCdp.connection_state && edgeCdp.connection_state !== 'connected') blockers.push('edge_cdp_disconnected')
   let tabUrl = null
-  try { tabUrl = new URL(edgeCdp.tab_url) } catch { blockers.push('edge_cdp_tab_invalid') }
+  const observedUrl = edgeCdp.page?.url || edgeCdp.tab_url
+  try { tabUrl = new URL(observedUrl) } catch { blockers.push('edge_cdp_tab_invalid') }
   if (tabUrl && (tabUrl.protocol !== 'https:' || tabUrl.hostname !== 'psdeals.net' || !tabUrl.pathname.startsWith('/us-store/'))) {
     blockers.push('edge_cdp_tab_invalid')
   }
-  if (edgeCdp.region !== 'us') blockers.push('edge_cdp_region_invalid')
-  if (edgeCdp.storefront !== 'playstation') blockers.push('edge_cdp_storefront_invalid')
+  if ((edgeCdp.page?.region || edgeCdp.region) !== 'us') blockers.push('edge_cdp_region_invalid')
+  if ((edgeCdp.page?.storefront || edgeCdp.storefront) !== 'playstation') blockers.push('edge_cdp_storefront_invalid')
+  if (!['page_ready', 'challenge_cleared'].includes(edgeCdp.state)) blockers.push('edge_cdp_page_state_invalid')
   return { valid: blockers.length === 0, blockers: unique(blockers).sort() }
 }
 
-export function evaluatePsdealsCaptchaGate(captcha = {}, { now = new Date().toISOString() } = {}) {
+export function evaluatePsdealsCaptchaGate(edgeRuntime = {}, { now = new Date().toISOString() } = {}) {
   const blockers = []
-  if (captcha.resolved !== true || captcha.confirmed_by !== 'Johan' || !isFresh(captcha.checked_at, now, 30)) {
-    blockers.push('captcha_not_visibly_resolved')
+  if (!['page_ready', 'challenge_cleared'].includes(edgeRuntime.state) || edgeRuntime.ready !== true) {
+    blockers.push(edgeRuntime.state === 'challenge_present'
+      ? 'captcha_challenge_persists'
+      : 'captcha_automatic_wait_not_ready')
   }
-  if (captcha.challenge_present_after_confirmation !== false) blockers.push('captcha_challenge_persists')
-  return { valid: blockers.length === 0, blockers: unique(blockers).sort() }
+  if (edgeRuntime.chat_confirmation_required !== false) blockers.push('captcha_chat_confirmation_contract_invalid')
+  if (edgeRuntime.checked_at && !isFresh(edgeRuntime.checked_at, now, 30)) blockers.push('captcha_runtime_evidence_stale')
+  return {
+    valid: blockers.length === 0,
+    blockers: unique(blockers).sort(),
+    CAPTCHA_AUTOMATIC_WAIT_READY: blockers.length === 0,
+    CHAT_CONFIRMATION_REQUIRED: false,
+  }
 }
 
 export async function runPsdealsDailyLiveGate({ live_executor, ...input } = {}) {

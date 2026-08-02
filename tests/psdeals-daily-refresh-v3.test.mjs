@@ -21,11 +21,20 @@ import {
   runPsdealsDailyReplay,
   validatePsdealsDailyOperationalAdapters,
 } from '../scripts/lib/psdeals-daily-refresh-v3.mjs'
+import {
+  createPsdealsBoundDailyLiveAdapters,
+  PSDEALS_DAILY_LIVE_BINDINGS,
+  validatePsdealsDailyLiveBindings,
+} from '../scripts/lib/psdeals-daily-live-bindings.mjs'
+import { evaluatePsdealsRecoveryLivePreflight } from '../scripts/lib/psdeals-daily-live-preflight.mjs'
 
 const TIMESTAMP = '2026-08-01T12:00:00.000Z'
 
-async function inspection() {
-  return inspectPsdealsDailyRefreshCode({ project_root: process.cwd() })
+async function inspection(productionAdapters) {
+  return inspectPsdealsDailyRefreshCode({
+    project_root: process.cwd(),
+    production_adapters: productionAdapters,
+  })
 }
 
 async function replay(scenario) {
@@ -38,14 +47,18 @@ async function replay(scenario) {
   })
 }
 
-test('validate proves one canonical command, three modes and no legacy cache path', async () => {
+test('validate proves one canonical command, four modes and does not self-certify recovery readiness', async () => {
   const value = await inspection()
-  assert.equal(value.DAILY_RUNNER_CODE_READY, true)
-  assert.equal(value.RECOVERY_REFRESH_COMMAND_READY, true)
+  assert.equal(value.DAILY_RUNNER_CODE_READY, false)
+  assert.equal(value.RECOVERY_REFRESH_COMMAND_READY, false)
+  assert.equal(value.RECOVERY_REFRESH_COMMAND_REQUIRES_LIVE_PREFLIGHT, true)
+  assert.equal(value.LIVE_ADAPTER_CONTRACTS_READY, true)
+  assert.equal(value.LIVE_EXECUTOR_BOUND, false)
+  assert.equal(value.REMOTE_CYCLE_IDENTITY_ALIGNED, true)
   assert.equal(value.SAFE_DEMOTION_RUNNER_INTEGRATED, true)
-  assert.deepEqual(value.modes, ['validate', 'replay', 'live'])
+  assert.deepEqual(value.modes, ['validate', 'replay', 'live-preflight', 'live'])
   assert.equal(value.legacy_cache_v15_blocked, true)
-  assert.deepEqual(value.blockers, [])
+  assert.deepEqual(value.blockers, ['live_executor_not_bound'])
 })
 
 test('operational blueprint contains every mandatory state and hardened sequence', () => {
@@ -59,21 +72,87 @@ test('operational blueprint contains every mandatory state and hardened sequence
   assert.ok(names.indexOf('ended_reanalyzed') < names.indexOf('demotions_planned'))
   assert.equal(PSDEALS_DAILY_OPERATIONAL_STAGES.find((value) => value.state === 'demotions_reconciled').component, 'apply_psdeals_ended_deals_v2')
   assert.equal(PSDEALS_DAILY_OPERATIONAL_STAGES.find((value) => value.state === 'cache_reconciled').component, 'refresh_catalog_public_cache_v16')
+  assert.equal(
+    PSDEALS_DAILY_OPERATIONAL_STAGES.find((value) => value.state === 'remote_preflight_passed').component,
+    'sql/validation/007-safe-demotion-postcheck-certificate-readonly.sql'
+  )
 })
 
 function completeOperationalAdapters(overrides = {}) {
   return Object.fromEntries(PSDEALS_DAILY_OPERATIONAL_STAGES.map((stage) => [
     stage.adapter,
-    overrides[stage.adapter] || (async ({ authorization, previous_stage_receipt_id }) => ({
+    overrides[stage.adapter] || (async ({ previous_stage_receipt_id }) => ({
       status: 'succeeded',
       accepted_parent_receipt_id: previous_stage_receipt_id,
       executed_writes: 0,
       external_action_performed: false,
       action_receipt: null,
-      cycle_id: authorization.cycle_id,
+      ...(stage.state === 'cycle_created'
+        ? { remote_cycle_id: '11111111-1111-4111-8111-111111111111' }
+        : {}),
     })),
   ]))
 }
+
+function productionOperationalAdapters(overrides = {}) {
+  const adapters = completeOperationalAdapters(overrides)
+  for (const adapter of Object.values(adapters)) {
+    Object.defineProperty(adapter, 'psdeals_implementation_status', { value: 'production' })
+  }
+  return adapters
+}
+
+test('all live bindings have schemas, idempotency, receipts, timeouts, reconciliation and no stubs', async () => {
+  const validation = validatePsdealsDailyLiveBindings()
+  assert.equal(validation.valid, true)
+  assert.equal(validation.LIVE_ADAPTER_CONTRACTS_READY, true)
+  assert.equal(validation.binding_count, PSDEALS_DAILY_OPERATIONAL_STAGES.length)
+  assert.equal(PSDEALS_DAILY_LIVE_BINDINGS.some((value) => /stub|not[_ -]?implemented/i.test(JSON.stringify(value))), false)
+
+  const calls = []
+  const adapters = createPsdealsBoundDailyLiveAdapters({
+    execute_stage: async (binding, context) => {
+      calls.push(binding.adapter)
+      return {
+        status: 'succeeded',
+        accepted_parent_receipt_id: context.previous_stage_receipt_id,
+        executed_writes: 0,
+        external_action_performed: false,
+        ...(binding.state === 'cycle_created'
+          ? { remote_cycle_id: '11111111-1111-4111-8111-111111111111' }
+          : {}),
+      }
+    },
+  })
+  const result = await createPsdealsDailyOperationalExecutor({ adapters })({
+    authorization: completeLiveInput('a'.repeat(64)).authorization,
+    gates: { valid: true },
+  })
+  assert.equal(result.classification, 'GO')
+  assert.deepEqual(calls, validation.adapter_names)
+})
+
+test('adapter validation rejects missing, explicit stub and not-implemented markers', () => {
+  const missing = completeOperationalAdapters()
+  delete missing.collect_discounts
+  assert.deepEqual(validatePsdealsDailyOperationalAdapters(missing).missing, ['collect_discounts'])
+  const stub = completeOperationalAdapters()
+  Object.defineProperty(stub.collect_discounts, 'psdeals_implementation_status', { value: 'stub' })
+  assert.deepEqual(validatePsdealsDailyOperationalAdapters(stub).unbound, ['collect_discounts'])
+  const notImplemented = completeOperationalAdapters()
+  Object.defineProperty(notImplemented.collect_discounts, 'psdeals_implementation_status', { value: 'not implemented' })
+  assert.deepEqual(validatePsdealsDailyOperationalAdapters(notImplemented).unbound, ['collect_discounts'])
+
+  const delegated = createPsdealsBoundDailyLiveAdapters({
+    execute_stage: async () => ({ status: 'succeeded' }),
+  })
+  const productionValidation = validatePsdealsDailyOperationalAdapters(
+    delegated,
+    { require_production: true }
+  )
+  assert.equal(productionValidation.valid, false)
+  assert.equal(productionValidation.non_production.length, PSDEALS_DAILY_OPERATIONAL_STAGES.length)
+})
 
 test('operational executor validates all adapters before the first side effect', async () => {
   const adapters = completeOperationalAdapters()
@@ -92,7 +171,7 @@ test('operational executor validates all adapters before the first side effect',
   assert.equal(calls, 0)
 })
 
-test('operational executor traverses all real bindings with a strict receipt chain', async () => {
+test('operational executor traverses all declared bindings with a strict receipt chain', async () => {
   const calls = []
   const adapters = completeOperationalAdapters()
   for (const [name, adapter] of Object.entries(adapters)) {
@@ -208,7 +287,7 @@ function completeLiveInput(migrationSha) {
       project_ref: PSDEALS_DAILY_PROJECT_REF,
       authorization_id: 'authorization-visible-0024-b',
       approved_by: 'Johan',
-      cycle_id: 'local-cycle-recovery-20260801',
+      run_intent_id: 'local-cycle-recovery-20260801',
       dry_run: false,
       migration_007_sha256: migrationSha,
       code_head: 'abc1234',
@@ -223,21 +302,32 @@ function completeLiveInput(migrationSha) {
       blocker_failures: 0,
       blockers: [],
     },
-    vercel: { safe_margin: true, approved_capacity: true, checked_at: TIMESTAMP },
+    vercel: {
+      evidence_version: 1,
+      observed_at: TIMESTAMP,
+      source: 'vercel_dashboard_manual',
+      fluid_active_cpu_used_minutes: 211,
+      fluid_active_cpu_limit_minutes: 240,
+      isr_writes: 301000,
+      function_invocations: 172000,
+      fast_origin_transfer_gb: 5.02,
+      edge_requests: 348000,
+      approved_by: 'Johan',
+      max_age_minutes: 180,
+    },
     edge_cdp: {
       ready: true,
+      state: 'page_ready',
       port: 9222,
       port_status: 'listening',
       connection_state: 'connected',
-      tab_url: 'https://psdeals.net/us-store/discounts',
-      region: 'us',
-      storefront: 'playstation',
-    },
-    captcha: {
-      resolved: true,
-      confirmed_by: 'Johan',
+      page: {
+        url: 'https://psdeals.net/us-store/all-games?platforms=ps5%2Cps4&sort=recently-added&contentType%5B%5D=games&contentType%5B%5D=bundles&contentType%5B%5D=dlc',
+        region: 'us',
+        storefront: 'playstation',
+      },
+      chat_confirmation_required: false,
       checked_at: TIMESTAMP,
-      challenge_present_after_confirmation: false,
     },
     migration_007_sha256: migrationSha,
     certificate_007_sha256: 'a'.repeat(64),
@@ -255,9 +345,9 @@ test('live fails before executor on every missing critical gate', async () => {
     ['sha', (value) => { value.authorization.migration_007_sha256 = 'b'.repeat(64) }, 'authorized_migration_007_sha_mismatch'],
     ['migration', (value) => { value.remote_preflight.migration_007_applied = false }, 'migration_007_not_applied'],
     ['certificate', (value) => { value.remote_preflight.certificate_sha256 = 'b'.repeat(64) }, 'remote_certificate_sha_mismatch'],
-    ['vercel', (value) => { value.vercel.safe_margin = false }, 'vercel_margin_not_approved'],
+    ['vercel', (value) => { value.vercel.fluid_active_cpu_used_minutes = 225 }, 'vercel_cpu_threshold_exceeded'],
     ['edge', (value) => { value.edge_cdp.ready = false }, 'edge_cdp_not_ready'],
-    ['captcha', (value) => { value.captcha.resolved = false }, 'captcha_not_visibly_resolved'],
+    ['captcha', (value) => { value.edge_cdp.state = 'challenge_present' }, 'captcha_challenge_persists'],
     ['env', (value) => { delete value.env.LOBODEALS_REMOTE_EXECUTION }, 'remote_execution_environment_confirmation_missing'],
   ]
   for (const [name, mutate, expected] of cases) {
@@ -271,13 +361,13 @@ test('live fails before executor on every missing critical gate', async () => {
   }
 })
 
-test('Edge CDP and captcha fakes distinguish every required failure class', () => {
+test('Edge CDP and automatic captcha fakes distinguish every required failure class', () => {
   const base = completeLiveInput('a'.repeat(64))
   const edgeCases = [
     ['edge absent', (value) => { value.ready = false }, 'edge_cdp_not_ready'],
     ['port occupied', (value) => { value.port_status = 'occupied_by_other_process' }, 'edge_cdp_port_invalid'],
-    ['wrong tab', (value) => { value.tab_url = 'https://example.com/' }, 'edge_cdp_tab_invalid'],
-    ['wrong region', (value) => { value.region = 'ca' }, 'edge_cdp_region_invalid'],
+    ['wrong tab', (value) => { value.page.url = 'https://example.com/' }, 'edge_cdp_tab_invalid'],
+    ['wrong region', (value) => { value.page.region = 'ca' }, 'edge_cdp_region_invalid'],
     ['disconnection', (value) => { value.connection_state = 'disconnected' }, 'edge_cdp_disconnected'],
   ]
   for (const [name, mutate, blocker] of edgeCases) {
@@ -285,18 +375,82 @@ test('Edge CDP and captcha fakes distinguish every required failure class', () =
     mutate(value)
     assert.ok(evaluatePsdealsEdgeCdpGate(value).blockers.includes(blocker), name)
   }
+  assert.deepEqual(
+    evaluatePsdealsEdgeCdpGate({ state: 'cdp_unavailable', ready: false, port: 9222 }).blockers,
+    ['edge_cdp_unavailable']
+  )
   assert.equal(evaluatePsdealsEdgeCdpGate(base.edge_cdp).valid, true)
 
-  const unresolved = structuredClone(base.captcha)
-  unresolved.resolved = false
-  unresolved.challenge_present_after_confirmation = true
-  assert.deepEqual(evaluatePsdealsCaptchaGate(unresolved, { now: TIMESTAMP }).blockers, [
-    'captcha_challenge_persists', 'captcha_not_visibly_resolved',
-  ])
-  const persistent = structuredClone(base.captcha)
-  persistent.challenge_present_after_confirmation = true
+  const persistent = structuredClone(base.edge_cdp)
+  persistent.state = 'challenge_present'
+  persistent.ready = false
   assert.deepEqual(evaluatePsdealsCaptchaGate(persistent, { now: TIMESTAMP }).blockers, ['captcha_challenge_persists'])
-  assert.equal(evaluatePsdealsCaptchaGate(base.captcha, { now: TIMESTAMP }).valid, true)
+  const chat = structuredClone(base.edge_cdp)
+  chat.chat_confirmation_required = true
+  assert.deepEqual(evaluatePsdealsCaptchaGate(chat, { now: TIMESTAMP }).blockers, ['captcha_chat_confirmation_contract_invalid'])
+  assert.equal(evaluatePsdealsCaptchaGate(base.edge_cdp, { now: TIMESTAMP }).valid, true)
+})
+
+test('live preflight reaches exactly the point before cycle creation only with production adapters', async () => {
+  const value = await inspection(productionOperationalAdapters())
+  const input = completeLiveInput(value.migration_007_sha256)
+  input.remote_preflight.read_only_verified = true
+  input.remote_preflight.migration_007_sha256 = value.migration_007_sha256
+  input.remote_preflight.drift_detected = false
+  input.remote_preflight.measurements = {
+    price_refresh_cycles: 0,
+    psdeals_cycle_action_receipts: 0,
+    psdeals_price_candidates: 0,
+    compact_minima: 0,
+    active_locks: 0,
+    active_operational_sessions: 0,
+  }
+  input.edge_cdp.launcher = { launch_method: 'powershell_start_process', powershell: true }
+  const result = evaluatePsdealsRecoveryLivePreflight({
+    inspection: value,
+    remote_preflight: input.remote_preflight,
+    vercel_evidence: input.vercel,
+    edge_runtime: input.edge_cdp,
+    run_intent_id: input.authorization.run_intent_id,
+    code_head: 'a'.repeat(40),
+    now: TIMESTAMP,
+  })
+  assert.equal(result.classification, 'READY_FOR_AUTHORIZATION_B')
+  assert.equal(result.next_state, 'cycle_created')
+  assert.equal(result.remote_cycle_id, null)
+  assert.equal(result.executed_writes, 0)
+  assert.equal(result.collectors_executed, 0)
+  assert.equal(result.operational_manifest_written, false)
+  assert.equal(result.RECOVERY_REFRESH_COMMAND_READY, true)
+})
+
+test('live preflight cannot self-certify from contracts or delegated handlers', async () => {
+  const value = await inspection()
+  const input = completeLiveInput(value.migration_007_sha256)
+  input.remote_preflight.read_only_verified = true
+  input.remote_preflight.migration_007_sha256 = value.migration_007_sha256
+  input.remote_preflight.drift_detected = false
+  input.remote_preflight.measurements = {
+    price_refresh_cycles: 0,
+    psdeals_cycle_action_receipts: 0,
+    psdeals_price_candidates: 0,
+    compact_minima: 0,
+    active_locks: 0,
+    active_operational_sessions: 0,
+  }
+  input.edge_cdp.launcher = { launch_method: 'powershell_start_process', powershell: true }
+  const result = evaluatePsdealsRecoveryLivePreflight({
+    inspection: value,
+    remote_preflight: input.remote_preflight,
+    vercel_evidence: input.vercel,
+    edge_runtime: input.edge_cdp,
+    run_intent_id: input.authorization.run_intent_id,
+    code_head: 'a'.repeat(40),
+    now: TIMESTAMP,
+  })
+  assert.equal(result.classification, 'RECOVERY_REFRESH_PREFLIGHT_BLOCKED')
+  assert.ok(result.blockers.includes('live_executor_not_bound'))
+  assert.equal(result.RECOVERY_REFRESH_COMMAND_READY, false)
 })
 
 test('live code HEAD comes from the local git identity without spawning git', async () => {
@@ -326,8 +480,9 @@ test('CLI validate and replay all expose machine-readable zero-effect output', a
   let output = ''
   let error = ''
   const io = { stdout: (value) => { output += value }, stderr: (value) => { error += value } }
-  assert.equal(await runPsdealsDailyRefreshCli(['validate', '--json'], io), 0, error)
-  assert.equal(JSON.parse(output).DAILY_RUNNER_CODE_READY, true)
+  assert.equal(await runPsdealsDailyRefreshCli(['validate', '--json'], io), 2, error)
+  assert.equal(JSON.parse(output).DAILY_RUNNER_CODE_READY, false)
+  assert.equal(JSON.parse(output).LIVE_EXECUTOR_BOUND, false)
   output = ''
   assert.equal(await runPsdealsDailyRefreshCli(['replay', '--scenario=all', `--timestamp=${TIMESTAMP}`, '--json'], io, { code_head: 'fixture-head' }), 0, error)
   const replayAll = JSON.parse(output)

@@ -116,14 +116,22 @@ export async function executeIdempotentPsdealsCreateCycle(
     throw new Error('CREATE_CYCLE_PORT_INCOMPLETE')
   }
   const reconcile = async () => {
-    const candidates = await find_cycles({
-      local_cycle_id: request.local_cycle_id,
-      run_token_sha256: request.run_token_sha256,
-    })
-    const matching = (Array.isArray(candidates) ? candidates : []).filter((row) => matchingCycle(row, request))
-    if (matching.length > 1) return { status: 'blocked', blockers: ['create_cycle_reconciliation_ambiguous'] }
+    const [candidateRows, receipt] = await Promise.all([
+      find_cycles({
+        local_cycle_id: request.local_cycle_id,
+        run_token_sha256: request.run_token_sha256,
+      }),
+      find_receipt(request.idempotency_key),
+    ])
+    const candidates = Array.isArray(candidateRows) ? candidateRows : []
+    const matching = candidates.filter((row) => matchingCycle(row, request))
+    if (candidates.length > 1 || matching.length > 1) {
+      return { status: 'blocked', blockers: ['create_cycle_reconciliation_ambiguous'] }
+    }
+    if (candidates.length === 1 && matching.length === 0) {
+      return { status: 'blocked', blockers: ['create_cycle_foreign_identity_conflict'] }
+    }
     if (matching.length === 1) {
-      const receipt = await find_receipt(request.idempotency_key)
       const receiptValidation = validatePsdealsRemoteActionReceipt(receipt, {
         cycle_id: matching[0].id,
         action_kind: 'create_cycle',
@@ -139,6 +147,9 @@ export async function executeIdempotentPsdealsCreateCycle(
         remote_receipt: receipt,
         reconciled: true,
       }
+    }
+    if (receipt) {
+      return { status: 'indeterminate', blockers: ['create_cycle_receipt_without_matching_cycle'] }
     }
     return { status: 'absent' }
   }
@@ -181,18 +192,25 @@ export async function executeIdempotentPsdealsCreateCycle(
   if (!UUID_PATTERN.test(String(returned?.cycle_id || '')) || returned?.receipt_status !== 'committed') {
     return { status: 'indeterminate', blockers: ['create_cycle_rpc_response_mismatch'] }
   }
+  const afterInvoke = await reconcile()
+  if (afterInvoke.status !== 'succeeded' || afterInvoke.remote_cycle_id !== returned.cycle_id) {
+    return {
+      status: afterInvoke.status === 'blocked' ? 'blocked' : 'indeterminate',
+      blockers: afterInvoke.blockers || ['create_cycle_postcondition_failed'],
+    }
+  }
   const receipt = await write_receipt({
     action: 'create_cycle',
     authorization_id: request.authorization_id,
     remote_cycle_id: returned.cycle_id,
-    remote_receipt_id: returned.receipt_id,
-    reconciled: returned.reconciled === true,
+    remote_receipt_id: afterInvoke.remote_receipt?.id || returned.receipt_id,
+    reconciled: true,
   })
   return {
     status: 'succeeded',
     remote_cycle_id: returned.cycle_id,
-    remote_receipt_id: returned.receipt_id,
-    reconciled: returned.reconciled === true,
+    remote_receipt_id: afterInvoke.remote_receipt?.id || returned.receipt_id,
+    reconciled: true,
     receipt,
   }
 }

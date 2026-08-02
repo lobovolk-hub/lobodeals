@@ -196,6 +196,11 @@ export async function loadPsdealsSupabaseOperationalPortFromEnvironment({
       autoRefreshToken: false,
       detectSessionInUrl: false,
     },
+    db: {
+      // A write retry must be governed by the cycle idempotency/reconciliation
+      // contract, never by a transport client's implicit retry policy.
+      retry: false,
+    },
   })
   return createPsdealsSupabaseJsPort({ client, timeout_ms })
 }

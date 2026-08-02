@@ -13,6 +13,12 @@ function finiteNonNegative(value) {
   return Number.isFinite(value) && value >= 0
 }
 
+function suppliedNumber(value) {
+  if (value === null || value === undefined) return Number.NaN
+  if (typeof value === 'string' && !value.trim()) return Number.NaN
+  return Number(value)
+}
+
 export function evaluatePsdealsVercelManualEvidence(
   evidenceInput,
   { now = new Date().toISOString() } = {}
@@ -21,9 +27,9 @@ export function evaluatePsdealsVercelManualEvidence(
   const blockers = []
   const observedAt = timestamp(evidence.observed_at)
   const nowDate = timestamp(now)
-  const maxAge = Number(evidence.max_age_minutes)
-  const used = Number(evidence.fluid_active_cpu_used_minutes)
-  const limit = Number(evidence.fluid_active_cpu_limit_minutes)
+  const maxAge = suppliedNumber(evidence.max_age_minutes)
+  const used = suppliedNumber(evidence.fluid_active_cpu_used_minutes)
+  const limit = suppliedNumber(evidence.fluid_active_cpu_limit_minutes)
   const margin = limit - used
 
   if (evidence.evidence_version !== PSDEALS_VERCEL_MANUAL_EVIDENCE_VERSION) {
@@ -51,7 +57,7 @@ export function evaluatePsdealsVercelManualEvidence(
     'fast_origin_transfer_gb',
     'edge_requests',
   ]) {
-    if (!finiteNonNegative(Number(evidence[field]))) blockers.push(`vercel_${field}_invalid`)
+    if (!finiteNonNegative(suppliedNumber(evidence[field]))) blockers.push(`vercel_${field}_invalid`)
   }
 
   const uniqueBlockers = [...new Set(blockers)]

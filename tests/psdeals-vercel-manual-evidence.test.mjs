@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict'
+import fs from 'node:fs/promises'
 import test from 'node:test'
 
 import { evaluatePsdealsVercelManualEvidence } from '../scripts/lib/psdeals-vercel-manual-evidence.mjs'
@@ -52,4 +53,12 @@ test('a boolean alone can never certify Vercel capacity', () => {
   }, { now: NOW })
   assert.equal(result.valid, false)
   assert.equal(result.VERCEL_MANUAL_EVIDENCE_ACCEPTED, false)
+})
+
+test('manual evidence template cannot pass before Johan supplies current dashboard values', async () => {
+  const template = JSON.parse(await fs.readFile('config/psdeals-vercel-manual-evidence-template.json', 'utf8'))
+  const result = evaluatePsdealsVercelManualEvidence(template, { now: '2026-08-02T12:00:00.000Z' })
+  assert.equal(result.valid, false)
+  assert.ok(result.blockers.includes('vercel_evidence_timestamp_invalid'))
+  assert.ok(result.blockers.includes('vercel_cpu_used_invalid'))
 })

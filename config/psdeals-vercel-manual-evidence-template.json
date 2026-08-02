@@ -1,0 +1,13 @@
+{
+  "evidence_version": 1,
+  "observed_at": null,
+  "source": "vercel_dashboard_manual",
+  "fluid_active_cpu_used_minutes": null,
+  "fluid_active_cpu_limit_minutes": 240,
+  "isr_writes": null,
+  "function_invocations": null,
+  "fast_origin_transfer_gb": null,
+  "edge_requests": null,
+  "approved_by": "Johan",
+  "max_age_minutes": 180
+}

@@ -11,6 +11,7 @@ import {
   stringifyPsdealsDailyResult,
 } from './lib/psdeals-daily-refresh-v3.mjs'
 import { evaluatePsdealsRecoveryLivePreflight } from './lib/psdeals-daily-live-preflight.mjs'
+import { createPsdealsDailyProductionAdapters } from './lib/psdeals-daily-production-adapters.mjs'
 import { runPsdealsEdgeCdpPreflight } from './preflight-psdeals-edge-cdp.mjs'
 
 export const PSDEALS_DAILY_CLI_EXIT_CODES = Object.freeze({
@@ -95,9 +96,13 @@ export async function runPsdealsDailyRefreshCli(argv, io = {}, dependencies = {}
     return PSDEALS_DAILY_CLI_EXIT_CODES.success
   }
   try {
+    const operationalAdapters = dependencies.operational_adapters || createPsdealsDailyProductionAdapters({
+      production_inputs: dependencies.production_inputs,
+      production_ports: dependencies.production_ports,
+    })
     const inspection = await inspectPsdealsDailyRefreshCode({
       project_root: dependencies.project_root || process.cwd(),
-      production_adapters: dependencies.operational_adapters,
+      production_adapters: operationalAdapters,
     })
     if (mode === 'validate') {
       stdout(stringifyPsdealsDailyResult({ mode, ...inspection }))
@@ -173,7 +178,7 @@ export async function runPsdealsDailyRefreshCli(argv, io = {}, dependencies = {}
       )
       const liveExecutor = dependencies.live_executor || (
         inspection.LIVE_EXECUTOR_BOUND
-          ? createPsdealsDailyOperationalExecutor({ adapters: dependencies.operational_adapters })
+          ? createPsdealsDailyOperationalExecutor({ adapters: operationalAdapters })
           : undefined
       )
       const result = await runPsdealsDailyLiveGate({

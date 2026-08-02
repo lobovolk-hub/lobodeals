@@ -49,16 +49,19 @@ async function replay(scenario) {
 
 test('validate proves one canonical command, four modes and does not self-certify recovery readiness', async () => {
   const value = await inspection()
-  assert.equal(value.DAILY_RUNNER_CODE_READY, false)
+  assert.equal(value.DAILY_RUNNER_CODE_READY, true)
   assert.equal(value.RECOVERY_REFRESH_COMMAND_READY, false)
   assert.equal(value.RECOVERY_REFRESH_COMMAND_REQUIRES_LIVE_PREFLIGHT, true)
   assert.equal(value.LIVE_ADAPTER_CONTRACTS_READY, true)
-  assert.equal(value.LIVE_EXECUTOR_BOUND, false)
+  assert.equal(value.LIVE_EXECUTOR_BOUND, true)
+  assert.equal(value.PRODUCTION_ADAPTERS_TOTAL, 23)
+  assert.equal(value.PRODUCTION_ADAPTERS_BOUND, 23)
+  assert.equal(value.PRODUCTION_ADAPTERS_MISSING, 0)
   assert.equal(value.REMOTE_CYCLE_IDENTITY_ALIGNED, true)
   assert.equal(value.SAFE_DEMOTION_RUNNER_INTEGRATED, true)
   assert.deepEqual(value.modes, ['validate', 'replay', 'live-preflight', 'live'])
   assert.equal(value.legacy_cache_v15_blocked, true)
-  assert.deepEqual(value.blockers, ['live_executor_not_bound'])
+  assert.deepEqual(value.blockers, [])
 })
 
 test('operational blueprint contains every mandatory state and hardened sequence', () => {
@@ -69,7 +72,7 @@ test('operational blueprint contains every mandatory state and hardened sequence
   const names = PSDEALS_DAILY_OPERATIONAL_STAGES.map((value) => value.state)
   assert.ok(names.indexOf('ended_analyzed') < names.indexOf('ambiguous_revalidated'))
   assert.ok(names.indexOf('ambiguous_revalidated') < names.indexOf('ended_reanalyzed'))
-  assert.ok(names.indexOf('ended_reanalyzed') < names.indexOf('demotions_planned'))
+  assert.ok(names.indexOf('ended_reanalyzed') < names.indexOf('demotions_reconciled'))
   assert.equal(PSDEALS_DAILY_OPERATIONAL_STAGES.find((value) => value.state === 'demotions_reconciled').component, 'apply_psdeals_ended_deals_v2')
   assert.equal(PSDEALS_DAILY_OPERATIONAL_STAGES.find((value) => value.state === 'cache_reconciled').component, 'refresh_catalog_public_cache_v16')
   assert.equal(
@@ -92,14 +95,6 @@ function completeOperationalAdapters(overrides = {}) {
         : {}),
     })),
   ]))
-}
-
-function productionOperationalAdapters(overrides = {}) {
-  const adapters = completeOperationalAdapters(overrides)
-  for (const adapter of Object.values(adapters)) {
-    Object.defineProperty(adapter, 'psdeals_implementation_status', { value: 'production' })
-  }
-  return adapters
 }
 
 test('all live bindings have schemas, idempotency, receipts, timeouts, reconciliation and no stubs', async () => {
@@ -230,6 +225,11 @@ test('all fifteen replays pass their expected safety outcome with zero effects',
     assert.equal(value.opens_connections, false)
     assert.equal(value.executes_processes, false)
     assert.equal(value.uses_supabase, false)
+    assert.equal(value.evidence.production_registry.valid, true)
+    assert.equal(value.evidence.production_registry.total, 23)
+    assert.equal(value.evidence.production_registry.bound, 23)
+    assert.equal(value.evidence.production_registry.request_contracts.length, 23)
+    assert.equal(value.evidence.production_registry.in_memory_ports_only, true)
   }
 })
 
@@ -392,10 +392,11 @@ test('Edge CDP and automatic captcha fakes distinguish every required failure cl
 })
 
 test('live preflight reaches exactly the point before cycle creation only with production adapters', async () => {
-  const value = await inspection(productionOperationalAdapters())
+  const value = await inspection()
   const input = completeLiveInput(value.migration_007_sha256)
   input.remote_preflight.read_only_verified = true
   input.remote_preflight.migration_007_sha256 = value.migration_007_sha256
+  input.remote_preflight.certificate_sha256 = value.certificate_007_sha256
   input.remote_preflight.drift_detected = false
   input.remote_preflight.measurements = {
     price_refresh_cycles: 0,
@@ -422,13 +423,92 @@ test('live preflight reaches exactly the point before cycle creation only with p
   assert.equal(result.collectors_executed, 0)
   assert.equal(result.operational_manifest_written, false)
   assert.equal(result.RECOVERY_REFRESH_COMMAND_READY, true)
+  assert.equal(result.PRODUCTION_ADAPTERS_TOTAL, 23)
+  assert.equal(result.PRODUCTION_ADAPTERS_BOUND, 23)
+  assert.equal(result.PRODUCTION_ADAPTERS_MISSING, 0)
 })
 
-test('live preflight cannot self-certify from contracts or delegated handlers', async () => {
+test('live preflight rejects stale, hash-mismatched or drift-ambiguous remote evidence', async () => {
+  const value = await inspection()
+  const base = completeLiveInput(value.migration_007_sha256)
+  Object.assign(base.remote_preflight, {
+    read_only_verified: true,
+    migration_007_sha256: value.migration_007_sha256,
+    certificate_sha256: value.certificate_007_sha256,
+    drift_detected: false,
+    measurements: {
+      price_refresh_cycles: 0,
+      psdeals_cycle_action_receipts: 0,
+      psdeals_price_candidates: 0,
+      compact_minima: 0,
+      active_locks: 0,
+      active_operational_sessions: 0,
+    },
+  })
+  base.edge_cdp.launcher = { launch_method: 'powershell_start_process', powershell: true }
+  for (const [name, mutate, blocker] of [
+    ['stale', (input) => { input.remote_preflight.checked_at = '2026-08-01T11:00:00.000Z' }, 'remote_preflight_stale'],
+    ['certificate', (input) => { input.remote_preflight.certificate_sha256 = 'b'.repeat(64) }, 'remote_certificate_sha_mismatch'],
+    ['drift', (input) => { delete input.remote_preflight.drift_detected }, 'remote_drift_not_explicitly_absent'],
+  ]) {
+    const input = structuredClone(base)
+    mutate(input)
+    const result = evaluatePsdealsRecoveryLivePreflight({
+      inspection: value,
+      remote_preflight: input.remote_preflight,
+      vercel_evidence: input.vercel,
+      edge_runtime: input.edge_cdp,
+      run_intent_id: input.authorization.run_intent_id,
+      code_head: 'a'.repeat(40),
+      now: TIMESTAMP,
+    })
+    assert.ok(result.blockers.includes(blocker), name)
+    assert.equal(result.RECOVERY_REFRESH_COMMAND_READY, false, name)
+  }
+})
+
+test('live preflight isolates an otherwise-ready stale Vercel dashboard observation', async () => {
   const value = await inspection()
   const input = completeLiveInput(value.migration_007_sha256)
   input.remote_preflight.read_only_verified = true
   input.remote_preflight.migration_007_sha256 = value.migration_007_sha256
+  input.remote_preflight.certificate_sha256 = value.certificate_007_sha256
+  input.remote_preflight.drift_detected = false
+  input.remote_preflight.measurements = {
+    price_refresh_cycles: 0,
+    psdeals_cycle_action_receipts: 0,
+    psdeals_price_candidates: 0,
+    compact_minima: 0,
+    active_locks: 0,
+    active_operational_sessions: 0,
+  }
+  input.edge_cdp.launcher = { launch_method: 'powershell_start_process', powershell: true }
+  input.edge_cdp.checked_at = '2026-08-01T16:01:00.000Z'
+  input.remote_preflight.checked_at = '2026-08-01T16:01:00.000Z'
+  const result = evaluatePsdealsRecoveryLivePreflight({
+    inspection: value,
+    remote_preflight: input.remote_preflight,
+    vercel_evidence: input.vercel,
+    edge_runtime: input.edge_cdp,
+    run_intent_id: input.authorization.run_intent_id,
+    code_head: 'a'.repeat(40),
+    now: '2026-08-01T16:01:00.000Z',
+  })
+  assert.equal(result.classification, 'PENDING_MANUAL_VERCEL_REFRESH')
+  assert.deepEqual(result.blockers, ['vercel_evidence_stale'])
+  assert.equal(result.RECOVERY_REFRESH_COMMAND_READY, true)
+  assert.equal(result.RECOVERY_REFRESH_REMOTE_PREFLIGHT_READY, 'pending_manual_vercel_refresh')
+})
+
+test('live preflight cannot self-certify from contracts or delegated handlers', async () => {
+  const delegated = createPsdealsBoundDailyLiveAdapters({
+    execute_stage: async () => ({ status: 'succeeded' }),
+  })
+  const value = await inspection(delegated)
+  const input = completeLiveInput(value.migration_007_sha256)
+  input.remote_preflight.read_only_verified = true
+  input.remote_preflight.migration_007_sha256 = value.migration_007_sha256
+  input.remote_preflight.certificate_sha256 = value.certificate_007_sha256
   input.remote_preflight.drift_detected = false
   input.remote_preflight.measurements = {
     price_refresh_cycles: 0,
@@ -480,9 +560,9 @@ test('CLI validate and replay all expose machine-readable zero-effect output', a
   let output = ''
   let error = ''
   const io = { stdout: (value) => { output += value }, stderr: (value) => { error += value } }
-  assert.equal(await runPsdealsDailyRefreshCli(['validate', '--json'], io), 2, error)
-  assert.equal(JSON.parse(output).DAILY_RUNNER_CODE_READY, false)
-  assert.equal(JSON.parse(output).LIVE_EXECUTOR_BOUND, false)
+  assert.equal(await runPsdealsDailyRefreshCli(['validate', '--json'], io), 0, error)
+  assert.equal(JSON.parse(output).DAILY_RUNNER_CODE_READY, true)
+  assert.equal(JSON.parse(output).LIVE_EXECUTOR_BOUND, true)
   output = ''
   assert.equal(await runPsdealsDailyRefreshCli(['replay', '--scenario=all', `--timestamp=${TIMESTAMP}`, '--json'], io, { code_head: 'fixture-head' }), 0, error)
   const replayAll = JSON.parse(output)

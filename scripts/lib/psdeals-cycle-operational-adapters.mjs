@@ -163,7 +163,7 @@ export async function executeIdempotentPsdealsCreateCycle(
       remote_cycle_id: before.remote_cycle_id,
       reconciled: true,
     })
-    return { ...before, receipt }
+    return { ...before, created: false, receipt }
   }
 
   let invoked
@@ -179,7 +179,7 @@ export async function executeIdempotentPsdealsCreateCycle(
         reconciled: true,
         ambiguous_transport_result: true,
       })
-      return { ...afterError, receipt, ambiguous_transport_result: true }
+      return { ...afterError, created: true, receipt, ambiguous_transport_result: true }
     }
     return {
       status: afterError.status === 'blocked' ? 'blocked' : 'indeterminate',
@@ -208,6 +208,7 @@ export async function executeIdempotentPsdealsCreateCycle(
   })
   return {
     status: 'succeeded',
+    created: true,
     remote_cycle_id: returned.cycle_id,
     remote_receipt_id: afterInvoke.remote_receipt?.id || returned.receipt_id,
     reconciled: true,

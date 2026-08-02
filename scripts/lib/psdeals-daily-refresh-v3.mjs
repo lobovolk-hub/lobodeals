@@ -13,6 +13,12 @@ import {
   PSDEALS_DAILY_LIVE_BINDINGS,
   validatePsdealsDailyLiveBindings,
 } from './psdeals-daily-live-bindings.mjs'
+import {
+  buildPsdealsProductionParityRequest,
+  createPsdealsDailyProductionAdapters,
+  PSDEALS_DAILY_PRODUCTION_ADAPTER_INVENTORY,
+  validatePsdealsDailyProductionRegistry,
+} from './psdeals-daily-production-adapters.mjs'
 import { evaluatePsdealsVercelManualEvidence } from './psdeals-vercel-manual-evidence.mjs'
 
 export const PSDEALS_DAILY_REFRESH_VERSION = 3
@@ -31,22 +37,22 @@ export const PSDEALS_DAILY_REFRESH_STATES = Object.freeze([
   'captcha_resolved',
   'cycle_created',
   'recently_added_collected',
+  'recently_added_analyzed',
   'recently_added_imported',
   'discounts_collected',
-  'discounts_certified',
-  'details_refreshed',
-  'retry_reconciled',
-  'monthly_reconciled',
+  'discounts_analyzed',
+  'discount_details_imported',
+  'detail_retry_reconciled',
+  'monthly_processed',
   'ended_analyzed',
   'ambiguous_revalidated',
   'ended_reanalyzed',
-  'demotions_planned',
   'demotions_reconciled',
   'candidates_prepared',
   'certification_reconciled',
   'minima_reconciled',
   'cache_reconciled',
-  'ready_to_finalize',
+  'final_postchecks_passed',
   'succeeded',
   'failed',
   'requires_reconciliation',
@@ -106,6 +112,7 @@ export async function inspectPsdealsDailyRefreshCode({
   project_root = process.cwd(),
   production_adapters,
 } = {}) {
+  const effectiveProductionAdapters = production_adapters || createPsdealsDailyProductionAdapters()
   const root = path.resolve(project_root)
   const migrationPath = path.join(root, 'sql', '007-lobodeals-3-safe-demotion-hardening.sql')
   const certificatePath = path.join(root, 'sql', 'validation', '007-safe-demotion-postcheck-certificate-readonly.sql')
@@ -135,9 +142,10 @@ export async function inspectPsdealsDailyRefreshCode({
   const modes = ['validate', 'replay', 'live-preflight', 'live']
   const bindingValidation = validatePsdealsDailyLiveBindings()
   const productionAdapterValidation = validatePsdealsDailyOperationalAdapters(
-    production_adapters,
+    effectiveProductionAdapters,
     { require_production: true }
   )
+  const productionRegistryValidation = validatePsdealsDailyProductionRegistry(effectiveProductionAdapters)
   const blockers = [
     ...(missing.length ? ['daily_runner_component_missing'] : []),
     ...(packageJson.scripts?.['refresh:daily'] !== 'node scripts/run-psdeals-daily-refresh-v3.mjs'
@@ -148,7 +156,7 @@ export async function inspectPsdealsDailyRefreshCode({
     ...(duplicateAdapters ? ['daily_runner_duplicate_adapter'] : []),
     ...(invalidParents.length ? ['daily_runner_parent_state_invalid'] : []),
     ...bindingValidation.blockers,
-    ...(!productionAdapterValidation.valid ? ['live_executor_not_bound'] : []),
+    ...(!productionAdapterValidation.valid || !productionRegistryValidation.valid ? ['live_executor_not_bound'] : []),
   ]
   return {
     runner_version: PSDEALS_DAILY_REFRESH_VERSION,
@@ -167,8 +175,12 @@ export async function inspectPsdealsDailyRefreshCode({
     RECOVERY_REFRESH_COMMAND_READY: false,
     RECOVERY_REFRESH_COMMAND_REQUIRES_LIVE_PREFLIGHT: true,
     LIVE_ADAPTER_CONTRACTS_READY: bindingValidation.LIVE_ADAPTER_CONTRACTS_READY,
-    LIVE_EXECUTOR_BOUND: productionAdapterValidation.valid,
+    LIVE_EXECUTOR_BOUND: productionAdapterValidation.valid && productionRegistryValidation.valid,
     production_adapter_validation: productionAdapterValidation,
+    production_registry_validation: productionRegistryValidation,
+    PRODUCTION_ADAPTERS_TOTAL: PSDEALS_DAILY_PRODUCTION_ADAPTER_INVENTORY.length,
+    PRODUCTION_ADAPTERS_BOUND: productionRegistryValidation.bound,
+    PRODUCTION_ADAPTERS_MISSING: productionRegistryValidation.missing.length,
     REMOTE_CYCLE_IDENTITY_ALIGNED: stageNames.includes('cycle_created'),
     SAFE_DEMOTION_RUNNER_INTEGRATED:
       stageNames.includes('ended_analyzed') &&
@@ -354,19 +366,19 @@ function replayDefinition(name) {
   const definitions = {
     'may-18-healthy': { fixture: 'happy-path', expected: 'GO', historical: { collected: 7593, declared: 7593 }, stop: null },
     'may-20-retry': { fixture: 'retry-success', expected: 'GO', historical: { retry_recovered: true }, stop: null },
-    'june-incomplete': { fixture: 'adversarial-listing', expected: 'NO_GO', historical: { collected: 5531, declared: 5552 }, stop: 'discounts_certified', blocker: 'listing_not_strongly_complete' },
+    'june-incomplete': { fixture: 'adversarial-listing', expected: 'NO_GO', historical: { collected: 5531, declared: 5552 }, stop: 'discounts_analyzed', blocker: 'listing_not_strongly_complete' },
     'ended-massive': { fixture: 'ended-deals', expected: 'GO', historical: { candidate_count: 1406 }, stop: null },
-    'hollow-knight': { fixture: 'ended-deals', expected: 'NO_GO', stop: 'demotions_planned', blocker: 'unsafe_demotion_blocked' },
+    'hollow-knight': { fixture: 'ended-deals', expected: 'NO_GO', stop: 'ended_reanalyzed', blocker: 'unsafe_demotion_blocked' },
     challenge: { fixture: 'happy-path', expected: 'REQUIRES_JOHAN', stop: 'captcha_resolved', blocker: 'captcha_requires_visible_johan' },
-    timeout: { fixture: 'happy-path', expected: 'REQUIRES_RECONCILIATION', stop: 'retry_reconciled', blocker: 'ambiguous_timeout_requires_reconciliation' },
+    timeout: { fixture: 'happy-path', expected: 'REQUIRES_RECONCILIATION', stop: 'detail_retry_reconciled', blocker: 'ambiguous_timeout_requires_reconciliation' },
     duplication: { fixture: 'happy-path', expected: 'GO', stop: null, idempotent_replay: true },
     restart: { fixture: 'happy-path', expected: 'GO', stop: null, resumed: true },
     'cycle-mismatch': { fixture: 'happy-path', expected: 'NO_GO', stop: 'candidates_prepared', blocker: 'candidate_cycle_mismatch' },
     'receipt-missing': { fixture: 'happy-path', expected: 'NO_GO', stop: 'candidates_prepared', blocker: 'required_receipt_missing' },
     'cache-postcheck-failed': { fixture: 'happy-path', expected: 'NO_GO', stop: 'cache_reconciled', blocker: 'cache_postcheck_failed' },
     'monthly-not-due': { fixture: 'happy-path', expected: 'GO', stop: null, monthly: 'not_due' },
-    'ps-plus-ambiguous': { fixture: 'ended-deals', expected: 'NO_GO', stop: 'demotions_planned', blocker: 'ps_plus_ambiguous_demotion_blocked' },
-    'empty-listing': { fixture: 'happy-path', expected: 'NO_GO', stop: 'discounts_certified', blocker: 'listing_empty' },
+    'ps-plus-ambiguous': { fixture: 'ended-deals', expected: 'NO_GO', stop: 'ended_reanalyzed', blocker: 'ps_plus_ambiguous_demotion_blocked' },
+    'empty-listing': { fixture: 'happy-path', expected: 'NO_GO', stop: 'discounts_analyzed', blocker: 'listing_empty' },
   }
   return definitions[name] || null
 }
@@ -458,6 +470,15 @@ export function runPsdealsDailyReplay({
       status: 'simulated',
       sha256: hashPsdealsUpdaterSimulationValue({ runId, state, index }),
     }))
+  const productionAdapters = createPsdealsDailyProductionAdapters()
+  const productionRegistry = validatePsdealsDailyProductionRegistry(productionAdapters)
+  const parityRequests = PSDEALS_DAILY_PRODUCTION_ADAPTER_INVENTORY.map((row) =>
+    buildPsdealsProductionParityRequest(row.name, {
+      run_identity: { run_intent_id: `local-cycle-replay-${scenario}`, remote_cycle_id: null },
+      previous_stage_receipt_id: null,
+      production_inputs: { [row.name]: { idempotency_key: `${row.name}:${inputHash}` } },
+    })
+  )
   const expectedSafetyBlock = definition.expected !== 'GO'
   const passed = definition.expected === 'GO'
     ? simulation.executed_writes === 0 && simulation.blockers.length === 0
@@ -493,6 +514,14 @@ export function runPsdealsDailyReplay({
       monthly_branch: definition.monthly || 'evidence_only',
       resumed: definition.resumed === true,
       duplicate_replay_noop: definition.idempotent_replay === true,
+      production_registry: {
+        valid: productionRegistry.valid,
+        total: productionRegistry.total,
+        bound: productionRegistry.bound,
+        missing: productionRegistry.missing,
+        request_contracts: parityRequests,
+        in_memory_ports_only: true,
+      },
     },
     blockers,
     warnings: [],
@@ -579,7 +608,9 @@ export function evaluatePsdealsEdgeCdpGate(edgeCdp = {}) {
     return { valid: false, blockers: [terminalStateBlocker] }
   }
   if (edgeCdp.ready !== true) blockers.push('edge_cdp_not_ready')
-  if (edgeCdp.port !== 9222) blockers.push('edge_cdp_port_invalid')
+  if (!Number.isSafeInteger(edgeCdp.port) || edgeCdp.port < 9222 || edgeCdp.port > 9232) {
+    blockers.push('edge_cdp_port_invalid')
+  }
   if (edgeCdp.port_status && edgeCdp.port_status !== 'listening') blockers.push('edge_cdp_port_invalid')
   if (edgeCdp.connection_state && edgeCdp.connection_state !== 'connected') blockers.push('edge_cdp_disconnected')
   let tabUrl = null

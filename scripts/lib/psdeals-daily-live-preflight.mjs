@@ -21,6 +21,13 @@ function readMeasurement(source, ...names) {
   return null
 }
 
+function isFresh(value, now, maxAgeMinutes) {
+  const checkedAt = Date.parse(value)
+  const nowAt = Date.parse(now)
+  return Number.isFinite(checkedAt) && Number.isFinite(nowAt) &&
+    checkedAt <= nowAt && nowAt - checkedAt <= maxAgeMinutes * 60_000
+}
+
 export function evaluatePsdealsRecoveryLivePreflight({
   inspection,
   remote_preflight,
@@ -45,16 +52,21 @@ export function evaluatePsdealsRecoveryLivePreflight({
     blockers.push('remote_preflight_project_mismatch')
   }
   if (remote_preflight?.read_only_verified !== true) blockers.push('remote_preflight_not_read_only')
+  if (!isFresh(remote_preflight?.checked_at, now, 30)) blockers.push('remote_preflight_stale')
   if (remote_preflight?.migration_007_applied !== true) blockers.push('migration_007_not_applied')
   if (remote_preflight?.migration_007_sha256 !== inspection?.migration_007_sha256) {
     blockers.push('migration_007_remote_sha_mismatch')
   }
+  if (remote_preflight?.certificate_sha256 !== inspection?.certificate_007_sha256) {
+    blockers.push('remote_certificate_sha_mismatch')
+  }
   if (remote_preflight?.certificate_passed !== true ||
-      Number(remote_preflight?.blocker_failures) !== 0) {
+      !Number.isSafeInteger(remote_preflight?.blocker_failures) ||
+      remote_preflight.blocker_failures !== 0) {
     blockers.push('remote_preflight_not_certified')
   }
   if ((remote_preflight?.blockers || []).length > 0) blockers.push('remote_preflight_has_blockers')
-  if (remote_preflight?.drift_detected === true) blockers.push('remote_drift_detected')
+  if (remote_preflight?.drift_detected !== false) blockers.push('remote_drift_not_explicitly_absent')
 
   const measurements = remote_preflight?.measurements || {}
   const cycles = readMeasurement(measurements, 'price_refresh_cycles', 'cycles')
@@ -69,16 +81,23 @@ export function evaluatePsdealsRecoveryLivePreflight({
   }
 
   const vercel = evaluatePsdealsVercelManualEvidence(vercel_evidence, { now })
-  blockers.push(...vercel.blockers)
   const edge = evaluatePsdealsEdgeCdpGate(edge_runtime)
   const captcha = evaluatePsdealsCaptchaGate(edge_runtime, { now })
   blockers.push(...edge.blockers, ...captcha.blockers)
 
-  const uniqueBlockers = unique(blockers).sort()
+  const coreBlockers = unique(blockers).sort()
+  const vercelRenewalOnly = coreBlockers.length === 0 &&
+    vercel.blockers.length === 1 && vercel.blockers[0] === 'vercel_evidence_stale'
+  const uniqueBlockers = unique([...coreBlockers, ...vercel.blockers]).sort()
   const ready = uniqueBlockers.length === 0
+  const commandReady = ready || vercelRenewalOnly
   return {
     preflight_version: 1,
-    classification: ready ? 'READY_FOR_AUTHORIZATION_B' : 'RECOVERY_REFRESH_PREFLIGHT_BLOCKED',
+    classification: ready
+      ? 'READY_FOR_AUTHORIZATION_B'
+      : vercelRenewalOnly
+        ? 'PENDING_MANUAL_VERCEL_REFRESH'
+        : 'RECOVERY_REFRESH_PREFLIGHT_BLOCKED',
     ready,
     blockers: uniqueBlockers,
     project_ref: PSDEALS_DAILY_PROJECT_REF,
@@ -86,7 +105,7 @@ export function evaluatePsdealsRecoveryLivePreflight({
     run_intent_id: run_intent_id || null,
     migration_007_sha256: inspection?.migration_007_sha256 || null,
     measurements: { cycles, receipts, candidates, minima, locks, activity },
-    last_completed_state: ready ? 'captcha_resolved' : null,
+    last_completed_state: commandReady ? 'captcha_resolved' : null,
     next_state: 'cycle_created',
     stopped_before_remote_cycle_creation: true,
     remote_cycle_id: null,
@@ -98,6 +117,9 @@ export function evaluatePsdealsRecoveryLivePreflight({
     operational_manifest_written: false,
     LIVE_ADAPTER_CONTRACTS_READY: bindings.LIVE_ADAPTER_CONTRACTS_READY,
     LIVE_EXECUTOR_BOUND: inspection?.LIVE_EXECUTOR_BOUND === true,
+    PRODUCTION_ADAPTERS_TOTAL: inspection?.PRODUCTION_ADAPTERS_TOTAL ?? null,
+    PRODUCTION_ADAPTERS_BOUND: inspection?.PRODUCTION_ADAPTERS_BOUND ?? null,
+    PRODUCTION_ADAPTERS_MISSING: inspection?.PRODUCTION_ADAPTERS_MISSING ?? null,
     REMOTE_CYCLE_IDENTITY_ALIGNED: inspection?.REMOTE_CYCLE_IDENTITY_ALIGNED === true,
     EDGE_CDP_POWERSHELL_LAUNCH_READY: edge_runtime?.launcher?.launch_method === 'powershell_start_process' || edge_runtime?.launcher?.powershell === true,
     CAPTCHA_AUTOMATIC_WAIT_READY: captcha.CAPTCHA_AUTOMATIC_WAIT_READY,
@@ -105,8 +127,8 @@ export function evaluatePsdealsRecoveryLivePreflight({
     EDGE_CDP_RUNTIME_PREFLIGHT_PASSED: edge.valid,
     VERCEL_MANUAL_EVIDENCE_ACCEPTED: vercel.VERCEL_MANUAL_EVIDENCE_ACCEPTED,
     VERCEL_CAPACITY_WITHIN_THRESHOLD: vercel.VERCEL_CAPACITY_WITHIN_THRESHOLD,
-    RECOVERY_REFRESH_COMMAND_READY: ready,
-    RECOVERY_REFRESH_REMOTE_PREFLIGHT_READY: ready,
+    RECOVERY_REFRESH_COMMAND_READY: commandReady,
+    RECOVERY_REFRESH_REMOTE_PREFLIGHT_READY: ready ? true : vercelRenewalOnly ? 'pending_manual_vercel_refresh' : false,
     RECOVERY_REFRESH_EXECUTED: false,
     PUBLIC_DATA_CURRENT: false,
     DAILY_RUNNER_READY: false,

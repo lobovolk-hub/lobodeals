@@ -10,6 +10,9 @@ import {
 } from '../scripts/lib/psdeals-stage-payload.mjs'
 
 const OBSERVED_AT = '2026-07-29T12:00:00.123456+00:00'
+const CYCLE = '11111111-1111-4111-8111-111111111111'
+const HASH = 'a'.repeat(64)
+const INPUT_HASH = 'b'.repeat(64)
 const PROTECTED_PRICE_LOW_FIELDS = [
   'lowest_price_amount',
   'lowest_ps_plus_price_amount',
@@ -69,6 +72,22 @@ function detailHtml({
       <span class="game-cover-top-platform">${platform}</span>
       <p class="game-cover-bottom-big">SAVE: <span>${discount}</span></p>
       <div class="game-buy-button-right"><p>${prices}</p></div>
+    </body></html>
+  `
+}
+
+function psPlusDetailHtml() {
+  return `
+    <html><head><script>
+      var item_id=123;var item_type="game";var item_currency="$";
+      var chart_bonus_prices="[{\"date\":\"2026-07-29\",\"price\":\"$4.99\"}]";var chart_bonus_active=true;var next_marker=true;
+    </script></head><body>
+      <div itemprop="name" class="game-title-info-name">Example</div>
+      <span class="game-cover-top-platform">PS5</span>
+      <div class="game-buy-button-right">
+        <span class="game-buy-button-price">$9.99</span>
+        <span class="game-buy-button-price-bonus">$4.99</span>
+      </div>
     </body></html>
   `
 }
@@ -192,6 +211,130 @@ test('does not infer permanent free-to-play from a temporary FREE promotion', ()
   assert.equal('current_price_amount' in result.payload, false)
   assert.equal(result.payload.raw_listing_json.commercial_state.classification,
     'temporary_free_promotion_candidate')
+})
+
+test('complete listing stamps public verification without changing unsafe commercial state', () => {
+  const source = listing({
+    discountText: '-100%',
+    discountPriceText: 'FREE',
+    regularPriceText: 'FREE',
+    originalPriceText: '$19.99',
+  })
+  const result = buildPsdealsListingUpdatePayload(source, {
+    listingObservedAt: OBSERVED_AT,
+    certificationContext: {
+      remote_cycle_id: CYCLE,
+      evidence_sha256: HASH,
+    },
+  })
+
+  assert.equal(result.payload.public_offer_verification_cycle_id, CYCLE)
+  assert.equal(result.payload.public_offer_verified_at, OBSERVED_AT)
+  assert.equal(result.payload.public_offer_verification_source, 'complete_listing')
+  assert.equal(result.payload.public_offer_evidence_sha256, HASH)
+  assert.equal(result.payload.public_offer_input_artifact_sha256, null)
+  assert.equal('current_price_amount' in result.payload, false)
+})
+
+test('Monthly Detail preserves regular evidence but writes no free commercial tuple', () => {
+  const parsed = parsePage(
+    detailHtml({ current: 'FREE', original: '$19.99', discount: '-100%' }),
+    'https://psdeals.net/us-store/game/123/example',
+    { observedAt: OBSERVED_AT }
+  )
+  const result = buildPsdealsDetailUpsertPayload(parsed, {
+    isExisting: true,
+    certificationContext: {
+      remote_cycle_id: CYCLE,
+      evidence_sha256: HASH,
+      input_artifact_sha256: INPUT_HASH,
+    },
+  })
+
+  assert.equal(result.is_valid, true)
+  assert.equal('current_price_amount' in result.payload, false)
+  assert.equal('original_price_amount' in result.payload, false)
+  assert.equal('discount_percent' in result.payload, false)
+  assert.equal('public_offer_verification_cycle_id' in result.payload, false)
+  assert.equal(result.payload.monthly_regular_certification_cycle_id, CYCLE)
+  assert.equal(
+    result.payload.monthly_regular_certification_input_artifact_sha256,
+    INPUT_HASH
+  )
+  assert.equal(
+    result.payload.monthly_regular_certification_input_artifact_sha256,
+    result.payload.monthly_regular_certification_candidate.input_artifact_sha256
+  )
+  assert.equal(
+    result.payload.monthly_regular_certification_candidate.regular_price_amount,
+    19.99
+  )
+})
+
+test('strong regular Detail stamps a public commercial verification', () => {
+  const parsed = parsePage(
+    detailHtml({ current: '$4.99', original: '$9.99', discount: '-50%' }),
+    'https://psdeals.net/us-store/game/123/example',
+    { observedAt: OBSERVED_AT }
+  )
+  const result = buildPsdealsDetailUpsertPayload(parsed, {
+    isExisting: true,
+    certificationContext: {
+      remote_cycle_id: CYCLE,
+      evidence_sha256: HASH,
+      input_artifact_sha256: INPUT_HASH,
+    },
+  })
+
+  assert.equal(result.payload.public_offer_verification_cycle_id, CYCLE)
+  assert.equal(
+    result.payload.public_offer_verification_source,
+    'strong_detail_revalidation'
+  )
+  assert.equal(result.payload.public_offer_input_artifact_sha256, INPUT_HASH)
+})
+
+test('strong PS Plus Detail stamps a public commercial verification', () => {
+  const parsed = parsePage(
+    psPlusDetailHtml(),
+    'https://psdeals.net/us-store/game/123/example',
+    { observedAt: OBSERVED_AT }
+  )
+  const result = buildPsdealsDetailUpsertPayload(parsed, {
+    isExisting: true,
+    certificationContext: {
+      remote_cycle_id: CYCLE,
+      evidence_sha256: HASH,
+      input_artifact_sha256: INPUT_HASH,
+    },
+  })
+
+  assert.equal(result.payload.ps_plus_certification_cycle_id, CYCLE)
+  assert.equal(result.payload.public_offer_verification_cycle_id, CYCLE)
+  assert.equal(
+    result.payload.public_offer_verification_source,
+    'strong_detail_revalidation'
+  )
+})
+
+test('strong Detail requires a valid input artifact SHA before stamping public verification', () => {
+  const parsed = parsePage(
+    detailHtml({ current: '$4.99', original: '$9.99', discount: '-50%' }),
+    'https://psdeals.net/us-store/game/123/example',
+    { observedAt: OBSERVED_AT }
+  )
+  const result = buildPsdealsDetailUpsertPayload(parsed, {
+    isExisting: true,
+    certificationContext: {
+      remote_cycle_id: CYCLE,
+      evidence_sha256: HASH,
+      input_artifact_sha256: 'invalid',
+    },
+  })
+
+  assert.equal('public_offer_verification_source' in result.payload, false)
+  assert.equal('public_offer_input_artifact_sha256' in result.payload, false)
+  assert.ok(result.reason_codes.includes('public_offer_verification_input_invalid'))
 })
 
 test('rejects a new listing row when mandatory local identity is missing', () => {

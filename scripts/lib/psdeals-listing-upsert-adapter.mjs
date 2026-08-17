@@ -33,6 +33,18 @@ function signature(operation, payload) {
   return `${operation}\u0000${Object.keys(payload).sort().join('\u0000')}`
 }
 
+export function findDisallowedPsdealsListingNullFields(payload = {}) {
+  return Object.entries(payload)
+    .filter(([field, value]) =>
+      value == null && !(
+        field === 'public_offer_input_artifact_sha256' &&
+        value === null &&
+        payload.public_offer_verification_source === 'complete_listing'
+      )
+    )
+    .map(([field]) => field)
+}
+
 export function preparePsdealsListingUpsertBatches({
   listing_items,
   existing_psdeals_ids,
@@ -74,7 +86,7 @@ export function preparePsdealsListingUpsertBatches({
       continue
     }
     const unsafeFields = Object.keys(built.payload).filter((field) => CERTIFIED_FIELDS.has(field))
-    const nullFields = Object.entries(built.payload).filter(([, value]) => value == null).map(([field]) => field)
+    const nullFields = findDisallowedPsdealsListingNullFields(built.payload)
     if (unsafeFields.length > 0 || nullFields.length > 0) {
       omitted.push({
         index,

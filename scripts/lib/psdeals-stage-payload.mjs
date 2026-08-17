@@ -1,7 +1,12 @@
 import {
+  buildPsdealsMonthlyRegularCertificationEvidence,
   buildPsdealsPsPlusCertificationEvidence,
   buildPsdealsRegularCertificationEvidence,
 } from './psdeals-certification-evidence.mjs'
+
+const HASH_PATTERN = /^[a-f0-9]{64}$/
+const UUID_PATTERN =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
 
 const PROTECTED_PRICE_LOW_FIELDS = new Set([
   'lowest_price_amount',
@@ -102,7 +107,13 @@ function copyPresentSafeFields(target, source, fieldRules) {
 
 function omitNullishKeys(payload) {
   return Object.fromEntries(
-    Object.entries(payload).filter(([, value]) => value !== null && value !== undefined)
+    Object.entries(payload).filter(([field, value]) =>
+      (value !== null && value !== undefined) || (
+        field === 'public_offer_input_artifact_sha256' &&
+        value === null &&
+        payload.public_offer_verification_source === 'complete_listing'
+      )
+    )
   )
 }
 
@@ -177,6 +188,49 @@ function addSafeListingCommercialState(payload, listingItem, reasonCodes) {
   reasonCodes.push('listing_commercial_state_omitted')
 }
 
+function addPublicOfferVerification(
+  payload,
+  context,
+  observedAt,
+  source,
+  reasonCodes
+) {
+  const cycleId = cleanText(context?.remote_cycle_id)
+  const evidenceSha256 = cleanText(context?.evidence_sha256)?.toLowerCase()
+  const inputArtifactSha256 =
+    cleanText(context?.input_artifact_sha256)?.toLowerCase()
+
+  if (!cycleId || !UUID_PATTERN.test(cycleId)) {
+    reasonCodes.push('public_offer_verification_cycle_invalid')
+    return
+  }
+  if (!observedAt) {
+    reasonCodes.push('public_offer_verification_timestamp_invalid')
+    return
+  }
+  if (!evidenceSha256 || !HASH_PATTERN.test(evidenceSha256)) {
+    reasonCodes.push('public_offer_verification_evidence_invalid')
+    return
+  }
+  if (
+    source === 'strong_detail_revalidation' &&
+    (!inputArtifactSha256 || !HASH_PATTERN.test(inputArtifactSha256))
+  ) {
+    reasonCodes.push('public_offer_verification_input_invalid')
+    return
+  }
+
+  payload.public_offer_verification_cycle_id = cycleId
+  payload.public_offer_verified_at = observedAt
+  payload.public_offer_verification_source = source
+  payload.public_offer_evidence_sha256 = evidenceSha256
+  if (source === 'complete_listing') {
+    payload.public_offer_input_artifact_sha256 = null
+  } else if (inputArtifactSha256) {
+    payload.public_offer_input_artifact_sha256 = inputArtifactSha256
+  }
+}
+
 function buildListingBase(listingItem, options, isExisting) {
   const reasonCodes = []
   const identity = buildListingIdentity(listingItem, reasonCodes)
@@ -211,6 +265,13 @@ function buildListingBase(listingItem, options, isExisting) {
     )
     Object.assign(payload, certification.columns)
     reasonCodes.push(...certification.reason_codes)
+    addPublicOfferVerification(
+      payload,
+      options.certificationContext,
+      observedAt,
+      'complete_listing',
+      reasonCodes
+    )
   }
 
   if (listingItem && typeof listingItem === 'object') {
@@ -269,6 +330,11 @@ function addDetailCommercialFields(payload, parsed, reasonCodes) {
 
   if (commercial?.is_safe_for_price_update !== true) {
     reasonCodes.push('detail_commercial_state_omitted')
+    return
+  }
+
+  if (commercial?.classification === 'temporary_free_promotion_candidate') {
+    reasonCodes.push('detail_monthly_entitlement_separated_from_commercial_state')
     return
   }
 
@@ -338,6 +404,32 @@ export function buildPsdealsDetailUpsertPayload(parsed, options = {}) {
     )
     Object.assign(payload, certification.columns)
     reasonCodes.push(...certification.reason_codes)
+
+    const monthlyRegular = buildPsdealsMonthlyRegularCertificationEvidence(
+      parsed,
+      {
+        ...options.certificationContext,
+        observed_at: detailSyncedAt,
+      }
+    )
+    Object.assign(payload, monthlyRegular.columns)
+    reasonCodes.push(...monthlyRegular.reason_codes)
+
+    const hasStrongRegularDetail =
+      parsed?.commercial_state?.is_safe_for_price_update === true &&
+      parsed?.commercial_state?.classification === 'regular_discount'
+
+    const hasStrongPsPlusDetail = certification.eligible === true
+
+    if (hasStrongRegularDetail || hasStrongPsPlusDetail) {
+      addPublicOfferVerification(
+        payload,
+        options.certificationContext,
+        detailSyncedAt,
+        'strong_detail_revalidation',
+        reasonCodes
+      )
+    }
   }
 
   const storeUrl = safeHttpUrl(parsed?.store_url, 'playstation.com')

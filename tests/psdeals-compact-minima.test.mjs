@@ -48,8 +48,14 @@ function psPlusObservation(overrides = {}) {
     observed_at: '2026-07-30T12:05:00Z',
     producer: 'detail',
     is_ps_plus_discount: true,
+    ps_plus_price_source: 'detail_buy_box',
+    current_ps_plus_buy_box_price_amount: 3.99,
+    ps_plus_parser_status: 'parsed_current_discount',
+    ps_plus_source_consistent: true,
+    is_monthly_entitlement: false,
     is_monthly_game: false,
     is_free_to_play: false,
+    commercial_state: { classification: 'regular_price' },
     type_classification_safe: true,
     platform_classification_safe: true,
     deal_active: true,
@@ -100,10 +106,108 @@ test('rejects one hundred percent as a certified regular observation', () => {
   assert.equal(result.can_update_certified_low, false)
 })
 
-test('accepts a current non-monthly PS Plus observation from detail', () => {
+test('non-Monthly regular and PS Plus observations keep their certified-low behavior', () => {
+  const regular = evaluatePsdealsCertifiedPriceLowObservation(
+    regularObservation()
+  )
   const result = evaluatePsdealsCertifiedPriceLowObservation(psPlusObservation())
+  assert.equal(regular.is_valid, true)
   assert.equal(result.is_valid, true)
   assert.equal(result.classification, 'ps_plus_certified_cycle_observation')
+})
+
+test('Monthly FREE entitlement alone never initializes Lowest PS Plus', () => {
+  const result = applyPsdealsCertifiedPriceLow(null, psPlusObservation({
+    price_amount: 0,
+    ps_plus_price_amount: 0,
+    current_price_amount: 19.99,
+    current_ps_plus_buy_box_price_amount: 0,
+    ps_plus_price_source: 'monthly_entitlement',
+    ps_plus_parser_status: 'parsed_not_discount',
+    is_ps_plus_discount: false,
+    is_monthly_game: true,
+    is_monthly_entitlement: true,
+    commercial_state: {
+      classification: 'temporary_free_promotion_candidate',
+    },
+  }))
+
+  assert.equal(result.changed, false)
+  assert.equal(result.value, null)
+  assert.equal(result.reason_code, 'observation_not_certifiable')
+})
+
+test('Monthly membership allows an independent positive PS Plus commercial low', () => {
+  const result = applyPsdealsCertifiedPriceLow(null, psPlusObservation({
+    price_amount: 39.99,
+    ps_plus_price_amount: 39.99,
+    current_price_amount: 59.99,
+    current_ps_plus_buy_box_price_amount: 39.99,
+    is_monthly_game: true,
+    is_monthly_entitlement: false,
+  }))
+
+  assert.equal(result.changed, true)
+  assert.equal(result.reason_code, 'certified_low_initialized')
+  assert.equal(result.value.amount, 39.99)
+})
+
+test('Monthly PS Plus buy-box zero can never write zero as a low', () => {
+  const result = applyPsdealsCertifiedPriceLow(null, psPlusObservation({
+    price_amount: 0,
+    ps_plus_price_amount: 0,
+    current_price_amount: 59.99,
+    current_ps_plus_buy_box_price_amount: 0,
+    is_monthly_game: true,
+    is_monthly_entitlement: true,
+  }))
+
+  assert.equal(result.changed, false)
+  assert.equal(result.value, null)
+})
+
+test('Big Walk Monthly evidence keeps Lowest PS Plus null', () => {
+  const result = applyPsdealsCertifiedPriceLow(null, psPlusObservation({
+    item_id: 'big-walk-item',
+    psdeals_id: 3781017,
+    price_amount: 0,
+    ps_plus_price_amount: 0,
+    current_price_amount: 19.99,
+    current_ps_plus_buy_box_price_amount: 0,
+    ps_plus_price_source: 'monthly_entitlement',
+    ps_plus_parser_status: 'parsed_not_discount',
+    is_ps_plus_discount: false,
+    is_monthly_game: true,
+    is_monthly_entitlement: true,
+    commercial_state: {
+      classification: 'temporary_free_promotion_candidate',
+    },
+  }))
+
+  assert.equal(result.changed, false)
+  assert.equal(result.value, null)
+})
+
+test('temporary free promotion classification can never write a PS Plus low', () => {
+  const result = applyPsdealsCertifiedPriceLow(null, psPlusObservation({
+    price_amount: 39.99,
+    ps_plus_price_amount: 39.99,
+    current_price_amount: 59.99,
+    current_ps_plus_buy_box_price_amount: 39.99,
+    is_monthly_game: true,
+    is_monthly_entitlement: false,
+    commercial_state: {
+      classification: 'temporary_free_promotion_candidate',
+    },
+  }))
+
+  assert.equal(result.changed, false)
+  assert.equal(result.value, null)
+  assert.ok(
+    result.evaluation.reason_codes.includes(
+      'ps_plus_temporary_free_promotion_forbidden'
+    )
+  )
 })
 
 test('rejects evidence not bound to an explicit cycle and producer', () => {
@@ -145,9 +249,8 @@ test('rejects incoherent, FREE, zero and extreme -100 percent observations', () 
   }
 })
 
-test('rejects monthly, unsafe classification, wrong scope and wrong currency', () => {
+test('rejects unsafe classification, wrong scope and wrong currency', () => {
   for (const observation of [
-    psPlusObservation({ is_monthly_game: true }),
     regularObservation({ type_classification_safe: false }),
     regularObservation({ platform_classification_safe: false }),
     regularObservation({ storefront: 'other' }),

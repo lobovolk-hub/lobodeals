@@ -214,14 +214,14 @@ export default async function DealsPage({ searchParams }: DealsPageProps) {
   let query = supabase
     .from('catalog_public_cache')
     .select(
-      'id, slug, title, image_url, platforms, content_type, item_type_label, release_date, current_price_amount, original_price_amount, discount_percent, ps_plus_price_amount, best_price_amount, best_price_type, has_deal, has_ps_plus_deal, metacritic_score',
+      'id, slug, title, image_url, platforms, content_type, item_type_label, release_date, current_price_amount, original_price_amount, discount_percent, ps_plus_price_amount, best_price_amount, best_price_type, has_deal, has_ps_plus_deal, has_verified_deal, has_verified_ps_plus_deal, metacritic_score',
       { count: 'exact' }
     )
     .eq('region_code', 'us')
     .eq('storefront', 'playstation')
     .gt('best_price_amount', 0)
     .lt('discount_percent', 100)
-    .or('has_deal.eq.true,has_ps_plus_deal.eq.true')
+    .or('has_verified_deal.eq.true,has_verified_ps_plus_deal.eq.true')
 
   if (tab === 'games') {
     query = query.eq('content_type', 'game').eq('item_type_label', 'game')
@@ -444,4 +444,3 @@ export default async function DealsPage({ searchParams }: DealsPageProps) {
     </main>
   )
 }
-

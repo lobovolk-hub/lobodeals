@@ -36,11 +36,16 @@ debe publicar un éxito parcial como ciclo completo.
 ## Precios y mínimos
 
 - Regular y PS Plus son familias distintas.
-- Monthly Games no es un descuento regular ni un precio PS Plus comercial.
+- El entitlement gratuito de Monthly Games no es un descuento regular ni un
+  precio PS Plus comercial. La membresía Monthly del producto no invalida una
+  oferta regular o PS Plus comercial independiente, positiva y certificada.
 - Los mínimos son prospectivos: empiezan con observaciones futuras de ciclos
   certificados y nunca se reconstruyen desde el histórico retirado.
 - Un mínimo solo se inicializa con un precio positivo, coherente, de identidad y
   familia seguras; solo cambia ante un precio estrictamente menor.
+- `Lowest PS+ Price Ever` nunca usa el entitlement Monthly `0`, un buy-box PS+
+  `0` ni `temporary_free_promotion_candidate`; sí admite un precio PS+ comercial
+  independiente y certificado aunque el producto esté Monthly activo.
 
 ## Prioridades visibles
 

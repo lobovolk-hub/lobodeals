@@ -51,6 +51,8 @@ type CatalogItem = {
   best_price_type: 'regular' | 'ps_plus' | 'none'
   has_deal: boolean
   has_ps_plus_deal: boolean
+  has_verified_deal: boolean
+  has_verified_ps_plus_deal: boolean
   metacritic_score: number | null
 }
 
@@ -260,7 +262,7 @@ export default async function CatalogPage({ searchParams }: CatalogPageProps) {
   const page = getSafePage(params.page)
   const from = (page - 1) * PAGE_SIZE
 
-  const { data, error } = await supabase.rpc('search_catalog_public_cache', {
+  const { data, error } = await supabase.rpc('search_catalog_public_cache_v2', {
     p_q: safeQ,
     p_tab: tab,
     p_letter: letter,
@@ -478,4 +480,3 @@ export default async function CatalogPage({ searchParams }: CatalogPageProps) {
     </main>
   )
 }
-

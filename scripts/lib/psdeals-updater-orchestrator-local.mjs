@@ -201,7 +201,12 @@ function minimumObservation(candidate, itemId) {
     discount_percent: candidate.discount_percent,
     is_ps_plus_discount: regular ? false : true,
     ps_plus_price_amount: candidate.ps_plus_price_amount,
-    is_monthly_game: false,
+    ps_plus_price_source: regular ? null : 'detail_buy_box',
+    current_ps_plus_buy_box_price_amount:
+      regular ? null : candidate.ps_plus_price_amount,
+    ps_plus_parser_status: candidate.parser_status,
+    ps_plus_source_consistent: candidate.source_consistent,
+    is_monthly_entitlement: false,
     commercial_state: regular
       ? {
           classification: 'regular_discount',
@@ -345,7 +350,6 @@ export function runPsdealsUpdaterOrchestratorLocal(inputValue) {
   const detailArtifactHash = hashPsdealsUpdaterSimulationValue(details.accepted)
   const plusEvidence = details.accepted.map((parsed) => ({
     psdeals_id: parsed.psdeals_id,
-    monthly: parsed.is_monthly_game,
     ...buildPsdealsPsPlusCertificationEvidence(parsed, {
       remote_cycle_id: identity.simulation_cycle_id,
       observed_at: input.logical_timestamp,
@@ -356,9 +360,7 @@ export function runPsdealsUpdaterOrchestratorLocal(inputValue) {
   const candidates = []
   const rejected = [...details.rejected]
   for (const evidence of [...regularEvidence, ...plusEvidence]) {
-    if (evidence.monthly === true) {
-      rejected.push({ psdeals_id: evidence.psdeals_id, disposition: 'permanently_rejected', reason_codes: ['monthly_game_excluded'] })
-    } else if (evidence.eligible) {
+    if (evidence.eligible) {
       const sameCycle = evidence.candidate.cycle_id === identity.simulation_cycle_id
       const familyReceipt = evidence.kind === 'regular' ? 'listing' : 'details'
       const receiptPresent = !omittedReceipts.has(familyReceipt)

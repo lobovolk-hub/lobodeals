@@ -2,7 +2,6 @@ import Link from 'next/link'
 import type { Metadata } from 'next'
 import type { ReactNode } from 'react'
 import { supabase } from '@/lib/supabase'
-import { HomeFeaturedCarousel } from '@/components/home-featured-carousel'
 import { ItemCard, type ItemCardData } from '@/components/item-card'
 
 export const revalidate = 3600
@@ -25,21 +24,8 @@ type CatalogSearchRow = ItemCardData & {
   total_count: number | string | null
 }
 
-const featuredCarouselSlugs = [
-  'pragmata',
-  'saros',
-  'assassins-creed-black-flag-resynced',
-  '007-first-light',
-  'mixtape',
-  'mouse-pi-for-hire',
-  'starfield',
-  'resident-evil-requiem',
-  'nte-neverness-to-everness',
-  'marvel-rivals-ps5',
-]
-
 const baseSelect =
-  'id, slug, title, image_url, platforms, content_type, item_type_label, release_date, current_price_amount, original_price_amount, discount_percent, ps_plus_price_amount, best_price_amount, best_price_type, has_deal, has_ps_plus_deal, is_ps_plus_monthly_game, ps_plus_monthly_label, ps_plus_monthly_note, ps_plus_monthly_month, ps_plus_monthly_until, metacritic_score'
+  'id, slug, title, image_url, platforms, content_type, item_type_label, release_date, current_price_amount, original_price_amount, discount_percent, ps_plus_price_amount, best_price_amount, best_price_type, has_deal, has_ps_plus_deal, has_verified_deal, has_verified_ps_plus_deal, is_ps_plus_monthly_game, ps_plus_monthly_label, ps_plus_monthly_note, ps_plus_monthly_month, ps_plus_monthly_until, metacritic_score'
 
 function Section({
   title,
@@ -95,8 +81,6 @@ function stripTotalCount(rows: CatalogSearchRow[] | null) {
 
 export default async function HomePage() {
   const [
-    { count },
-    featuredResult,
     topRatedDiscounts,
     highestDiscounts,
     monthlyGames,
@@ -105,27 +89,12 @@ export default async function HomePage() {
   ] = await Promise.all([
     supabase
       .from('catalog_public_cache')
-      .select('*', { count: 'exact', head: true })
-      .eq('region_code', 'us')
-      .eq('storefront', 'playstation')
-      .eq('content_type', 'game')
-      .eq('item_type_label', 'game'),
-
-    supabase
-      .from('catalog_public_cache')
-      .select(baseSelect)
-      .eq('region_code', 'us')
-      .eq('storefront', 'playstation')
-      .in('slug', featuredCarouselSlugs),
-
-    supabase
-      .from('catalog_public_cache')
       .select(baseSelect)
       .eq('region_code', 'us')
       .eq('storefront', 'playstation')
       .eq('content_type', 'game')
       .eq('item_type_label', 'game')
-      .or('has_deal.eq.true,has_ps_plus_deal.eq.true')
+      .or('has_verified_deal.eq.true,has_verified_ps_plus_deal.eq.true')
       .not('metacritic_score', 'is', null)
       .lt('discount_percent', 100)
       .gt('best_price_amount', 0)
@@ -141,7 +110,7 @@ export default async function HomePage() {
       .eq('storefront', 'playstation')
       .eq('content_type', 'game')
       .eq('item_type_label', 'game')
-      .or('has_deal.eq.true,has_ps_plus_deal.eq.true')
+      .or('has_verified_deal.eq.true,has_verified_ps_plus_deal.eq.true')
       .lt('discount_percent', 100)
       .gt('best_price_amount', 0)
       .order('discount_percent', { ascending: false, nullsFirst: false })
@@ -157,7 +126,7 @@ export default async function HomePage() {
       .order('title', { ascending: true })
       .limit(6),
 
-    supabase.rpc('search_catalog_public_cache', {
+    supabase.rpc('search_catalog_public_cache_v2', {
       p_q: '',
       p_tab: 'games',
       p_letter: 'ALL',
@@ -166,7 +135,7 @@ export default async function HomePage() {
       p_offset: 0,
     }),
 
-    supabase.rpc('search_catalog_public_cache', {
+    supabase.rpc('search_catalog_public_cache_v2', {
       p_q: '',
       p_tab: 'games',
       p_letter: 'ALL',
@@ -175,12 +144,6 @@ export default async function HomePage() {
       p_offset: 0,
     }),
   ])
-
-  const featuredItemsRaw = (featuredResult.data || []) as ItemCardData[]
-
-  const featuredItems = featuredCarouselSlugs
-    .map((slug) => featuredItemsRaw.find((item) => item.slug === slug))
-    .filter((item): item is ItemCardData => Boolean(item))
 
   const topRatedDiscountItems = (topRatedDiscounts.data ||
     []) as ItemCardData[]
@@ -206,8 +169,6 @@ export default async function HomePage() {
     LoboDeals&apos; choice
   </h1>
 </div>
-
-<HomeFeaturedCarousel items={featuredItems} />
 
         <Section
           title="Top rated discounts by Metacritic"

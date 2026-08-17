@@ -216,11 +216,13 @@ export function runPsdealsUpdaterDryRun() {
     item: listingFixture({ id: 2000 + index, name, discount, current, original }),
   }))
   const regularResults = priceItems.map(({ name, monthly, item }) => {
-    const evidence = monthly
-      ? { eligible: false, reason_codes: ['monthly_game_excluded'], candidate: null }
-      : buildPsdealsRegularCertificationEvidence(item, candidateContext())
+    const evidence = buildPsdealsRegularCertificationEvidence(
+      item,
+      candidateContext()
+    )
     return {
       fixture: name,
+      monthly,
       classification: item.commercial_state.classification,
       accepted: evidence.eligible,
       reason_codes: evidence.eligible ? [] : evidence.reason_codes,
@@ -264,14 +266,12 @@ export function runPsdealsUpdaterDryRun() {
       ...candidateContext(),
       input_artifact_sha256: INPUT_SHA256,
     })
-    const monthlyBlocked = detail.is_monthly_game === true
     return {
       fixture: name,
-      accepted: evidence.eligible && !monthlyBlocked,
-      reason_codes: monthlyBlocked
-        ? ['monthly_game_excluded']
-        : evidence.reason_codes,
-      candidate: evidence.eligible && !monthlyBlocked ? evidence.candidate : null,
+      monthly: detail.is_monthly_game === true,
+      accepted: evidence.eligible,
+      reason_codes: evidence.reason_codes,
+      candidate: evidence.eligible ? evidence.candidate : null,
     }
   })
 

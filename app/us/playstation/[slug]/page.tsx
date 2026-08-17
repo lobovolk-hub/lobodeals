@@ -34,6 +34,8 @@ type SlugSeoItem = {
   best_price_type: string | null
   has_deal: boolean | null
   has_ps_plus_deal: boolean | null
+  has_verified_deal: boolean | null
+  has_verified_ps_plus_deal: boolean | null
   is_ps_plus_monthly_game: boolean | null
   ps_plus_monthly_label: string | null
   ps_plus_monthly_note: string | null
@@ -72,11 +74,11 @@ function buildSlugSeoTitle(item: SlugSeoItem) {
       ? item.platforms.join(' & ')
       : 'PlayStation'
 
-  if (item.has_ps_plus_deal && item.ps_plus_price_amount !== null) {
+  if (item.has_verified_ps_plus_deal && item.ps_plus_price_amount !== null) {
     return `${item.title} PS Plus deal and price`
   }
 
-  if (item.has_deal && item.best_price_amount !== null) {
+  if (item.has_verified_deal && item.best_price_amount !== null) {
     return `${item.title} deal and price`
   }
 
@@ -95,11 +97,11 @@ function buildSlugSeoDescription(item: SlugSeoItem) {
 
   const parts: string[] = []
 
-  if (item.has_ps_plus_deal && psPlusPrice) {
+  if (item.has_verified_ps_plus_deal && psPlusPrice) {
     parts.push(
       `Track ${item.title} on LoboDeals and view its current PS Plus deal at ${psPlusPrice}.`
     )
-  } else if (item.has_deal && currentPrice) {
+  } else if (item.has_verified_deal && currentPrice) {
     parts.push(
       `Track ${item.title} on LoboDeals and view its current PlayStation deal at ${currentPrice}.`
     )
@@ -147,7 +149,7 @@ export async function generateMetadata({
   const { data } = await supabase
     .from('catalog_public_cache')
     .select(
-      'slug, title, image_url, platforms, content_type, item_type_label, release_date, publisher, current_price_amount, original_price_amount, discount_percent, ps_plus_price_amount, best_price_amount, best_price_type, has_deal, has_ps_plus_deal, is_ps_plus_monthly_game, ps_plus_monthly_label, ps_plus_monthly_note, ps_plus_monthly_month, ps_plus_monthly_until, metacritic_score'
+      'slug, title, image_url, platforms, content_type, item_type_label, release_date, publisher, current_price_amount, original_price_amount, discount_percent, ps_plus_price_amount, best_price_amount, best_price_type, has_deal, has_ps_plus_deal, has_verified_deal, has_verified_ps_plus_deal, is_ps_plus_monthly_game, ps_plus_monthly_label, ps_plus_monthly_note, ps_plus_monthly_month, ps_plus_monthly_until, metacritic_score'
     )
     .eq('region_code', 'us')
     .eq('storefront', 'playstation')
@@ -228,6 +230,8 @@ type Item = {
   best_price_type: string | null
   has_deal: boolean | null
   has_ps_plus_deal: boolean | null
+  has_verified_deal: boolean | null
+  has_verified_ps_plus_deal: boolean | null
   is_ps_plus_monthly_game: boolean | null
   ps_plus_monthly_label: string | null
   ps_plus_monthly_note: string | null
@@ -315,7 +319,7 @@ function isGame(item: Item) {
 }
 
 function hasCurrentRegularOffer(item: Item) {
-  if (item.has_deal !== true) return false
+  if (item.has_verified_deal !== true) return false
   if (!item.discount_percent || item.discount_percent <= 0) return false
   if (item.current_price_amount === null) return false
   if (item.original_price_amount === null) return false
@@ -326,7 +330,7 @@ function hasCurrentRegularOffer(item: Item) {
 }
 
 function hasCurrentPsPlusOffer(item: Item) {
-  if (item.has_ps_plus_deal !== true) return false
+  if (item.has_verified_ps_plus_deal !== true) return false
   if (item.ps_plus_price_amount === null) return false
   if (item.ps_plus_price_amount < 0) return false
 
@@ -467,7 +471,7 @@ export default async function PlayStationItemPage({ params }: PageProps) {
 
     const { data: cacheRow, error: cacheError } = await supabase
   .from('catalog_public_cache')
-  .select('item_id, platforms, content_type, item_type_label, current_price_amount, original_price_amount, discount_percent, ps_plus_price_amount, best_price_amount, best_price_type, has_deal, has_ps_plus_deal, is_ps_plus_monthly_game, ps_plus_monthly_label, ps_plus_monthly_note, ps_plus_monthly_month, ps_plus_monthly_until, deal_ends_at')
+  .select('item_id, platforms, content_type, item_type_label, current_price_amount, original_price_amount, discount_percent, ps_plus_price_amount, best_price_amount, best_price_type, has_deal, has_ps_plus_deal, has_verified_deal, has_verified_ps_plus_deal, is_ps_plus_monthly_game, ps_plus_monthly_label, ps_plus_monthly_note, ps_plus_monthly_month, ps_plus_monthly_until, deal_ends_at')
   .eq('region_code', 'us')
   .eq('storefront', 'playstation')
   .in('slug', slugCandidates)
@@ -498,6 +502,8 @@ const stageItem = data as Omit<
   | 'best_price_type'
   | 'has_deal'
   | 'has_ps_plus_deal'
+  | 'has_verified_deal'
+  | 'has_verified_ps_plus_deal'
   | 'is_ps_plus_monthly_game'
   | 'ps_plus_monthly_label'
   | 'ps_plus_monthly_note'
@@ -518,6 +524,8 @@ const item = {
   best_price_type: cacheRow.best_price_type,
   has_deal: cacheRow.has_deal,
   has_ps_plus_deal: cacheRow.has_ps_plus_deal,
+  has_verified_deal: cacheRow.has_verified_deal,
+  has_verified_ps_plus_deal: cacheRow.has_verified_ps_plus_deal,
   is_ps_plus_monthly_game: cacheRow.is_ps_plus_monthly_game,
   ps_plus_monthly_label: cacheRow.ps_plus_monthly_label,
   ps_plus_monthly_note: cacheRow.ps_plus_monthly_note,
@@ -657,7 +665,7 @@ const displayCurrentAmount = getDisplayCurrentAmount(item)
             href="/catalog"
             className="text-sm font-semibold text-zinc-400 transition hover:text-white"
           >
-            â† Back to catalog
+            ← Back to catalog
           </Link>
         </div>
 
@@ -870,7 +878,7 @@ const displayCurrentAmount = getDisplayCurrentAmount(item)
                 </p>
                 <p className="mt-2 text-2xl font-bold text-emerald-300">
                   {item.lobodeals_lowest_regular_price_amount === null
-                    ? 'â€”'
+                    ? '—'
                     : lowestRegularPriceLabel}
                 </p>
                 {item.lobodeals_lowest_regular_price_first_seen_at ? (
@@ -887,7 +895,7 @@ const displayCurrentAmount = getDisplayCurrentAmount(item)
                 </p>
                 <p className="mt-2 text-2xl font-bold text-yellow-300">
                   {item.lobodeals_lowest_ps_plus_price_amount === null
-                    ? 'â€”'
+                    ? '—'
                     : lowestPsPlusPriceLabel}
                 </p>
                 {item.lobodeals_lowest_ps_plus_price_first_seen_at ? (

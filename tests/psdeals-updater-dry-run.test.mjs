@@ -35,23 +35,25 @@ test('dry-run covers product families and preserves canonical PS5, PS4 order', (
   }
 })
 
-test('only coherent 1, 50 and 99 percent regular discounts become candidates', () => {
+test('coherent regular discounts remain eligible even with separate Monthly membership', () => {
   const report = runPsdealsUpdaterDryRun()
   const accepted = report.price_fixtures.filter((entry) => entry.accepted).map((entry) => entry.fixture)
-  assert.deepEqual(accepted, ['discount-1', 'discount-50', 'discount-99'])
-  for (const rejected of ['discount-0', 'discount-100', 'free', 'zero', 'negative', 'original-missing', 'current-missing', 'formula-mismatch', 'monthly', 'ambiguous-signal']) {
+  assert.deepEqual(accepted, ['discount-1', 'discount-50', 'discount-99', 'monthly'])
+  assert.equal(report.price_fixtures.find((entry) => entry.fixture === 'monthly').monthly, true)
+  for (const rejected of ['discount-0', 'discount-100', 'free', 'zero', 'negative', 'original-missing', 'current-missing', 'formula-mismatch', 'ambiguous-signal']) {
     assert.equal(report.price_fixtures.find((entry) => entry.fixture === rejected).accepted, false)
   }
 })
 
-test('PS Plus separates valid, ambiguous and monthly observations', () => {
+test('PS Plus separates ambiguous evidence from an independent Monthly commercial offer', () => {
   const report = runPsdealsUpdaterDryRun()
   const plus = Object.fromEntries(report.ps_plus_fixtures.map((entry) => [entry.fixture, entry]))
   assert.equal(plus['ps-plus-valid'].accepted, true)
   assert.equal(plus['ps-plus-ambiguous'].accepted, false)
   assert.ok(plus['ps-plus-ambiguous'].reason_codes.includes('ps_plus_parser_state_unsafe'))
-  assert.equal(plus['ps-plus-monthly'].accepted, false)
-  assert.deepEqual(plus['ps-plus-monthly'].reason_codes, ['monthly_game_excluded'])
+  assert.equal(plus['ps-plus-monthly'].monthly, true)
+  assert.equal(plus['ps-plus-monthly'].accepted, true)
+  assert.deepEqual(plus['ps-plus-monthly'].reason_codes, [])
 })
 
 test('minima initialize, lower and preserve higher observations independently', () => {

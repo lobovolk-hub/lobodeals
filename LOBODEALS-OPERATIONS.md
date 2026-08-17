@@ -299,9 +299,12 @@ Después de cache v16, validar como mínimo:
 
 - cycle, receipts, hashes, request/affected counts e idempotency keys;
 - total de stage/cache y fecha máxima de actualización;
-- ofertas regulares y PS Plus activas, Monthly separado;
+- ofertas regulares y PS Plus activas, con el entitlement Monthly separado sin
+  vetar ofertas comerciales independientes del mismo producto;
 - cero descuentos `>=100`, cero precios incoherentes y cero expirados activos;
 - cero mínimos no certificados o pertenecientes a otro ciclo;
+- cero mínimos PS Plus originados en entitlement Monthly, buy-box PS+ `0` o
+  `temporary_free_promotion_candidate`;
 - una muestra de Game, Bundle, DLC/Add-on, PS Plus, Monthly, producto sin deal,
   deal finalizado y caso de la clase Hollow Knight;
 - home, catalog y deals; solo slugs de la muestra, sin crawler/warm-up;
@@ -323,8 +326,26 @@ Después de cache v16, validar como mínimo:
 - Después de cache v16 terminal, un replay idéntico debe reconciliar el receipt;
   nunca repetir a ciegas.
 - No hay cambio Vercel durante el recovery y no hay rollback Vercel.
-- Prohibidos `CASCADE`, borrado de histórico, refresh v15, warm-up de slugs,
+- Prohibidos `CASCADE`, borrado de histórico, invocación directa de refresh v15,
+  warm-up de slugs,
   push y deploy.
+
+### Rollout pendiente de FASE 0
+
+Las migraciones locales 008 y 009 y el frontend con `has_verified_*` no están
+aplicados ni aprobados para producción. Cuando exista autorización explícita,
+el orden obligatorio es:
+
+1. aplicar 008;
+2. aplicar 009;
+3. ejecutar el postcheck 009 read-only;
+4. ejecutar por separado el recovery de Big Walk sólo si se autoriza;
+5. completar un Daily Runner nuevo con preflight v24 y cache v19;
+6. verificar en live los stamps de Stage, los flags `has_verified_*` y `/deals`;
+7. sólo entonces permitir commit, push o deploy del frontend.
+
+El default `false` de `has_verified_*` no es un backfill. Desplegar el frontend
+antes del nuevo Daily Runner ocultaría temporalmente las ofertas públicas.
 
 ### Condiciones GO
 

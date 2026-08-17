@@ -150,6 +150,26 @@ const PS_PLUS_HASH_FIELDS = Object.freeze([
   'platforms',
 ])
 
+const MONTHLY_REGULAR_HASH_FIELDS = Object.freeze([
+  'contract_version',
+  'kind',
+  'cycle_id',
+  'observed_at',
+  'evidence_sha256',
+  'input_artifact_sha256',
+  'psdeals_id',
+  'region_code',
+  'storefront',
+  'currency_code',
+  'regular_price_amount',
+  'entitlement_price_amount',
+  'discount_percent',
+  'classification',
+  'content_type',
+  'item_type_label',
+  'platforms',
+])
+
 function hashFieldValue(value) {
   if (Array.isArray(value)) return value.join(',')
   if (value === null || value === undefined) return '<null>'
@@ -162,6 +182,8 @@ export function hashPsdealsCertificationCandidate(candidate) {
       ? REGULAR_HASH_FIELDS
       : candidate?.kind === 'ps_plus'
         ? PS_PLUS_HASH_FIELDS
+        : candidate?.kind === 'monthly_regular'
+          ? MONTHLY_REGULAR_HASH_FIELDS
         : null
   if (!fields) return null
   const canonical = fields
@@ -202,7 +224,9 @@ function result(kind, reasons, common, candidate) {
   }
   const prefix = kind === 'regular'
     ? 'regular_certification'
-    : 'ps_plus_certification'
+    : kind === 'ps_plus'
+      ? 'ps_plus_certification'
+      : 'monthly_regular_certification'
   return {
     eligible: true,
     kind,
@@ -212,6 +236,12 @@ function result(kind, reasons, common, candidate) {
       [`${prefix}_cycle_id`]: common.cycleId,
       [`${prefix}_observed_at`]: common.observedAt,
       [`${prefix}_evidence_sha256`]: common.evidenceSha256,
+      ...(kind === 'monthly_regular'
+        ? {
+            [`${prefix}_input_artifact_sha256`]:
+              candidate.input_artifact_sha256,
+          }
+        : {}),
       [`${prefix}_candidate`]: candidate,
     },
   }
@@ -298,6 +328,12 @@ export function buildPsdealsPsPlusCertificationEvidence(
   if (parsedDetail?.is_ps_plus_discount !== true) {
     reasons.push('ps_plus_discount_not_explicitly_true')
   }
+  if (
+    parsedDetail?.commercial_state?.classification ===
+    'temporary_free_promotion_candidate'
+  ) {
+    reasons.push('ps_plus_temporary_free_promotion_forbidden')
+  }
   if (plusEvidence?.parser_status !== 'parsed_current_discount') {
     reasons.push('ps_plus_parser_state_unsafe')
   }
@@ -342,4 +378,62 @@ export function buildPsdealsPsPlusCertificationEvidence(
     platforms,
   }, reasons)
   return result('ps_plus', reasons, common, candidate)
+}
+
+export function buildPsdealsMonthlyRegularCertificationEvidence(
+  parsedDetail,
+  context = {}
+) {
+  const reasons = []
+  const common = commonContext(context, reasons)
+  const commercial = parsedDetail?.commercial_state
+  const platforms = canonicalPlatforms(
+    parsedDetail?.platform_classification,
+    reasons
+  )
+  const type = safeType(parsedDetail?.type_classification, reasons)
+  const regular = validMoney(commercial?.original_price_amount)
+  const entitlement = Number(commercial?.current_price_amount)
+  const percent = commercial?.discount_percent_normalized
+  const inputArtifactSha256 =
+    cleanText(context?.input_artifact_sha256)?.toLowerCase() || null
+
+  if (
+    commercial?.classification !== 'temporary_free_promotion_candidate' ||
+    commercial?.is_safe_for_price_update !== true
+  ) {
+    reasons.push('monthly_regular_detail_state_not_certifiable')
+  }
+  if (entitlement !== 0 || percent !== 100) {
+    reasons.push('monthly_regular_entitlement_tuple_invalid')
+  }
+  if (regular === null) reasons.push('monthly_regular_price_invalid')
+  if (String(parsedDetail?.currency_code || '').toUpperCase() !== 'USD') {
+    reasons.push('monthly_regular_currency_invalid')
+  }
+  if (!inputArtifactSha256 || !HASH_PATTERN.test(inputArtifactSha256)) {
+    reasons.push('monthly_regular_input_artifact_sha256_invalid')
+  }
+
+  const candidate = sealCandidate({
+    contract_version: PSDEALS_CERTIFICATION_EVIDENCE_VERSION,
+    kind: 'monthly_regular',
+    cycle_id: common.cycleId,
+    observed_at: common.observedAt,
+    evidence_sha256: common.evidenceSha256,
+    input_artifact_sha256: inputArtifactSha256,
+    psdeals_id: parsedDetail?.psdeals_id ?? null,
+    region_code: 'us',
+    storefront: 'playstation',
+    currency_code: String(parsedDetail?.currency_code || '').toUpperCase(),
+    regular_price_amount: regular,
+    entitlement_price_amount: entitlement,
+    discount_percent: percent ?? null,
+    classification: commercial?.classification ?? null,
+    content_type: type?.content_type ?? null,
+    item_type_label: type?.item_type_label ?? null,
+    platforms,
+  }, reasons)
+
+  return result('monthly_regular', reasons, common, candidate)
 }

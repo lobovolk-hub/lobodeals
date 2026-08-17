@@ -201,6 +201,8 @@ async function fetchDiscountSignalStageItems(admin) {
       .not('original_price_amount', 'is', null)
       .gte('discount_percent', 1)
       .lte('discount_percent', 99)
+      .order('psdeals_id', { ascending: true })
+      .order('id', { ascending: true })
       .range(from, to)
 
     if (error) throw error

@@ -19,6 +19,8 @@ export type ItemCardData = {
   best_price_type: 'regular' | 'ps_plus' | 'none'
   has_deal: boolean
   has_ps_plus_deal: boolean
+  has_verified_deal: boolean
+  has_verified_ps_plus_deal: boolean
   is_ps_plus_monthly_game?: boolean | null
   ps_plus_monthly_label?: string | null
   ps_plus_monthly_note?: string | null
@@ -75,7 +77,7 @@ function getTypeLabel(item: ItemCardData) {
 }
 
 function getPsPlusDiscountPercent(item: ItemCardData) {
-  if (!item.has_ps_plus_deal) return null
+  if (!item.has_verified_ps_plus_deal) return null
   if (item.original_price_amount === null) return null
   if (item.ps_plus_price_amount === null) return null
   if (item.original_price_amount <= 0) return null
@@ -94,7 +96,7 @@ function getSavingsLabel(item: ItemCardData) {
   const labels: string[] = []
 
   if (
-    item.has_deal &&
+    item.has_verified_deal &&
     item.discount_percent !== null &&
     item.discount_percent > 0 &&
     item.discount_percent < 100
@@ -126,18 +128,20 @@ export function ItemCard({
     : savingsLabel
 
   const showOriginalPrice =
-    (item.has_deal || item.has_ps_plus_deal) &&
+    (item.has_verified_deal || item.has_verified_ps_plus_deal) &&
     item.original_price_amount !== null &&
     item.original_price_amount > 0
 
   const showRegularDealPrice =
-    item.has_deal && item.current_price_amount !== null
+    item.has_verified_deal && item.current_price_amount !== null
 
   const showPsPlusDealPrice =
-    item.has_ps_plus_deal && item.ps_plus_price_amount !== null
+    item.has_verified_ps_plus_deal && item.ps_plus_price_amount !== null
 
   const showBasePrice =
-    !item.has_deal && !item.has_ps_plus_deal && !showMonthlyIncluded
+    !item.has_verified_deal &&
+    !item.has_verified_ps_plus_deal &&
+    !showMonthlyIncluded
 
   return (
     <article className="group flex h-full flex-col overflow-hidden rounded-2xl border border-zinc-800 bg-zinc-900 transition hover:border-zinc-600">

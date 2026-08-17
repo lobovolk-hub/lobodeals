@@ -129,6 +129,22 @@ test('regular and PS Plus candidates remain product, cycle and family bound', ()
   assert.equal(new Set(result.candidate_plan.map((entry) => entry.cycle_id)).size, 1)
 })
 
+test('active Monthly membership does not suppress an independent PS Plus candidate', () => {
+  const result = run('happy-path', (fixture) => {
+    fixture.details[1].attempts[0].is_monthly_game = true
+    fixture.monthly.active_item_ids = [910002]
+  })
+  const plus = result.candidate_plan.find(
+    (entry) => entry.psdeals_id === 910002 && entry.kind === 'ps_plus'
+  )
+  const minimum = result.certification_plan.find(
+    (entry) => entry.psdeals_id === 910002 && entry.family === 'ps_plus'
+  )
+
+  assert.equal(plus.ps_plus_price_amount, 19.99)
+  assert.equal(minimum.decision, 'initialize')
+})
+
 test('cycle mismatch and missing receipt reject candidates and block certification', () => {
   const mismatch = run('happy-path', (fixture) => { fixture.faults.candidate_cycle_mismatch = true })
   assert.ok(mismatch.blockers.includes('candidate_cycle_mismatch'))

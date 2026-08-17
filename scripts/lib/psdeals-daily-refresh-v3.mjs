@@ -240,7 +240,11 @@ function dailyStageReceipt({ authorizationId, runIntentId, remoteCycleId, stage,
   }
 }
 
-export function createPsdealsDailyOperationalExecutor({ adapters } = {}) {
+export function createPsdealsDailyOperationalExecutor({
+  adapters,
+  resolve_stage_runtime = null,
+  production_ports = null,
+} = {}) {
   const adapterValidation = validatePsdealsDailyOperationalAdapters(adapters)
   return async function executePsdealsDailyOperationalRun(input = {}) {
     if (!adapterValidation.valid) {
@@ -250,21 +254,36 @@ export function createPsdealsDailyOperationalExecutor({ adapters } = {}) {
         blockers: ['operational_adapter_set_incomplete'],
         adapter_validation: adapterValidation,
         receipts: [],
+        stage_results: {},
         executed_writes: 0,
         adapter_calls: 0,
       }
     }
     const { authorization, gates } = input
     if (gates?.valid !== true) throw new Error('DAILY_OPERATIONAL_EXECUTOR_GATE_BYPASS')
+    if (resolve_stage_runtime !== null && typeof resolve_stage_runtime !== 'function') {
+      return {
+        mode: 'live',
+        classification: 'FAILED',
+        blockers: ['stage_runtime_resolver_invalid'],
+        receipts: [],
+        stage_results: {},
+        executed_writes: 0,
+        adapter_calls: 0,
+      }
+    }
+
     const receipts = []
+    const stageResults = {}
     let executedWrites = 0
     let previousReceiptId = null
     let remoteCycleId = UUID_PATTERN.test(String(authorization.resume_remote_cycle_id || ''))
       ? authorization.resume_remote_cycle_id
       : null
     const createStageIndex = PSDEALS_DAILY_OPERATIONAL_STAGES.findIndex((value) => value.state === 'cycle_created')
+
     for (const [index, stage] of PSDEALS_DAILY_OPERATIONAL_STAGES.entries()) {
-      const result = await adapters[stage.adapter]({
+      const baseContext = {
         ...input,
         run_identity: {
           run_intent_id: authorization.run_intent_id,
@@ -274,24 +293,74 @@ export function createPsdealsDailyOperationalExecutor({ adapters } = {}) {
         order: index + 1,
         previous_stage_receipt_id: previousReceiptId,
         receipts: receipts.map((value) => ({ ...value })),
+        stage_results: Object.fromEntries(
+          Object.entries(stageResults).map(([key, value]) => [key, { ...value }])
+        ),
+      }
+
+      let runtime = {}
+      if (resolve_stage_runtime) {
+        try {
+          runtime = await resolve_stage_runtime(baseContext)
+        } catch {
+          return {
+            mode: 'live',
+            classification: 'FAILED',
+            blockers: ['stage_runtime_resolution_failed'],
+            failed_state: stage.state,
+            receipts,
+            stage_results: stageResults,
+            executed_writes: executedWrites,
+            adapter_calls: index,
+          }
+        }
+        if (!runtime || typeof runtime !== 'object' || Array.isArray(runtime)) {
+          return {
+            mode: 'live',
+            classification: 'FAILED',
+            blockers: ['stage_runtime_resolution_invalid'],
+            failed_state: stage.state,
+            receipts,
+            stage_results: stageResults,
+            executed_writes: executedWrites,
+            adapter_calls: index,
+          }
+        }
+      }
+
+      const result = await adapters[stage.adapter]({
+        ...baseContext,
+        production_inputs: runtime.production_inputs ?? input.production_inputs,
+        production_ports:
+          runtime.production_ports ?? input.production_ports ?? production_ports,
       })
+
+      stageResults[stage.state] = {
+        adapter: stage.adapter,
+        status: result?.status || null,
+        result,
+      }
+
       if (!LIVE_ADAPTER_STATUSES.has(result?.status)) {
         return {
           mode: 'live', classification: 'FAILED', blockers: ['operational_adapter_status_invalid'],
-          failed_state: stage.state, receipts, executed_writes: executedWrites, adapter_calls: index + 1,
+          failed_state: stage.state, receipts, stage_results: stageResults,
+          executed_writes: executedWrites, adapter_calls: index + 1,
         }
       }
       if (stage.state === 'cycle_created' && ['succeeded', 'skipped'].includes(result.status)) {
         if (!UUID_PATTERN.test(String(result.remote_cycle_id || ''))) {
           return {
             mode: 'live', classification: 'REQUIRES_RECONCILIATION', blockers: ['create_cycle_remote_uuid_invalid'],
-            failed_state: stage.state, receipts, executed_writes: executedWrites, adapter_calls: index + 1,
+            failed_state: stage.state, receipts, stage_results: stageResults,
+            executed_writes: executedWrites, adapter_calls: index + 1,
           }
         }
         if (remoteCycleId && result.remote_cycle_id !== remoteCycleId) {
           return {
             mode: 'live', classification: 'REQUIRES_RECONCILIATION', blockers: ['resume_cycle_identity_mismatch'],
-            failed_state: stage.state, receipts, executed_writes: executedWrites, adapter_calls: index + 1,
+            failed_state: stage.state, receipts, stage_results: stageResults,
+            executed_writes: executedWrites, adapter_calls: index + 1,
           }
         }
         remoteCycleId = result.remote_cycle_id
@@ -299,20 +368,23 @@ export function createPsdealsDailyOperationalExecutor({ adapters } = {}) {
       if (index > createStageIndex && remoteCycleId === null) {
         return {
           mode: 'live', classification: 'FAILED', blockers: ['remote_cycle_identity_not_bound'],
-          failed_state: stage.state, receipts, executed_writes: executedWrites, adapter_calls: index + 1,
+          failed_state: stage.state, receipts, stage_results: stageResults,
+          executed_writes: executedWrites, adapter_calls: index + 1,
         }
       }
       if ((result.accepted_parent_receipt_id ?? null) !== previousReceiptId) {
         return {
           mode: 'live', classification: 'FAILED', blockers: ['stage_receipt_parent_mismatch'],
-          failed_state: stage.state, receipts, executed_writes: executedWrites, adapter_calls: index + 1,
+          failed_state: stage.state, receipts, stage_results: stageResults,
+          executed_writes: executedWrites, adapter_calls: index + 1,
         }
       }
       const writes = Number(result.executed_writes || 0)
       if (!Number.isSafeInteger(writes) || writes < 0) {
         return {
           mode: 'live', classification: 'FAILED', blockers: ['stage_executed_writes_invalid'],
-          failed_state: stage.state, receipts, executed_writes: executedWrites, adapter_calls: index + 1,
+          failed_state: stage.state, receipts, stage_results: stageResults,
+          executed_writes: executedWrites, adapter_calls: index + 1,
         }
       }
       if (result.external_action_performed === true &&
@@ -321,7 +393,8 @@ export function createPsdealsDailyOperationalExecutor({ adapters } = {}) {
             result.action_receipt?.cycle_id !== remoteCycleId)) {
         return {
           mode: 'live', classification: 'REQUIRES_RECONCILIATION', blockers: ['external_action_receipt_invalid'],
-          failed_state: stage.state, receipts, executed_writes: executedWrites, adapter_calls: index + 1,
+          failed_state: stage.state, receipts, stage_results: stageResults,
+          executed_writes: executedWrites, adapter_calls: index + 1,
         }
       }
       executedWrites += writes
@@ -343,8 +416,9 @@ export function createPsdealsDailyOperationalExecutor({ adapters } = {}) {
             ? 'REQUIRES_RECONCILIATION'
             : 'FAILED'
         return {
-          mode: 'live', classification, blockers: unique(result.blockers || [`${stage.state}_${result.status}`]),
-          failed_state: stage.state, receipts, executed_writes: executedWrites, adapter_calls: index + 1,
+          mode: 'live', classification, blockers: unique(result.blockers || [stage.state + '_' + result.status]),
+          failed_state: stage.state, receipts, stage_results: stageResults,
+          executed_writes: executedWrites, adapter_calls: index + 1,
         }
       }
     }
@@ -356,6 +430,7 @@ export function createPsdealsDailyOperationalExecutor({ adapters } = {}) {
       run_intent_id: authorization.run_intent_id,
       remote_cycle_id: remoteCycleId,
       receipts,
+      stage_results: stageResults,
       executed_writes: executedWrites,
       adapter_calls: PSDEALS_DAILY_OPERATIONAL_STAGES.length,
     }

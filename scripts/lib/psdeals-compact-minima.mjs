@@ -98,6 +98,23 @@ function evaluatePsPlusObservation(observation, priceAmount, reasons) {
   if (!exactMoney(observation?.ps_plus_price_amount, priceAmount)) {
     reasons.push('ps_plus_price_evidence_mismatch')
   }
+  if (observation?.ps_plus_price_source !== 'detail_buy_box') {
+    reasons.push('ps_plus_detail_buy_box_source_required')
+  }
+  if (
+    !exactMoney(
+      observation?.current_ps_plus_buy_box_price_amount,
+      priceAmount
+    )
+  ) {
+    reasons.push('ps_plus_buy_box_price_evidence_mismatch')
+  }
+  if (observation?.ps_plus_parser_status !== 'parsed_current_discount') {
+    reasons.push('ps_plus_parser_state_unsafe')
+  }
+  if (observation?.ps_plus_source_consistent !== true) {
+    reasons.push('ps_plus_source_discrepancy')
+  }
 
   const current = positiveMoney(observation?.current_price_amount)
   if (current === null) {
@@ -105,8 +122,14 @@ function evaluatePsPlusObservation(observation, priceAmount, reasons) {
   } else if (current <= priceAmount) {
     reasons.push('ps_plus_not_below_current_price')
   }
-  if (observation?.is_monthly_game !== false) {
-    reasons.push('ps_plus_monthly_exclusion_not_demonstrated')
+  if (observation?.is_monthly_entitlement !== false) {
+    reasons.push('ps_plus_monthly_entitlement_exclusion_not_demonstrated')
+  }
+  if (
+    observation?.commercial_state?.classification ===
+    'temporary_free_promotion_candidate'
+  ) {
+    reasons.push('ps_plus_temporary_free_promotion_forbidden')
   }
 }
 

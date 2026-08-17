@@ -1,3 +1,4 @@
+import crypto from 'node:crypto'
 import { spawn } from 'node:child_process'
 import fs from 'node:fs/promises'
 import path from 'node:path'
@@ -125,6 +126,88 @@ function validateRpcArgs(args, requiredNames) {
   if (missing.length > 0) throw new Error(`PRODUCTION_RPC_ARGS_MISSING:${missing.join(',')}`)
 }
 
+function validReceiptTimestamp(value) {
+  return typeof value === 'string' && Number.isFinite(Date.parse(value))
+}
+
+function validReceiptResult(value) {
+  return Boolean(value && typeof value === 'object' && !Array.isArray(value))
+}
+
+async function resolveProcessReceiptTerminal(name, context, {
+  processResult,
+  receiptInput,
+  begunReceipt,
+  terminalStatus,
+} = {}) {
+  if (receiptInput.resolve_after_process !== true) {
+    return {
+      valid: true,
+      value: {
+        finished_at: receiptInput.finished_at,
+        affected_rows: Number(receiptInput.affected_rows || 0),
+        result: receiptInput.result || {},
+        error_code: terminalStatus === 'committed'
+          ? null
+          : receiptInput.error_code || 'PROCESS_STAGE_INCOMPLETE',
+      },
+    }
+  }
+
+  const resolver = context?.production_ports?.resolve_process_receipt
+  if (typeof resolver !== 'function') {
+    return {
+      valid: false,
+      blocker: 'process_receipt_resolver_missing',
+      error_code: 'PROCESS_RECEIPT_RESOLVER_REQUIRED',
+    }
+  }
+
+  let value
+  try {
+    value = await resolver({
+      adapter: name,
+      run_identity: { ...(context.run_identity || {}) },
+      previous_stage_receipt_id: context.previous_stage_receipt_id ?? null,
+      process_result: processResult,
+      receipt_input: { ...receiptInput },
+      begun_receipt: { ...(begunReceipt || {}) },
+    })
+  } catch {
+    return {
+      valid: false,
+      blocker: 'process_receipt_resolution_failed',
+      error_code: 'PROCESS_RECEIPT_RESOLUTION_FAILED',
+    }
+  }
+
+  const valid =
+    validReceiptTimestamp(value?.finished_at) &&
+    Number.isSafeInteger(value?.affected_rows) &&
+    value.affected_rows >= 0 &&
+    validReceiptResult(value?.result) &&
+    (value?.error_code == null ||
+      (typeof value.error_code === 'string' && value.error_code.trim().length > 0))
+
+  return valid
+    ? {
+        valid: true,
+        value: {
+          finished_at: new Date(value.finished_at).toISOString(),
+          affected_rows: value.affected_rows,
+          result: value.result,
+          error_code: terminalStatus === 'committed'
+            ? null
+            : value.error_code || 'PROCESS_STAGE_INCOMPLETE',
+        },
+      }
+    : {
+        valid: false,
+        blocker: 'process_receipt_resolution_invalid',
+        error_code: 'PROCESS_RECEIPT_RESOLUTION_INVALID',
+      }
+}
+
 async function invokeRpc(context, name, args) {
   const port = context?.production_ports?.supabase
   if (typeof port?.write?.invokeAllowedRpc !== 'function') throw new Error('PRODUCTION_SUPABASE_WRITE_PORT_REQUIRED')
@@ -231,6 +314,140 @@ async function defaultFetchPublicPage({ url, timeout_ms, max_body_bytes, follows
   }
 }
 
+
+function sha256Bytes(bytes) {
+  return crypto.createHash('sha256').update(bytes).digest('hex')
+}
+
+function isInside(root, candidate) {
+  const relative = path.relative(path.resolve(root), path.resolve(candidate))
+  return relative === '' ||
+    (!relative.startsWith(`..${path.sep}`) && relative !== '..' && !path.isAbsolute(relative))
+}
+
+async function readAdoptedWorkspaceArtifact(input, {
+  workspace,
+  artifact,
+  blocker_prefix,
+} = {}) {
+  const root = workspace?.root_dir
+  const file = artifact?.workspace_path
+  const expectedHash = String(artifact?.sha256 || '').toLowerCase()
+  if (!root || !file || !HASH_PATTERN.test(expectedHash) || !isInside(root, file)) {
+    return { valid: false, blocker: `${blocker_prefix}_contract_invalid` }
+  }
+  let bytes
+  try {
+    const stat = await fs.stat(file)
+    if (!stat.isFile()) return { valid: false, blocker: `${blocker_prefix}_not_file` }
+    bytes = await fs.readFile(file)
+  } catch {
+    return { valid: false, blocker: `${blocker_prefix}_missing` }
+  }
+  const actualHash = sha256Bytes(bytes)
+  if (actualHash !== expectedHash) {
+    return { valid: false, blocker: `${blocker_prefix}_hash_mismatch` }
+  }
+  return { valid: true, file: path.resolve(file), bytes, sha256: actualHash }
+}
+
+async function adoptRecentlyAddedCollection(context) {
+  const input = inputFor(context, 'collect_recently_added')
+  assertPermission(input, 'allow_collect_listing')
+  const loaded = await readAdoptedWorkspaceArtifact(input, {
+    workspace: input.workspace,
+    artifact: input.adopted_listing,
+    blocker_prefix: 'adopted_recently_added_listing',
+  })
+  if (!loaded.valid) return blocked(context, loaded.blocker)
+
+  let listing
+  try {
+    listing = JSON.parse(loaded.bytes.toString('utf8').replace(/^\uFEFF/, ''))
+  } catch {
+    return blocked(context, 'adopted_recently_added_listing_json_invalid')
+  }
+
+  const expected = input.adopted_listing?.counts || {}
+  const validCounts =
+    Number.isSafeInteger(expected.pages) &&
+    Number.isSafeInteger(expected.raw_positions) &&
+    Number.isSafeInteger(expected.unique_items) &&
+    Number.isSafeInteger(expected.duplicates_removed) &&
+    Array.isArray(listing?.items) &&
+    Array.isArray(listing?.page_summaries) &&
+    listing.items.length === expected.unique_items &&
+    listing.page_summaries.length === expected.pages &&
+    Number(listing.pages_processed) === expected.pages &&
+    Number(listing.pages_failed) === 0 &&
+    Array.isArray(listing.failed_pages) &&
+    listing.failed_pages.length === 0 &&
+    listing.stop_reason === 'final_short_page' &&
+    listing.auto_stop_reason === 'final_short_page' &&
+    Number(listing.total_results_detected) === expected.raw_positions &&
+    Number(listing.reconstruction?.pages_reconstructed) === expected.pages &&
+    Number(listing.reconstruction?.raw_items_before_deduplication) === expected.raw_positions &&
+    Number(listing.reconstruction?.unique_items_after_deduplication) === expected.unique_items &&
+    Number(listing.reconstruction?.duplicate_occurrences_removed) === expected.duplicates_removed
+
+  if (!validCounts) return blocked(context, 'adopted_recently_added_listing_counts_invalid')
+
+  const ids = listing.items.map((item) => Number(item?.psdeals_id))
+  if (ids.some((id) => !Number.isSafeInteger(id) || id <= 0) ||
+      new Set(ids).size !== ids.length) {
+    return blocked(context, 'adopted_recently_added_listing_identity_invalid')
+  }
+
+  return resultFor(context, {
+    evidence: {
+      adopted: true,
+      artifact_kind: 'recently_added_listing',
+      workspace_path: loaded.file,
+      sha256: loaded.sha256,
+      pages: expected.pages,
+      raw_positions: expected.raw_positions,
+      unique_items: expected.unique_items,
+      duplicates_removed: expected.duplicates_removed,
+      collection_repeated: false,
+    },
+  })
+}
+
+async function adoptRecentlyAddedAnalysis(context) {
+  const input = inputFor(context, 'analyze_recently_added')
+  assertPermission(input, 'allow_analyze_detail_candidates')
+  const loaded = await readAdoptedWorkspaceArtifact(input, {
+    workspace: input.workspace,
+    artifact: input.adopted_queue,
+    blocker_prefix: 'adopted_recently_added_queue',
+  })
+  if (!loaded.valid) return blocked(context, loaded.blocker)
+
+  const lines = loaded.bytes.toString('utf8')
+    .replace(/^\uFEFF/, '')
+    .split(/\r?\n/)
+    .map((value) => value.trim())
+    .filter(Boolean)
+  const expectedCount = input.adopted_queue?.count
+  if (!Number.isSafeInteger(expectedCount) ||
+      lines.length !== expectedCount ||
+      new Set(lines).size !== lines.length ||
+      lines.some((url) => !url.startsWith('https://psdeals.net/us-store/'))) {
+    return blocked(context, 'adopted_recently_added_queue_invalid')
+  }
+
+  return resultFor(context, {
+    evidence: {
+      adopted: true,
+      artifact_kind: 'recently_added_new_urls',
+      workspace_path: loaded.file,
+      sha256: loaded.sha256,
+      count: expectedCount,
+      analysis_repeated: false,
+    },
+  })
+}
+
 function buildProcessSpec(name, context) {
   const input = inputFor(context, name)
   const projectRoot = path.resolve(input.project_root || process.cwd())
@@ -322,21 +539,42 @@ async function executeReceiptBoundProcess(name, context, { permission, actionKin
   }
   if (!begun?.id || begun.status !== 'running') return blocked(context, 'receipt_begin_contract_invalid', 'requires_reconciliation')
   const processResult = await executeProcess(name, context, { permission })
-  const terminalStatus = processResult.status === 'succeeded'
+  let terminalStatus = processResult.status === 'succeeded'
     ? 'committed'
     : processResult.status === 'requires_reconciliation'
       ? 'indeterminate'
       : 'failed'
+  const receiptResolution = await resolveProcessReceiptTerminal(name, context, {
+    processResult,
+    receiptInput,
+    begunReceipt: begun,
+    terminalStatus,
+  })
+  if (!receiptResolution.valid) terminalStatus = 'indeterminate'
+  const terminalReceipt = receiptResolution.valid
+    ? receiptResolution.value
+    : {
+        finished_at: validReceiptTimestamp(receiptInput.finished_at)
+          ? new Date(receiptInput.finished_at).toISOString()
+          : new Date().toISOString(),
+        affected_rows: 0,
+        result: {
+          adapter: name,
+          status: 'requires_reconciliation',
+          reason_code: receiptResolution.error_code,
+        },
+        error_code: receiptResolution.error_code,
+      }
   const finishArgs = {
     p_receipt_id: begun.id,
     p_cycle_id: beginArgs.p_cycle_id,
     p_idempotency_key: beginArgs.p_idempotency_key,
     p_request_hash: beginArgs.p_request_hash,
     p_status: terminalStatus,
-    p_finished_at: receiptInput.finished_at,
-    p_affected_rows: Number(receiptInput.affected_rows || 0),
-    p_result: receiptInput.result || {},
-    p_error_code: terminalStatus === 'committed' ? null : receiptInput.error_code || 'PROCESS_STAGE_INCOMPLETE',
+    p_finished_at: terminalReceipt.finished_at,
+    p_affected_rows: terminalReceipt.affected_rows,
+    p_result: terminalReceipt.result,
+    p_error_code: terminalStatus === 'committed' ? null : terminalReceipt.error_code,
   }
   let finished
   try {
@@ -354,6 +592,16 @@ async function executeReceiptBoundProcess(name, context, { permission, actionKin
   })
   if (terminalStatus === 'committed' && !validation.committed) {
     return blocked(context, 'receipt_finish_requires_reconciliation', 'requires_reconciliation')
+  }
+  if (!receiptResolution.valid) {
+    return resultFor(context, {
+      ...processResult,
+      status: 'requires_reconciliation',
+      blockers: [receiptResolution.blocker],
+      executed_writes: 1,
+      external_action_performed: true,
+      action_receipt: receiptFrom(finished, beginArgs.p_cycle_id),
+    })
   }
   return resultFor(context, {
     ...processResult,
@@ -415,8 +663,18 @@ async function create_remote_cycle(context) {
   })
 }
 
-async function collect_recently_added(context) { return executeProcess('collect_recently_added', context, { permission: 'allow_collect_listing' }) }
-async function analyze_recently_added(context) { return executeProcess('analyze_recently_added', context, { permission: 'allow_analyze_detail_candidates' }) }
+async function collect_recently_added(context) {
+  const input = inputFor(context, 'collect_recently_added')
+  return input.adopt_existing === true
+    ? adoptRecentlyAddedCollection(context)
+    : executeProcess('collect_recently_added', context, { permission: 'allow_collect_listing' })
+}
+async function analyze_recently_added(context) {
+  const input = inputFor(context, 'analyze_recently_added')
+  return input.adopt_existing === true
+    ? adoptRecentlyAddedAnalysis(context)
+    : executeProcess('analyze_recently_added', context, { permission: 'allow_analyze_detail_candidates' })
+}
 async function import_recently_added(context) {
   return executeReceiptBoundProcess('import_recently_added', context, {
     permission: 'allow_detail_import',

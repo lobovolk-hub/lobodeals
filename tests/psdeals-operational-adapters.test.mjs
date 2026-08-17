@@ -4,6 +4,7 @@ import test from 'node:test'
 import {
   executePreparedPsdealsListingBatches,
   executeReconciledPsdealsListingUpsert,
+  findDisallowedPsdealsListingNullFields,
   preparePsdealsListingUpsertBatches,
   PSDEALS_STAGE_UPSERT_CONFLICT_TARGET,
 } from '../scripts/lib/psdeals-listing-upsert-adapter.mjs'
@@ -47,6 +48,44 @@ test('prepares homogeneous safe insert and update batches with demonstrated conf
   assert.deepEqual(result.batches.map((batch) => batch.operation).sort(), ['insert', 'update'])
   assert.equal(result.batches.some((batch) => batch.rows.some((row) => Object.values(row).includes(null))), false)
   assert.equal(result.batches.some((batch) => batch.columns.some((column) => column.startsWith('lobodeals_lowest_'))), false)
+})
+
+test('complete listing accepts only its explicit input-artifact NULL and preserves signature batching', () => {
+  const result = preparePsdealsListingUpsertBatches({
+    listing_items: [item(1), item(2), item(3)],
+    existing_psdeals_ids: [1, 2],
+    listing_observed_at: '2026-08-16T12:00:00.000Z',
+    certification_context: {
+      remote_cycle_id: '11111111-1111-4111-8111-111111111111',
+      evidence_sha256: 'a'.repeat(64),
+    },
+    batch_size: 100,
+  })
+
+  assert.equal(result.valid, true)
+  assert.equal(result.prepared, 3)
+  assert.equal(result.batches.length, 2)
+  assert.equal(result.batches.find((batch) => batch.operation === 'update').rows.length, 2)
+  assert.equal(result.batches.find((batch) => batch.operation === 'insert').rows.length, 1)
+  assert.ok(result.batches.every((batch) => batch.columns.includes('public_offer_input_artifact_sha256')))
+  assert.ok(result.batches.every((batch) => batch.rows.every((row) => row.public_offer_input_artifact_sha256 === null)))
+})
+
+test('listing adapter rejects every NULL outside the complete-listing input-artifact exception', () => {
+  assert.deepEqual(findDisallowedPsdealsListingNullFields({
+    public_offer_verification_source: 'complete_listing',
+    public_offer_input_artifact_sha256: null,
+  }), [])
+  assert.deepEqual(findDisallowedPsdealsListingNullFields({
+    public_offer_verification_source: 'complete_listing',
+    public_offer_input_artifact_sha256: null,
+    title: null,
+  }), ['title'])
+  assert.deepEqual(findDisallowedPsdealsListingNullFields({
+    public_offer_verification_source: 'strong_detail_revalidation',
+    public_offer_input_artifact_sha256: null,
+  }), ['public_offer_input_artifact_sha256'])
+  assert.deepEqual(findDisallowedPsdealsListingNullFields({ title: undefined }), ['title'])
 })
 
 test('omits an unsafe row without losing another safe row', () => {

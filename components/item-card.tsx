@@ -1,6 +1,7 @@
 import Link from 'next/link'
 import { FallbackGameImage } from './fallback-game-image'
 import { TrackButton } from './track-button'
+import { derivePublicPricePresentation } from '@/lib/catalog-price-presentation.mjs'
 
 export type ItemCardData = {
   id: string
@@ -76,43 +77,6 @@ function getTypeLabel(item: ItemCardData) {
   return item.item_type_label || item.content_type || 'Item'
 }
 
-function getPsPlusDiscountPercent(item: ItemCardData) {
-  if (!item.has_verified_ps_plus_deal) return null
-  if (item.original_price_amount === null) return null
-  if (item.ps_plus_price_amount === null) return null
-  if (item.original_price_amount <= 0) return null
-  if (item.ps_plus_price_amount >= item.original_price_amount) return null
-
-  const percent = Math.round(
-    ((item.original_price_amount - item.ps_plus_price_amount) /
-      item.original_price_amount) *
-      100
-  )
-
-  return percent > 0 && percent < 100 ? percent : null
-}
-
-function getSavingsLabel(item: ItemCardData) {
-  const labels: string[] = []
-
-  if (
-    item.has_verified_deal &&
-    item.discount_percent !== null &&
-    item.discount_percent > 0 &&
-    item.discount_percent < 100
-  ) {
-    labels.push(`Save ${item.discount_percent}%`)
-  }
-
-  const psPlusDiscountPercent = getPsPlusDiscountPercent(item)
-
-  if (psPlusDiscountPercent !== null) {
-    labels.push(`PS+ ${psPlusDiscountPercent}%`)
-  }
-
-  return labels.length > 0 ? labels.join(' / ') : null
-}
-
 export function ItemCard({
   item,
   initialIsTracked = false,
@@ -120,28 +84,15 @@ export function ItemCard({
   reloadOnUntrack = false,
 }: ItemCardProps) {
   const releaseDate = formatDate(item.release_date)
-  const savingsLabel = getSavingsLabel(item)
+  const pricePresentation = derivePublicPricePresentation(item)
+  const savingsLabel = pricePresentation.savings_labels.join(' / ') || null
   const showMonthlyIncluded = item.is_ps_plus_monthly_game === true
   const monthlyPriceLabel = item.ps_plus_monthly_label || 'Free with PS Plus'
-  const imageBadgeLabel = showMonthlyIncluded
-    ? 'Monthly PS Plus game'
-    : savingsLabel
 
-  const showOriginalPrice =
-    (item.has_verified_deal || item.has_verified_ps_plus_deal) &&
-    item.original_price_amount !== null &&
-    item.original_price_amount > 0
-
-  const showRegularDealPrice =
-    item.has_verified_deal && item.current_price_amount !== null
-
-  const showPsPlusDealPrice =
-    item.has_verified_ps_plus_deal && item.ps_plus_price_amount !== null
-
-  const showBasePrice =
-    !item.has_verified_deal &&
-    !item.has_verified_ps_plus_deal &&
-    !showMonthlyIncluded
+  const showOriginalPrice = pricePresentation.show_original_price
+  const showRegularDealPrice = pricePresentation.has_regular_offer
+  const showPsPlusDealPrice = pricePresentation.has_ps_plus_offer
+  const showBuyPrice = pricePresentation.show_buy_price
 
   return (
     <article className="group flex h-full flex-col overflow-hidden rounded-2xl border border-zinc-800 bg-zinc-900 transition hover:border-zinc-600">
@@ -173,11 +124,18 @@ export function ItemCard({
             </div>
           ) : null}
 
-          {imageBadgeLabel ? (
-            <div className="absolute bottom-2 left-2 right-2">
-              <span className="inline-flex rounded-full border border-white/20 bg-black/85 px-2 py-1 text-[10px] font-black text-white shadow-lg backdrop-blur">
-                {imageBadgeLabel}
-              </span>
+          {showMonthlyIncluded || savingsLabel ? (
+            <div className="absolute bottom-2 left-2 right-2 flex flex-wrap gap-1">
+              {showMonthlyIncluded ? (
+                <span className="inline-flex rounded-full border border-yellow-300/30 bg-black/85 px-2 py-1 text-[10px] font-black text-yellow-300 shadow-lg backdrop-blur">
+                  Monthly PS Plus game
+                </span>
+              ) : null}
+              {savingsLabel ? (
+                <span className="inline-flex rounded-full border border-white/20 bg-black/85 px-2 py-1 text-[10px] font-black text-white shadow-lg backdrop-blur">
+                  {savingsLabel}
+                </span>
+              ) : null}
             </div>
           ) : null}
         </div>
@@ -200,7 +158,7 @@ export function ItemCard({
           <div className="mt-auto space-y-1 pt-4">
             {showPsPlusDealPrice ? (
               <p className="text-xl font-black text-yellow-300">
-                PS+ {formatPrice(item.ps_plus_price_amount)}
+                PS+ {formatPrice(pricePresentation.ps_plus_price_amount)}
               </p>
             ) : null}
 
@@ -208,18 +166,18 @@ export function ItemCard({
               <p
                 className={
                   showPsPlusDealPrice
-                    ? 'text-sm font-bold text-zinc-100'
-                    : 'text-xl font-black text-white'
+                    ? 'text-sm font-bold text-emerald-300'
+                    : 'text-xl font-black text-emerald-300'
                 }
               >
                 {showPsPlusDealPrice ? 'Regular ' : ''}
-                {formatPrice(item.current_price_amount)}
+                {formatPrice(pricePresentation.regular_price_amount)}
               </p>
             ) : null}
 
             {showOriginalPrice ? (
               <p className="text-xs text-zinc-500 line-through">
-                {formatPrice(item.original_price_amount)}
+                {formatPrice(pricePresentation.original_price_amount)}
               </p>
             ) : null}
 
@@ -228,15 +186,27 @@ export function ItemCard({
                 <p className="text-xl font-black text-yellow-300">
                   {monthlyPriceLabel}
                 </p>
-                {item.current_price_amount !== null ? (
-                  <p className="text-xs font-semibold text-zinc-500">
-                    Regular {formatPrice(item.current_price_amount)}
-                  </p>
-                ) : null}
               </div>
             ) : null}
 
-            {showBasePrice ? (
+            {showBuyPrice ? (
+              <p
+                className={
+                  showPsPlusDealPrice || showMonthlyIncluded
+                    ? 'text-xs font-semibold text-zinc-400'
+                    : 'text-xl font-black text-white'
+                }
+              >
+                {showPsPlusDealPrice || showMonthlyIncluded
+                  ? `Buy price ${formatPrice(pricePresentation.buy_price_amount)}`
+                  : formatPrice(pricePresentation.buy_price_amount)}
+              </p>
+            ) : null}
+
+            {!showRegularDealPrice &&
+            !showPsPlusDealPrice &&
+            !showMonthlyIncluded &&
+            !showBuyPrice ? (
               <p className="text-xl font-black text-white">
                 {formatPrice(item.current_price_amount)}
               </p>

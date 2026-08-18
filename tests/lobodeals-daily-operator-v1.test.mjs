@@ -289,6 +289,7 @@ test('legacy demotion and cache RPCs are impossible through the allowlist', () =
   assert.equal(assertAllowedWriteRpc('certify_price_refresh_cycle_v3'), true)
   assert.equal(assertAllowedWriteRpc('refresh_catalog_public_cache_v16'), true)
   assert.equal(assertAllowedWriteRpc('certify_price_refresh_cycle_v4'), true)
+  assert.equal(assertAllowedWriteRpc('certify_price_refresh_cycle_v5'), true)
   assert.equal(assertAllowedWriteRpc('refresh_catalog_public_cache_v17'), true)
   assert.throws(() => assertAllowedWriteRpc('apply_psdeals_ended_deals_v1'), /WRITE_RPC_FORBIDDEN|LEGACY_RPC_FORBIDDEN/)
   assert.throws(() => assertAllowedWriteRpc('refresh_catalog_public_cache_v15'), /WRITE_RPC_FORBIDDEN|LEGACY_RPC_FORBIDDEN/)
@@ -1462,17 +1463,18 @@ test('v1.29 persists the resolved monthly mapping so future resumes do not need 
 })
 
 
-test('v2 adopts a committed certification receipt before invoking certify v4', async () => {
+test('v2 adopts a committed certification receipt before invoking certify v5', async () => {
   const fs = await import('node:fs/promises')
   const source = await fs.readFile(new URL('../scripts/lobodeals-daily-operator-v1.mjs', import.meta.url), 'utf8')
   assert.match(source, /async function adoptCommittedCertificationRecovery\(admin, state, saveState, log\)/)
   assert.match(source, /\.eq\('action_kind', 'certify'\)/)
   assert.match(source, /\.eq\('status', 'committed'\)/)
   assert.match(source, /\.eq\('parent_receipt_id', state\.receipts\.mark_succeeded\)/)
-  const stepStart = source.indexOf("const certification = await step('certify_cycle_v4'")
+  const stepStart = source.indexOf("const certification = await step('certify_cycle_v5'")
   const adopt = source.indexOf('adoptCommittedCertificationRecovery(admin, state, saveState, log)', stepStart)
-  const rpcCall = source.indexOf("rpc('certify_price_refresh_cycle_v4'", stepStart)
+  const rpcCall = source.indexOf("rpc('certify_price_refresh_cycle_v5'", stepStart)
   assert.ok(stepStart > 0 && adopt > stepStart && rpcCall > adopt)
+  assert.match(source, /\[3, 4, 5\]\.includes\(Number\(result\.contract_version\)\)/)
   assert.match(source, /\[RECONCILIAR CERTIFY\]/)
 })
 
@@ -1544,6 +1546,10 @@ test('v2 preflight requires the installed database contracts before any live col
   assert.match(source, /certify_v4_present/)
   assert.match(source, /cache_v17_present/)
   assert.match(source, /listing_stamp_index_present/)
+  const v25PreflightRpc = source.indexOf("admin.rpc('lobodeals_daily_runner_v25_preflight')", preflightRpc)
+  assert.ok(v25PreflightRpc > preflightRpc && recentStep > v25PreflightRpc)
+  assert.match(source, /DAILY_RUNNER_V25_DB_CONTRACTS_MISSING/)
+  assert.match(source, /monthly_positive_regular_contract_present === true/)
 })
 
 test('v2 database setup installs timeout-safe certify/cache contracts, listing stamp index, and Monthly NULL support', async () => {
@@ -1585,15 +1591,43 @@ test('v2 detail runtime promotes only mathematically consistent positive PS Plus
 test('v2 initial execution plan is listing-first and never reopens the full ended population as Detail', async () => {
   const fs = await import('node:fs/promises')
   const source = await fs.readFile(new URL('../scripts/lobodeals-daily-operator-v1.mjs', import.meta.url), 'utf8')
+  assert.match(source, /const DETAIL_CHUNK_SIZE = 50/)
+  assert.match(source, /const FAST_REFRESH_STALE_LIMIT = 2/)
+  assert.match(source, /const FAST_REFRESH_PS_PLUS_RECHECK_LIMIT = 3/)
+  assert.match(source, /const FAST_REFRESH_PS_PLUS_DISCOVERY_LIMIT = DETAIL_CHUNK_SIZE/)
   const planStart = source.indexOf("const executionPlanRef = await step('prepare_readonly_execution_plan'")
   const planEnd = source.indexOf("await step('create_remote_cycle'", planStart)
   const block = source.slice(planStart, planEnd)
   assert.match(block, /const requiredMustRefresh = selected\.mustRefresh\.filter/)
   assert.match(block, /needsFinalDeltaDetail\(row\.listing, row\.db, \{ nowMs: Date\.parse\(generatedAt\) \}\)/)
+  assert.match(block, /psPlusDiscoveryLimit: FAST_REFRESH_PS_PLUS_DISCOVERY_LIMIT/)
+  assert.match(block, /psPlusDiscoveryHours: FAST_REFRESH_PS_PLUS_DISCOVERY_HOURS/)
+  assert.match(block, /\.\.\.selected\.psPlusDiscoveryCandidates\.map\(\(row\) => row\.listing\)/)
+  assert.match(block, /ps_plus_discovery: selected\.psPlusDiscoveryCandidates\.length/)
+  assert.match(block, /old_regular_discount_discovery_bounded_oldest_first/)
   assert.match(block, /listing_first_safe_must_refresh_skipped_from_detail/)
+  assert.match(block, /listing_owned_safe_changes_not_forced_to_detail/)
   assert.match(block, /ended_candidates_not_reopened_wholesale: endedCandidateIds\.length/)
   assert.doesNotMatch(block, /\.\.\.revalidationCandidates/)
   assert.doesNotMatch(block, /ENDED_REVALIDATION_QUEUE_INCOMPLETE/)
+})
+
+test('v2 persists a bounded official Monthly continuity lane without disturbing PS+ discovery lanes', async () => {
+  const fs = await import('node:fs/promises')
+  const source = await fs.readFile(new URL('../scripts/lobodeals-daily-operator-v1.mjs', import.meta.url), 'utf8')
+  const planStart = source.indexOf("const executionPlanRef = await step('prepare_readonly_execution_plan'")
+  const planEnd = source.indexOf("await step('create_remote_cycle'", planStart)
+  const block = source.slice(planStart, planEnd)
+
+  assert.match(block, /const monthlyContinuityItems = prospectiveMonthlyResolution\.resolutions/)
+  assert.match(block, /monthly_continuity: monthlyContinuityItems\.length/)
+  assert.match(block, /monthly_continuity: \(monthly\.games \|\| \[\]\)\.length/)
+  assert.match(block, /\.\.\.selected\.psPlusRecheckCandidates\.map/)
+  assert.match(block, /\.\.\.selected\.psPlusDiscoveryCandidates\.map/)
+  assert.match(block, /\.\.\.monthlyContinuityItems/)
+  assert.match(block, /\.\.\.staleDetailItems/)
+  assert.match(block, /monthlyContinuityIds\.has\(Number\(item\.psdeals_id\)\)/)
+  assert.match(block, /detail_items: detailItems/)
 })
 
 test('v2 reuses a still-fresh initial listing snapshot instead of performing a second full PSDeals scan', async () => {
@@ -1918,12 +1952,14 @@ test('v2.1 core allowlist permits only the async cache enqueue write, not direct
 })
 
 
-test('v2.4 proves the verified-offer cache contract before enqueueing async cache', async () => {
+test('v2.5 proves certification v5 and verified-offer cache contracts before writes', async () => {
   const fs = await import('node:fs/promises')
   const source = await fs.readFile(new URL('../scripts/lobodeals-daily-operator-v1.mjs', import.meta.url), 'utf8')
-  assert.match(source, /lobodeals_daily_runner_v24_preflight/)
-  assert.match(source, /CACHE_V24_PREFLIGHT_CONTRACT_INVALID/)
-  assert.match(source, /CACHE_V24_REFRESH_V19_MISSING/)
+  assert.match(source, /lobodeals_daily_runner_v25_preflight/)
+  assert.match(source, /CERTIFY_V25_PREFLIGHT_CONTRACT_INVALID/)
+  assert.match(source, /CERTIFY_V25_MONTHLY_REGULAR_CONTRACT_MISSING/)
+  assert.match(source, /CACHE_V25_PREFLIGHT_CONTRACT_INVALID/)
+  assert.match(source, /CACHE_V25_REFRESH_V19_MISSING/)
   assert.match(source, /verified_offer_columns_present === true/)
   assert.match(source, /monthly_regular_columns_present === true/)
 })

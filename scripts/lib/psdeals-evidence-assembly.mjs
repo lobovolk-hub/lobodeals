@@ -244,6 +244,7 @@ function buildManifest({ stages, anchor, generatedAt }) {
   const detailSummary = artifactByRole(detail.outputs, 'detail_import_summary')
   const retrySummary = artifactByRole(retry?.outputs, 'detail_retry_summary')
   const pendingFailures = retry?.payload?.pending_failed ?? detail.payload.failed
+  const hasPsPlusDiscovery = isObject(fast?.payload?.ps_plus_discovery)
   const listingComplete =
     listing.status === 'succeeded' &&
     listing.payload.collection_result === 'complete'
@@ -314,6 +315,14 @@ function buildManifest({ stages, anchor, generatedAt }) {
           artifactByRole(fast.outputs, 'ps_plus_recheck_queue'),
           runToken
         ),
+        ...(hasPsPlusDiscovery
+          ? {
+              ps_plus_discovery: manifestArtifact(
+                artifactByRole(fast.outputs, 'ps_plus_discovery_queue'),
+                runToken
+              ),
+            }
+          : {}),
         stale: manifestArtifact(
           artifactByRole(fast.outputs, 'stale_queue'),
           runToken
@@ -326,6 +335,9 @@ function buildManifest({ stages, anchor, generatedAt }) {
       queues: {
         must_refresh: fast.payload.must_refresh,
         ps_plus_recheck: fast.payload.ps_plus_recheck,
+        ...(hasPsPlusDiscovery
+          ? { ps_plus_discovery: fast.payload.ps_plus_discovery }
+          : {}),
         stale: fast.payload.stale,
       },
       combined_count: fast.payload.combined_count,

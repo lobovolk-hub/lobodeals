@@ -173,10 +173,53 @@ function dedupeRows(rows) {
   return [...found.values()]
 }
 
+const LISTING_OWNED_SAFE_REASON_CODES = new Set([
+  'current_price_mismatch',
+  'original_price_mismatch',
+  'discount_percent_mismatch',
+])
+
+function isListingOwnedSafeCommercialChange(row) {
+  const reasons = Array.isArray(row?.reasons) ? row.reasons : []
+
+  return Boolean(
+    row?.db &&
+    row?.commercialState?.is_safe_for_price_update === true &&
+    reasons.length > 0 &&
+    reasons.every((reason) => LISTING_OWNED_SAFE_REASON_CODES.has(reason))
+  )
+}
+
+function isPsPlusDiscoveryCandidate(row) {
+  return Boolean(
+    row?.db &&
+    row?.db?.is_ps_plus_discount !== true &&
+    row?.commercialState?.classification === 'regular_discount' &&
+    row?.commercialState?.is_safe_for_price_update === true
+  )
+}
+
+function compareOldestDetailFirst(left, right) {
+  const leftTime = left?.db?.detail_last_synced_at
+    ? new Date(left.db.detail_last_synced_at).getTime()
+    : 0
+  const rightTime = right?.db?.detail_last_synced_at
+    ? new Date(right.db.detail_last_synced_at).getTime()
+    : 0
+  const safeLeftTime = Number.isFinite(leftTime) ? leftTime : 0
+  const safeRightTime = Number.isFinite(rightTime) ? rightTime : 0
+
+  if (safeLeftTime !== safeRightTime) return safeLeftTime - safeRightTime
+
+  return String(rowKey(left, 0)).localeCompare(String(rowKey(right, 0)))
+}
+
 export function selectFastRefreshQueues(analyzedRows, {
   staleLimit = 500,
   staleHours = 24,
   psPlusRecheckLimit = 500,
+  psPlusDiscoveryLimit = 0,
+  psPlusDiscoveryHours = 7 * 24,
   nowMs = Date.now(),
 } = {}) {
   const analyzed = Array.isArray(analyzedRows) ? analyzedRows : []
@@ -185,9 +228,28 @@ export function selectFastRefreshQueues(analyzedRows, {
     0,
     Math.trunc(Number(psPlusRecheckLimit) || 0)
   )
+  const boundedPsPlusDiscoveryLimit = Math.max(
+    0,
+    Math.trunc(Number(psPlusDiscoveryLimit) || 0)
+  )
   const safeStaleHours = Math.max(0, Number(staleHours) || 0)
+  const safePsPlusDiscoveryHours = Math.max(
+    0,
+    Number(psPlusDiscoveryHours) || 0
+  )
+  const listingOwnedSafeChanges = dedupeRows(
+    analyzed.filter(
+      (row) =>
+        row?.shouldRefresh === true &&
+        isListingOwnedSafeCommercialChange(row)
+    )
+  )
   const mustRefresh = dedupeRows(
-    analyzed.filter((row) => row?.shouldRefresh === true)
+    analyzed.filter(
+      (row) =>
+        row?.shouldRefresh === true &&
+        !isListingOwnedSafeCommercialChange(row)
+    )
   )
   const mustKeys = new Set(
     mustRefresh.map((row, index) => rowKey(row, index))
@@ -195,7 +257,6 @@ export function selectFastRefreshQueues(analyzedRows, {
 
   const rotationCandidates = dedupeRows(
     analyzed.filter((row, index) =>
-      row?.shouldRefresh !== true &&
       !mustKeys.has(rowKey(row, index))
     )
   )
@@ -206,24 +267,17 @@ export function selectFastRefreshQueues(analyzedRows, {
         nowMs
       ),
     }))
-    .filter(
-      (row) =>
-        row.detailAgeHours === null ||
-        row.detailAgeHours >= safeStaleHours
-    )
-    .sort((a, b) => {
-      const aTime = a?.db?.detail_last_synced_at
-        ? new Date(a.db.detail_last_synced_at).getTime()
-        : 0
-      const bTime = b?.db?.detail_last_synced_at
-        ? new Date(b.db.detail_last_synced_at).getTime()
-        : 0
-
-      return aTime - bTime
-    })
+    .sort(compareOldestDetailFirst)
 
   const psPlusRecheckCandidates = rotationCandidates
-    .filter((row) => row?.db?.is_ps_plus_discount === true)
+    .filter(
+      (row) =>
+        row?.db?.is_ps_plus_discount === true &&
+        (
+          row.detailAgeHours === null ||
+          row.detailAgeHours >= safeStaleHours
+        )
+    )
     .slice(0, boundedPsPlusRecheckLimit)
     .map((row) => ({
       ...row,
@@ -234,13 +288,44 @@ export function selectFastRefreshQueues(analyzedRows, {
     psPlusRecheckCandidates.map((row, index) => rowKey(row, index))
   )
 
+  const psPlusDiscoveryCandidates = rotationCandidates
+    .filter((row, index) => {
+      const key = rowKey(row, index)
+      return (
+        isPsPlusDiscoveryCandidate(row) &&
+        !mustKeys.has(key) &&
+        !psPlusKeys.has(key) &&
+        (
+          row.detailAgeHours === null ||
+          row.detailAgeHours >= safePsPlusDiscoveryHours
+        )
+      )
+    })
+    .slice(0, boundedPsPlusDiscoveryLimit)
+    .map((row) => ({
+      ...row,
+      reasons: [
+        ...(row.reasons || []),
+        'ps_plus_discovery_stale_regular_discount',
+      ],
+    }))
+
+  const psPlusDiscoveryKeys = new Set(
+    psPlusDiscoveryCandidates.map((row, index) => rowKey(row, index))
+  )
+
   const staleCandidates = rotationCandidates
     .filter((row, index) => {
       const key = rowKey(row, index)
       return (
         row?.db?.is_ps_plus_discount !== true &&
         !mustKeys.has(key) &&
-        !psPlusKeys.has(key)
+        !psPlusKeys.has(key) &&
+        !psPlusDiscoveryKeys.has(key) &&
+        (
+          row.detailAgeHours === null ||
+          row.detailAgeHours >= safeStaleHours
+        )
       )
     })
     .slice(0, boundedStaleLimit)
@@ -252,6 +337,7 @@ export function selectFastRefreshQueues(analyzedRows, {
   const combined = dedupeRows([
     ...mustRefresh,
     ...psPlusRecheckCandidates,
+    ...psPlusDiscoveryCandidates,
     ...staleCandidates,
   ])
   const selectedKeys = new Set(
@@ -265,13 +351,17 @@ export function selectFastRefreshQueues(analyzedRows, {
 
   return {
     mustRefresh,
+    listingOwnedSafeChanges,
     psPlusRecheckCandidates,
+    psPlusDiscoveryCandidates,
     staleCandidates,
     combined,
     skippedSafe,
     boundedStaleLimit,
     boundedPsPlusRecheckLimit,
+    boundedPsPlusDiscoveryLimit,
     staleHours: safeStaleHours,
+    psPlusDiscoveryHours: safePsPlusDiscoveryHours,
   }
 }
 

@@ -164,6 +164,28 @@ test('Monthly entitlement seals a separate strong regular-price candidate', () =
   assert.equal(result.candidate.candidate_sha256.length, 64)
 })
 
+test('positive no-discount Detail seals a separate Monthly regular continuity candidate', () => {
+  const parsed = parsedDetail({
+    current: '$19.99',
+    chart: null,
+    includePlusMarker: false,
+  })
+  const result = buildPsdealsMonthlyRegularCertificationEvidence(parsed, {
+    remote_cycle_id: CYCLE,
+    observed_at: OBSERVED,
+    evidence_sha256: HASH,
+    input_artifact_sha256: INPUT_HASH,
+  })
+
+  assert.equal(parsed.commercial_state.classification, 'no_discount')
+  assert.equal(result.eligible, true)
+  assert.equal(result.candidate.classification, 'no_discount')
+  assert.equal(result.candidate.regular_price_amount, 19.99)
+  assert.equal(result.candidate.entitlement_price_amount, null)
+  assert.equal(result.candidate.discount_percent, null)
+  assert.equal(result.candidate.input_artifact_sha256, INPUT_HASH)
+})
+
 test('Monthly FREE only cannot become a PS Plus commercial low', () => {
   const parsed = monthlyDetail()
   const plus = buildPsdealsPsPlusCertificationEvidence(parsed, {

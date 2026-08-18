@@ -135,18 +135,24 @@ function chain({ includeEnded = false, includeMonthly = false, importFailures = 
       combined,
       ref('must_refresh_queue', '5', 'url_queue'),
       ref('ps_plus_recheck_queue', '6', 'url_queue'),
+      ref('ps_plus_discovery_queue', 'd', 'url_queue'),
       ref('stale_queue', '7', 'url_queue'),
       ref('skipped_queue', '8', 'url_queue'),
     ],
     analysis: {
       must_refresh: { count: 1, reason_counts: { price_mismatch: 1 } },
       ps_plus_recheck: { count: 0, limit: 5, reason_counts: {} },
+      ps_plus_discovery: { count: 0, limit: 50, reason_counts: {} },
       stale: { count: 1, limit: 5, reason_counts: { stale_rotation: 1 } },
       skipped: { count: 0 },
       combined_count: 2,
       overlap_count: 0,
       duplicate_urls: 0,
-      limits_reached: { ps_plus_recheck: false, stale: false },
+      limits_reached: {
+        ps_plus_recheck: false,
+        ps_plus_discovery: false,
+        stale: false,
+      },
     },
   })
   const failedUrls = importFailures
@@ -277,6 +283,11 @@ test('assembles a valid listing to analyzer to importer to retry chain', () => {
   assert.equal(result.manifest.manifest_version, 1)
   assert.equal(result.manifest.identity.local_cycle_id, CYCLE)
   assert.equal(result.manifest.identity.run_token, TOKEN)
+  assert.equal(result.manifest.fast_refresh.queues.ps_plus_discovery.limit, 50)
+  assert.equal(
+    result.manifest.fast_refresh.artifacts.ps_plus_discovery.path,
+    'tests/fixtures/psdeals-evidence/ps_plus_discovery_queue.fixture'
+  )
   assert.equal(result.evidence_graph.edges.length, 4)
   assert.equal(result.manifest_validation.listing_complete, true)
   assert.equal(result.manifest_validation.detail_complete, true)

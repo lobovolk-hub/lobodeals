@@ -6,7 +6,7 @@ const importerPath = new URL('../scripts/import-psdeals-detail-local.mjs', impor
 const payloadPath = new URL('../scripts/lib/psdeals-stage-payload.mjs', import.meta.url)
 const detailPagePath = new URL('../app/us/playstation/[slug]/page.tsx', import.meta.url)
 
-test('runtime code has retired legacy PSDeals price-low producers and consumers', async () => {
+test('runtime keeps legacy lows read-only and presents them separately from certified lows', async () => {
   const [importer, payload, detailPage] = await Promise.all([
     fs.readFile(importerPath, 'utf8'),
     fs.readFile(payloadPath, 'utf8'),
@@ -14,10 +14,13 @@ test('runtime code has retired legacy PSDeals price-low producers and consumers'
   ])
 
   assert.doesNotMatch(importer, /lowestPriceAmount|lowestPsPlusPriceAmount/)
-  assert.doesNotMatch(detailPage, /\blowest_price_amount\b|\blowest_ps_plus_price_amount\b/)
+  assert.match(detailPage, /\blowest_price_amount\b/)
+  assert.match(detailPage, /\blowest_ps_plus_price_amount\b/)
   assert.match(detailPage, /lobodeals_lowest_regular_price_amount/)
   assert.match(detailPage, /lobodeals_lowest_ps_plus_price_amount/)
-  assert.doesNotMatch(detailPage, /lowest price ever|lowest regular price ever|lowest PS\+ price ever/i)
+  assert.match(detailPage, /Historical lowest regular price/)
+  assert.match(detailPage, /Historical lowest PS\+ price/)
+  assert.match(detailPage, /Preserved legacy observation/)
   assert.match(detailPage, /Lowest certified regular price/)
   assert.match(detailPage, /Lowest certified PS\+ price/)
 

@@ -1,7 +1,7 @@
 import Link from 'next/link'
 import type { Metadata } from 'next'
 import { supabase } from '@/lib/supabase'
-import { ItemCard } from '@/components/item-card'
+import { ItemCard, type ItemCardData } from '@/components/item-card'
 
 
 export const revalidate = 900
@@ -33,27 +33,8 @@ type CatalogPageProps = {
   searchParams: Promise<CatalogSearchParams>
 }
 
-type CatalogItem = {
-  id: string
+type CatalogItem = ItemCardData & {
   item_id: string
-  slug: string
-  title: string
-  image_url: string
-  platforms: string[]
-  content_type: string | null
-  item_type_label: string | null
-  release_date: string | null
-  current_price_amount: number | null
-  original_price_amount: number | null
-  discount_percent: number | null
-  ps_plus_price_amount: number | null
-  best_price_amount: number | null
-  best_price_type: 'regular' | 'ps_plus' | 'none'
-  has_deal: boolean
-  has_ps_plus_deal: boolean
-  has_verified_deal: boolean
-  has_verified_ps_plus_deal: boolean
-  metacritic_score: number | null
 }
 
 type CatalogSearchRow = CatalogItem & {

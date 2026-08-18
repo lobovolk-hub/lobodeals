@@ -25,7 +25,7 @@ type TrackedItem = ItemCardData & {
 }
 
 const baseSelect =
-  'id, item_id, slug, title, image_url, platforms, content_type, item_type_label, release_date, current_price_amount, original_price_amount, discount_percent, ps_plus_price_amount, best_price_amount, best_price_type, has_deal, has_ps_plus_deal, has_verified_deal, has_verified_ps_plus_deal, metacritic_score'
+  'id, item_id, slug, title, image_url, platforms, content_type, item_type_label, release_date, current_price_amount, original_price_amount, discount_percent, ps_plus_price_amount, best_price_amount, best_price_type, has_deal, has_ps_plus_deal, has_verified_deal, has_verified_ps_plus_deal, is_ps_plus_monthly_game, ps_plus_monthly_label, ps_plus_monthly_note, ps_plus_monthly_month, ps_plus_monthly_until, metacritic_score'
 
 export default async function TrackedPage() {
   const supabase = await createServerSupabaseClient()

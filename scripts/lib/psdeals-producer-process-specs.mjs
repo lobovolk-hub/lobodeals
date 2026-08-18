@@ -60,6 +60,13 @@ function option(name, value) {
   return `--${name}=${value}`
 }
 
+function optionValues(args, name) {
+  const prefix = `--${name}=`
+  return (Array.isArray(args) ? args : [])
+    .filter((value) => value.startsWith(prefix))
+    .map((value) => value.slice(prefix.length))
+}
+
 function commonTrackedArgs(workspace, evidencePath) {
   return [
     option('local-cycle-id', workspace.identity.local_cycle_id),
@@ -80,6 +87,7 @@ function paths(workspace) {
     combined: path.join(root, 'artifacts', 'combined.txt'),
     must: path.join(root, 'artifacts', 'must-refresh.txt'),
     plus: path.join(root, 'artifacts', 'ps-plus-recheck.txt'),
+    plusDiscovery: path.join(root, 'artifacts', 'ps-plus-discovery.txt'),
     stale: path.join(root, 'artifacts', 'stale.txt'),
     skipped: path.join(root, 'artifacts', 'skipped.txt'),
     fastSummary: path.join(root, 'artifacts', 'fast-refresh-summary.json'),
@@ -102,8 +110,10 @@ export function buildPsdealsProducerProcessSpec({
   node_executable = process.execPath,
   listing_url = workspace?.identity?.context?.requested_url,
   pages = 1000,
-  stale_limit = 500,
-  ps_plus_recheck_limit = 500,
+  stale_limit = 2,
+  ps_plus_recheck_limit = 3,
+  ps_plus_discovery_limit = 50,
+  ps_plus_discovery_hours = 7 * 24,
   remote_cycle_id = workspace?.identity?.remote_cycle_id,
 } = {}) {
   const definition = PRODUCERS[stage]
@@ -136,9 +146,12 @@ export function buildPsdealsProducerProcessSpec({
     args = [
       option('file', p.listing), option('output-txt', p.combined),
       option('must-output-txt', p.must), option('ps-plus-output-txt', p.plus),
+      option('ps-plus-discovery-output-txt', p.plusDiscovery),
       option('stale-output-txt', p.stale), option('skipped-output-txt', p.skipped),
       option('summary-output-json', p.fastSummary), option('stale-limit', stale_limit),
       option('ps-plus-recheck-limit', ps_plus_recheck_limit),
+      option('ps-plus-discovery-limit', ps_plus_discovery_limit),
+      option('ps-plus-discovery-hours', ps_plus_discovery_hours),
     ]
   } else if (stage === 'import_details') {
     evidencePath = p.importEvidence
@@ -201,6 +214,38 @@ export function validatePsdealsProducerProcessSpec(spec, { project_root, workspa
   if (spec?.entrypoint !== expectedEntrypoint) errors.push('process_entrypoint_mismatch')
   if (spec?.cwd !== path.resolve(project_root)) errors.push('process_cwd_mismatch')
   if (!Array.isArray(spec?.args) || spec.args.some((value) => typeof value !== 'string')) errors.push('process_args_invalid')
+  if (spec?.stage === 'analyze_detail_candidates' && Array.isArray(spec?.args)) {
+    const discoveryOutputs = optionValues(
+      spec.args,
+      'ps-plus-discovery-output-txt'
+    )
+    const expectedDiscoveryOutput = workspace?.root_dir
+      ? path.join(
+          workspace.root_dir,
+          'artifacts',
+          'ps-plus-discovery.txt'
+        )
+      : null
+    if (
+      !expectedDiscoveryOutput ||
+      discoveryOutputs.length !== 1 ||
+      path.resolve(discoveryOutputs[0]) !== path.resolve(expectedDiscoveryOutput)
+    ) {
+      errors.push('process_ps_plus_discovery_output_invalid')
+    }
+    const discoveryLimits = optionValues(spec.args, 'ps-plus-discovery-limit')
+    if (discoveryLimits.length !== 1 || discoveryLimits[0] !== '50') {
+      errors.push('process_ps_plus_discovery_limit_invalid')
+    }
+    const psPlusRecheckLimits = optionValues(spec.args, 'ps-plus-recheck-limit')
+    if (psPlusRecheckLimits.length !== 1 || psPlusRecheckLimits[0] !== '3') {
+      errors.push('process_ps_plus_recheck_limit_invalid')
+    }
+    const staleLimits = optionValues(spec.args, 'stale-limit')
+    if (staleLimits.length !== 1 || staleLimits[0] !== '2') {
+      errors.push('process_stale_limit_invalid')
+    }
+  }
   if (spec?.inherit_all_environment !== false) errors.push('process_environment_inheritance_forbidden')
   if (spec?.parses_logs_as_evidence !== false) errors.push('process_logs_cannot_be_evidence')
   if (!inside(workspace?.root_dir, spec?.evidence_path || '')) errors.push('process_evidence_outside_workspace')

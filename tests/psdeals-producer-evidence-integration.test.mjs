@@ -140,22 +140,93 @@ test('analyzer uses the real fast-refresh evidence builder', () => {
       ref('combined_queue', 'data/combined.txt', 'url_queue'),
       ref('must_refresh_queue', 'data/must.txt', 'url_queue'),
       ref('ps_plus_recheck_queue', 'data/plus.txt', 'url_queue'),
+      ref(
+        'ps_plus_discovery_queue',
+        'data/plus-discovery.txt',
+        'url_queue'
+      ),
       ref('stale_queue', 'data/stale.txt', 'url_queue'),
       ref('skipped_queue', 'data/skipped.txt', 'url_queue'),
     ],
     queues: {
       must_refresh: [row(1, 'new_item')],
       ps_plus_recheck: [],
+      ps_plus_discovery: [
+        row(3, 'ps_plus_discovery_stale_regular_discount'),
+      ],
       stale: [row(2, 'stale_rotation')],
       skipped: [],
-      combined: [row(1, 'new_item'), row(2, 'stale_rotation')],
+      combined: [
+        row(1, 'new_item'),
+        row(3, 'ps_plus_discovery_stale_regular_discount'),
+        row(2, 'stale_rotation'),
+      ],
       ps_plus_recheck_limit: 5,
+      ps_plus_discovery_limit: 1,
       stale_limit: 5,
     },
   })
   assert.equal(evidence.status, 'succeeded')
-  assert.equal(evidence.payload.combined_count, 2)
+  assert.equal(evidence.payload.combined_count, 3)
   assert.deepEqual(evidence.payload.must_refresh.reason_counts, { new_item: 1 })
+  assert.equal(evidence.payload.ps_plus_discovery.count, 1)
+  assert.equal(evidence.payload.ps_plus_discovery.limit, 1)
+  assert.deepEqual(evidence.payload.ps_plus_discovery.reason_counts, {
+    ps_plus_discovery_stale_regular_discount: 1,
+  })
+  assert.equal(evidence.payload.stale.count, 1)
+  assert.deepEqual(evidence.payload.stale.reason_counts, { stale_rotation: 1 })
+  assert.equal(evidence.payload.limits_reached.ps_plus_discovery, true)
+})
+
+test('analyzer evidence enforces the independent PS Plus discovery limit of 50', () => {
+  const row = (id) => ({
+    listing: {
+      psdeals_id: id,
+      psdeals_url: `https://psdeals.net/us-store/game/${id}/fixture`,
+    },
+    reasons: ['ps_plus_discovery_stale_regular_discount'],
+  })
+  const discovery = Array.from({ length: 50 }, (_, index) => row(index + 1))
+  const evidence = buildAnalyzerFastRefreshEvidence({
+    identity: identity(),
+    producer: producer('analyzer'),
+    timestamps: times(120_000),
+    context: context(),
+    listing_input: ref('listing_json', 'data/listing.json', 'listing_json'),
+    outputs: [
+      ref('fast_refresh_summary', 'data/summary.json'),
+      ref('combined_queue', 'data/combined.txt', 'url_queue'),
+      ref('must_refresh_queue', 'data/must.txt', 'url_queue'),
+      ref('ps_plus_recheck_queue', 'data/plus.txt', 'url_queue'),
+      ref(
+        'ps_plus_discovery_queue',
+        'data/plus-discovery.txt',
+        'url_queue'
+      ),
+      ref('stale_queue', 'data/stale.txt', 'url_queue'),
+      ref('skipped_queue', 'data/skipped.txt', 'url_queue'),
+    ],
+    queues: {
+      must_refresh: [],
+      ps_plus_recheck: [],
+      ps_plus_discovery: discovery,
+      stale: [],
+      skipped: [],
+      combined: discovery,
+      ps_plus_recheck_limit: 3,
+      ps_plus_discovery_limit: 50,
+      stale_limit: 2,
+    },
+  })
+
+  assert.equal(evidence.status, 'succeeded')
+  assert.equal(evidence.payload.ps_plus_recheck.limit, 3)
+  assert.equal(evidence.payload.ps_plus_discovery.count, 50)
+  assert.equal(evidence.payload.ps_plus_discovery.limit, 50)
+  assert.equal(evidence.payload.stale.count, 0)
+  assert.equal(evidence.payload.stale.limit, 2)
+  assert.equal(evidence.payload.limits_reached.ps_plus_discovery, true)
 })
 
 test('analyzer records overlap instead of hiding it', () => {

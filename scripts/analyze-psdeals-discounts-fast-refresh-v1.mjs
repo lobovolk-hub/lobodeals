@@ -210,7 +210,13 @@ function overlapCount(queueGroups) {
   return [...counts.values()].filter((count) => count > 1).length
 }
 
-function analyzerContext(payload, { staleHours, staleLimit, psPlusRecheckLimit }) {
+function analyzerContext(payload, {
+  staleHours,
+  staleLimit,
+  psPlusRecheckLimit,
+  psPlusDiscoveryHours,
+  psPlusDiscoveryLimit,
+}) {
   const parsed = new URL(payload.base_url)
   return {
     requested_url: parsed.toString(),
@@ -223,6 +229,8 @@ function analyzerContext(payload, { staleHours, staleLimit, psPlusRecheckLimit }
       stale_hours: staleHours,
       stale: staleLimit,
       ps_plus_recheck: psPlusRecheckLimit,
+      ps_plus_discovery_hours: psPlusDiscoveryHours,
+      ps_plus_discovery: psPlusDiscoveryLimit,
     },
   }
 }
@@ -238,6 +246,7 @@ export function buildAnalyzerFastRefreshEvidence({
 } = {}) {
   const mustUrls = uniqueUrls(queues?.must_refresh)
   const psPlusUrls = uniqueUrls(queues?.ps_plus_recheck)
+  const psPlusDiscoveryUrls = uniqueUrls(queues?.ps_plus_discovery)
   const staleUrls = uniqueUrls(queues?.stale)
   const skippedUrls = uniqueUrls(queues?.skipped)
   const combinedUrls = uniqueUrls(queues?.combined)
@@ -259,6 +268,11 @@ export function buildAnalyzerFastRefreshEvidence({
         limit: queues?.ps_plus_recheck_limit,
         reason_counts: reasonCounts(queues?.ps_plus_recheck),
       },
+      ps_plus_discovery: {
+        count: psPlusDiscoveryUrls.length,
+        limit: queues?.ps_plus_discovery_limit,
+        reason_counts: reasonCounts(queues?.ps_plus_discovery),
+      },
       stale: {
         count: staleUrls.length,
         limit: queues?.stale_limit,
@@ -269,6 +283,7 @@ export function buildAnalyzerFastRefreshEvidence({
       overlap_count: overlapCount([
         queues?.must_refresh,
         queues?.ps_plus_recheck,
+        queues?.ps_plus_discovery,
         queues?.stale,
       ]),
       duplicate_urls:
@@ -278,8 +293,12 @@ export function buildAnalyzerFastRefreshEvidence({
         ps_plus_recheck:
           psPlusUrls.length === queues?.ps_plus_recheck_limit &&
           queues?.ps_plus_recheck_limit > 0,
+        ps_plus_discovery:
+          psPlusDiscoveryUrls.length === queues?.ps_plus_discovery_limit &&
+          queues?.ps_plus_discovery_limit > 0,
         stale:
-          staleUrls.length === queues?.stale_limit && queues?.stale_limit > 0,
+          staleUrls.length === queues?.stale_limit &&
+          queues?.stale_limit > 0,
       },
     },
   })
@@ -294,13 +313,23 @@ async function main() {
   const outputTxt = getArg(args, 'output-txt')
   const mustOutputTxt = getArg(args, 'must-output-txt')
   const psPlusOutputTxt = getArg(args, 'ps-plus-output-txt')
+  const psPlusDiscoveryOutputTxt = getArg(
+    args,
+    'ps-plus-discovery-output-txt'
+  )
   const staleOutputTxt = getArg(args, 'stale-output-txt')
   const skippedOutputTxt = getArg(args, 'skipped-output-txt')
   const summaryOutputJson = getArg(args, 'summary-output-json')
-  const staleLimit = Number(getArg(args, 'stale-limit', '500'))
+  const staleLimit = Number(getArg(args, 'stale-limit', '2'))
   const staleHours = Number(getArg(args, 'stale-hours', '24'))
   const psPlusRecheckLimit = Number(
-    getArg(args, 'ps-plus-recheck-limit', '500')
+    getArg(args, 'ps-plus-recheck-limit', '3')
+  )
+  const psPlusDiscoveryLimit = Number(
+    getArg(args, 'ps-plus-discovery-limit', '50')
+  )
+  const psPlusDiscoveryHours = Number(
+    getArg(args, 'ps-plus-discovery-hours', String(7 * 24))
   )
 
   if (!filePath) {
@@ -323,11 +352,26 @@ async function main() {
   }
 
   if (
+    !Number.isFinite(psPlusDiscoveryLimit) ||
+    psPlusDiscoveryLimit < 0
+  ) {
+    throw new Error('Invalid --ps-plus-discovery-limit argument.')
+  }
+
+  if (
+    !Number.isFinite(psPlusDiscoveryHours) ||
+    psPlusDiscoveryHours < 0
+  ) {
+    throw new Error('Invalid --ps-plus-discovery-hours argument.')
+  }
+
+  if (
     evidenceOptions.tracked &&
     [
       outputTxt,
       mustOutputTxt,
       psPlusOutputTxt,
+      psPlusDiscoveryOutputTxt,
       staleOutputTxt,
       skippedOutputTxt,
       summaryOutputJson,
@@ -385,15 +429,20 @@ async function main() {
   const {
     mustRefresh,
     psPlusRecheckCandidates,
+    psPlusDiscoveryCandidates,
     staleCandidates,
     combined,
     skippedSafe,
     boundedStaleLimit,
     boundedPsPlusRecheckLimit,
+    boundedPsPlusDiscoveryLimit,
+    psPlusDiscoveryHours: safePsPlusDiscoveryHours,
   } = selectFastRefreshQueues(analyzed, {
     staleLimit,
     staleHours,
     psPlusRecheckLimit,
+    psPlusDiscoveryLimit,
+    psPlusDiscoveryHours,
   })
   const commercialClassificationCounts =
     summarizeCommercialClassifications(analyzed)
@@ -424,6 +473,7 @@ async function main() {
   console.log(`New in DB: ${newItems.length}`)
   console.log(`Must refresh: ${mustRefresh.length}`)
   console.log(`PS Plus recheck selected: ${psPlusRevalidation.length}`)
+  console.log(`PS Plus discovery selected: ${psPlusDiscoveryCandidates.length}`)
   console.log(`Stale selected: ${staleCandidates.length}`)
   console.log(`Combined refresh total: ${combined.length}`)
   console.log(`Skipped safe: ${skippedSafe.length}`)
@@ -433,6 +483,7 @@ async function main() {
   console.log(`- ps_plus_risk_listing_discount_without_regular_sale: ${psPlusListingRisk.length}`)
   console.log(`- ps_plus_risk_missing_raw_price: ${psPlusRawMissingRisk.length}`)
   console.log(`- ps_plus_revalidation: ${psPlusRevalidation.length}`)
+  console.log(`- ps_plus_discovery: ${psPlusDiscoveryCandidates.length}`)
   for (const [classification, count] of Object.entries(
     commercialClassificationCounts
   )) {
@@ -441,6 +492,8 @@ async function main() {
   console.log(`- stale_hours: ${staleHours}`)
   console.log(`- stale_limit: ${boundedStaleLimit}`)
   console.log(`- ps_plus_recheck_limit: ${boundedPsPlusRecheckLimit}`)
+  console.log(`- ps_plus_discovery_hours: ${safePsPlusDiscoveryHours}`)
+  console.log(`- ps_plus_discovery_limit: ${boundedPsPlusDiscoveryLimit}`)
 
   console.log('=== COMBINED REFRESH SAMPLE ===')
   for (const row of combined.slice(0, 80)) {
@@ -474,6 +527,15 @@ async function main() {
     console.log(`PS_PLUS_RECHECK_TXT: ${psPlusOutputTxt}`)
   }
 
+  if (psPlusDiscoveryOutputTxt) {
+    await fs.writeFile(
+      path.resolve(process.cwd(), psPlusDiscoveryOutputTxt),
+      toTxt(psPlusDiscoveryCandidates.map((row) => row.listing)),
+      'utf8'
+    )
+    console.log(`PS_PLUS_DISCOVERY_TXT: ${psPlusDiscoveryOutputTxt}`)
+  }
+
   if (staleOutputTxt) {
     await fs.writeFile(
       path.resolve(process.cwd(), staleOutputTxt),
@@ -499,6 +561,7 @@ async function main() {
       unique_psdeals_ids: uniqueItems.length,
       must_refresh: mustRefresh.length,
       ps_plus_recheck: psPlusRecheckCandidates.length,
+      ps_plus_discovery: psPlusDiscoveryCandidates.length,
       stale: staleCandidates.length,
       combined: combined.length,
       skipped: skippedSafe.length,
@@ -522,6 +585,11 @@ async function main() {
       [outputTxt, 'combined_queue', 'url_queue'],
       [mustOutputTxt, 'must_refresh_queue', 'url_queue'],
       [psPlusOutputTxt, 'ps_plus_recheck_queue', 'url_queue'],
+      [
+        psPlusDiscoveryOutputTxt,
+        'ps_plus_discovery_queue',
+        'url_queue',
+      ],
       [staleOutputTxt, 'stale_queue', 'url_queue'],
       [skippedOutputTxt, 'skipped_queue', 'url_queue'],
     ]
@@ -552,17 +620,21 @@ async function main() {
         staleHours,
         staleLimit: boundedStaleLimit,
         psPlusRecheckLimit: boundedPsPlusRecheckLimit,
+        psPlusDiscoveryHours: safePsPlusDiscoveryHours,
+        psPlusDiscoveryLimit: boundedPsPlusDiscoveryLimit,
       }),
       listing_input: listingInput,
       outputs,
       queues: {
         must_refresh: mustRefresh,
         ps_plus_recheck: psPlusRecheckCandidates,
+        ps_plus_discovery: psPlusDiscoveryCandidates,
         stale: staleCandidates,
         skipped: skippedSafe,
         combined,
         stale_limit: boundedStaleLimit,
         ps_plus_recheck_limit: boundedPsPlusRecheckLimit,
+        ps_plus_discovery_limit: boundedPsPlusDiscoveryLimit,
       },
     })
     await emitPsdealsProducerEvidence({

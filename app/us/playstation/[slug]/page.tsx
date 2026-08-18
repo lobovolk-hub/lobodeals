@@ -2,6 +2,10 @@
 import type { Metadata } from 'next'
 import { notFound } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
+import {
+  derivePriceLowPresentation,
+  derivePublicPricePresentation,
+} from '@/lib/catalog-price-presentation.mjs'
 import { FallbackGameImage } from '@/components/fallback-game-image'
 import { TrackButton } from '@/components/track-button'
 
@@ -69,16 +73,17 @@ function getSeoTypeLabel(item: SlugSeoItem) {
 
 function buildSlugSeoTitle(item: SlugSeoItem) {
   const typeLabel = getSeoTypeLabel(item)
+  const pricePresentation = derivePublicPricePresentation(item)
   const platformLabel =
     item.platforms && item.platforms.length > 0
       ? item.platforms.join(' & ')
       : 'PlayStation'
 
-  if (item.has_verified_ps_plus_deal && item.ps_plus_price_amount !== null) {
+  if (pricePresentation.has_ps_plus_offer) {
     return `${item.title} PS Plus deal and price`
   }
 
-  if (item.has_verified_deal && item.best_price_amount !== null) {
+  if (pricePresentation.has_regular_offer) {
     return `${item.title} deal and price`
   }
 
@@ -87,23 +92,34 @@ function buildSlugSeoTitle(item: SlugSeoItem) {
 
 function buildSlugSeoDescription(item: SlugSeoItem) {
   const typeLabel = getSeoTypeLabel(item)
+  const pricePresentation = derivePublicPricePresentation(item)
   const platformLabel =
     item.platforms && item.platforms.length > 0
       ? item.platforms.join(' and ')
       : 'PlayStation'
 
-  const currentPrice = formatSeoPrice(item.current_price_amount)
-  const psPlusPrice = formatSeoPrice(item.ps_plus_price_amount)
+  const currentPrice = formatSeoPrice(pricePresentation.buy_price_amount)
+  const regularDealPrice = formatSeoPrice(pricePresentation.regular_price_amount)
+  const psPlusPrice = formatSeoPrice(pricePresentation.ps_plus_price_amount)
 
   const parts: string[] = []
 
-  if (item.has_verified_ps_plus_deal && psPlusPrice) {
+  if (
+    pricePresentation.has_regular_offer &&
+    pricePresentation.has_ps_plus_offer &&
+    regularDealPrice &&
+    psPlusPrice
+  ) {
+    parts.push(
+      `Track ${item.title} on LoboDeals and view its current PlayStation deal at ${regularDealPrice} and PS Plus deal at ${psPlusPrice}.`
+    )
+  } else if (pricePresentation.has_ps_plus_offer && psPlusPrice) {
     parts.push(
       `Track ${item.title} on LoboDeals and view its current PS Plus deal at ${psPlusPrice}.`
     )
-  } else if (item.has_verified_deal && currentPrice) {
+  } else if (pricePresentation.has_regular_offer && regularDealPrice) {
     parts.push(
-      `Track ${item.title} on LoboDeals and view its current PlayStation deal at ${currentPrice}.`
+      `Track ${item.title} on LoboDeals and view its current PlayStation deal at ${regularDealPrice}.`
     )
   } else if (currentPrice) {
     parts.push(
@@ -238,6 +254,8 @@ type Item = {
   ps_plus_monthly_month: string | null
   ps_plus_monthly_until: string | null
   currency_code: string | null
+  lowest_price_amount: number | null
+  lowest_ps_plus_price_amount: number | null
   lobodeals_lowest_regular_price_amount: number | null
   lobodeals_lowest_regular_price_first_seen_at: string | null
   lobodeals_lowest_ps_plus_price_amount: number | null
@@ -318,31 +336,6 @@ function isGame(item: Item) {
   return item.content_type === 'game' && item.item_type_label === 'game'
 }
 
-function hasCurrentRegularOffer(item: Item) {
-  if (item.has_verified_deal !== true) return false
-  if (!item.discount_percent || item.discount_percent <= 0) return false
-  if (item.current_price_amount === null) return false
-  if (item.original_price_amount === null) return false
-  if (item.original_price_amount <= item.current_price_amount) return false
-  if (item.discount_percent >= 100) return false
-  if (item.original_price_amount > 999) return false
-  return true
-}
-
-function hasCurrentPsPlusOffer(item: Item) {
-  if (item.has_verified_ps_plus_deal !== true) return false
-  if (item.ps_plus_price_amount === null) return false
-  if (item.ps_plus_price_amount < 0) return false
-
-  const comparisonAmount = item.original_price_amount ?? item.current_price_amount
-
-  if (comparisonAmount === null) {
-    return item.ps_plus_price_amount === 0
-  }
-
-  return item.ps_plus_price_amount < comparisonAmount
-}
-
 function getDisplayCurrentAmount(item: Item) {
   return item.current_price_amount
 }
@@ -358,51 +351,6 @@ function getLowestCertifiedAmount(item: Item) {
   return Math.min(...values)
 }
 
-function getDiscountPercentFromPrices(
-  originalAmount: number | null,
-  discountedAmount: number | null
-) {
-  if (originalAmount === null) return null
-  if (discountedAmount === null) return null
-  if (originalAmount <= 0) return null
-  if (discountedAmount >= originalAmount) return null
-
-  const percent = Math.round(
-    ((originalAmount - discountedAmount) / originalAmount) * 100
-  )
-
-  return percent > 0 && percent < 100 ? percent : null
-}
-
-function getSavingsLabel(item: Item, currentPsPlusOffer: boolean) {
-  const labels: string[] = []
-
-  if (
-    hasCurrentRegularOffer(item) &&
-    item.discount_percent !== null &&
-    item.discount_percent > 0 &&
-    item.discount_percent < 100
-  ) {
-    labels.push(`Save ${item.discount_percent}%`)
-  }
-
-    if (currentPsPlusOffer) {
-    const psPlusDiscountPercent =
-      item.discount_percent && item.discount_percent > 0
-        ? item.discount_percent
-        : getDiscountPercentFromPrices(
-            item.original_price_amount,
-            item.ps_plus_price_amount
-          )
-
-    if (psPlusDiscountPercent !== null) {
-      labels.push(`PS+ ${psPlusDiscountPercent}%`)
-    }
-  }
-
-  return labels.length > 0 ? labels.join(' / ') : null
-}
-
 function pricesMatch(a: number | null, b: number | null) {
   if (a === null || b === null) return false
   return Math.abs(a - b) < 0.01
@@ -411,7 +359,7 @@ function pricesMatch(a: number | null, b: number | null) {
 function getFreeLabel(item: Item, displayCurrentAmount: number | null) {
   if (displayCurrentAmount !== 0) return null
 
-  if (hasCurrentRegularOffer(item)) return 'Free'
+  if (item.has_verified_deal === true) return 'Free'
   if (isGame(item)) return 'Free to Play'
   return 'Free'
 }
@@ -484,7 +432,7 @@ if (cacheError || !cacheRow?.item_id) {
 const { data, error } = await supabase
   .from('psdeals_stage_items')
   .select(
-    'id, psdeals_id, psdeals_slug, title, image_url, platforms, content_type, item_type_label, availability_state, current_price_amount, original_price_amount, discount_percent, currency_code, lobodeals_lowest_regular_price_amount, lobodeals_lowest_regular_price_first_seen_at, lobodeals_lowest_ps_plus_price_amount, lobodeals_lowest_ps_plus_price_first_seen_at, release_date, publisher, genres, store_url, deal_ends_at, metacritic_score'
+    'id, psdeals_id, psdeals_slug, title, image_url, platforms, content_type, item_type_label, availability_state, current_price_amount, original_price_amount, discount_percent, currency_code, lowest_price_amount, lowest_ps_plus_price_amount, lobodeals_lowest_regular_price_amount, lobodeals_lowest_regular_price_first_seen_at, lobodeals_lowest_ps_plus_price_amount, lobodeals_lowest_ps_plus_price_first_seen_at, release_date, publisher, genres, store_url, deal_ends_at, metacritic_score'
   )
   .eq('id', cacheRow.item_id)
   .eq('region_code', 'us')
@@ -601,9 +549,11 @@ const relatedItemById = new Map(
 )
 
   const typeLabel = getTypeLabel(item)
-  const currentRegularOffer = hasCurrentRegularOffer(item)
-const currentPsPlusOffer = hasCurrentPsPlusOffer(item)
-const savingsLabel = getSavingsLabel(item, currentPsPlusOffer)
+  const pricePresentation = derivePublicPricePresentation(item)
+  const currentRegularOffer = pricePresentation.has_regular_offer
+const currentPsPlusOffer = pricePresentation.has_ps_plus_offer
+const showBuyPrice = pricePresentation.show_buy_price
+const savingsLabel = pricePresentation.savings_labels.join(' / ') || null
 const displayCurrentAmount = getDisplayCurrentAmount(item)
 
     const bestCurrentAmount = currentPsPlusOffer
@@ -612,11 +562,6 @@ const displayCurrentAmount = getDisplayCurrentAmount(item)
 
   const freeLabel = getFreeLabel(item, displayCurrentAmount)
   const availabilityLabel = getAvailabilityLabel(item)
-
-  const originalPriceLabel = formatPrice(
-    item.original_price_amount,
-    item.currency_code
-  )
 
   const currentPriceLabel = formatPrice(
     item.current_price_amount,
@@ -642,6 +587,25 @@ const displayCurrentAmount = getDisplayCurrentAmount(item)
     item.lobodeals_lowest_ps_plus_price_amount,
     item.currency_code
   )
+
+  const historicalRegularPriceLabel = formatPrice(
+    item.lowest_price_amount,
+    item.currency_code
+  )
+
+  const historicalPsPlusPriceLabel = formatPrice(
+    item.lowest_ps_plus_price_amount,
+    item.currency_code
+  )
+
+  const regularLowPresentation = derivePriceLowPresentation({
+    legacy: item.lowest_price_amount,
+    certified: item.lobodeals_lowest_regular_price_amount,
+  })
+  const psPlusLowPresentation = derivePriceLowPresentation({
+    legacy: item.lowest_ps_plus_price_amount,
+    certified: item.lobodeals_lowest_ps_plus_price_amount,
+  })
 
   const lowestCertifiedAmount = getLowestCertifiedAmount(item)
   const bestCurrentMatchesCertifiedLow =
@@ -797,9 +761,6 @@ const displayCurrentAmount = getDisplayCurrentAmount(item)
         <p className="mt-2 text-sm font-semibold text-yellow-100/80">
           {monthlyNote}
         </p>
-        <p className="mt-3 text-sm font-semibold text-zinc-400">
-          Regular price {displayCurrentPriceLabel}
-        </p>
       </div>
     ) : null}
 
@@ -822,8 +783,8 @@ const displayCurrentAmount = getDisplayCurrentAmount(item)
         <p
           className={
             currentPsPlusOffer
-              ? 'mt-1 text-2xl font-black text-white'
-              : 'mt-1 text-5xl font-black text-white'
+              ? 'mt-1 text-2xl font-black text-emerald-300'
+              : 'mt-1 text-5xl font-black text-emerald-300'
           }
         >
           {currentPriceLabel}
@@ -831,19 +792,37 @@ const displayCurrentAmount = getDisplayCurrentAmount(item)
       </div>
     ) : null}
 
-    {(currentRegularOffer || currentPsPlusOffer) &&
-    item.original_price_amount !== null ? (
+    {pricePresentation.show_original_price ? (
       <div>
         <p className="text-xs font-bold uppercase tracking-[0.18em] text-zinc-500">
           Original price
         </p>
         <p className="mt-1 text-lg font-semibold text-zinc-500 line-through">
-          {originalPriceLabel}
+          {formatPrice(pricePresentation.original_price_amount, item.currency_code)}
         </p>
       </div>
     ) : null}
 
-    {!currentRegularOffer && !currentPsPlusOffer && !showMonthlyIncluded ? (
+    {showBuyPrice ? (
+      <div>
+        {currentPsPlusOffer || showMonthlyIncluded ? (
+          <p className="text-xs font-bold uppercase tracking-[0.18em] text-zinc-500">
+            Buy price
+          </p>
+        ) : null}
+        <p
+          className={
+            currentPsPlusOffer || showMonthlyIncluded
+              ? 'mt-1 text-2xl font-black text-zinc-200'
+              : 'text-5xl font-black text-white'
+          }
+        >
+          {formatPrice(pricePresentation.buy_price_amount, item.currency_code)}
+        </p>
+      </div>
+    ) : null}
+
+    {!currentRegularOffer && !currentPsPlusOffer && !showMonthlyIncluded && !showBuyPrice ? (
       <p className="text-5xl font-black text-white">
         {freeLabel || availabilityLabel || displayCurrentPriceLabel}
       </p>
@@ -871,41 +850,80 @@ const displayCurrentAmount = getDisplayCurrentAmount(item)
   ) : null}
 </div>
 
-            <div className="mt-6 grid gap-3 sm:grid-cols-2">
-              <div className="rounded-2xl border border-zinc-800 bg-zinc-900 p-4">
-                <p className="text-xs uppercase tracking-[0.2em] text-zinc-500">
-                  Lowest certified regular price
+            <section className="mt-6 space-y-3" aria-labelledby="price-history-heading">
+              <div>
+                <h2 id="price-history-heading" className="text-lg font-black text-white">
+                  Price lows
+                </h2>
+                <p className="mt-1 text-sm text-zinc-500">
+                  Preserved historical observations are shown separately from cycle-certified lows.
                 </p>
-                <p className="mt-2 text-2xl font-bold text-emerald-300">
-                  {item.lobodeals_lowest_regular_price_amount === null
-                    ? '—'
-                    : lowestRegularPriceLabel}
-                </p>
-                {item.lobodeals_lowest_regular_price_first_seen_at ? (
-                  <p className="mt-1 text-xs text-zinc-500">
-                    First observed{' '}
-                    {formatDate(item.lobodeals_lowest_regular_price_first_seen_at)}
-                  </p>
-                ) : null}
               </div>
 
-              <div className="rounded-2xl border border-zinc-800 bg-zinc-900 p-4">
-                <p className="text-xs uppercase tracking-[0.2em] text-zinc-500">
-                  Lowest certified PS+ price
-                </p>
-                <p className="mt-2 text-2xl font-bold text-yellow-300">
-                  {item.lobodeals_lowest_ps_plus_price_amount === null
-                    ? '—'
-                    : lowestPsPlusPriceLabel}
-                </p>
-                {item.lobodeals_lowest_ps_plus_price_first_seen_at ? (
-                  <p className="mt-1 text-xs text-zinc-500">
-                    First observed{' '}
-                    {formatDate(item.lobodeals_lowest_ps_plus_price_first_seen_at)}
+              <div className="grid gap-3 sm:grid-cols-2">
+                <div className="rounded-2xl border border-zinc-800 bg-zinc-900 p-4">
+                  <p className="text-xs uppercase tracking-[0.2em] text-zinc-500">
+                    Historical lowest regular price
                   </p>
-                ) : null}
+                  <p className="mt-2 text-2xl font-bold text-zinc-100">
+                    {regularLowPresentation.historical_amount === null
+                      ? '—'
+                      : historicalRegularPriceLabel}
+                  </p>
+                  <p className="mt-1 text-xs text-zinc-500">Preserved legacy observation</p>
+                </div>
+
+                <div className="rounded-2xl border border-zinc-800 bg-zinc-900 p-4">
+                  <p className="text-xs uppercase tracking-[0.2em] text-zinc-500">
+                    Historical lowest PS+ price
+                  </p>
+                  <p className="mt-2 text-2xl font-bold text-zinc-100">
+                    {psPlusLowPresentation.historical_amount === null
+                      ? '—'
+                      : historicalPsPlusPriceLabel}
+                  </p>
+                  <p className="mt-1 text-xs text-zinc-500">Preserved legacy observation</p>
+                </div>
+
+                <div className="rounded-2xl border border-emerald-300/20 bg-zinc-900 p-4">
+                  <p className="text-xs uppercase tracking-[0.2em] text-zinc-500">
+                    Lowest certified regular price
+                  </p>
+                  <p className="mt-2 text-2xl font-bold text-emerald-300">
+                    {regularLowPresentation.certified_amount === null
+                      ? '—'
+                      : lowestRegularPriceLabel}
+                  </p>
+                  {regularLowPresentation.values_match ? (
+                    <p className="mt-1 text-xs text-zinc-500">Matches the historical low</p>
+                  ) : item.lobodeals_lowest_regular_price_first_seen_at ? (
+                    <p className="mt-1 text-xs text-zinc-500">
+                      First certified{' '}
+                      {formatDate(item.lobodeals_lowest_regular_price_first_seen_at)}
+                    </p>
+                  ) : null}
+                </div>
+
+                <div className="rounded-2xl border border-yellow-300/20 bg-zinc-900 p-4">
+                  <p className="text-xs uppercase tracking-[0.2em] text-zinc-500">
+                    Lowest certified PS+ price
+                  </p>
+                  <p className="mt-2 text-2xl font-bold text-yellow-300">
+                    {psPlusLowPresentation.certified_amount === null
+                      ? '—'
+                      : lowestPsPlusPriceLabel}
+                  </p>
+                  {psPlusLowPresentation.values_match ? (
+                    <p className="mt-1 text-xs text-zinc-500">Matches the historical low</p>
+                  ) : item.lobodeals_lowest_ps_plus_price_first_seen_at ? (
+                    <p className="mt-1 text-xs text-zinc-500">
+                      First certified{' '}
+                      {formatDate(item.lobodeals_lowest_ps_plus_price_first_seen_at)}
+                    </p>
+                  ) : null}
+                </div>
               </div>
-            </div>
+            </section>
 
             <div className="mt-6 flex flex-wrap gap-3">
   <TrackButton itemId={item.id} size="large" checkOnMount />

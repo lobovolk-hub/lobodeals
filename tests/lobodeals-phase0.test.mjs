@@ -15,6 +15,7 @@ test('public deals use cycle-bound verified flags while commercial flags remain 
   const deals = await read('app/deals/page.tsx')
   const home = await read('app/page.tsx')
   const card = await read('components/item-card.tsx')
+  const pricePresentation = await read('lib/catalog-price-presentation.mjs')
 
   assert.match(migration, /has_verified_deal boolean not null default false/i)
   assert.match(migration, /public_offer_verification_cycle_id=p_cycle_id/i)
@@ -32,8 +33,9 @@ test('public deals use cycle-bound verified flags while commercial flags remain 
   assert.match(deals, /has_verified_deal\.eq\.true,has_verified_ps_plus_deal\.eq\.true/)
   assert.doesNotMatch(deals, /\.or\('has_deal\.eq\.true,has_ps_plus_deal\.eq\.true'\)/)
   assert.match(home, /has_verified_deal\.eq\.true,has_verified_ps_plus_deal\.eq\.true/g)
-  assert.match(card, /item\.has_verified_deal/)
-  assert.match(card, /item\.has_verified_ps_plus_deal/)
+  assert.match(card, /derivePublicPricePresentation\(item\)/)
+  assert.match(pricePresentation, /item\.has_verified_deal === true/)
+  assert.match(pricePresentation, /item\.has_verified_ps_plus_deal === true/)
 })
 
 test('Monthly regular-price contract excludes the free entitlement from commercial and PS Plus lows', async () => {
@@ -209,6 +211,6 @@ test('Daily Runner canonical migration excludes historical one-off repairs', asy
   assert.match(migration, /public\.unaccent/)
   assert.doesNotMatch(migration, /214ea444-c3ec-4e75-b8ac-8fe3620faed5/)
   assert.doesNotMatch(migration, /b76f201f-a686-4293-99e4-517031c5b216/)
-  assert.match(operator, /lobodeals_daily_runner_v24_preflight/)
+  assert.match(operator, /lobodeals_daily_runner_v25_preflight/)
   assert.match(operator, /cache-v19:/)
 })

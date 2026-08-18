@@ -45,6 +45,29 @@ test('collector spec pins exact listing artifacts instead of timestamp inference
   assert.equal(spec.args.some((value) => value.startsWith('--output-prefix=')), false)
 })
 
+test('fast-refresh producer spec carries explicit bounded PS Plus discovery policy', () => {
+  const spec = buildPsdealsProducerProcessSpec({
+    stage: 'analyze_detail_candidates', project_root: projectRoot, workspace,
+    ps_plus_discovery_limit: 50,
+    ps_plus_discovery_hours: 168,
+  })
+  assert.ok(spec.args.includes('--ps-plus-discovery-limit=50'))
+  assert.ok(spec.args.includes('--ps-plus-discovery-hours=168'))
+  assert.ok(spec.args.includes('--ps-plus-recheck-limit=3'))
+  assert.ok(spec.args.includes('--stale-limit=2'))
+  assert.ok(spec.args.includes(
+    `--ps-plus-discovery-output-txt=${path.join(workspace.root_dir, 'artifacts', 'ps-plus-discovery.txt')}`
+  ))
+
+  const invalid = validatePsdealsProducerProcessSpec({
+    ...spec,
+    args: spec.args.filter(
+      (value) => !value.startsWith('--ps-plus-discovery-output-txt=')
+    ),
+  }, { project_root: projectRoot, workspace })
+  assert.ok(invalid.errors.includes('process_ps_plus_discovery_output_invalid'))
+})
+
 test('spec validation rejects shell execution, arbitrary entrypoints, and outside evidence', () => {
   const spec = buildPsdealsProducerProcessSpec({
     stage: 'import_details', project_root: projectRoot, workspace,

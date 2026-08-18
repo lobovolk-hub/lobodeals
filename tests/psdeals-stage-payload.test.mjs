@@ -294,6 +294,35 @@ test('strong regular Detail stamps a public commercial verification', () => {
   assert.equal(result.payload.public_offer_input_artifact_sha256, INPUT_HASH)
 })
 
+test('positive no-discount Detail emits Monthly continuity evidence without bypassing ended reconciliation', () => {
+  const parsed = parsePage(
+    detailHtml({ current: '$19.99' }),
+    'https://psdeals.net/us-store/game/123/example',
+    { observedAt: OBSERVED_AT }
+  )
+  const result = buildPsdealsDetailUpsertPayload(parsed, {
+    isExisting: true,
+    certificationContext: {
+      remote_cycle_id: CYCLE,
+      evidence_sha256: HASH,
+      input_artifact_sha256: INPUT_HASH,
+    },
+  })
+
+  assert.equal(parsed.commercial_state.classification, 'no_discount')
+  assert.equal(result.payload.current_price_amount, 19.99)
+  assert.equal('public_offer_verification_cycle_id' in result.payload, false)
+  assert.equal('public_offer_verification_source' in result.payload, false)
+  assert.equal(
+    result.payload.monthly_regular_certification_candidate.classification,
+    'no_discount'
+  )
+  assert.equal(
+    result.payload.monthly_regular_certification_candidate.regular_price_amount,
+    19.99
+  )
+})
+
 test('strong PS Plus Detail stamps a public commercial verification', () => {
   const parsed = parsePage(
     psPlusDetailHtml(),

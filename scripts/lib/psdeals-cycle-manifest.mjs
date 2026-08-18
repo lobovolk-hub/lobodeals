@@ -702,6 +702,10 @@ function validateFastRefresh(section, identity, errors) {
   }
 
   validateScope(section, 'fast_refresh', identity, errors)
+  const queues = isObject(section.queues) ? section.queues : {}
+  const hasPsPlusDiscovery =
+    isObject(section.artifacts?.ps_plus_discovery) ||
+    isObject(queues.ps_plus_discovery)
   let complete = validateArtifact(
     section.artifacts?.summary,
     'fast_refresh.artifacts.summary',
@@ -709,7 +713,15 @@ function validateFastRefresh(section, identity, errors) {
     errors
   )
 
-  for (const name of ['combined', 'must_refresh', 'ps_plus_recheck', 'stale', 'skipped']) {
+  const artifactNames = [
+    'combined',
+    'must_refresh',
+    'ps_plus_recheck',
+    ...(hasPsPlusDiscovery ? ['ps_plus_discovery'] : []),
+    'stale',
+    'skipped',
+  ]
+  for (const name of artifactNames) {
     complete =
       validateArtifact(
         section.artifacts?.[name],
@@ -724,9 +736,14 @@ function validateFastRefresh(section, identity, errors) {
     complete = false
   }
 
-  const queues = isObject(section.queues) ? section.queues : {}
   let queueTotal = 0
-  for (const name of ['must_refresh', 'ps_plus_recheck', 'stale']) {
+  const queueNames = [
+    'must_refresh',
+    'ps_plus_recheck',
+    ...(hasPsPlusDiscovery ? ['ps_plus_discovery'] : []),
+    'stale',
+  ]
+  for (const name of queueNames) {
     const queue = queues[name]
     if (!isObject(queue) || !isNonNegativeInteger(queue.count)) {
       errors.push(

@@ -75,6 +75,11 @@ const DETAIL_CHUNK_REST_EVERY = 2
 const DETAIL_CHUNK_REST_MS = 60000
 const FINAL_FRESH_RECONCILE_MAX_AGE_MS = 2 * 60 * 60 * 1000
 const UNSAFE_DETAIL_REVALIDATE_HOURS = 7 * 24
+const FAST_REFRESH_STALE_LIMIT = 2
+const FAST_REFRESH_STALE_HOURS = 24
+const FAST_REFRESH_PS_PLUS_RECHECK_LIMIT = 3
+const FAST_REFRESH_PS_PLUS_DISCOVERY_LIMIT = DETAIL_CHUNK_SIZE
+const FAST_REFRESH_PS_PLUS_DISCOVERY_HOURS = 7 * 24
 const ASYNC_CACHE_POLL_MS = 2000
 const ASYNC_CACHE_MAX_WAIT_MS = 12 * 60 * 1000
 const ASYNC_CACHE_MAX_ATTEMPTS = 3
@@ -1382,7 +1387,10 @@ async function adoptCommittedCertificationRecovery(admin, state, saveState, log)
   if (!receipt?.id) return null
 
   const result = receipt.result || {}
-  assert(String(result.contract_version || '') === '3', 'CERTIFY_RECOVERY_CONTRACT_INVALID')
+  assert(
+    [3, 4, 5].includes(Number(result.contract_version)),
+    'CERTIFY_RECOVERY_CONTRACT_INVALID'
+  )
   assert(String(result.certification_timestamp || '') === String(cycleRow.certified_at), 'CERTIFY_RECOVERY_TIMESTAMP_MISMATCH')
 
   state.receipts.certify = receipt.id
@@ -1535,6 +1543,7 @@ async function buildChunkEvidence({ projectRoot, runRoot, state, chunkItems, chu
   const queueFile = path.join(dir, 'combined.txt')
   const mustFile = path.join(dir, 'must.txt')
   const plusFile = path.join(dir, 'plus.txt')
+  const plusDiscoveryFile = path.join(dir, 'plus-discovery.txt')
   const staleFile = path.join(dir, 'stale.txt')
   const skippedFile = path.join(dir, 'skipped.txt')
   const summaryFile = path.join(dir, 'analysis-summary.json')
@@ -1542,10 +1551,10 @@ async function buildChunkEvidence({ projectRoot, runRoot, state, chunkItems, chu
   const urls = chunkItems.map((item) => item.psdeals_url)
   await writeJsonAtomic(listingFile, { base_url: RECENT_URL, pages_processed: 0, pages_failed: 0, items: chunkItems })
   const text = urls.length ? `${urls.join('\n')}\n` : ''
-  await writeAtomic(queueFile, text); await writeAtomic(mustFile, text); await writeAtomic(plusFile, ''); await writeAtomic(staleFile, ''); await writeAtomic(skippedFile, '')
+  await writeAtomic(queueFile, text); await writeAtomic(mustFile, text); await writeAtomic(plusFile, ''); await writeAtomic(plusDiscoveryFile, ''); await writeAtomic(staleFile, ''); await writeAtomic(skippedFile, '')
   await writeJsonAtomic(summaryFile, { chunk_index: chunkIndex, combined: urls.length, reason: 'daily_operator_detail_queue' })
   const outputSpecs = [
-    [summaryFile, 'fast_refresh_summary', 'fast_refresh_summary'], [queueFile, 'combined_queue', 'url_queue'], [mustFile, 'must_refresh_queue', 'url_queue'], [plusFile, 'ps_plus_recheck_queue', 'url_queue'], [staleFile, 'stale_queue', 'url_queue'], [skippedFile, 'skipped_queue', 'url_queue'],
+    [summaryFile, 'fast_refresh_summary', 'fast_refresh_summary'], [queueFile, 'combined_queue', 'url_queue'], [mustFile, 'must_refresh_queue', 'url_queue'], [plusFile, 'ps_plus_recheck_queue', 'url_queue'], [plusDiscoveryFile, 'ps_plus_discovery_queue', 'url_queue'], [staleFile, 'stale_queue', 'url_queue'], [skippedFile, 'skipped_queue', 'url_queue'],
   ]
   const outputs = []
   for (const [file, role, artifactKind] of outputSpecs) outputs.push(await modules.referencePsdealsFile({ project_root: projectRoot, file_path: file, role, artifact_kind: artifactKind }))
@@ -1557,7 +1566,7 @@ async function buildChunkEvidence({ projectRoot, runRoot, state, chunkItems, chu
     timestamps: { started_at: nowIso(), finished_at: nowIso(), generated_at: nowIso() },
     context: modules.buildPsdealsFilterContext({ requested_url: RECENT_URL, platforms: ['ps5', 'ps4'], content_types: ['games', 'bundles', 'dlc'], order: 'daily-detail-queue', limits: { chunk_size: DETAIL_CHUNK_SIZE } }),
     listing_input: listingInput, outputs,
-    queues: { must_refresh: rows, ps_plus_recheck: [], stale: [], skipped: [], combined: rows, ps_plus_recheck_limit: 0, stale_limit: 0 },
+    queues: { must_refresh: rows, ps_plus_recheck: [], ps_plus_discovery: [], stale: [], skipped: [], combined: rows, ps_plus_recheck_limit: 0, ps_plus_discovery_limit: 0, stale_limit: 0 },
   })
   await fs.rm(evidenceFile, { force: true })
   await modules.emitPsdealsProducerEvidence({ output_path: evidenceFile, envelope })
@@ -2229,12 +2238,13 @@ async function selfTest() {
   assert(typeof fetch === 'function', 'SELFTEST_FETCH_RUNTIME_MISSING')
   assert(typeof WebSocket === 'function', 'SELFTEST_WEBSOCKET_RUNTIME_MISSING')
   assertAllowedWriteRpc('apply_psdeals_ended_deals_v4')
+  assertAllowedWriteRpc('certify_price_refresh_cycle_v5')
   assertAllowedWriteRpc('enqueue_lobodeals_catalog_cache_refresh_v18')
   assertAllowedWriteRpc('enqueue_lobodeals_ended_demotion_v5')
   let blocked = false
   try { assertAllowedWriteRpc('refresh_catalog_public_cache_v15') } catch { blocked = true }
   assert(blocked, 'SELFTEST_V15_BLOCK')
-  process.stdout.write(`${JSON.stringify({ self_test: true, operator_version: OPERATOR_VERSION, passed: true, incremental_recent_against_database: true, adopted_backlog_without_catalog_rescan: true, durable_page_checkpoints: true, durable_detail_chunk_checkpoints: true, durable_final_reconciliation_decision: true, empty_detail_queue_supported: true, runtime_fetch_available: true, runtime_websocket_available: true, explicit_429_pause: true, psdeals_english_language_gate: true, monthly_dynamic_official_source: true, safe_monthly_swap: true, demotion_v4_reconciliation: true, demotion_v5_async_runner_contract: true, certification_v4_runner_contract: true, cache_v17_runner_contract: true, cache_v18_async_runner_contract: true, unchanged_unsafe_detail_bounded: true, reused_snapshot_zero_detail: true, long_rpc_manual_recovery_adoption: true, cache_receipt_exact_count_postcheck: true, deferred_malformed_discount_insert_recovery: true, final_fresh_reconciliation_before_certification: true, monthly_candidate_prefix_lookup: true, final_delta_listing_first_policy: true, best_new_deals_preserved: true, canonical_discount_path_pagination: true, canonical_recent_path_pagination: true, recent_checkpoint_migration_without_catalog_rescan: true, cross_page_overlap_dedup_without_reset: true, exact_reported_total_required_before_demotion: true }, null, 2)}\n`)
+  process.stdout.write(`${JSON.stringify({ self_test: true, operator_version: OPERATOR_VERSION, passed: true, incremental_recent_against_database: true, adopted_backlog_without_catalog_rescan: true, durable_page_checkpoints: true, durable_detail_chunk_checkpoints: true, durable_final_reconciliation_decision: true, empty_detail_queue_supported: true, runtime_fetch_available: true, runtime_websocket_available: true, explicit_429_pause: true, psdeals_english_language_gate: true, monthly_dynamic_official_source: true, safe_monthly_swap: true, monthly_regular_continuity_bounded: true, demotion_v4_reconciliation: true, demotion_v5_async_runner_contract: true, certification_v5_runner_contract: true, cache_v17_runner_contract: true, cache_v18_async_runner_contract: true, unchanged_unsafe_detail_bounded: true, reused_snapshot_zero_detail: true, long_rpc_manual_recovery_adoption: true, cache_receipt_exact_count_postcheck: true, deferred_malformed_discount_insert_recovery: true, final_fresh_reconciliation_before_certification: true, monthly_candidate_prefix_lookup: true, final_delta_listing_first_policy: true, best_new_deals_preserved: true, canonical_discount_path_pagination: true, canonical_recent_path_pagination: true, recent_checkpoint_migration_without_catalog_rescan: true, cross_page_overlap_dedup_without_reset: true, exact_reported_total_required_before_demotion: true }, null, 2)}\n`)
 }
 
 async function main() {
@@ -2381,8 +2391,20 @@ async function main() {
         runnerContracts?.listing_stamp_index_present === true,
         `DAILY_RUNNER_V2_DB_CONTRACTS_INVALID:${JSON.stringify(runnerContracts)}`
       )
+      const { data: v25ContractsData, error: v25ContractsError } = await admin.rpc('lobodeals_daily_runner_v25_preflight')
+      if (v25ContractsError) throw new Error(`DAILY_RUNNER_V25_DB_CONTRACTS_MISSING:${v25ContractsError.message}`)
+      const v25Contracts = firstRow(v25ContractsData)
+      assert(
+        Number(v25Contracts?.contract_version) === 25 &&
+        v25Contracts?.certify_v5_present === true &&
+        v25Contracts?.monthly_positive_regular_contract_present === true &&
+        v25Contracts?.refresh_cache_v19_present === true &&
+        v25Contracts?.verified_offer_columns_present === true &&
+        v25Contracts?.monthly_regular_columns_present === true,
+        `DAILY_RUNNER_V25_DB_CONTRACTS_INVALID:${JSON.stringify(v25Contracts)}`
+      )
       assert(Number.isSafeInteger(stageCount) && stageCount > 0 && Number.isSafeInteger(cacheCount) && cacheCount > 0, 'REMOTE_TABLE_COUNTS_INVALID')
-      return { stage_rows: stageCount, cache_rows: cacheCount, monthly_active_count: monthlyRows.length, runner_contracts: runnerContracts, checked_at: nowIso() }
+      return { stage_rows: stageCount, cache_rows: cacheCount, monthly_active_count: monthlyRows.length, runner_contracts: runnerContracts, runner_v25_contracts: v25Contracts, checked_at: nowIso() }
     })
 
     let endpoint = state.edge?.websocket_debugger_url || await step('edge_preflight', async () => ({
@@ -2595,30 +2617,55 @@ async function main() {
       }))
       const generatedAt = await stableTimestamp(state, saveState, 'readonly_plan_generated_at', [discountArtifacts.listing_observed_at])
       const selected = fastModule.selectFastRefreshQueues(analyzedDiscounts, {
-        staleLimit: 2,
-        staleHours: 24,
-        psPlusRecheckLimit: 3,
+        staleLimit: FAST_REFRESH_STALE_LIMIT,
+        staleHours: FAST_REFRESH_STALE_HOURS,
+        psPlusRecheckLimit: FAST_REFRESH_PS_PLUS_RECHECK_LIMIT,
+        psPlusDiscoveryLimit: FAST_REFRESH_PS_PLUS_DISCOVERY_LIMIT,
+        psPlusDiscoveryHours: FAST_REFRESH_PS_PLUS_DISCOVERY_HOURS,
         nowMs: Date.parse(generatedAt),
       })
       const endedCandidateRows = [...(endedPre.ended_discount_candidates || []), ...(endedPre.blocked_discount_candidates || [])]
       const endedCandidateIds = canonicalCandidateIds(endedCandidateRows.map((candidate) => Number(candidate.psdeals_id)))
       // Daily Runner v2 listing-first policy: known safe commercial mismatches
       // are written from the complete listing and do not require Detail.
-      // Detail is reserved for new IDs, unsafe/PS+ signals and the tiny bounded
-      // PS+/stale rotation. Ended candidates are revalidated transactionally by
-      // the demotion RPC and are not reopened wholesale every daily run.
+      // Detail is reserved for new IDs, unsafe/PS+ signals and bounded rotations.
+      // The discovery rotation samples old, active regular discounts even when
+      // Stage does not know about PS+ yet. Ended candidates are revalidated
+      // transactionally by the demotion RPC and are not reopened wholesale.
       const requiredMustRefresh = selected.mustRefresh.filter((row) =>
         needsFinalDeltaDetail(row.listing, row.db, { nowMs: Date.parse(generatedAt) })
       )
-      const detailItems = mergeBacklogAndFresh(recentMissingItems, [
-        ...requiredMustRefresh.map((row) => row.listing),
-        ...selected.psPlusRecheckCandidates.map((row) => row.listing),
-        ...selected.staleCandidates.map((row) => row.listing),
-      ])
-
       const prospectiveMonthlyCandidates = await fetchMonthlyCandidates(admin, monthly, recentMissingItems)
       const prospectiveMonthlyResolution = resolveMonthlyGames(monthly, prospectiveMonthlyCandidates)
       assert(prospectiveMonthlyResolution.resolved, `MONTHLY_MAPPING_AMBIGUOUS:${JSON.stringify(prospectiveMonthlyResolution.resolutions.map((row) => ({ title: row.official.title, candidates: row.candidates })))}`)
+
+      const higherPriorityDetailItems = [
+        ...recentMissingItems,
+        ...requiredMustRefresh.map((row) => row.listing),
+        ...selected.psPlusRecheckCandidates.map((row) => row.listing),
+        ...selected.psPlusDiscoveryCandidates.map((row) => row.listing),
+      ]
+      const higherPriorityDetailIds = new Set(
+        higherPriorityDetailItems.map((item) => Number(item.psdeals_id))
+      )
+      const monthlyContinuityItems = prospectiveMonthlyResolution.resolutions
+        .map((resolution) => resolution.candidate)
+        .filter((candidate) =>
+          candidate && !higherPriorityDetailIds.has(Number(candidate.psdeals_id))
+        )
+      const monthlyContinuityIds = new Set(
+        monthlyContinuityItems.map((item) => Number(item.psdeals_id))
+      )
+      const staleDetailItems = selected.staleCandidates
+        .map((row) => row.listing)
+        .filter((item) => !monthlyContinuityIds.has(Number(item.psdeals_id)))
+      const detailItems = mergeBacklogAndFresh(recentMissingItems, [
+        ...requiredMustRefresh.map((row) => row.listing),
+        ...selected.psPlusRecheckCandidates.map((row) => row.listing),
+        ...selected.psPlusDiscoveryCandidates.map((row) => row.listing),
+        ...monthlyContinuityItems,
+        ...staleDetailItems,
+      ])
 
       const detailQueueFile = path.join(artifactsDir, 'detail-queue-combined.txt')
       await writeAtomic(detailQueueFile, `${detailItems.map((item) => item.psdeals_url).join('\n')}\n`)
@@ -2639,6 +2686,23 @@ async function main() {
         detail_queue_items: detailItems.length,
         detail_items: detailItems,
         listing_first_safe_must_refresh_skipped_from_detail: selected.mustRefresh.length - requiredMustRefresh.length,
+        listing_owned_safe_changes_not_forced_to_detail: selected.listingOwnedSafeChanges.length,
+        detail_selection: {
+          must_refresh: requiredMustRefresh.length,
+          ps_plus_recheck: selected.psPlusRecheckCandidates.length,
+          ps_plus_discovery: selected.psPlusDiscoveryCandidates.length,
+          monthly_continuity: monthlyContinuityItems.length,
+          stale: staleDetailItems.length,
+          limits: {
+            ps_plus_recheck: selected.boundedPsPlusRecheckLimit,
+            ps_plus_discovery: selected.boundedPsPlusDiscoveryLimit,
+            ps_plus_discovery_hours: selected.psPlusDiscoveryHours,
+            monthly_continuity: (monthly.games || []).length,
+            stale: selected.boundedStaleLimit,
+            stale_hours: selected.staleHours,
+          },
+          policy: 'complete_listing_owns_safe_regular_price; known_ps_plus_first; old_regular_discount_discovery_bounded_oldest_first; official_monthly_regular_continuity_bounded_by_active_set',
+        },
         ended_candidates_not_reopened_wholesale: endedCandidateIds.length,
         ended_safe_candidates_before_revalidation: (endedPre.ended_discount_candidates || []).length,
         ended_blocked_candidates_before_revalidation: (endedPre.blocked_discount_candidates || []).length,
@@ -2647,7 +2711,7 @@ async function main() {
         writes_executed_at_plan_time: 0,
         restrictions: {
           demotion_rpc: 'apply_psdeals_ended_deals_v3',
-          certification_rpc: 'certify_price_refresh_cycle_v4',
+          certification_rpc: 'certify_price_refresh_cycle_v5',
           cache_rpc: 'enqueue_lobodeals_catalog_cache_refresh_v18',
           v1_demotion_forbidden: true,
           cache_v15_forbidden: true,
@@ -3766,23 +3830,30 @@ async function main() {
       return { receipt_id: receipt.id, required_receipts: required.length, total_committed_receipt_candidates: allRequiredCandidates.length, receipt_set_compacted: receiptSetCompacted, metrics }
     })
 
-    const certification = await step('certify_cycle_v4', async () => {
+    const certification = await step('certify_cycle_v5', async () => {
       const adopted = await adoptCommittedCertificationRecovery(admin, state, saveState, log)
       if (adopted) {
         await updatePhaseCheckpoint(path.join(stateDir, 'certification', 'checkpoint.json'), { result: adopted, phases: { certified: true } })
         return adopted
       }
 
+      const { data: v25PreflightData, error: v25PreflightError } = await admin.rpc('lobodeals_daily_runner_v25_preflight')
+      if (v25PreflightError) throw new Error(`lobodeals_daily_runner_v25_preflight:${v25PreflightError.message}`)
+      const v25Preflight = firstRow(v25PreflightData)
+      assert(Number(v25Preflight?.contract_version) === 25, 'CERTIFY_V25_PREFLIGHT_CONTRACT_INVALID')
+      assert(v25Preflight?.certify_v5_present === true, 'CERTIFY_V25_RPC_MISSING')
+      assert(v25Preflight?.monthly_positive_regular_contract_present === true, 'CERTIFY_V25_MONTHLY_REGULAR_CONTRACT_MISSING')
+
       const startedAt = await stableTimestamp(state, saveState, 'certify_started_at', [state.timestamps.cycle_finished_at])
       const parameters = {
         p_cycle_id: state.remote_cycle_id,
         p_mark_succeeded_receipt_id: state.receipts.mark_succeeded,
-        p_idempotency_key: `certify-v4:${runId}`,
+        p_idempotency_key: `certify-v5:${runId}`,
         p_started_at: startedAt,
       }
       parameters.p_request_hash = requestHash(parameters)
-      const row = firstRow(await rpc('certify_price_refresh_cycle_v4', parameters))
-      assert(row?.action_status === 'committed' && row.receipt_id, `CERTIFY_V4_FAILED:${row?.error_code || row?.action_status}`)
+      const row = firstRow(await rpc('certify_price_refresh_cycle_v5', parameters))
+      assert(row?.action_status === 'committed' && row.receipt_id, `CERTIFY_V5_FAILED:${row?.error_code || row?.action_status}`)
       state.receipts.certify = row.receipt_id
       await saveState()
       await updatePhaseCheckpoint(path.join(stateDir, 'certification', 'checkpoint.json'), { result: row, phases: { certified: true } })
@@ -3796,16 +3867,16 @@ async function main() {
         return adopted
       }
 
-      const { data: v24PreflightData, error: v24PreflightError } = await admin.rpc('lobodeals_daily_runner_v24_preflight')
-      if (v24PreflightError) throw new Error(`lobodeals_daily_runner_v24_preflight:${v24PreflightError.message}`)
-      const v24Preflight = firstRow(v24PreflightData)
-      assert(Number(v24Preflight?.contract_version) === 24, 'CACHE_V24_PREFLIGHT_CONTRACT_INVALID')
-      assert(v24Preflight?.pg_cron_present === true, 'CACHE_V24_PG_CRON_MISSING')
-      assert(v24Preflight?.async_cache_v18_present === true, 'CACHE_V24_ASYNC_V18_MISSING')
-      assert(v24Preflight?.refresh_cache_v19_present === true, 'CACHE_V24_REFRESH_V19_MISSING')
-      assert(v24Preflight?.verified_offer_columns_present === true, 'CACHE_V24_VERIFIED_OFFER_COLUMNS_MISSING')
-      assert(v24Preflight?.monthly_regular_columns_present === true, 'CACHE_V24_MONTHLY_REGULAR_COLUMNS_MISSING')
-      assert(v24Preflight?.search_v2_present === true, 'CACHE_V24_SEARCH_V2_MISSING')
+      const { data: v25PreflightData, error: v25PreflightError } = await admin.rpc('lobodeals_daily_runner_v25_preflight')
+      if (v25PreflightError) throw new Error(`lobodeals_daily_runner_v25_preflight:${v25PreflightError.message}`)
+      const v25Preflight = firstRow(v25PreflightData)
+      assert(Number(v25Preflight?.contract_version) === 25, 'CACHE_V25_PREFLIGHT_CONTRACT_INVALID')
+      assert(v25Preflight?.pg_cron_present === true, 'CACHE_V25_PG_CRON_MISSING')
+      assert(v25Preflight?.async_cache_v18_present === true, 'CACHE_V25_ASYNC_V18_MISSING')
+      assert(v25Preflight?.refresh_cache_v19_present === true, 'CACHE_V25_REFRESH_V19_MISSING')
+      assert(v25Preflight?.verified_offer_columns_present === true, 'CACHE_V25_VERIFIED_OFFER_COLUMNS_MISSING')
+      assert(v25Preflight?.monthly_regular_columns_present === true, 'CACHE_V25_MONTHLY_REGULAR_COLUMNS_MISSING')
+      assert(v25Preflight?.search_v2_present === true, 'CACHE_V25_SEARCH_V2_MISSING')
 
       const startedAt = await stableTimestamp(state, saveState, 'cache_started_at', [state.timestamps.certify_started_at])
       let attempt = Number(state.async_cache_attempt_v18 || 1)

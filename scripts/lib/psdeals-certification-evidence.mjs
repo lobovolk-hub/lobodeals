@@ -392,20 +392,46 @@ export function buildPsdealsMonthlyRegularCertificationEvidence(
     reasons
   )
   const type = safeType(parsedDetail?.type_classification, reasons)
-  const regular = validMoney(commercial?.original_price_amount)
-  const entitlement = Number(commercial?.current_price_amount)
+  const classification = commercial?.classification
+  // The producer does not infer Monthly membership. It seals either safe
+  // regular-price shape; certification v4/v5 intersects the candidate with
+  // the exact active official Monthly set before changing a certified low.
+  const isMonthlyEntitlement =
+    classification === 'temporary_free_promotion_candidate'
+  const isPositiveRegularPrice = classification === 'no_discount'
+  const regular = validMoney(
+    isPositiveRegularPrice
+      ? commercial?.current_price_amount
+      : commercial?.original_price_amount
+  )
+  const entitlement = isMonthlyEntitlement
+    ? Number(commercial?.current_price_amount)
+    : null
   const percent = commercial?.discount_percent_normalized
   const inputArtifactSha256 =
     cleanText(context?.input_artifact_sha256)?.toLowerCase() || null
 
   if (
-    commercial?.classification !== 'temporary_free_promotion_candidate' ||
+    (!isMonthlyEntitlement && !isPositiveRegularPrice) ||
     commercial?.is_safe_for_price_update !== true
   ) {
     reasons.push('monthly_regular_detail_state_not_certifiable')
   }
-  if (entitlement !== 0 || percent !== 100) {
+  if (isMonthlyEntitlement && (entitlement !== 0 || percent !== 100)) {
     reasons.push('monthly_regular_entitlement_tuple_invalid')
+  }
+  if (
+    isPositiveRegularPrice &&
+    (
+      regular === null ||
+      (percent !== null && percent !== 0) ||
+      (
+        validMoney(commercial?.original_price_amount) !== null &&
+        validMoney(commercial?.original_price_amount) !== regular
+      )
+    )
+  ) {
+    reasons.push('monthly_regular_positive_tuple_invalid')
   }
   if (regular === null) reasons.push('monthly_regular_price_invalid')
   if (String(parsedDetail?.currency_code || '').toUpperCase() !== 'USD') {
@@ -429,7 +455,7 @@ export function buildPsdealsMonthlyRegularCertificationEvidence(
     regular_price_amount: regular,
     entitlement_price_amount: entitlement,
     discount_percent: percent ?? null,
-    classification: commercial?.classification ?? null,
+    classification: classification ?? null,
     content_type: type?.content_type ?? null,
     item_type_label: type?.item_type_label ?? null,
     platforms,

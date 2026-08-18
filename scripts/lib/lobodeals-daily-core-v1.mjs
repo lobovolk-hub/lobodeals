@@ -13,6 +13,7 @@ export const ALLOWED_WRITE_RPCS = Object.freeze(new Set([
   'mark_psdeals_price_refresh_cycle_succeeded_v1',
   'certify_price_refresh_cycle_v3',
   'certify_price_refresh_cycle_v4',
+  'certify_price_refresh_cycle_v5',
   'refresh_catalog_public_cache_v16',
   'refresh_catalog_public_cache_v17',
   'enqueue_lobodeals_catalog_cache_refresh_v18',

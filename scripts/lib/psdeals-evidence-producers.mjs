@@ -187,12 +187,21 @@ function assessFastRefresh(input) {
     'stale_queue',
     'skipped_queue',
   ]
-  const requiredArtifactsPresent = requiredOutputs.every((role) =>
-    hasArtifact(outputs, role, 'final')
+  const psPlusDiscoveryPresent = isObject(analysis.ps_plus_discovery)
+  const psPlusDiscoveryArtifactPresent = hasArtifact(
+    outputs,
+    'ps_plus_discovery_queue',
+    'final'
   )
+  const requiredArtifactsPresent =
+    requiredOutputs.every((role) => hasArtifact(outputs, role, 'final')) &&
+    psPlusDiscoveryPresent === psPlusDiscoveryArtifactPresent
   const listingLinked = hasArtifact(input.inputs, 'listing_json', 'final')
   const mustCount = analysis.must_refresh?.count
   const psPlusCount = analysis.ps_plus_recheck?.count
+  const psPlusDiscoveryCount = psPlusDiscoveryPresent
+    ? analysis.ps_plus_discovery?.count
+    : 0
   const staleCount = analysis.stale?.count
   const skippedCount = analysis.skipped?.count
   const combinedCount = analysis.combined_count
@@ -201,6 +210,7 @@ function assessFastRefresh(input) {
   const countsValid = [
     mustCount,
     psPlusCount,
+    psPlusDiscoveryCount,
     staleCount,
     skippedCount,
     combinedCount,
@@ -208,23 +218,39 @@ function assessFastRefresh(input) {
     duplicateUrls,
   ].every(isNonNegativeInteger)
   const countsReconcile =
-    countsValid && combinedCount === mustCount + psPlusCount + staleCount
+    countsValid &&
+    combinedCount ===
+      mustCount + psPlusCount + psPlusDiscoveryCount + staleCount
   const limitsValid =
     isNonNegativeInteger(analysis.ps_plus_recheck?.limit) &&
     psPlusCount <= analysis.ps_plus_recheck.limit &&
+    (!psPlusDiscoveryPresent ||
+      (
+        isNonNegativeInteger(analysis.ps_plus_discovery?.limit) &&
+        psPlusDiscoveryCount <= analysis.ps_plus_discovery.limit
+      )) &&
     isNonNegativeInteger(analysis.stale?.limit) &&
     staleCount <= analysis.stale.limit
   const reasonsPresent = [
     analysis.must_refresh,
     analysis.ps_plus_recheck,
+    ...(psPlusDiscoveryPresent ? [analysis.ps_plus_discovery] : []),
     analysis.stale,
   ].every((queue) => isObject(queue?.reason_counts))
+  const psPlusDiscoveryLimitReachedValid =
+    !psPlusDiscoveryPresent ||
+    analysis.limits_reached?.ps_plus_discovery ===
+      (
+        psPlusDiscoveryCount === analysis.ps_plus_discovery.limit &&
+        analysis.ps_plus_discovery.limit > 0
+      )
   const complete =
     listingLinked &&
     requiredArtifactsPresent &&
     countsReconcile &&
     limitsValid &&
     reasonsPresent &&
+    psPlusDiscoveryLimitReachedValid &&
     overlapCount === 0 &&
     duplicateUrls === 0 &&
     normalizeErrors(input.errors).length === 0
@@ -243,6 +269,9 @@ function assessFastRefresh(input) {
   if (overlapCount > 0) reasonCodes.push('FAST_REFRESH_QUEUE_OVERLAP')
   if (duplicateUrls > 0) reasonCodes.push('FAST_REFRESH_DUPLICATE_URLS')
   if (!reasonsPresent) reasonCodes.push('FAST_REFRESH_REASONS_MISSING')
+  if (!psPlusDiscoveryLimitReachedValid) {
+    reasonCodes.push('FAST_REFRESH_LIMIT_REACHED_INCONSISTENT')
+  }
 
   return {
     status,
@@ -250,6 +279,9 @@ function assessFastRefresh(input) {
     payload: {
       must_refresh: analysis.must_refresh,
       ps_plus_recheck: analysis.ps_plus_recheck,
+      ...(psPlusDiscoveryPresent
+        ? { ps_plus_discovery: analysis.ps_plus_discovery }
+        : {}),
       stale: analysis.stale,
       skipped: analysis.skipped,
       combined_count: combinedCount,

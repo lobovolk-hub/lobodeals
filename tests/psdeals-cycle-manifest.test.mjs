@@ -229,6 +229,27 @@ test('enforces independent fast refresh queue limits', () => {
   assert.ok(reasonCodes(validate(value)).has('FAST_REFRESH_QUEUE_LIMIT_EXCEEDED'))
 })
 
+test('validates PS Plus discovery as an independent optional-v1 queue', () => {
+  const value = manifest()
+  value.fast_refresh.artifacts.ps_plus_discovery = {
+    ...value.fast_refresh.artifacts.stale,
+    path: 'ps-plus-discovery.txt',
+  }
+  value.fast_refresh.queues.ps_plus_discovery = {
+    count: 0,
+    limit: 50,
+    reason_counts: {},
+  }
+
+  assert.equal(validate(value).valid, true)
+
+  value.fast_refresh.queues.ps_plus_discovery.count = 51
+  value.fast_refresh.combined_count += 51
+  assert.ok(
+    reasonCodes(validate(value)).has('FAST_REFRESH_QUEUE_LIMIT_EXCEEDED')
+  )
+})
+
 test('blocks a missing monthly check', () => {
   const value = manifest()
   value.monthly_games = null

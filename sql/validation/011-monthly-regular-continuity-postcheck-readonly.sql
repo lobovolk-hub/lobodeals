@@ -24,7 +24,14 @@ begin
     pg_catalog.pg_get_functiondef(procedure.oid),
     pg_catalog.encode(
       pg_catalog.sha256(
-        pg_catalog.convert_to(procedure.prosrc,'UTF8')
+        pg_catalog.convert_to(
+          pg_catalog.replace(
+            procedure.prosrc,
+            pg_catalog.chr(13),
+            ''
+          ),
+          'UTF8'
+        )
       ),
       'hex'
     )
@@ -36,7 +43,14 @@ begin
     pg_catalog.pg_get_functiondef(procedure.oid),
     pg_catalog.encode(
       pg_catalog.sha256(
-        pg_catalog.convert_to(procedure.prosrc,'UTF8')
+        pg_catalog.convert_to(
+          pg_catalog.replace(
+            procedure.prosrc,
+            pg_catalog.chr(13),
+            ''
+          ),
+          'UTF8'
+        )
       ),
       'hex'
     )
@@ -60,7 +74,7 @@ begin
   end if;
 
   if v5_source_sha256 <> 'a5a285b6b181cf265ec2401bed9e4886e396e660cd159d013ba875e6bc099548'
-     or v25_source_sha256 <> '8081c9f1a695f2b5bcfcb2a03d8f2c3e166631941731e86ac0925892da9562cf' then
+     or v25_source_sha256 <> 'c7d056f2e70bfc85890e94661fb548f4f7c06107caeb9681ae31eebe85ee59f6' then
     raise exception 'LOBODEALS_011_POSTCHECK_DEFINITION_HASH_INVALID:%:%',
       v5_source_sha256,v25_source_sha256;
   end if;

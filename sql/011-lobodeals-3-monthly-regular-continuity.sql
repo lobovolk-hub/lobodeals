@@ -25,7 +25,7 @@ declare
   v_language name;
   v_volatility "char";
   v_expected_v5_source_sha256 constant text := 'a5a285b6b181cf265ec2401bed9e4886e396e660cd159d013ba875e6bc099548';
-  v_expected_v25_source_sha256 constant text := '8081c9f1a695f2b5bcfcb2a03d8f2c3e166631941731e86ac0925892da9562cf';
+  v_expected_v25_source_sha256 constant text := 'c7d056f2e70bfc85890e94661fb548f4f7c06107caeb9681ae31eebe85ee59f6';
 begin
   if current_user <> 'postgres' then
     raise exception 'LOBODEALS_011_POSTGRES_OWNER_REQUIRED';
@@ -102,7 +102,14 @@ begin
       procedure.provolatile,
       pg_catalog.encode(
         pg_catalog.sha256(
-          pg_catalog.convert_to(procedure.prosrc,'UTF8')
+          pg_catalog.convert_to(
+            pg_catalog.replace(
+              procedure.prosrc,
+              pg_catalog.chr(13),
+              ''
+            ),
+            'UTF8'
+          )
         ),
         'hex'
       )
@@ -178,7 +185,14 @@ begin
       procedure.provolatile,
       pg_catalog.encode(
         pg_catalog.sha256(
-          pg_catalog.convert_to(procedure.prosrc,'UTF8')
+          pg_catalog.convert_to(
+            pg_catalog.replace(
+              procedure.prosrc,
+              pg_catalog.chr(13),
+              ''
+            ),
+            'UTF8'
+          )
         ),
         'hex'
       )
@@ -553,7 +567,14 @@ as $function$
         and procedure.provolatile='v'
         and pg_catalog.encode(
           pg_catalog.sha256(
-            pg_catalog.convert_to(procedure.prosrc,'UTF8')
+            pg_catalog.convert_to(
+              pg_catalog.replace(
+                procedure.prosrc,
+                pg_catalog.chr(13),
+                ''
+              ),
+              'UTF8'
+            )
           ),
           'hex'
         )='a5a285b6b181cf265ec2401bed9e4886e396e660cd159d013ba875e6bc099548'
@@ -674,7 +695,7 @@ begin
       expected_language := 'plpgsql';
       expected_volatility := 'v';
     else
-      expected_source_sha256 := '8081c9f1a695f2b5bcfcb2a03d8f2c3e166631941731e86ac0925892da9562cf';
+      expected_source_sha256 := 'c7d056f2e70bfc85890e94661fb548f4f7c06107caeb9681ae31eebe85ee59f6';
       expected_language := 'sql';
       expected_volatility := 's';
     end if;
@@ -692,7 +713,14 @@ begin
            and procedure.provolatile=expected_volatility
            and pg_catalog.encode(
              pg_catalog.sha256(
-               pg_catalog.convert_to(procedure.prosrc,'UTF8')
+               pg_catalog.convert_to(
+                 pg_catalog.replace(
+                   procedure.prosrc,
+                   pg_catalog.chr(13),
+                   ''
+                 ),
+                 'UTF8'
+               )
              ),
              'hex'
            )=expected_source_sha256

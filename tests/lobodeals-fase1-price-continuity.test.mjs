@@ -26,6 +26,10 @@ function sha256(value) {
   return createHash('sha256').update(value, 'utf8').digest('hex')
 }
 
+function canonicalProsrcSha256(value) {
+  return sha256(value.replaceAll('\r', ''))
+}
+
 test('011 adds a cycle-bound Monthly positive regular low without promoting legacy history', async () => {
   const migration = await read('sql/011-lobodeals-3-monthly-regular-continuity.sql')
   const applied = migration.slice(
@@ -92,11 +96,11 @@ test('011 pins exact v5/v25 function sources and the strong preflight verifies v
     migration,
     'create or replace function public.lobodeals_daily_runner_v25_preflight()'
   )
-  const v5Hash = sha256(v5)
-  const v25Hash = sha256(v25)
+  const v5Hash = canonicalProsrcSha256(v5)
+  const v25Hash = canonicalProsrcSha256(v25)
 
   assert.equal(v5Hash, 'a5a285b6b181cf265ec2401bed9e4886e396e660cd159d013ba875e6bc099548')
-  assert.equal(v25Hash, '8081c9f1a695f2b5bcfcb2a03d8f2c3e166631941731e86ac0925892da9562cf')
+  assert.equal(v25Hash, 'c7d056f2e70bfc85890e94661fb548f4f7c06107caeb9681ae31eebe85ee59f6')
   assert.ok(migration.split(v5Hash).length >= 3)
   assert.ok(migration.includes(v25Hash))
   assert.match(v25, /pg_catalog\.pg_get_userbyid\(procedure\.proowner\)='postgres'/)
@@ -105,6 +109,56 @@ test('011 pins exact v5/v25 function sources and the strong preflight verifies v
   assert.match(v25, /procedure\.prosrc/)
   assert.match(v25, /has_function_privilege\([\s\S]*service_role/)
   assert.match(v25, /select count\(\*\)=13/)
+})
+
+test('011 canonical prosrc hashes are stable across LF and CRLF without hiding content drift', async () => {
+  const [migration, postcheck] = await Promise.all([
+    read('sql/011-lobodeals-3-monthly-regular-continuity.sql'),
+    read('sql/validation/011-monthly-regular-continuity-postcheck-readonly.sql'),
+  ])
+  const sources = [
+    {
+      body: functionBody(
+        migration,
+        'create or replace function public.certify_price_refresh_cycle_v5('
+      ),
+      expected: 'a5a285b6b181cf265ec2401bed9e4886e396e660cd159d013ba875e6bc099548',
+    },
+    {
+      body: functionBody(
+        migration,
+        'create or replace function public.lobodeals_daily_runner_v25_preflight()'
+      ),
+      expected: 'c7d056f2e70bfc85890e94661fb548f4f7c06107caeb9681ae31eebe85ee59f6',
+    },
+  ]
+
+  for (const { body, expected } of sources) {
+    const lf = body.replaceAll('\r', '')
+    const crlf = lf.replaceAll('\n', '\r\n')
+
+    assert.equal(canonicalProsrcSha256(lf), expected)
+    assert.equal(canonicalProsrcSha256(crlf), expected)
+    assert.notEqual(
+      canonicalProsrcSha256(`${lf}\n-- real content mutation`),
+      expected
+    )
+  }
+
+  const canonicalHashExpression = /pg_catalog\.convert_to\(\s*pg_catalog\.replace\(\s*procedure\.prosrc,\s*pg_catalog\.chr\(13\),\s*''\s*\),\s*'UTF8'\s*\)/g
+  const migrationProsrcReferences = [...migration.matchAll(/procedure\.prosrc/g)]
+  const migrationCanonicalHashes = [...migration.matchAll(canonicalHashExpression)]
+  const postcheckProsrcReferences = [...postcheck.matchAll(/procedure\.prosrc/g)]
+  const postcheckCanonicalHashes = [...postcheck.matchAll(canonicalHashExpression)]
+
+  assert.equal(migrationProsrcReferences.length, 4)
+  assert.equal(migrationCanonicalHashes.length, migrationProsrcReferences.length)
+  assert.equal(postcheckProsrcReferences.length, 2)
+  assert.equal(postcheckCanonicalHashes.length, postcheckProsrcReferences.length)
+  assert.doesNotMatch(
+    `${migration}\n${postcheck}`,
+    /pg_catalog\.convert_to\(\s*procedure\.prosrc/
+  )
 })
 
 test('011 v25 preflight preserves the varchar(64) hash-column contract installed by 009', async () => {

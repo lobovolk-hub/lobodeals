@@ -1,8 +1,9 @@
 import type { Metadata } from 'next'
 import Link from 'next/link'
 import { CampaignSections } from '@/components/campaign-sections'
-import { loadOfficialCampaigns } from '@/lib/sales-source'
-import { getStoresByPlatform, type Platform } from '@/lib/stores'
+import { isSalesUnavailableForStores } from '@/lib/sales-availability'
+import { loadSalesFeed } from '@/lib/sales-source'
+import { getStoresByPlatform, stores, type Platform } from '@/lib/stores'
 
 export const metadata: Metadata = {
   alternates: { canonical: '/' },
@@ -41,7 +42,7 @@ const platforms = [
 }[]
 
 export default async function HomePage() {
-  const campaigns = await loadOfficialCampaigns()
+  const salesFeed = await loadSalesFeed()
 
   return (
     <main>
@@ -131,7 +132,16 @@ export default async function HomePage() {
         </nav>
       </section>
 
-      <CampaignSections campaigns={campaigns} idPrefix="home" showStore />
+      <CampaignSections
+        campaigns={salesFeed.campaigns}
+        idPrefix="home"
+        showStore
+        dataUnavailable={isSalesUnavailableForStores(
+          salesFeed.availability,
+          stores.map((store) => store.slug),
+          salesFeed.sourceUnavailable
+        )}
+      />
     </main>
   )
 }

@@ -359,6 +359,10 @@ test('home, platform, Sales, and shell protect the approved structure', async ()
   assert.match(browser, /Filter by store/)
   assert.match(browser, /All official stores/)
   assert.ok(sections.indexOf('Live now') < sections.indexOf('Upcoming'))
+  assert.match(sections, /Sales data is temporarily unavailable\./)
+  assert.match(sections, /groups\.live\.map/)
+  assert.match(sections, /groups\.upcoming\.map/)
+  assert.doesNotMatch(sections, /dataUnavailable\s*\?\s*null\s*:/)
   assert.match(shell, /sticky top-0/)
   assert.match(shell, /href: '\/sales'/)
   assert.match(shell, /A LoboVolk brand/)
@@ -374,7 +378,6 @@ test('active runtime has no legacy data, auth, catalog, or pricing consumers', a
   ).flat()
   const retiredPatterns = [
     /@supabase\//i,
-    /NEXT_PUBLIC_SUPABASE/i,
     /catalog_public_cache/i,
     /psdeals/i,
     /metacritic/i,
@@ -392,15 +395,17 @@ test('active runtime has no legacy data, auth, catalog, or pricing consumers', a
   }
 })
 
-test('Sales source boundary is empty and contains no manual campaign registry', async () => {
+test('Sales source boundary reads only the new public feed and has no manual registry', async () => {
   const source = await readFile(path.join(root, 'lib/sales-source.ts'), 'utf8')
-  const sourceModule = await import(
-    toModuleUrl(transpileTypeScript(source, 'lib/sales-source.ts'))
-  )
 
-  assert.deepEqual(await sourceModule.loadOfficialCampaigns(), [])
   assert.match(source, /EMPTY_CAMPAIGN_FEED/)
-  assert.match(source, /return EMPTY_CAMPAIGN_FEED/)
+  assert.match(source, /\/rest\/v1\/sales_campaigns/)
+  assert.match(source, /NEXT_PUBLIC_SUPABASE_URL/)
+  assert.match(source, /NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY/)
+  assert.match(source, /validateOfficialCampaigns/)
+  assert.match(source, /functions\/v1\/campaign-monitoring/)
+  assert.match(source, /sourceUnavailable/)
+  assert.doesNotMatch(source, /@supabase\//i)
   assert.doesNotMatch(source, /campaigns?\s*=\s*\[\s*\{/i)
   assert.doesNotMatch(source, /curated|manual.*event|autumn/i)
 })
@@ -417,7 +422,7 @@ test('repository guidance reflects closed authority and the later SQL gate', asy
   assert.match(agents, /P1–P11 are CLOSED/)
   assert.match(agents, /tracked \`sql\/\` directory is a temporary protected exception/)
   assert.doesNotMatch(readme, /purely static|minimal, static/i)
-  assert.match(readme, /later\s+approved backend/)
+  assert.match(readme, /campaign-monitoring/)
 
   for (const name of (await loadStores()).stores.map((store) => store.name)) {
     assert.match(assetDoc, new RegExp(name.replace(/[.*+?^$()|[\]\\]/g, '\\$&')))

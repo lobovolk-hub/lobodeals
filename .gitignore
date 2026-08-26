@@ -18,6 +18,10 @@ out/
 # operational documentation
 docs/*
 !docs/service-brand-assets.md
+!docs/sales-backend.md
+
+# Supabase CLI local state
+supabase/.temp/
 
 # logs
 *.log

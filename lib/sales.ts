@@ -26,7 +26,7 @@ export type OfficialCampaign = Readonly<{
   name: string
   storeSlug: string
   market: 'US'
-  starts: CampaignBoundary
+  starts?: CampaignBoundary
   ends?: CampaignBoundary
   lifecycle: CampaignLifecycle
   officialUrl: string
@@ -162,10 +162,13 @@ export function isOfficialCampaign(value: unknown): value is OfficialCampaign {
     typeof candidate.storeSlug !== 'string' ||
     !getStoreBySlug(candidate.storeSlug) ||
     candidate.market !== 'US' ||
-    !isCampaignBoundary(candidate.starts) ||
     !isCampaignLifecycle(candidate.lifecycle) ||
     !isAbsoluteHttpsUrl(candidate.officialUrl)
   ) {
+    return false
+  }
+
+  if (candidate.starts !== undefined && !isCampaignBoundary(candidate.starts)) {
     return false
   }
 
@@ -179,6 +182,7 @@ export function isOfficialCampaign(value: unknown): value is OfficialCampaign {
 
   if (lifecycle.basis === 'exact-time') {
     if (
+      !starts ||
       starts.precision !== 'datetime' ||
       !ends ||
       ends.precision !== 'datetime'
@@ -189,11 +193,11 @@ export function isOfficialCampaign(value: unknown): value is OfficialCampaign {
     return Date.parse(ends.dateTime) > Date.parse(starts.dateTime)
   }
 
-  if (starts.precision === 'date' && ends?.precision === 'date') {
+  if (starts?.precision === 'date' && ends?.precision === 'date') {
     return ends.date >= starts.date
   }
 
-  if (starts.precision === 'datetime' && ends?.precision === 'datetime') {
+  if (starts?.precision === 'datetime' && ends?.precision === 'datetime') {
     return Date.parse(ends.dateTime) > Date.parse(starts.dateTime)
   }
 
@@ -246,6 +250,29 @@ export function getCampaignState(
   referenceTime?: Date
 ): CampaignState {
   if (campaign.lifecycle.basis === 'official-source') {
+    if (referenceTime) {
+      const now = referenceTime.getTime()
+
+      if (!Number.isFinite(now)) {
+        throw new RangeError('Campaign state requires a valid reference time')
+      }
+
+      if (
+        campaign.ends?.precision === 'datetime' &&
+        now >= Date.parse(campaign.ends.dateTime)
+      ) {
+        return 'expired'
+      }
+
+      if (
+        campaign.lifecycle.status === 'upcoming' &&
+        campaign.starts?.precision === 'datetime' &&
+        now >= Date.parse(campaign.starts.dateTime)
+      ) {
+        return 'live'
+      }
+    }
+
     return campaign.lifecycle.status
   }
 
@@ -366,9 +393,17 @@ export function getNextExactBoundary(
   let nextBoundary: number | null = null
 
   for (const campaign of campaigns) {
-    if (campaign.lifecycle.basis !== 'exact-time') continue
+    const boundaries =
+      campaign.lifecycle.basis === 'exact-time'
+        ? [campaign.starts, campaign.ends]
+        : [
+            campaign.lifecycle.status === 'upcoming'
+              ? campaign.starts
+              : undefined,
+            campaign.ends,
+          ]
 
-    for (const boundary of [campaign.starts, campaign.ends]) {
+    for (const boundary of boundaries) {
       if (!boundary || boundary.precision !== 'datetime') continue
 
       const boundaryTime = Date.parse(boundary.dateTime)

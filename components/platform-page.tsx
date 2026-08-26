@@ -1,7 +1,8 @@
 import { CampaignSections } from '@/components/campaign-sections'
 import { StoreCard } from '@/components/store-card'
 import { getCampaignsByPlatform } from '@/lib/sales'
-import { loadOfficialCampaigns } from '@/lib/sales-source'
+import { isSalesUnavailableForStores } from '@/lib/sales-availability'
+import { loadSalesFeed } from '@/lib/sales-source'
 import { getStoresByPlatform, type Platform } from '@/lib/stores'
 
 type PlatformPageProps = {
@@ -11,8 +12,9 @@ type PlatformPageProps = {
 
 export async function PlatformPage({ platform, name }: PlatformPageProps) {
   const platformStores = getStoresByPlatform(platform)
+  const salesFeed = await loadSalesFeed()
   const campaigns = getCampaignsByPlatform(
-    await loadOfficialCampaigns(),
+    salesFeed.campaigns,
     platform
   )
 
@@ -72,6 +74,11 @@ export async function PlatformPage({ platform, name }: PlatformPageProps) {
         campaigns={campaigns}
         idPrefix={`${platform}-campaigns`}
         showStore
+        dataUnavailable={isSalesUnavailableForStores(
+          salesFeed.availability,
+          platformStores.map((store) => store.slug),
+          salesFeed.sourceUnavailable
+        )}
       />
     </main>
   )

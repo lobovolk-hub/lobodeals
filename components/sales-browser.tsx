@@ -3,19 +3,37 @@
 import { useState } from 'react'
 import { CampaignSections } from '@/components/campaign-sections'
 import type { OfficialCampaign } from '@/lib/sales'
+import {
+  isSalesUnavailableForStores,
+  type SalesAvailability,
+} from '@/lib/sales-availability'
 import type { Store } from '@/lib/stores'
 
 type SalesBrowserProps = {
   campaigns: readonly OfficialCampaign[]
   stores: readonly Store[]
+  availability: readonly SalesAvailability[]
+  sourceUnavailable: boolean
 }
 
-export function SalesBrowser({ campaigns, stores }: SalesBrowserProps) {
+export function SalesBrowser({
+  campaigns,
+  stores,
+  availability,
+  sourceUnavailable,
+}: SalesBrowserProps) {
   const [storeSlug, setStoreSlug] = useState('all')
   const visibleCampaigns =
     storeSlug === 'all'
       ? campaigns
       : campaigns.filter((campaign) => campaign.storeSlug === storeSlug)
+  const visibleStoreSlugs =
+    storeSlug === 'all' ? stores.map((store) => store.slug) : [storeSlug]
+  const dataUnavailable = isSalesUnavailableForStores(
+    availability,
+    visibleStoreSlugs,
+    sourceUnavailable
+  )
 
   return (
     <>
@@ -59,6 +77,7 @@ export function SalesBrowser({ campaigns, stores }: SalesBrowserProps) {
         campaigns={visibleCampaigns}
         idPrefix="sales"
         showStore
+        dataUnavailable={dataUnavailable}
       />
     </>
   )

@@ -41,22 +41,24 @@ export function CampaignCard({
         </h3>
 
         <dl className="mt-3 flex flex-wrap gap-x-5 gap-y-2 text-xs leading-5 text-[#9b9a98]">
-          <div>
-            <dt className="font-semibold text-[#d0cdc7]">
-              {campaign.starts.precision === 'date' ? 'Start date' : 'Starts'}
-            </dt>
-            <dd>
-              <time
-                dateTime={
-                  campaign.starts.precision === 'date'
-                    ? campaign.starts.date
-                    : campaign.starts.dateTime
-                }
-              >
-                {formatCampaignBoundary(campaign.starts)}
-              </time>
-            </dd>
-          </div>
+          {campaign.starts ? (
+            <div>
+              <dt className="font-semibold text-[#d0cdc7]">
+                {campaign.starts.precision === 'date' ? 'Start date' : 'Starts'}
+              </dt>
+              <dd>
+                <time
+                  dateTime={
+                    campaign.starts.precision === 'date'
+                      ? campaign.starts.date
+                      : campaign.starts.dateTime
+                  }
+                >
+                  {formatCampaignBoundary(campaign.starts)}
+                </time>
+              </dd>
+            </div>
+          ) : null}
           {campaign.ends ? (
             <div>
               <dt className="font-semibold text-[#d0cdc7]">

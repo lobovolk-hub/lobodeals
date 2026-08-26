@@ -4,7 +4,8 @@ import { notFound } from 'next/navigation'
 import { CampaignSections } from '@/components/campaign-sections'
 import { StoreLogo } from '@/components/store-logo'
 import { getCampaignsByStore } from '@/lib/sales'
-import { loadOfficialCampaigns } from '@/lib/sales-source'
+import { isSalesUnavailableForStores } from '@/lib/sales-availability'
+import { loadSalesFeed } from '@/lib/sales-source'
 import {
   getStoreBySlug,
   platformLabels,
@@ -45,10 +46,8 @@ export default async function StoreProfilePage({ params }: StorePageProps) {
 
   if (!store) notFound()
 
-  const campaigns = getCampaignsByStore(
-    await loadOfficialCampaigns(),
-    store.slug
-  )
+  const salesFeed = await loadSalesFeed()
+  const campaigns = getCampaignsByStore(salesFeed.campaigns, store.slug)
 
   return (
     <main>
@@ -130,6 +129,11 @@ export default async function StoreProfilePage({ params }: StorePageProps) {
         campaigns={campaigns}
         idPrefix={`store-${store.slug}`}
         showStore={false}
+        dataUnavailable={isSalesUnavailableForStores(
+          salesFeed.availability,
+          [store.slug],
+          salesFeed.sourceUnavailable
+        )}
       />
     </main>
   )

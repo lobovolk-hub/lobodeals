@@ -205,6 +205,8 @@ export const stores = [
   },
 ] as const satisfies readonly Store[]
 
+export type StoreSlug = (typeof stores)[number]['slug']
+
 const storesBySlug = new Map<string, Store>(
   stores.map((store) => [store.slug, store] as const)
 )

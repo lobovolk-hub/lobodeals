@@ -3,6 +3,7 @@ import { readFile } from 'node:fs/promises'
 import path from 'node:path'
 import test from 'node:test'
 import ts from 'typescript'
+import { isSalesUnavailableForStores } from '../lib/sales-availability.ts'
 
 const root = process.cwd()
 
@@ -44,6 +45,34 @@ async function loadSalesModel() {
 }
 
 const salesModelPromise = loadSalesModel()
+
+test('availability mapping distinguishes blocked scopes from healthy scopes', () => {
+  const availability = [
+    { storeSlug: 'steam', availability: 'available' },
+    {
+      storeSlug: 'epic-games-store',
+      availability: 'temporarily_unavailable',
+    },
+  ]
+
+  assert.equal(
+    isSalesUnavailableForStores(availability, ['steam'], false),
+    false
+  )
+  assert.equal(
+    isSalesUnavailableForStores(
+      availability,
+      ['steam', 'epic-games-store'],
+      false
+    ),
+    true
+  )
+  assert.equal(
+    isSalesUnavailableForStores(availability, ['missing-health-row'], false),
+    true
+  )
+  assert.equal(isSalesUnavailableForStores(availability, ['steam'], true), true)
+})
 
 function reportedCampaign(overrides = {}) {
   return {
@@ -136,6 +165,16 @@ test('campaign validation requires one canonical store and the US market', async
   assert.equal('platform' in campaign, false)
   assert.equal('ecosystem' in campaign, false)
   assert.equal('productCount' in campaign, false)
+  assert.equal(
+    isOfficialCampaign(
+      reportedCampaign({
+        starts: undefined,
+        ends: undefined,
+        lifecycle: { basis: 'official-source', status: 'live' },
+      })
+    ),
+    true
+  )
 })
 
 test('source-reported status is not derived from date-only boundaries', async () => {
@@ -148,6 +187,36 @@ test('source-reported status is not derived from date-only boundaries', async ()
 
   assert.equal(getCampaignState(upcoming, distantFuture), 'upcoming')
   assert.equal(getCampaignState(live, distantFuture), 'live')
+})
+
+test('source-reported state changes only at official exact instants', async () => {
+  const { getCampaignState } = await salesModelPromise
+  const liveWithExactEnd = reportedCampaign({
+    starts: undefined,
+    ends: { precision: 'datetime', dateTime: '2030-06-10T16:00:00Z' },
+    lifecycle: { basis: 'official-source', status: 'live' },
+  })
+  const upcomingWithExactStart = reportedCampaign({
+    starts: { precision: 'datetime', dateTime: '2030-06-01T16:00:00Z' },
+    ends: undefined,
+  })
+
+  assert.equal(
+    getCampaignState(liveWithExactEnd, new Date('2030-06-10T15:59:59Z')),
+    'live'
+  )
+  assert.equal(
+    getCampaignState(liveWithExactEnd, new Date('2030-06-10T16:00:00Z')),
+    'expired'
+  )
+  assert.equal(
+    getCampaignState(upcomingWithExactStart, new Date('2030-06-01T15:59:59Z')),
+    'upcoming'
+  )
+  assert.equal(
+    getCampaignState(upcomingWithExactStart, new Date('2030-06-01T16:00:00Z')),
+    'live'
+  )
 })
 
 test('time-derived lifecycle requires exact start and end instants', async () => {
@@ -370,7 +439,7 @@ test('mixed precision on the same day uses a non-temporal stable tie-breaker', a
   }
 })
 
-test('client refresh boundaries are scheduled only for exact-time lifecycle', async () => {
+test('client refresh boundaries use only exact official instants', async () => {
   const { getNextExactBoundary } = await salesModelPromise
   const reported = reportedCampaign({
     starts: {
@@ -396,6 +465,19 @@ test('client refresh boundaries are scheduled only for exact-time lifecycle', as
   assert.equal(
     getNextExactBoundary(
       [reported],
+      Date.parse('2030-05-01T00:00:00Z')
+    ),
+    Date.parse('2030-06-01T12:00:00Z')
+  )
+
+  assert.equal(
+    getNextExactBoundary(
+      [
+        reportedCampaign({
+          starts: { precision: 'date', date: '2030-06-01' },
+          ends: { precision: 'date', date: '2030-06-10' },
+        }),
+      ],
       Date.parse('2030-05-01T00:00:00Z')
     ),
     null

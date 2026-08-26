@@ -16,14 +16,21 @@ repository operating authority.
 - Node test runner
 
 The canonical ten-store registry lives in `lib/stores.ts`. `lib/sales.ts`
-defines the future-facing campaign contract, including store ownership and
-date-only versus exact-time semantics. `lib/sales-source.ts` is the replaceable
-backend boundary.
+defines the campaign contract, including store ownership and date-only versus
+exact-time semantics. `lib/sales-source.ts` reads the public Sales feed through
+a small REST boundary; the frontend does not ship a Supabase SDK or any
+authentication runtime.
 
-MACROBLOQUE A intentionally connects no remote Sales adapter and returns an
-empty campaign feed. The public UI already consumes that boundary, so a later
-approved backend can supply official campaigns without redesigning pages or the
-campaign model. The frontend has no Supabase or authentication runtime.
+The Sales backend is isolated in `supabase/`. Its migration creates only
+`sales_campaigns` and `sales_source_health`. The single Edge Function
+`campaign-monitoring` owns ten independent official-source adapters and writes
+only those two structures. Missing source data is never replaced with a demo or
+manual campaign, and an adapter failure does not delete or change confirmed
+campaigns from that store. A missing campaign on a partial discovery surface is
+also preserved; only exact official end evidence can move it to a non-public
+`ended` row. One Vault-authenticated scheduler invokes all ten adapters every
+four hours, including blocked sources. Operational details and current source
+health are in `docs/sales-backend.md`.
 
 ## Public routes
 
@@ -48,4 +55,4 @@ profile, and tracking routes return 404.
 
 The tracked `sql/` directory remains only because remote legacy Supabase cleanup
 has a later operational gate. It is not part of the new frontend or Sales
-model.
+backend.

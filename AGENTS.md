@@ -101,10 +101,23 @@ Campaign time rules:
 - A source-reported Live/Upcoming state may be represented explicitly; do not
   disguise a manual date guess as a derived state.
 
-MACROBLOQUE A keeps the frontend decoupled from persistence and remote adapters.
-The local Sales source is intentionally empty, but the public UI consumes the
-approved campaign model through a replaceable source boundary. Do not add the
-Supabase SDK merely to prepare for future work.
+The frontend stays decoupled from persistence through `lib/sales-source.ts` and
+does not use the Supabase SDK. The approved Sales backend has two new tables,
+`sales_campaigns` and `sales_source_health`, plus one Edge Function,
+`campaign-monitoring`, with exactly one adapter per canonical store. It may
+write only those two tables. Never reuse legacy catalog, pricing, ingestion, or
+user tables for Sales.
+
+The monitoring scheduler must remain inactive unless all ten adapters have
+passed controlled probes, failure isolation is demonstrated, and a complete
+manual persisted run is verified not to mutate anything outside the two new
+Sales tables. A blocked official source must remain an explicit health failure;
+do not substitute a third party, a manual registry, or synthetic data.
+
+Those scheduler gates closed on 26 August 2026. The single active job
+`campaign-monitoring-every-4-hours` runs at `0 */4 * * *` and must continue to
+invoke all ten adapters. A blocked adapter is retried every cycle and is never
+filtered out of scheduling.
 
 ## Protected infrastructure and later gates
 
@@ -159,3 +172,13 @@ After every broad change run:
 - `git diff --stat`
 
 Do not commit the result.
+
+<!-- BEGIN:nextjs-agent-rules -->
+
+# This is NOT the Next.js you know
+
+This version has breaking changes — APIs, conventions, and file structure may all differ from your training data. Read the relevant guide in `node_modules/next/dist/docs/` (resolved from this file's directory; in monorepos the `next` package may not be visible from the repo root) before writing any code. Heed deprecation notices.
+
+This block is written and re-added by `next dev` — verify at `node_modules/next/dist/server/lib/generate-agent-files.js`. Removing it from a diff only re-creates the uncommitted change; committing it with your work keeps the tree clean.
+
+<!-- END:nextjs-agent-rules -->

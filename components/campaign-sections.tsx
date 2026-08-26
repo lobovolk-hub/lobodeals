@@ -12,6 +12,7 @@ type CampaignSectionsProps = {
   campaigns: readonly OfficialCampaign[]
   idPrefix: string
   showStore?: boolean
+  dataUnavailable?: boolean
 }
 
 const MAX_TIMEOUT_DELAY = 2_147_000_000
@@ -21,6 +22,7 @@ export function CampaignSections({
   campaigns,
   idPrefix,
   showStore = true,
+  dataUnavailable = false,
 }: CampaignSectionsProps) {
   const [currentTime, setCurrentTime] = useState<number | null>(null)
 
@@ -58,6 +60,17 @@ export function CampaignSections({
 
   return (
     <>
+      {dataUnavailable ? (
+        <aside
+          aria-label="Sales data availability"
+          className="border-t border-amber-200/15 bg-amber-100/[0.035]"
+        >
+          <p className="mx-auto w-full max-w-7xl px-4 py-3 text-sm text-[#c8bda7] sm:px-6 lg:px-8">
+            Sales data is temporarily unavailable.
+          </p>
+        </aside>
+      ) : null}
+
       <section
         aria-labelledby={`${idPrefix}-live-heading`}
         className="border-t border-white/10"
@@ -86,8 +99,9 @@ export function CampaignSections({
             </div>
           ) : (
             <p className="mt-5 rounded-lg border border-dashed border-white/15 bg-[#171717] px-5 py-5 text-sm leading-6 text-[#9b9a98]">
-              No live official store campaigns are available in the current
-              Sales feed.
+              {dataUnavailable
+                ? 'Current campaign availability cannot be confirmed right now.'
+                : 'No live official store campaigns are available in the current Sales feed.'}
             </p>
           )}
         </div>
@@ -121,8 +135,9 @@ export function CampaignSections({
             </div>
           ) : (
             <p className="mt-5 rounded-lg border border-dashed border-white/15 bg-[#171717] px-5 py-5 text-sm leading-6 text-[#9b9a98]">
-              No upcoming official store campaigns are available in the current
-              Sales feed.
+              {dataUnavailable
+                ? 'Upcoming campaign availability cannot be confirmed right now.'
+                : 'No upcoming official store campaigns are available in the current Sales feed.'}
             </p>
           )}
         </div>

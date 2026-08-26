@@ -1,53 +1,52 @@
+import Image from 'next/image'
 import Link from 'next/link'
-import { AccountLinks } from './account-links'
-import { MobileSiteHeader } from './mobile-site-header'
-import { SiteHeaderSearch } from './site-header-search'
+import siteIcon from '@/app/icon.png'
 
-const primaryLinks = [
+const navigation = [
   { href: '/', label: 'Home' },
-  { href: '/catalog', label: 'Catalog' },
-  { href: '/deals', label: 'Deals' },
+  { href: '/sales', label: 'Sales' },
+  { href: '/playstation', label: 'PlayStation' },
+  { href: '/pc', label: 'PC' },
+  { href: '/nintendo', label: 'Nintendo' },
+  { href: '/xbox', label: 'Xbox' },
+  { href: '/about', label: 'About' },
 ]
 
 export function SiteHeader() {
   return (
-    <header className="sticky top-0 z-50 border-b border-zinc-800 bg-black/95 text-white backdrop-blur">
-      <MobileSiteHeader />
-
-      <div className="mx-auto hidden max-w-[1700px] items-center justify-between gap-5 px-6 py-4 md:flex">
-        <Link href="/" className="flex shrink-0 items-center gap-3">
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img
-            src="/logo.png"
-            alt="LoboDeals"
-            className="h-10 w-10 object-contain"
+    <header className="sticky top-0 z-50 border-b border-white/10 border-t-2 border-t-[#990303] bg-[#0d0d0d]/95 backdrop-blur">
+      <div className="mx-auto flex w-full max-w-7xl flex-col gap-3 px-4 py-3 sm:px-6 sm:py-4 md:flex-row md:items-center md:justify-between lg:px-8">
+        <Link
+          href="/"
+          className="group inline-flex min-h-11 w-fit items-center gap-3 rounded-md"
+        >
+          <Image
+            src={siteIcon}
+            alt=""
+            width={38}
+            height={38}
+            priority
+            className="h-9.5 w-9.5"
           />
-
-          <div>
-            <p className="text-base font-bold leading-none">LoboDeals</p>
-            <p className="mt-1 text-xs text-zinc-500">
-              PlayStation prices and deals
-            </p>
-          </div>
+          <span className="text-lg font-bold tracking-[-0.025em] text-white">
+            Lobo<span className="text-[#c42b2b]">Deals</span>
+          </span>
         </Link>
 
-        <nav className="flex shrink-0 items-center gap-5 text-sm font-semibold text-zinc-300">
-          {primaryLinks.map((link) => (
+        <nav
+          aria-label="Primary navigation"
+          className="-mx-2 flex flex-wrap items-center gap-x-1 gap-y-1 text-sm font-medium text-zinc-400"
+        >
+          {navigation.map((item) => (
             <Link
-              key={link.href}
-              href={link.href}
-              className="transition hover:text-white"
+              key={item.href}
+              href={item.href}
+              className="inline-flex min-h-11 items-center rounded-md px-2 py-2 transition-colors hover:bg-white/5 hover:text-white sm:px-3"
             >
-              {link.label}
+              {item.label}
             </Link>
           ))}
         </nav>
-
-        <SiteHeaderSearch />
-
-        <div className="flex shrink-0 items-center gap-2">
-          <AccountLinks variant="desktop" />
-        </div>
       </div>
     </header>
   )
@@ -55,58 +54,18 @@ export function SiteHeader() {
 
 export function SiteFooter() {
   return (
-    <footer className="border-t border-zinc-800 bg-black text-zinc-400">
-      <div className="mx-auto grid max-w-[1700px] gap-8 px-6 py-8 md:grid-cols-[1fr_auto] md:items-start">
+    <footer className="border-t border-white/10 bg-[#0d0d0d]">
+      <div className="mx-auto flex w-full max-w-7xl flex-col gap-5 px-4 py-8 text-sm sm:flex-row sm:items-center sm:justify-between sm:px-6 lg:px-8">
         <div>
-          <div className="flex items-center gap-3">
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img
-              src="/logo.png"
-              alt="LoboDeals"
-              className="h-9 w-9 object-contain"
-            />
-
-            <div>
-              <p className="font-bold text-white">LoboDeals</p>
-              <p className="mt-1 text-xs text-zinc-500">
-                PlayStation prices and deals
-              </p>
-            </div>
-          </div>
-
-          <p className="mt-4 max-w-2xl text-sm leading-6">
-            Browse PlayStation games, bundles, add-ons, prices, deals, and price
-            history in one place.
-          </p>
+          <p className="font-semibold text-zinc-300">LoboDeals</p>
+          <p className="mt-1 text-zinc-400">A LoboVolk brand</p>
         </div>
-
-        <div className="grid gap-6 sm:grid-cols-2">
-          <nav>
-            <p className="mb-3 text-xs font-bold uppercase tracking-[0.2em] text-zinc-600">
-              Browse
-            </p>
-
-            <div className="flex flex-col gap-2 text-sm font-semibold">
-              {primaryLinks.map((link) => (
-                <Link
-                  key={link.href}
-                  href={link.href}
-                  className="transition hover:text-white"
-                >
-                  {link.label}
-                </Link>
-              ))}
-            </div>
-          </nav>
-
-          <nav>
-            <p className="mb-3 text-xs font-bold uppercase tracking-[0.2em] text-zinc-600">
-              Account
-            </p>
-
-            <AccountLinks variant="footer" />
-          </nav>
-        </div>
+        <Link
+          href="/about"
+          className="inline-flex min-h-11 w-fit items-center rounded-md font-medium text-zinc-400 transition-colors hover:text-white"
+        >
+          About LoboDeals
+        </Link>
       </div>
     </footer>
   )

@@ -1,60 +1,161 @@
-# Reglas operativas de LoboDeals 3.2
+# LoboDeals — rebuild operating authority
 
-LoboDeals 3.2 es la única identidad activa del proyecto. Los documentos con
-versiones 1.9, 2.x, 3.0 o 3.1 son evidencia histórica, no instrucciones
-operativas.
+This repository is in the official rebuild of the new LoboDeals.
 
-## Fuentes canónicas y orden de lectura
+## Governing authorities
 
-1. `AGENTS.md`
-2. `LOBODEALS-PRODUCT-DIRECTION.md`
-3. `LOBODEALS-CURRENT-STATUS.md`
-4. `LOBODEALS-SYSTEM-MAP.md`
-5. `LOBODEALS-OPERATIONS.md`
-6. `LOBODEALS-ROADMAP.md`
-7. `LOBODEALS-CONTINUITY.md`
+Apply these Project Sources in order:
 
-`README.md` solo orienta hacia estas fuentes. `docs/audit/**` y Git son
-evidencia, no estado vigente.
+1. **LoboDeals — Product Definition & Transition Authority — Consolidated Revision** — APPROVED Final Consolidation — 25 August 2026.
+2. **LoboDeals — Technical Transition Audit** — APPROVED — 20 August 2026.
 
-## Producto y comunicación
+The Product Authority defines what is built. The Technical Audit defines the
+technical state, dependencies, and gates. Product decisions P1–P11 are CLOSED
+and must not be reopened through implementation preference.
 
-- Prioridad: producto actualizado y útil; operación diaria confiable;
-  estabilidad y costes; mejoras visibles; retención; monetización;
-  arquitectura avanzada.
-- La UI pública se escribe en inglés. La comunicación con Johan se hace en
-  español.
-- La promesa mínima es una actualización al día, no tiempo real.
-- No crear arquitecturas, simuladores, updaters ni fuentes de verdad paralelos.
+Public product copy is English. Collaboration with Johan is Spanish.
 
-## Forma de trabajo
+## Approved product
 
-- Codex inspecciona, modifica y prueba directamente; Johan no debe reparar
-  código mediante copia y pega.
-- Avanzar autónomamente en lecturas, cambios locales, pruebas y commits de
-  alcance claro.
-- Preservar cambios ajenos o no relacionados del worktree.
-- Inspeccionar antes de modificar y validar después de modificar.
-- No asumir tablas, columnas, funciones, rutas, scripts, runners, variables,
-  despliegues ni comportamiento de procesos. Verificarlos en código, esquema o
-  lecturas autorizadas.
-- Antes de cada operación crítica, mostrar exactamente qué se ejecutará y qué
-  efecto tendrá.
+LoboDeals is a LoboVolk brand with two public functions:
 
-## Límites
+- **Directory:** where to find the approved official digital stores.
+- **Sales:** when an official store sale campaign is live or officially
+  announced.
 
-- No ejecutar collectors, importadores, runners ni procesos reales sin
-  autorización explícita.
-- No escribir, actualizar ni eliminar datos de Supabase sin autorización
-  explícita.
-- No refrescar caché de producción.
-- No hacer push, deploy ni abrir pull requests sin autorización explícita.
-- No eliminar tablas o datos históricos adicionales ni usar `CASCADE`.
-- La prueba operativa de 30 días no ha comenzado. Solo comienza cuando Johan
-  escriba exactamente la frase reservada definida para ese inicio.
+The tracked market is the United States. The audience is international and
+English-speaking.
 
-<!-- BEGIN:nextjs-agent-rules -->
-# This is NOT the Next.js you know
+The ten canonical stores are:
 
-This version has breaking changes — APIs, conventions, and file structure may all differ from your training data. Read the relevant guide in `node_modules/next/dist/docs/` before writing any code. Heed deprecation notices.
-<!-- END:nextjs-agent-rules -->
+1. PlayStation Store
+2. Nintendo eShop
+3. Microsoft / Xbox Store
+4. Steam
+5. Epic Games Store
+6. GOG
+7. EA app
+8. Ubisoft Store
+9. Battle.net
+10. Rockstar Store
+
+Microsoft / Xbox Store is one canonical store projected onto both PC and Xbox.
+A campaign belongs primarily to one canonical store; platform pages are
+projections of that store relationship.
+
+Do not rebuild price tracking, price histories, a massive game catalog,
+individual game search, accounts, authentication, profiles, wishlists,
+community, editorial, blog, news, catalog crawling, legacy collectors, workers,
+queues, or ingestion pipelines.
+
+Sales cover official store campaigns, not individual discounted products.
+Freebies, free games, free weekends, demos, subscription giveaways, and
+hardware-only promotions do not qualify as Sales by themselves. Do not infer
+product counts unless an official source publishes a reliable count. Do not
+reconstruct campaigns by traversing product catalogs.
+
+## Public routes and SEO
+
+Canonical public routes:
+
+- `/`
+- `/sales`
+- `/playstation`
+- `/pc`
+- `/nintendo`
+- `/xbox`
+- `/services/[slug]`
+- `/about`
+
+SEO transition:
+
+- `/deals` returns a 301 redirect to `/sales`.
+- `/catalog`, `/us/playstation/[slug]`, `/login`, `/profile`, `/tracked`, and
+  `/auth/callback` return real 404 responses.
+- Do not add broad legacy redirects.
+- Do not add internal campaign detail pages.
+- Sitemap output contains only current canonical public routes.
+- `robots` must not be used as a substitute for route removal and 404 behavior.
+
+## Frontend and campaign model
+
+The MVP is dark-only: charcoal/dark base, off-white foreground, `#990303`
+primary accent, and `#71706E` neutral. The interface is gaming-first, clean,
+compact, and dense, without SaaS, storefront, price-tracker, campaign-artwork,
+or carousel styling.
+
+Required home order: sticky header, hero, Explore by Platform, Live now,
+Upcoming, footer.
+
+Each platform page contains Official Stores, Live now, and Upcoming. Each store
+profile contains normalized identity, objective information, platforms,
+digital scope, official CTA, Live now, and Upcoming.
+
+Campaign time rules:
+
+- Preserve date-only facts as calendar dates without inventing a time.
+- Preserve exact datetimes only when the official source provides an instant
+  with timezone.
+- Derive lifecycle state from time only when the required official instants are
+  exact.
+- A source-reported Live/Upcoming state may be represented explicitly; do not
+  disguise a manual date guess as a derived state.
+
+MACROBLOQUE A keeps the frontend decoupled from persistence and remote adapters.
+The local Sales source is intentionally empty, but the public UI consumes the
+approved campaign model through a replaceable source boundary. Do not add the
+Supabase SDK merely to prepare for future work.
+
+## Protected infrastructure and later gates
+
+Keep the repository and Git history, GitHub repository, `lobodeals.com` and
+useful DNS, the existing Vercel project/integration, the existing Supabase
+Project, useful configuration and secrets, appropriate LoboDeals brand assets,
+GTM when useful, and `NEXT_PUBLIC_SITE_URL`.
+
+The tracked `sql/` directory is a temporary protected exception. It remains
+until the separately authorized remote Supabase cleanup plan closes its
+dependencies. Do not expand or reuse legacy SQL for the new product.
+
+Do not touch `D:\\Proyectos\\worker-playstation-ingest` in this pass. Local or
+remote Worker retirement requires separate authorization.
+
+Do not delete or mutate remote Supabase legacy content, the Supabase Project,
+Auth users, identities, profiles, or tracked data.
+
+## Local authorization and prohibitions
+
+Local rebuild work may create, modify, and delete files; remove dead npm
+dependencies; and run tests, lint, and build.
+
+Without later explicit authorization, do not:
+
+- commit, push, deploy, or open a pull request;
+- modify production, Vercel, Cloudflare, GitHub remote state, DNS, or domains;
+- modify remote Supabase schemas, data, functions, RPC, triggers, cron, Edge
+  Functions, users, identities, profiles, or tracked items;
+- retire the remote PlayStation ingestion Worker or its routes, triggers, or
+  secrets;
+- rotate, delete, or expose secrets;
+- use `git reset`, `git clean`, destructive checkout/restore, automatic stash,
+  or broad revert.
+
+The pre-existing uncommitted rebuild is authorized work. Preserve compatible
+parts and consciously remove incompatible legacy systems; never discard the
+working tree in bulk and never create archive, legacy, backup, `.old`, or `.bak`
+copies.
+
+## Next.js and verification
+
+This repository uses Next.js 16. When behavior depends on framework details,
+inspect the installed documentation under `node_modules/next/dist/docs`.
+
+After every broad change run:
+
+- `npm test`
+- `npm run lint`
+- `npm run build`
+- `git status --short`
+- `git diff --stat`
+
+Do not commit the result.

@@ -1,15 +1,3 @@
-# Local browser/session profiles used for scraping
-.browser-profiles/
-.browser-profiles/**
-
-# Local generated/import/export data
-data/
-data/**
-
-# Local archives and handoff packages
-archive/
-archive/**
-
 # Local project documentation not needed at runtime
 docs/
 docs/**
@@ -21,7 +9,7 @@ yarn-debug.log*
 yarn-error.log*
 pnpm-debug.log*
 
-# Generated large imports/exports outside data/docs/archive only
+# Generated large imports and exports
 *.zip
 *.rar
 *.7z

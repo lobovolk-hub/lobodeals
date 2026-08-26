@@ -15,19 +15,9 @@ out/
 .env.production
 .env*.local
 
-# local scraping/browser profiles
-.browser-profiles/
-.browser-profiles/**
-
-# local generated data
-data/
-data/**
-archive/
-archive/**
-
-# local docs / handoff files not needed in repo
-docs/
-docs/**
+# operational documentation
+docs/*
+!docs/service-brand-assets.md
 
 # logs
 *.log
@@ -47,10 +37,6 @@ pnpm-debug.log*
 Thumbs.db
 .vscode/
 .idea/
-
-# Playwright local CLI/cache
-.playwright-cli/
-.playwright-cli/**
 
 # Local logs folder
 logs/

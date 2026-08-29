@@ -3,8 +3,7 @@ import { PlatformPage } from '@/components/platform-page'
 
 export const metadata: Metadata = {
   title: 'PlayStation',
-  description:
-    'Official PlayStation Store sale campaigns for the United States market.',
+  description: 'Official PlayStation Store sales, live and announced.',
   alternates: { canonical: '/playstation' },
 }
 

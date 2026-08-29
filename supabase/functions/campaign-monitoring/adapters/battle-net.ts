@@ -5,6 +5,7 @@ import {
   isSaleCampaignText,
 } from '../_shared/campaign.ts'
 import { extractMeta, textFromHtml, uniqueBy } from '../_shared/html.ts'
+import { extractOfficialArtwork } from '../_shared/artwork.ts'
 import { fetchOfficialJson, fetchOfficialText } from '../_shared/http.ts'
 import { extractExactEnglishDateTimes } from '../_shared/time.ts'
 import { verifyKnownCampaigns } from '../_shared/verification.ts'
@@ -99,6 +100,7 @@ export const runBattleNetAdapter: StoreAdapter = async ({
         ends,
         officialUrl: url,
         sourceUrl: SOURCE_URL,
+        artworkUrl: extractOfficialArtwork(html, url),
       })
     })
   )

@@ -11,6 +11,7 @@ import {
   textFromHtml,
   uniqueBy,
 } from '../_shared/html.ts'
+import { extractOfficialArtwork } from '../_shared/artwork.ts'
 import { fetchOfficialText } from '../_shared/http.ts'
 import { extractExactEnglishDateTimes } from '../_shared/time.ts'
 import { verifyKnownCampaigns } from '../_shared/verification.ts'
@@ -69,6 +70,7 @@ async function discoverCampaignTabs(
         lifecycleBasis: 'official-source',
         officialUrl: officialUrl.toString(),
         sourceUrl: SALES_URL,
+        artworkUrl: extractOfficialArtwork(pageHtml, officialUrl.toString()),
       })
     })
   )
@@ -130,6 +132,7 @@ async function discoverNewsCampaigns(
           ends,
           officialUrl: url,
           sourceUrl: NEWS_URL,
+          artworkUrl: extractOfficialArtwork(html, url),
         })
       }
 
@@ -144,6 +147,7 @@ async function discoverNewsCampaigns(
           ends,
           officialUrl: url,
           sourceUrl: NEWS_URL,
+          artworkUrl: extractOfficialArtwork(html, url),
         })
       }
 

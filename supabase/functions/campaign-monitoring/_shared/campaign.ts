@@ -74,6 +74,7 @@ export function campaign(input: {
   ends?: SourceBoundary
   officialUrl: string
   sourceUrl: string
+  artworkUrl?: string
 }): DetectedCampaign {
   return {
     ...input,

@@ -39,21 +39,22 @@ export function textFromHtml(value: string): string {
 }
 
 export function extractMeta(html: string, key: string): string | null {
-  const escaped = key.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
-  const patterns = [
-    new RegExp(
-      `<meta[^>]+(?:property|name)=["']${escaped}["'][^>]+content=["']([^"']+)["']`,
+  const attribute = (tag: string, name: string): string | null => {
+    const escaped = name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+    const match = new RegExp(
+      `\\b${escaped}\\s*=\\s*(?:"([^"]*)"|'([^']*)')`,
       'i'
-    ),
-    new RegExp(
-      `<meta[^>]+content=["']([^"']+)["'][^>]+(?:property|name)=["']${escaped}["']`,
-      'i'
-    ),
-  ]
+    ).exec(tag)
+    return match ? decodeHtml(match[1] ?? match[2] ?? '').trim() : null
+  }
 
-  for (const pattern of patterns) {
-    const match = pattern.exec(html)
-    if (match) return decodeHtml(match[1]).trim()
+  for (const match of html.matchAll(/<meta\b[^>]*>/gi)) {
+    const tag = match[0]
+    const metaKey = attribute(tag, 'property') ?? attribute(tag, 'name')
+    if (metaKey?.toLowerCase() !== key.toLowerCase()) continue
+
+    const content = attribute(tag, 'content')
+    if (content !== null) return content
   }
 
   return null

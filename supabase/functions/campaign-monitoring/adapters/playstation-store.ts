@@ -6,6 +6,7 @@ import {
   isSaleCampaignText,
 } from '../_shared/campaign.ts'
 import { extractAnchors, extractMeta, textFromHtml, uniqueBy } from '../_shared/html.ts'
+import { extractOfficialArtwork } from '../_shared/artwork.ts'
 import { fetchOfficialText } from '../_shared/http.ts'
 import { extractExactEnglishDateTimes } from '../_shared/time.ts'
 import { AdapterError } from '../_shared/types.ts'
@@ -167,6 +168,7 @@ async function campaignFromPage(
       ends,
       officialUrl: href,
       sourceUrl,
+      artworkUrl: extractOfficialArtwork(html, href),
     })
   }
 
@@ -181,6 +183,7 @@ async function campaignFromPage(
       ends,
       officialUrl: href,
       sourceUrl,
+      artworkUrl: extractOfficialArtwork(html, href),
     })
   }
 
@@ -192,6 +195,7 @@ async function campaignFromPage(
     lifecycleBasis: 'official-source',
     officialUrl: href,
     sourceUrl,
+    artworkUrl: extractOfficialArtwork(html, href),
   })
 }
 

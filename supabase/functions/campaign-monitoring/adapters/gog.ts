@@ -9,6 +9,7 @@ import {
   textFromHtml,
   uniqueBy,
 } from '../_shared/html.ts'
+import { extractOfficialArtwork } from '../_shared/artwork.ts'
 import { fetchOfficialText } from '../_shared/http.ts'
 import { verifyKnownCampaigns } from '../_shared/verification.ts'
 import type { AdapterResult, DetectedCampaign, StoreAdapter } from '../_shared/types.ts'
@@ -60,6 +61,10 @@ export const runGogAdapter: StoreAdapter = async ({
         lifecycleBasis: 'official-source',
         officialUrl: officialUrl.toString(),
         sourceUrl: SOURCE_URL,
+        artworkUrl: extractOfficialArtwork(
+          campaignHtml,
+          officialUrl.toString()
+        ),
       })
     })
   )

@@ -21,8 +21,9 @@ exact-time semantics. `lib/sales-source.ts` reads the public Sales feed through
 a small REST boundary; the frontend does not ship a Supabase SDK or any
 authentication runtime.
 
-The Sales backend is isolated in `supabase/`. Its migration creates only
-`sales_campaigns` and `sales_source_health`. The single Edge Function
+The Sales backend is isolated in `supabase/`. Its migrations create only
+`sales_campaigns` and `sales_source_health`, with optional official
+campaign-page artwork stored as an HTTPS URL on the campaign row. The single Edge Function
 `campaign-monitoring` owns ten independent official-source adapters and writes
 only those two structures. Missing source data is never replaced with a demo or
 manual campaign, and an adapter failure does not delete or change confirmed

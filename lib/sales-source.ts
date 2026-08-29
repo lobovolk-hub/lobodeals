@@ -29,6 +29,7 @@ type SalesCampaignRow = Readonly<{
   ends_on: string | null
   ends_at: string | null
   official_url: string
+  artwork_url: string | null
 }>
 
 type SalesAvailabilityRow = Readonly<{
@@ -62,6 +63,7 @@ function toOfficialCampaign(row: SalesCampaignRow): OfficialCampaign {
     ends,
     lifecycle,
     officialUrl: row.official_url,
+    artworkUrl: row.artwork_url ?? undefined,
   }
 }
 
@@ -92,6 +94,7 @@ async function loadCampaigns(): Promise<Readonly<{
     'ends_on',
     'ends_at',
     'official_url',
+    'artwork_url',
   ].join(',')
 
   try {

@@ -15,7 +15,7 @@ const navigation = [
 export function SiteHeader() {
   return (
     <header className="sticky top-0 z-50 border-b border-white/10 border-t-2 border-t-[#990303] bg-[#0d0d0d]/95 backdrop-blur">
-      <div className="mx-auto flex w-full max-w-7xl flex-col gap-3 px-4 py-3 sm:px-6 sm:py-4 md:flex-row md:items-center md:justify-between lg:px-8">
+      <div className="mx-auto flex w-full max-w-7xl flex-col gap-1 px-4 py-2 sm:px-6 sm:py-3 md:flex-row md:items-center md:justify-between md:gap-3 lg:px-8">
         <Link
           href="/"
           className="group inline-flex min-h-11 w-fit items-center gap-3 rounded-md"
@@ -35,13 +35,13 @@ export function SiteHeader() {
 
         <nav
           aria-label="Primary navigation"
-          className="-mx-2 flex flex-wrap items-center gap-x-1 gap-y-1 text-sm font-medium text-zinc-400"
+          className="primary-navigation -mx-2 flex w-[calc(100%+1rem)] flex-nowrap items-center gap-x-1 overflow-x-auto whitespace-nowrap text-sm font-medium text-zinc-400 md:w-auto md:overflow-visible"
         >
           {navigation.map((item) => (
             <Link
               key={item.href}
               href={item.href}
-              className="inline-flex min-h-11 items-center rounded-md px-2 py-2 transition-colors hover:bg-white/5 hover:text-white sm:px-3"
+              className="inline-flex min-h-11 shrink-0 items-center rounded-md px-2 py-2 transition-colors hover:bg-white/5 hover:text-white sm:px-3"
             >
               {item.label}
             </Link>

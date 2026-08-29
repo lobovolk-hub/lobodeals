@@ -81,8 +81,9 @@ SEO transition:
 
 The MVP is dark-only: charcoal/dark base, off-white foreground, `#990303`
 primary accent, and `#71706E` neutral. The interface is gaming-first, clean,
-compact, and dense, without SaaS, storefront, price-tracker, campaign-artwork,
-or carousel styling.
+compact, and dense, without SaaS, storefront, price-tracker, or carousel
+dependence. Official campaign artwork is optional enhancement only; the
+designed store-identity fallback remains required.
 
 Required home order: sticky header, hero, Explore by Platform, Live now,
 Upcoming, footer.

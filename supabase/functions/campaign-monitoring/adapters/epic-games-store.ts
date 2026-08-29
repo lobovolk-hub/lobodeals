@@ -5,6 +5,7 @@ import {
   isSaleCampaignText,
 } from '../_shared/campaign.ts'
 import { extractAnchors, extractMeta, textFromHtml, uniqueBy } from '../_shared/html.ts'
+import { extractOfficialArtwork } from '../_shared/artwork.ts'
 import { fetchOfficialText } from '../_shared/http.ts'
 import { extractExactEnglishDateTimes } from '../_shared/time.ts'
 import { AdapterError } from '../_shared/types.ts'
@@ -105,6 +106,7 @@ export const runEpicGamesStoreAdapter: StoreAdapter = async ({
         ends,
         officialUrl: officialUrl.toString(),
         sourceUrl,
+        artworkUrl: extractOfficialArtwork(html, officialUrl.toString()),
       })
     })
   )

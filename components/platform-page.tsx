@@ -1,7 +1,8 @@
 import { CampaignSections } from '@/components/campaign-sections'
+import { PlatformHero } from '@/components/platform-hero'
 import { StoreCard } from '@/components/store-card'
 import { getCampaignsByPlatform } from '@/lib/sales'
-import { isSalesUnavailableForStores } from '@/lib/sales-availability'
+import { getPlatformSalesState } from '@/lib/sales-availability'
 import { loadSalesFeed } from '@/lib/sales-source'
 import { getStoresByPlatform, type Platform } from '@/lib/stores'
 
@@ -17,34 +18,20 @@ export async function PlatformPage({ platform, name }: PlatformPageProps) {
     salesFeed.campaigns,
     platform
   )
+  const platformState = getPlatformSalesState({
+    storeSlugs: platformStores.map((store) => store.slug),
+    campaignCount: campaigns.length,
+    availability: salesFeed.availability,
+    sourceUnavailable: salesFeed.sourceUnavailable,
+  })
 
   return (
     <main>
-      <header className="border-b border-white/10">
-        <div className="mx-auto grid w-full max-w-7xl gap-6 px-4 py-10 sm:px-6 sm:py-12 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-end lg:px-8">
-          <div>
-            <p className="flex items-center gap-3 text-xs font-bold uppercase tracking-[0.22em] text-[#c84b4b]">
-              <span className="h-px w-8 bg-[#990303]" aria-hidden="true" />
-              Platform sales · United States
-            </p>
-            <h1 className="mt-5 text-4xl font-bold leading-tight tracking-[-0.04em] text-white sm:text-5xl">
-              {name}
-            </h1>
-            <p className="mt-4 max-w-2xl text-base leading-7 text-[#aaa8a4]">
-              Official stores for {name}, followed by their live and announced
-              sale campaigns.
-            </p>
-          </div>
-          <div className="border-l-2 border-[#990303] pl-4">
-            <p className="text-3xl font-semibold tabular-nums text-white">
-              {platformStores.length}
-            </p>
-            <p className="mt-1 text-xs font-bold uppercase tracking-[0.16em] text-[#71706e]">
-              {platformStores.length === 1 ? 'official store' : 'official stores'}
-            </p>
-          </div>
-        </div>
-      </header>
+      <PlatformHero
+        platform={platform}
+        name={name}
+        storeCount={platformStores.length}
+      />
 
       <section
         aria-labelledby={`${platform}-stores-heading`}
@@ -60,26 +47,54 @@ export async function PlatformPage({ platform, name }: PlatformPageProps) {
           Official Stores
         </h2>
         <div
-          className={`mt-5 grid auto-rows-fr gap-3 sm:grid-cols-2 ${
-            platform === 'pc' ? 'lg:grid-cols-3 xl:grid-cols-4' : 'lg:grid-cols-3'
+          className={`mt-5 grid auto-rows-fr gap-4 ${
+            platform === 'pc'
+              ? 'md:grid-cols-2 xl:grid-cols-4'
+              : 'max-w-md'
           }`}
         >
-          {platformStores.map((store) => (
-            <StoreCard key={store.slug} store={store} />
+          {platformStores.map((store, index) => (
+            <StoreCard
+              key={store.slug}
+              store={store}
+              eagerLogo={index === 0}
+            />
           ))}
         </div>
       </section>
 
-      <CampaignSections
-        campaigns={campaigns}
-        idPrefix={`${platform}-campaigns`}
-        showStore
-        dataUnavailable={isSalesUnavailableForStores(
-          salesFeed.availability,
-          platformStores.map((store) => store.slug),
-          salesFeed.sourceUnavailable
-        )}
-      />
+      {platformState === 'unavailable' ? (
+        <section
+          aria-live="polite"
+          data-platform-availability-state="unavailable"
+          className="border-t border-white/10"
+        >
+          <div className="mx-auto w-full max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
+            <p className="rounded-lg border border-dashed border-white/15 bg-[#171717] px-5 py-5 text-sm leading-6 text-[#9b9a98]">
+              Current sale campaign availability cannot be confirmed right now.
+            </p>
+          </div>
+        </section>
+      ) : (
+        <>
+          {platformState === 'content-with-availability-notice' ? (
+            <aside
+              aria-label="Platform sales data availability"
+              className="border-t border-amber-200/15 bg-amber-100/[0.035]"
+            >
+              <p className="mx-auto w-full max-w-7xl px-4 py-3 text-sm text-[#c8bda7] sm:px-6 lg:px-8">
+                Some current campaign availability cannot be refreshed right
+                now. Previously confirmed campaigns remain visible.
+              </p>
+            </aside>
+          ) : null}
+          <CampaignSections
+            campaigns={campaigns}
+            idPrefix={`${platform}-campaigns`}
+            showStore
+          />
+        </>
+      )}
     </main>
   )
 }

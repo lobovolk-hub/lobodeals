@@ -3,8 +3,7 @@ import { PlatformPage } from '@/components/platform-page'
 
 export const metadata: Metadata = {
   title: 'Nintendo',
-  description:
-    'Official Nintendo eShop sale campaigns for the United States market.',
+  description: 'Official Nintendo eShop sales, live and announced.',
   alternates: { canonical: '/nintendo' },
 }
 

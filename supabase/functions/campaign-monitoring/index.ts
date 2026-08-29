@@ -17,9 +17,15 @@ import {
   toPublicAvailability,
   type HealthStatus,
 } from './_shared/availability.ts'
+import { isSafeArtworkUrl } from './_shared/artwork.ts'
+import {
+  artworkPatch,
+  campaignBaseRow,
+  type ArtworkPatch,
+} from './_shared/persistence.ts'
 
 const JSON_HEADERS = { 'Content-Type': 'application/json; charset=utf-8' }
-const ADAPTER_VERSION = '3'
+const ADAPTER_VERSION = '5'
 
 type MonitorRequest = Readonly<{
   mode?: 'probe' | 'persist'
@@ -44,6 +50,7 @@ type StoreOutcome = Readonly<{
     starts?: DetectedCampaign['starts']
     ends?: DetectedCampaign['ends']
     officialUrl: string
+    artworkUrl?: string
   }>[]
   errorCode?: string
   errorMessage?: string
@@ -136,6 +143,15 @@ function assertCampaign(campaign: DetectedCampaign, expectedStore: StoreSlug): v
       throw new AdapterError('INVALID_ADAPTER_OUTPUT', 'Campaign URL is not safe HTTPS')
     }
   }
+  if (
+    campaign.artworkUrl !== undefined &&
+    !isSafeArtworkUrl(campaign.artworkUrl)
+  ) {
+    throw new AdapterError(
+      'INVALID_ADAPTER_OUTPUT',
+      'Campaign artwork URL is not safe official HTTPS metadata'
+    )
+  }
   if (campaign.lifecycleBasis === 'exact-time') {
     if (
       campaign.starts?.precision !== 'datetime' ||
@@ -216,31 +232,48 @@ async function upsertCampaigns(
   confirmedAt: string
 ): Promise<number> {
   if (campaigns.length === 0) return 0
-  const rows = await Promise.all(
+  const keyedCampaigns = await Promise.all(
     campaigns.map(async (entry) => ({
-      campaign_key: await campaignKey(entry),
-      store_slug: entry.storeSlug,
-      source_uid: entry.sourceUid,
-      name: entry.name,
-      market: 'US',
-      state: entry.state,
-      lifecycle_basis: entry.lifecycleBasis,
-      starts_on: entry.starts?.precision === 'date' ? entry.starts.value : null,
-      starts_at:
-        entry.starts?.precision === 'datetime' ? entry.starts.value : null,
-      ends_on: entry.ends?.precision === 'date' ? entry.ends.value : null,
-      ends_at: entry.ends?.precision === 'datetime' ? entry.ends.value : null,
-      official_url: entry.officialUrl,
-      source_url: entry.sourceUrl,
-      last_confirmed_at: confirmedAt,
-      updated_at: confirmedAt,
+      entry,
+      key: await campaignKey(entry),
     }))
+  )
+  const rows = keyedCampaigns.map(({ entry, key }) =>
+    campaignBaseRow(entry, key, confirmedAt)
   )
 
   await restRequest('sales_campaigns?on_conflict=campaign_key', {
     method: 'POST',
     headers: { Prefer: 'resolution=merge-duplicates,return=minimal' },
     body: JSON.stringify(rows),
+  })
+
+  const artworkUpdates = keyedCampaigns
+    .map(({ entry, key }) => artworkPatch(entry, key))
+    .filter((update): update is ArtworkPatch => update !== null)
+  const artworkResults = await Promise.allSettled(
+    artworkUpdates.map((update) =>
+      restRequest(
+        `sales_campaigns?campaign_key=eq.${encodeURIComponent(
+          update.campaignKey
+        )}`,
+        {
+          method: 'PATCH',
+          headers: { Prefer: 'return=minimal' },
+          body: JSON.stringify({ artwork_url: update.artworkUrl }),
+        }
+      )
+    )
+  )
+  artworkResults.forEach((result, index) => {
+    if (result.status === 'rejected') {
+      console.error(
+        JSON.stringify({
+          event: 'campaign-monitoring.artwork-write-failed',
+          campaignKey: artworkUpdates[index].campaignKey,
+        })
+      )
+    }
   })
   return rows.length
 }
@@ -453,6 +486,7 @@ async function runStore(
         starts: entry.starts,
         ends: entry.ends,
         officialUrl: entry.officialUrl,
+        artworkUrl: entry.artworkUrl,
       })),
     }
   } catch (error) {

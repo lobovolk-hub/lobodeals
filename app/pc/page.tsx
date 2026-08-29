@@ -3,8 +3,7 @@ import { PlatformPage } from '@/components/platform-page'
 
 export const metadata: Metadata = {
   title: 'PC',
-  description:
-    'Official PC store sale campaigns for the United States market.',
+  description: 'Official digital PC store sales, live and announced.',
   alternates: { canonical: '/pc' },
 }
 

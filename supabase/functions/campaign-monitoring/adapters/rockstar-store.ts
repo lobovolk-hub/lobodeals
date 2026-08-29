@@ -4,6 +4,7 @@ import {
   isSaleCampaignText,
 } from '../_shared/campaign.ts'
 import { extractAnchors, uniqueBy } from '../_shared/html.ts'
+import { discoverOfficialArtwork } from '../_shared/artwork.ts'
 import { fetchOfficialText } from '../_shared/http.ts'
 import { AdapterError } from '../_shared/types.ts'
 import { verifyKnownCampaigns } from '../_shared/verification.ts'
@@ -38,16 +39,19 @@ export const runRockstarStoreAdapter: StoreAdapter = async ({
     )
   }
 
-  const campaigns = links.map(({ href, label }) =>
-    campaign({
-      sourceUid: href,
-      name: label,
-      storeSlug: 'rockstar-store',
-      state: 'live',
-      lifecycleBasis: 'official-source',
-      officialUrl: href,
-      sourceUrl: SOURCE_URL,
-    })
+  const campaigns = await Promise.all(
+    links.map(async ({ href, label }) =>
+      campaign({
+        sourceUid: href,
+        name: label,
+        storeSlug: 'rockstar-store',
+        state: 'live',
+        lifecycleBasis: 'official-source',
+        officialUrl: href,
+        sourceUrl: SOURCE_URL,
+        artworkUrl: await discoverOfficialArtwork(fetch, href),
+      })
+    )
   )
   const explicitlyEndedSourceUids = await verifyKnownCampaigns(
     fetch,

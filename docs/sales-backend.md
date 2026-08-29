@@ -7,7 +7,8 @@ documentation, not a replacement for the Product Authority.
 
 - `public.sales_campaigns` stores official US sale campaigns. Calendar dates
   use `starts_on` / `ends_on`; exact timezone-bearing instants use
-  `starts_at` / `ends_at`.
+  `starts_at` / `ends_at`. Nullable `artwork_url` stores only safe HTTPS
+  artwork discovered from metadata on a campaign-specific official page.
 - `public.sales_source_health` has one internal row for each canonical store.
 - `campaign-monitoring` is the only monitoring Edge Function. Its ten adapters
   run independently and can write only the two tables above.
@@ -41,7 +42,8 @@ A campaign can become `ended` only when one of these facts exists:
 
 No current adapter uses the third option. Date-only facts never trigger a
 state transition. Failed discovery or failed verification preserves prior
-campaigns. Adapter version 3 implements this policy.
+campaigns. Adapter version 5 implements this policy and optional official
+artwork discovery without changing lifecycle behavior.
 
 ## Official source map
 
@@ -62,6 +64,23 @@ No adapter uses a comparator, aggregator, price tracker, silent third party,
 product catalog crawl, or manual campaign registry. Product counts are not
 stored.
 
+## Optional campaign artwork
+
+All ten adapters use the same conservative metadata helper when a
+campaign-specific official page is already available. The helper prioritizes
+`og:image`, then `twitter:image`, requires credential-free HTTPS, and rejects
+obvious favicon, logo, placeholder, default-social, and generic social-share
+assets. The final image may live on a CDN only when the official campaign page
+publishes that URL directly.
+
+Artwork is never a discovery, health, lifecycle, or persist requirement. Base
+campaign upserts omit `artwork_url`; a valid new value is applied separately.
+Therefore a later run that still confirms a campaign but cannot rediscover its
+image preserves the last confirmed artwork. A failed image write is logged and
+does not fail the store adapter. The frontend renders remote artwork directly,
+without a server proxy or rehosting, and returns to the store-logo gradient if
+the browser cannot load it.
+
 ## Authentication and scheduler
 
 The raw dedicated invocation token exists only in Supabase Vault as
@@ -80,28 +99,34 @@ single `campaign-monitoring` function with `{ "mode": "persist" }`. Omitting a
 store list makes the orchestrator use its canonical ten-store registry. Blocked
 stores are therefore retried on every cycle; blocked never means disabled.
 
-## Current controlled validation
+## Current operational snapshot
 
-On 26 August 2026, Edge Function version 11 received a complete ten-store probe
-through the same Vault + pg_net authentication path used by the scheduler. Six
-adapters succeeded and four were explicitly blocked: PlayStation Store, Epic
-Games Store, EA app, and Rockstar Store. A separate isolation probe forced
-Steam to fail while GOG still succeeded. The final complete persisted run ended
-zero campaigns and left 29 public campaigns:
+A read-only revalidation on 29 August 2026 confirmed Edge Function version 14
+ACTIVE, adapter version 5, and one active
+`campaign-monitoring-every-4-hours` job at `0 */4 * * *`. Recent scheduled
+invocations completed with HTTP 200. Six adapters were healthy and four were
+explicitly blocked: PlayStation Store, Epic Games Store, EA app, and Rockstar
+Store.
 
-- Nintendo eShop: 3 Live;
+The public feed contained 34 campaigns: 13 Live and 21 Upcoming, with no ended
+rows. The per-store snapshot was:
+
+- Nintendo eShop: 6 Live;
 - Microsoft / Xbox Store: 1 Live;
-- Steam: 1 Live and 21 Upcoming;
+- Steam: 3 Live and 21 Upcoming;
 - GOG: 1 Live;
 - Ubisoft Store: 1 Live;
 - Battle.net: 1 Live.
 
-Before and after the persisted run, row counts and full-row content hashes were
-identical for Auth users, identities, profiles, tracked items,
-`official_ps_store_deals`, `automation_runs`, and `ps_ingest_queue`. Only
-`sales_campaigns` and `sales_source_health` changed.
+Four campaigns had automatically discovered official artwork: three Steam
+campaigns and one Battle.net campaign. The other 30 campaigns remained valid
+and used the designed fallback. Counts and campaign names are operational
+snapshots, not invariants; the scheduler may change them as official sources
+change.
 
-The scheduler was installed only after the schema, Edge deployment, complete
-probe, failure-isolation probe, and protected-object comparison passed. The
-four blocked sources remain visible as `temporarily_unavailable` and continue
-to be retried rather than replaced with third-party or manual data.
+The original scheduler gate included a complete probe, a forced
+failure-isolation probe, and before/after protected-object comparisons. Auth
+users, identities, profiles, tracked items, `official_ps_store_deals`,
+`automation_runs`, and `ps_ingest_queue` were unchanged by that validation.
+Blocked sources remain visible as `temporarily_unavailable` and are retried on
+every cycle rather than replaced with third-party or manual data.

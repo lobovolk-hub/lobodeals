@@ -6,7 +6,6 @@ export type StoreLogo = Readonly<{
   src: string
   width: number
   height: number
-  surface: 'light' | 'dark'
 }>
 
 export type Store = Readonly<{
@@ -43,7 +42,6 @@ export const stores = [
       src: '/services/playstation-store/logo.png',
       width: 800,
       height: 800,
-      surface: 'light',
     },
   },
   {
@@ -61,14 +59,13 @@ export const stores = [
       src: '/services/nintendo-eshop/logo.png',
       width: 512,
       height: 512,
-      surface: 'light',
     },
   },
   {
     slug: 'microsoft-store',
     name: 'Microsoft / Xbox Store',
     description:
-      'Microsoft’s single canonical store identity for digital Windows PC and Xbox games.',
+      'Microsoft’s official digital store for Windows PC and Xbox games.',
     platforms: ['pc', 'xbox'],
     digitalScope:
       'Digital Windows PC and Xbox games, editions, bundles, and add-on content.',
@@ -76,10 +73,9 @@ export const stores = [
       'LoboDeals follows the United States storefront and its official digital sale campaigns.',
     officialUrl: 'https://apps.microsoft.com/games?hl=en-US&gl=US',
     logo: {
-      src: '/services/microsoft-store/logo.png',
-      width: 256,
-      height: 256,
-      surface: 'light',
+      src: '/platforms/xbox/logo.png',
+      width: 410,
+      height: 124,
     },
   },
   {
@@ -97,7 +93,6 @@ export const stores = [
       src: '/services/steam/logo.png',
       width: 744,
       height: 171,
-      surface: 'dark',
     },
   },
   {
@@ -115,7 +110,6 @@ export const stores = [
       src: '/services/epic-games-store/logo.png',
       width: 1360,
       height: 1360,
-      surface: 'light',
     },
   },
   {
@@ -133,7 +127,6 @@ export const stores = [
       src: '/services/gog/logo.png',
       width: 1920,
       height: 1819,
-      surface: 'light',
     },
   },
   {
@@ -151,7 +144,6 @@ export const stores = [
       src: '/services/ea-app/logo.png',
       width: 60,
       height: 60,
-      surface: 'dark',
     },
   },
   {
@@ -169,7 +161,6 @@ export const stores = [
       src: '/services/ubisoft-store/logo.svg',
       width: 722,
       height: 316,
-      surface: 'dark',
     },
   },
   {
@@ -187,7 +178,6 @@ export const stores = [
       src: '/services/battle-net/logo.svg',
       width: 1200,
       height: 717,
-      surface: 'dark',
     },
   },
   {

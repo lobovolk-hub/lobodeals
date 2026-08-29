@@ -4,6 +4,7 @@ import {
   isSaleCampaignText,
 } from '../_shared/campaign.ts'
 import { extractAnchors, uniqueBy } from '../_shared/html.ts'
+import { discoverOfficialArtwork } from '../_shared/artwork.ts'
 import { fetchOfficialText } from '../_shared/http.ts'
 import { verifyKnownCampaigns } from '../_shared/verification.ts'
 import type { AdapterResult, StoreAdapter } from '../_shared/types.ts'
@@ -36,23 +37,26 @@ export const runMicrosoftStoreAdapter: StoreAdapter = async ({
     }
   }
 
-  const campaigns = uniqueBy(detected, ({ key }) => key.toLowerCase()).map(
-    ({ key, name }) => {
+  const campaigns = await Promise.all(
+    uniqueBy(detected, ({ key }) => key.toLowerCase()).map(
+      async ({ key, name }) => {
       const matchingLink = anchors.find(({ href }) =>
         new URL(href).pathname.toLowerCase().includes(key.toLowerCase())
       )
       const officialUrl =
         matchingLink?.href ?? `https://www.xbox.com/games/browse/${key}`
-      return campaign({
+        return campaign({
         sourceUid: key.toLowerCase(),
         name,
         storeSlug: 'microsoft-store',
         state: 'live',
         lifecycleBasis: 'official-source',
         officialUrl,
-        sourceUrl: SOURCE_URL,
-      })
-    }
+          sourceUrl: SOURCE_URL,
+          artworkUrl: await discoverOfficialArtwork(fetch, officialUrl),
+        })
+      }
+    )
   )
 
   const explicitlyEndedSourceUids = await verifyKnownCampaigns(

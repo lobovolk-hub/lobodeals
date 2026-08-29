@@ -39,7 +39,7 @@ const excludedStoreNames = [
 ]
 
 const approvedAssetDirectories = approvedSlugs.filter(
-  (slug) => slug !== 'rockstar-store'
+  (slug) => !['microsoft-store', 'rockstar-store'].includes(slug)
 )
 
 async function exists(relativePath) {
@@ -202,6 +202,7 @@ test('only approved store logo directories and own-brand assets remain', async (
 
   for (const protectedPath of [
     'public/og/lobodeals-og.png',
+    'public/platforms/xbox/logo.png',
     'app/favicon.ico',
     'app/icon.png',
     'app/apple-icon.png',
@@ -320,6 +321,10 @@ test('store profiles are static, reject unknown slugs, and contain campaign sect
     path.join(root, 'app/services/[slug]/page.tsx'),
     'utf8'
   )
+  const heroSource = await readFile(
+    path.join(root, 'components/store-profile-hero.tsx'),
+    'utf8'
+  )
 
   assert.deepEqual(
     storeStaticParams.map(({ slug }) => slug),
@@ -328,13 +333,15 @@ test('store profiles are static, reject unknown slugs, and contain campaign sect
   assert.doesNotMatch(routeSource, /export const dynamicParams = false/)
   assert.match(routeSource, /return storeStaticParams/)
   assert.match(routeSource, /if \(!store\) notFound\(\)/)
-  assert.match(routeSource, /<StoreLogo store=\{store\}/)
-  assert.match(routeSource, /Visit official store/)
+  assert.match(routeSource, /<StoreProfileHero store=\{store\}/)
+  assert.match(heroSource, /<StoreLogo store=\{store\}/)
+  assert.match(heroSource, /Visit official store/)
   assert.match(routeSource, /<CampaignSections/)
 })
 
 test('home, platform, Sales, and shell protect the approved structure', async () => {
   const home = await readFile(path.join(root, 'app/page.tsx'), 'utf8')
+  const hero = await readFile(path.join(root, 'components/home-hero.tsx'), 'utf8')
   const platform = await readFile(
     path.join(root, 'components/platform-page.tsx'),
     'utf8'
@@ -354,11 +361,16 @@ test('home, platform, Sales, and shell protect the approved structure', async ()
   )
 
   assert.ok(home.indexOf('Explore by Platform') < home.indexOf('<CampaignSections'))
+  assert.match(home, /<HomeHero \/>/)
+  assert.match(hero, /Know where official game sales are happening/)
   assert.ok(platform.indexOf('Official Stores') < platform.indexOf('<CampaignSections'))
   assert.match(sales, /<SalesBrowser/)
-  assert.match(browser, /Filter by store/)
+  assert.match(browser, /<header[\s\S]*data-sales-header[\s\S]*<select/)
+  assert.match(browser, /<span className="sr-only">Filter by store<\/span>/)
   assert.match(browser, /All official stores/)
-  assert.ok(sections.indexOf('Live now') < sections.indexOf('Upcoming'))
+  assert.ok(
+    sections.indexOf('Live now') < sections.indexOf('Announced official campaigns')
+  )
   assert.match(sections, /Sales data is temporarily unavailable\./)
   assert.match(sections, /groups\.live\.map/)
   assert.match(sections, /groups\.upcoming\.map/)
@@ -366,6 +378,50 @@ test('home, platform, Sales, and shell protect the approved structure', async ()
   assert.match(shell, /sticky top-0/)
   assert.match(shell, /href: '\/sales'/)
   assert.match(shell, /A LoboVolk brand/)
+})
+
+test('visual pass keeps Home public-facing and makes cards fully navigable', async () => {
+  const home = await readFile(path.join(root, 'app/page.tsx'), 'utf8')
+  const hero = await readFile(path.join(root, 'components/home-hero.tsx'), 'utf8')
+  const platformCard = await readFile(
+    path.join(root, 'components/platform-card.tsx'),
+    'utf8'
+  )
+  const campaignCard = await readFile(
+    path.join(root, 'components/campaign-card.tsx'),
+    'utf8'
+  )
+  const sections = await readFile(
+    path.join(root, 'components/campaign-sections.tsx'),
+    'utf8'
+  )
+  const upcomingRail = await readFile(
+    path.join(root, 'components/upcoming-rail.tsx'),
+    'utf8'
+  )
+
+  assert.match(hero, /Official game sales/i)
+  assert.doesNotMatch(`${home}\n${hero}`, /United States|US market scope/i)
+  assert.match(home, /<CampaignSections[\s\S]*?homePreview/)
+  assert.match(sections, /<UpcomingRail>/)
+  assert.match(upcomingRail, /overflow-x-auto/)
+  assert.match(upcomingRail, /snap-mandatory/)
+  assert.match(sections, /View all upcoming sales/)
+  assert.match(sections, /href="\/sales"/)
+
+  assert.equal((campaignCard.match(/<a\b/g) || []).length, 1)
+  assert.ok(campaignCard.indexOf('<a\n') < campaignCard.indexOf('<StoreLogo'))
+  assert.ok(
+    campaignCard.indexOf('</a>') > campaignCard.indexOf('View official sale')
+  )
+  assert.match(campaignCard, /target="_blank"/)
+  assert.match(campaignCard, /rel="noopener noreferrer"/)
+  assert.match(campaignCard, /focus-visible:outline/)
+
+  assert.equal((platformCard.match(/<Link\b/g) || []).length, 1)
+  assert.match(platformCard, /aria-label=\{`Explore/)
+  assert.match(platformCard, /cursor-pointer/)
+  assert.match(platformCard, /focus-visible:outline/)
 })
 
 test('active runtime has no legacy data, auth, catalog, or pricing consumers', async () => {

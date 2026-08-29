@@ -5,6 +5,7 @@ import {
   isSaleCampaignText,
 } from '../_shared/campaign.ts'
 import { extractAnchors, extractMeta, textFromHtml, uniqueBy } from '../_shared/html.ts'
+import { extractOfficialArtwork } from '../_shared/artwork.ts'
 import { fetchOfficialText } from '../_shared/http.ts'
 import { verifyKnownCampaigns } from '../_shared/verification.ts'
 import { extractExactEnglishDateTimes } from '../_shared/time.ts'
@@ -57,6 +58,7 @@ export const runUbisoftStoreAdapter: StoreAdapter = async ({
         ends,
         officialUrl: href,
         sourceUrl: SOURCE_URL,
+        artworkUrl: extractOfficialArtwork(campaignHtml, href),
       })
     })
   )

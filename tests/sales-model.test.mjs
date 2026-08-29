@@ -111,6 +111,7 @@ function exactCampaign(overrides = {}) {
 test('date-only boundaries accept real canonical dates and never invent a time', async () => {
   const {
     formatCampaignBoundary,
+    formatCompactCampaignBoundary,
     isCampaignBoundary,
     isCanonicalDate,
   } = await salesModelPromise
@@ -130,16 +131,30 @@ test('date-only boundaries accept real canonical dates and never invent a time',
     formatCampaignBoundary({ precision: 'date', date: '2030-06-01' }),
     /12:00|UTC|AM|PM/
   )
+  assert.equal(
+    formatCompactCampaignBoundary({ precision: 'date', date: '2030-06-01' }),
+    'Jun 1, 2030'
+  )
+  assert.doesNotMatch(
+    formatCompactCampaignBoundary({ precision: 'date', date: '2030-06-01' }),
+    /\d{1,2}:\d{2}|UTC|AM|PM/
+  )
 })
 
-test('exact datetime boundaries require a valid explicit timezone', async () => {
-  const { isExactDateTime } = await salesModelPromise
+test('exact datetime boundaries require a valid timezone and format only published minutes', async () => {
+  const { formatCampaignBoundary, isExactDateTime } = await salesModelPromise
 
   assert.equal(isExactDateTime('2030-06-01T12:00:00-04:00'), true)
   assert.equal(isExactDateTime('2030-06-01T16:00:00Z'), true)
   assert.equal(isExactDateTime('2030-06-01T12:00:00'), false)
   assert.equal(isExactDateTime('2030-06-01 12:00:00Z'), false)
   assert.equal(isExactDateTime('2030-02-29T12:00:00Z'), false)
+  const formatted = formatCampaignBoundary({
+    precision: 'datetime',
+    dateTime: '2026-09-01T10:00:00Z',
+  })
+  assert.equal(formatted, 'September 1, 2026 at 10:00 AM UTC')
+  assert.doesNotMatch(formatted, /10:00:00/)
 })
 
 test('campaign validation requires one canonical store and the US market', async () => {
@@ -174,6 +189,31 @@ test('campaign validation requires one canonical store and the US market', async
       })
     ),
     true
+  )
+})
+
+test('campaign artwork is optional and safe HTTPS when present', async () => {
+  const { isOfficialCampaign } = await salesModelPromise
+  const base = reportedCampaign()
+
+  assert.equal(isOfficialCampaign(base), true)
+  assert.equal(
+    isOfficialCampaign({
+      ...base,
+      artworkUrl: 'https://cdn.example/official-campaign.jpg',
+    }),
+    true
+  )
+  assert.equal(
+    isOfficialCampaign({
+      ...base,
+      artworkUrl: 'https://user:password@cdn.example/campaign.jpg',
+    }),
+    false
+  )
+  assert.equal(
+    isOfficialCampaign({ ...base, artworkUrl: 'data:image/png;base64,abc' }),
+    false
   )
 })
 

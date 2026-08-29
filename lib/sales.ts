@@ -30,6 +30,7 @@ export type OfficialCampaign = Readonly<{
   ends?: CampaignBoundary
   lifecycle: CampaignLifecycle
   officialUrl: string
+  artworkUrl?: string
 }>
 
 export type CampaignState = 'live' | 'upcoming' | 'expired' | 'indeterminate'
@@ -65,6 +66,15 @@ const MONTH_NAMES = [
 const exactDateTimeFormatter = new Intl.DateTimeFormat('en-US', {
   year: 'numeric',
   month: 'long',
+  day: 'numeric',
+  hour: 'numeric',
+  minute: '2-digit',
+  hour12: true,
+  timeZone: 'UTC',
+})
+const compactExactDateTimeFormatter = new Intl.DateTimeFormat('en-US', {
+  year: 'numeric',
+  month: 'short',
   day: 'numeric',
   hour: 'numeric',
   minute: '2-digit',
@@ -163,7 +173,9 @@ export function isOfficialCampaign(value: unknown): value is OfficialCampaign {
     !getStoreBySlug(candidate.storeSlug) ||
     candidate.market !== 'US' ||
     !isCampaignLifecycle(candidate.lifecycle) ||
-    !isAbsoluteHttpsUrl(candidate.officialUrl)
+    !isAbsoluteHttpsUrl(candidate.officialUrl) ||
+    (candidate.artworkUrl !== undefined &&
+      !isAbsoluteHttpsUrl(candidate.artworkUrl))
   ) {
     return false
   }
@@ -243,6 +255,31 @@ export function formatCampaignBoundary(boundary: CampaignBoundary): string {
   }
 
   return `${exactDateTimeFormatter.format(new Date(boundary.dateTime))} UTC`
+}
+
+export function formatCompactCampaignBoundary(
+  boundary: CampaignBoundary
+): string {
+  if (!isCampaignBoundary(boundary)) {
+    throw new RangeError('Cannot format an invalid campaign boundary')
+  }
+
+  if (boundary.precision === 'date') {
+    const match = DATE_ONLY_PATTERN.exec(boundary.date)
+
+    if (!match) {
+      throw new RangeError('Cannot format an invalid campaign boundary')
+    }
+
+    const month = Number(match[2])
+    const day = Number(match[3])
+
+    return `${MONTH_NAMES[month - 1].slice(0, 3)} ${day}, ${match[1]}`
+  }
+
+  return `${compactExactDateTimeFormatter.format(
+    new Date(boundary.dateTime)
+  )} UTC`
 }
 
 export function getCampaignState(

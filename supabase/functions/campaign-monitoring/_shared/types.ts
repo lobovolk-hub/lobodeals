@@ -54,6 +54,7 @@ export type DetectedCampaign = Readonly<{
   ends?: SourceBoundary
   officialUrl: string
   sourceUrl: string
+  artworkUrl?: string
 }>
 
 export type KnownCampaign = Readonly<{

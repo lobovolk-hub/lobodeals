@@ -6,6 +6,7 @@ import {
   isSaleCampaignText,
 } from '../_shared/campaign.ts'
 import { decodeHtml, extractAnchors, extractMeta, textFromHtml, uniqueBy } from '../_shared/html.ts'
+import { extractOfficialArtwork } from '../_shared/artwork.ts'
 import { fetchOfficialText } from '../_shared/http.ts'
 import { extractExactEnglishDateTimes } from '../_shared/time.ts'
 import { AdapterError } from '../_shared/types.ts'
@@ -114,6 +115,7 @@ export const runEaAppAdapter: StoreAdapter = async ({
           ends,
           officialUrl: officialUrl.toString(),
           sourceUrl: href.startsWith(NEWS_URL) ? NEWS_URL : DEALS_URL,
+          artworkUrl: extractOfficialArtwork(html, officialUrl.toString()),
         })
       }
 
@@ -127,6 +129,7 @@ export const runEaAppAdapter: StoreAdapter = async ({
         ends,
         officialUrl: officialUrl.toString(),
         sourceUrl: href.startsWith(NEWS_URL) ? NEWS_URL : DEALS_URL,
+        artworkUrl: extractOfficialArtwork(html, officialUrl.toString()),
       })
     })
   )

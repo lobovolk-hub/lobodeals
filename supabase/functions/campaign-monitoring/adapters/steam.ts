@@ -7,7 +7,14 @@ import {
   isSaleCampaignText,
   monthNumber,
 } from '../_shared/campaign.ts'
-import { extractAnchors, extractMeta, textFromHtml, uniqueBy } from '../_shared/html.ts'
+import {
+  decodeHtml,
+  extractAnchors,
+  extractMeta,
+  textFromHtml,
+  uniqueBy,
+} from '../_shared/html.ts'
+import { extractOfficialArtwork } from '../_shared/artwork.ts'
 import { fetchOfficialText } from '../_shared/http.ts'
 import { extractExactEnglishDateTimes } from '../_shared/time.ts'
 import { verifyKnownCampaigns } from '../_shared/verification.ts'
@@ -18,6 +25,173 @@ const CALENDAR_URL =
 const STORE_HOME_URL = 'https://store.steampowered.com/?cc=us&l=english'
 const MONTH =
   '(January|February|March|April|May|June|July|August|September|October|November|December)'
+const CAMPAIGN_KIND = '(?:sale|fest|festival|promotion|deals?)'
+
+type SteamPartnerEvent = Readonly<{
+  event_name?: unknown
+  rtime32_start_time?: unknown
+  rtime32_end_time?: unknown
+  jsondata?: unknown
+}>
+
+type SteamGroup = Readonly<{
+  group_name?: unknown
+}>
+
+function normalizeTitle(value: string): string {
+  return decodeHtml(value).replace(/\s+/g, ' ').trim()
+}
+
+function extractDataAttributeJson(html: string, attribute: string): unknown {
+  const escaped = attribute.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+  const match = new RegExp(
+    `\\b${escaped}=(["'])([\\s\\S]*?)\\1`,
+    'i'
+  ).exec(html)
+  if (!match) return null
+
+  try {
+    return JSON.parse(decodeHtml(match[2])) as unknown
+  } catch {
+    return null
+  }
+}
+
+function firstRecord(value: unknown): Readonly<Record<string, unknown>> | null {
+  if (!Array.isArray(value) || !value[0] || typeof value[0] !== 'object') {
+    return null
+  }
+  return value[0] as Readonly<Record<string, unknown>>
+}
+
+function partnerEvent(html: string): SteamPartnerEvent | null {
+  return firstRecord(
+    extractDataAttributeJson(html, 'data-partnereventstore')
+  ) as SteamPartnerEvent | null
+}
+
+function officialGroupName(html: string): string | null {
+  const group = firstRecord(
+    extractDataAttributeJson(html, 'data-groupvanityinfo')
+  ) as SteamGroup | null
+  if (typeof group?.group_name !== 'string') return null
+
+  const name = normalizeTitle(group.group_name).replace(/^official\s+/i, '')
+  return name || null
+}
+
+function localizedSubtitle(event: SteamPartnerEvent | null): string | null {
+  if (typeof event?.jsondata !== 'string') return null
+
+  try {
+    const data = JSON.parse(event.jsondata) as {
+      localized_subtitle?: unknown
+    }
+    const subtitle = Array.isArray(data.localized_subtitle)
+      ? data.localized_subtitle[0]
+      : null
+    return typeof subtitle === 'string' ? normalizeTitle(subtitle) : null
+  } catch {
+    return null
+  }
+}
+
+function titleFromCampaignSentence(value: string): string | null {
+  const normalized = normalizeTitle(value)
+    .replace(/\s+[|–—-]\s+Steam(?:\s+Store)?$/i, '')
+    .replace(/\s+Advertising App$/i, '')
+  const sentence = new RegExp(
+    `^(?:the|a|an)\\s+(.+?\\b${CAMPAIGN_KIND})\\b(?=\\s+(?:is|are|starts?|runs?|returns?|has|ends?)\\b|\\s*[.!–—-]|$)`,
+    'i'
+  ).exec(normalized)
+  const candidate = normalizeTitle(sentence?.[1] ?? normalized).replace(
+    /^(?:the|a|an)\s+/i,
+    ''
+  )
+
+  if (candidate.length < 6 || candidate.length > 120) return null
+  if (!new RegExp(`\\b${CAMPAIGN_KIND}\\b`, 'i').test(candidate)) return null
+  if (/[,;:]$/.test(candidate)) return null
+  if (
+    /^(?:steam|steam store|store|home|featured|special offers?|publisher sale)$/i.test(
+      candidate
+    )
+  ) {
+    return null
+  }
+  if (
+    /\b(?:click here|learn more|shop now|save up to|happening now|we(?:'|’)re|going shopping)\b/i.test(
+      candidate
+    )
+  ) {
+    return null
+  }
+
+  return candidate
+}
+
+function completePublisherTitle(
+  candidate: string,
+  groupName: string | null
+): string {
+  if (!groupName || !/\sPublisher Sale$/i.test(candidate)) return candidate
+
+  const prefix = candidate.replace(/\s+Publisher Sale$/i, '').trim()
+  if (
+    prefix.length >= 3 &&
+    groupName.toLowerCase().startsWith(prefix.toLowerCase())
+  ) {
+    return `${groupName} Publisher Sale`
+  }
+  return candidate
+}
+
+export function extractSteamCampaignTitle(
+  html: string,
+  fallbackLabel = ''
+): string | null {
+  const event = partnerEvent(html)
+  const eventName =
+    typeof event?.event_name === 'string' ? normalizeTitle(event.event_name) : ''
+  const subtitle =
+    localizedSubtitle(event) ??
+    extractMeta(html, 'og:description') ??
+    extractMeta(html, 'description') ??
+    ''
+  const documentTitle = /<title\b[^>]*>([\s\S]*?)<\/title>/i.exec(html)?.[1] ?? ''
+  const groupName = officialGroupName(html)
+
+  for (const source of [
+    eventName,
+    subtitle,
+    extractMeta(html, 'og:title') ?? '',
+    documentTitle,
+    fallbackLabel,
+  ]) {
+    const candidate = titleFromCampaignSentence(source)
+    if (candidate) return completePublisherTitle(candidate, groupName)
+  }
+  return null
+}
+
+export function extractSteamPartnerTiming(
+  html: string
+): Readonly<{
+  starts: { precision: 'datetime'; value: string }
+  ends: { precision: 'datetime'; value: string }
+}> | null {
+  const event = partnerEvent(html)
+  const start = Number(event?.rtime32_start_time)
+  const end = Number(event?.rtime32_end_time)
+  if (!Number.isInteger(start) || !Number.isInteger(end) || start <= 0 || end <= start) {
+    return null
+  }
+
+  return {
+    starts: { precision: 'datetime', value: new Date(start * 1_000).toISOString() },
+    ends: { precision: 'datetime', value: new Date(end * 1_000).toISOString() },
+  }
+}
 
 function parseUpcomingCalendar(html: string): readonly DetectedCampaign[] {
   const text = textFromHtml(html)
@@ -137,16 +311,20 @@ async function discoverLiveCampaigns(
         fetcher,
         `${officialUrl.toString()}?cc=us&l=english`
       )
-      const title = extractMeta(html, 'og:title') ?? label
+      const title = extractSteamCampaignTitle(html, label)
       const description =
         extractMeta(html, 'og:description') ?? extractMeta(html, 'description') ?? ''
+      if (!title) return null
       if (!isSaleCampaignText(`${title} ${description}`)) return null
       if (isExcludedCampaignText(`${title} ${description}`)) return null
 
       const matchingUpcoming = upcoming.find(
         (entry) => comparableName(entry.name) === comparableName(title)
       )
-      const exact = extractExactEnglishDateTimes(textFromHtml(html))
+      const partnerTiming = extractSteamPartnerTiming(html)
+      const exact = partnerTiming
+        ? [partnerTiming.starts, partnerTiming.ends]
+        : extractExactEnglishDateTimes(textFromHtml(html))
       if (exact.length >= 2) {
         const starts = exact[0]
         const ends = exact[exact.length - 1]
@@ -161,6 +339,7 @@ async function discoverLiveCampaigns(
           ends,
           officialUrl: officialUrl.toString(),
           sourceUrl: STORE_HOME_URL,
+          artworkUrl: extractOfficialArtwork(html, officialUrl.toString()),
         })
       }
 
@@ -175,6 +354,7 @@ async function discoverLiveCampaigns(
         ends: ends ?? matchingUpcoming?.ends,
         officialUrl: officialUrl.toString(),
         sourceUrl: STORE_HOME_URL,
+        artworkUrl: extractOfficialArtwork(html, officialUrl.toString()),
       })
     })
   )

@@ -2,11 +2,16 @@ import { AdapterError } from './types.ts'
 
 const REQUEST_TIMEOUT_MS = 15_000
 
-export async function fetchOfficialText(
+export type OfficialPage = Readonly<{
+  text: string
+  url: string
+}>
+
+export async function fetchOfficialPage(
   fetcher: typeof fetch,
   url: string,
   init: RequestInit = {}
-): Promise<string> {
+): Promise<OfficialPage> {
   const controller = new AbortController()
   const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS)
 
@@ -32,7 +37,10 @@ export async function fetchOfficialText(
       )
     }
 
-    return await response.text()
+    return {
+      text: await response.text(),
+      url: response.url || url,
+    }
   } catch (error) {
     if (error instanceof AdapterError) throw error
 
@@ -47,6 +55,14 @@ export async function fetchOfficialText(
   } finally {
     clearTimeout(timeout)
   }
+}
+
+export async function fetchOfficialText(
+  fetcher: typeof fetch,
+  url: string,
+  init: RequestInit = {}
+): Promise<string> {
+  return (await fetchOfficialPage(fetcher, url, init)).text
 }
 
 export async function fetchOfficialJson<T>(

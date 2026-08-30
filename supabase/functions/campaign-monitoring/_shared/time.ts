@@ -18,16 +18,18 @@ const ZONE_OFFSETS: Readonly<Record<string, string>> = {
 }
 
 const EXACT_ENGLISH_DATE =
-  /\b(January|February|March|April|May|June|July|August|September|October|November|December)\s+(\d{1,2})(?:st|nd|rd|th)?,?\s+(\d{4})\s+(?:at\s+)?(\d{1,2})(?::(\d{2}))?\s*(a\.?m\.?|p\.?m\.?)?\s*(UTC|GMT|BST|CET|CEST|EST|EDT|CST|CDT|MST|MDT|PST|PDT)\b/gi
+  /\b(January|February|March|April|May|June|July|August|September|October|November|December)\s+(\d{1,2})(?:st|nd|rd|th)?,?\s+(?:(\d{4})\s+)?(?:at\s+)?(\d{1,2})(?::(\d{2}))?\s*(a\.?m\.?|p\.?m\.?)?\s*(UTC|GMT|BST|CET|CEST|EST|EDT|CST|CDT|MST|MDT|PST|PDT)\b/gi
 
 export function extractExactEnglishDateTimes(
-  text: string
+  text: string,
+  defaultYear?: number
 ): readonly SourceBoundary[] {
   const values: SourceBoundary[] = []
 
   for (const match of text.matchAll(EXACT_ENGLISH_DATE)) {
     const month = monthNumber(match[1])
-    if (!month) continue
+    const year = match[3] ? Number(match[3]) : defaultYear
+    if (!month || !year) continue
 
     let hour = Number(match[4])
     const minute = Number(match[5] ?? '0')
@@ -38,7 +40,7 @@ export function extractExactEnglishDateTimes(
     if (meridiem === 'am' && hour === 12) hour = 0
     if (hour > 23 || minute > 59) continue
 
-    const date = canonicalDate(Number(match[3]), month, Number(match[2]))
+    const date = canonicalDate(year, month, Number(match[2]))
     const value = `${date}T${hour.toString().padStart(2, '0')}:${minute
       .toString()
       .padStart(2, '0')}:00${ZONE_OFFSETS[zone]}`

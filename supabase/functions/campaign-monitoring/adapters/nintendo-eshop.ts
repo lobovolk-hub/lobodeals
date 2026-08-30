@@ -12,10 +12,15 @@ import {
   uniqueBy,
 } from '../_shared/html.ts'
 import { extractOfficialArtwork } from '../_shared/artwork.ts'
-import { fetchOfficialText } from '../_shared/http.ts'
+import { fetchOfficialPage, fetchOfficialText } from '../_shared/http.ts'
 import { extractExactEnglishDateTimes } from '../_shared/time.ts'
-import { verifyKnownCampaigns } from '../_shared/verification.ts'
-import type { AdapterResult, DetectedCampaign, StoreAdapter } from '../_shared/types.ts'
+import { sourceExplicitlyEndsCampaign } from '../_shared/verification.ts'
+import type {
+  AdapterResult,
+  DetectedCampaign,
+  KnownCampaign,
+  StoreAdapter,
+} from '../_shared/types.ts'
 
 const SALES_URL = 'https://www.nintendo.com/us/store/sales-and-deals/'
 const NEWS_URL = 'https://www.nintendo.com/us/whatsnew/'
@@ -25,6 +30,82 @@ type NintendoArticle = {
   tags?: readonly { __ref?: string }[]
   title?: string
   'url({"relative":true})'?: string
+}
+
+function comparableNintendoUrl(value: string): string | null {
+  try {
+    const url = new URL(value)
+    if (url.hostname !== 'www.nintendo.com') return null
+    url.search = ''
+    url.hash = ''
+    url.pathname = url.pathname.replace(/\/+$/, '') || '/'
+    return url.toString().toLowerCase()
+  } catch {
+    return null
+  }
+}
+
+async function verifyNintendoKnownCampaigns(
+  fetcher: typeof fetch,
+  knownCampaigns: readonly KnownCampaign[],
+  detectedTabs: readonly DetectedCampaign[]
+): Promise<readonly string[]> {
+  const salesUrl = comparableNintendoUrl(SALES_URL)
+  const detectedUrls = new Set(
+    detectedTabs.flatMap((entry) =>
+      [entry.sourceUid, entry.officialUrl].flatMap((value) => {
+        const normalized = comparableNintendoUrl(value)
+        return normalized ? [normalized] : []
+      })
+    )
+  )
+  const eligible = knownCampaigns.filter((known) => {
+    const officialUrl = comparableNintendoUrl(known.officialUrl)
+    const sourceUrl = comparableNintendoUrl(known.sourceUrl)
+    return officialUrl !== null && officialUrl !== sourceUrl
+  })
+
+  const byUrl = new Map<string, KnownCampaign[]>()
+  for (const known of eligible) {
+    const normalized = comparableNintendoUrl(known.officialUrl)
+    if (!normalized) continue
+    const group = byUrl.get(normalized) ?? []
+    group.push(known)
+    byUrl.set(normalized, group)
+  }
+
+  const settled = await Promise.allSettled(
+    [...byUrl.values()].map(async (knownAtUrl) => {
+      const page = await fetchOfficialPage(fetcher, knownAtUrl[0].officialUrl)
+      const explicitlyEnded = sourceExplicitlyEndsCampaign(page.text)
+      const redirectedToSalesIndex =
+        comparableNintendoUrl(page.url) === salesUrl
+
+      return knownAtUrl
+        .filter((known) => {
+          if (explicitlyEnded) return true
+
+          const sourceUid = comparableNintendoUrl(known.sourceUid)
+          const officialUrl = comparableNintendoUrl(known.officialUrl)
+          const wasDiscoveredFromSales =
+            comparableNintendoUrl(known.sourceUrl) === salesUrl
+          const stillDetected =
+            (sourceUid !== null && detectedUrls.has(sourceUid)) ||
+            (officialUrl !== null && detectedUrls.has(officialUrl))
+
+          return (
+            wasDiscoveredFromSales &&
+            !stillDetected &&
+            redirectedToSalesIndex
+          )
+        })
+        .map(({ sourceUid }) => sourceUid)
+    })
+  )
+
+  return settled.flatMap((result) =>
+    result.status === 'fulfilled' ? result.value : []
+  )
 }
 
 function tabName(title: string, label: string): string {
@@ -167,10 +248,13 @@ export const runNintendoEshopAdapter: StoreAdapter = async ({
   knownCampaigns = [],
 }) => {
   const salesHtml = await fetchOfficialText(fetch, SALES_URL)
+  const tabsPromise = discoverCampaignTabs(fetch, salesHtml)
   const [tabs, news, explicitlyEndedSourceUids] = await Promise.all([
-    discoverCampaignTabs(fetch, salesHtml),
+    tabsPromise,
     discoverNewsCampaigns(now, fetch),
-    verifyKnownCampaigns(fetch, knownCampaigns, ['www.nintendo.com']),
+    tabsPromise.then((detectedTabs) =>
+      verifyNintendoKnownCampaigns(fetch, knownCampaigns, detectedTabs)
+    ),
   ])
 
   return {

@@ -4,6 +4,7 @@ import test from 'node:test'
 import { runBattleNetAdapter } from '../supabase/functions/campaign-monitoring/adapters/battle-net.ts'
 import { runEaAppAdapter } from '../supabase/functions/campaign-monitoring/adapters/ea-app.ts'
 import { runEpicGamesStoreAdapter } from '../supabase/functions/campaign-monitoring/adapters/epic-games-store.ts'
+import { runGogAdapter } from '../supabase/functions/campaign-monitoring/adapters/gog.ts'
 import { runMicrosoftStoreAdapter } from '../supabase/functions/campaign-monitoring/adapters/microsoft-store.ts'
 import { runNintendoEshopAdapter } from '../supabase/functions/campaign-monitoring/adapters/nintendo-eshop.ts'
 import { runPlayStationStoreAdapter } from '../supabase/functions/campaign-monitoring/adapters/playstation-store.ts'
@@ -29,6 +30,37 @@ const active = (overrides = {}) => ({
   ends_at: null,
   ...overrides,
 })
+
+function responseAt(body, url, init) {
+  const response = new Response(body, init)
+  Object.defineProperty(response, 'url', { value: url })
+  return response
+}
+
+const nintendoKnown = (overrides = {}) => ({
+  campaignKey: 'nintendo-indie-io',
+  sourceUid: 'https://www.nintendo.com/us/store/sales-and-deals/indie-io/',
+  name: 'Indie.io Sale',
+  state: 'live',
+  officialUrl:
+    'https://www.nintendo.com/us/store/sales-and-deals/indie-io/',
+  sourceUrl: 'https://www.nintendo.com/us/store/sales-and-deals/',
+  ...overrides,
+})
+
+const emptyNintendoNews =
+  '<script id="__NEXT_DATA__">{"props":{"pageProps":{"initialApolloState":{}}}}</script>'
+
+const validGogHome = (content = '') => `
+  <script id="gogcom-store-state" type="application/json">
+    {"sections":["PROMO_BANNER_SECTION"]}
+  </script>
+  <promo-banner-section>${content}</promo-banner-section>
+`
+
+const gogFeed = (items = '') => `
+  <rss version="2.0"><channel><title>GOG.com News</title>${items}</channel></rss>
+`
 
 test('partial discovery never ends a known campaign merely because it is absent', () => {
   assert.deepEqual(
@@ -289,6 +321,333 @@ test('Nintendo discovers campaign tabs without traversing the product catalog', 
   assert.deepEqual(result.campaigns.map(({ name }) => name), ['SEGA Sale'])
   assert.equal(result.sourceUrls.length, 2)
   assert.equal(calls.some((url) => url.includes('/products/')), false)
+})
+
+test('Nintendo ends a missing Sales tab only when its official URL redirects to the Sales index', async () => {
+  const salesUrl = 'https://www.nintendo.com/us/store/sales-and-deals/'
+  const known = nintendoKnown({
+    sourceUid: `${salesUrl}indie-io/`,
+    officialUrl: `${salesUrl}indie-io`,
+    sourceUrl: salesUrl.slice(0, -1),
+  })
+  const result = await runNintendoEshopAdapter({
+    now: new Date('2026-08-30T00:00:00Z'),
+    knownCampaigns: [known],
+    fetch: async (input) => {
+      const url = input.toString()
+      if (url === salesUrl) return new Response('<main>Current tabs</main>')
+      if (url === 'https://www.nintendo.com/us/whatsnew/') {
+        return new Response(emptyNintendoNews)
+      }
+      if (url === known.officialUrl) {
+        return responseAt('<main>Nintendo Sales & Deals</main>', salesUrl)
+      }
+      throw new Error(`Unexpected URL: ${url}`)
+    },
+  })
+
+  assert.deepEqual(result.explicitlyEndedSourceUids, [known.sourceUid])
+  assert.deepEqual(
+    campaignKeysToEnd({
+      sourceSucceeded: true,
+      coverage: result.coverage,
+      activeCampaigns: [
+        active({
+          campaign_key: known.campaignKey,
+          source_uid: known.sourceUid,
+        }),
+      ],
+      detectedCampaigns: result.campaigns,
+      explicitlyEndedSourceUids: result.explicitlyEndedSourceUids,
+      now: new Date('2026-08-30T00:00:00Z'),
+    }),
+    [known.campaignKey]
+  )
+})
+
+test('Nintendo preserves a missing Sales tab when its specific page still resolves', async () => {
+  const salesUrl = 'https://www.nintendo.com/us/store/sales-and-deals/'
+  const known = nintendoKnown()
+  const result = await runNintendoEshopAdapter({
+    now: new Date('2026-08-30T00:00:00Z'),
+    knownCampaigns: [known],
+    fetch: async (input) => {
+      const url = input.toString()
+      if (url === salesUrl) return new Response('<main>Current tabs</main>')
+      if (url === 'https://www.nintendo.com/us/whatsnew/') {
+        return new Response(emptyNintendoNews)
+      }
+      if (url === known.officialUrl) {
+        return responseAt('<h1>Indie.io Sale</h1>', known.officialUrl)
+      }
+      throw new Error(`Unexpected URL: ${url}`)
+    },
+  })
+
+  assert.deepEqual(result.explicitlyEndedSourceUids, [])
+})
+
+test('Nintendo preserves a missing Sales tab when verification fails', async () => {
+  const salesUrl = 'https://www.nintendo.com/us/store/sales-and-deals/'
+  const known = nintendoKnown()
+  const result = await runNintendoEshopAdapter({
+    now: new Date('2026-08-30T00:00:00Z'),
+    knownCampaigns: [known],
+    fetch: async (input) => {
+      const url = input.toString()
+      if (url === salesUrl) return new Response('<main>Current tabs</main>')
+      if (url === 'https://www.nintendo.com/us/whatsnew/') {
+        return new Response(emptyNintendoNews)
+      }
+      if (url === known.officialUrl) {
+        return new Response('Unavailable', { status: 503 })
+      }
+      throw new Error(`Unexpected URL: ${url}`)
+    },
+  })
+
+  assert.deepEqual(result.explicitlyEndedSourceUids, [])
+})
+
+test('Nintendo does not end a known campaign that is still a detected Sales tab', async () => {
+  const salesUrl = 'https://www.nintendo.com/us/store/sales-and-deals/'
+  const known = nintendoKnown({
+    sourceUid: `${salesUrl}indie-io`,
+    officialUrl: `${salesUrl}indie-io`,
+  })
+  const result = await runNintendoEshopAdapter({
+    now: new Date('2026-08-30T00:00:00Z'),
+    knownCampaigns: [known],
+    fetch: async (input) => {
+      const url = input.toString()
+      if (url === salesUrl) {
+        return new Response(
+          '<a href="/us/store/sales-and-deals/indie-io/">Indie.io</a>'
+        )
+      }
+      if (url === 'https://www.nintendo.com/us/whatsnew/') {
+        return new Response(emptyNintendoNews)
+      }
+      if (url.startsWith(`${salesUrl}indie-io`)) {
+        return responseAt(
+          '<meta property="og:title" content="Indie.io Sale">',
+          `${salesUrl}indie-io/`
+        )
+      }
+      throw new Error(`Unexpected URL: ${url}`)
+    },
+  })
+
+  assert.equal(result.campaigns.length, 1)
+  assert.deepEqual(result.explicitlyEndedSourceUids, [])
+})
+
+test('GOG News discovers an official Sale campaign page without traversing products', async () => {
+  const articleUrl =
+    'https://www.gog.com/en/news/back_to_school_sale_brings_another_giveaway'
+  const campaignUrl = 'https://www.gog.com/promo/2026_back_to_school_sale'
+  const calls = []
+  const result = await runGogAdapter({
+    now: new Date('2026-08-30T00:00:00Z'),
+    fetch: async (input) => {
+      const url = input.toString()
+      calls.push(url)
+      if (url === 'https://www.gog.com/en/') {
+        return new Response(validGogHome())
+      }
+      if (url === 'https://www.gog.com/frontpage/rss') {
+        return new Response(
+          gogFeed(`
+            <item>
+              <title>Back to School Sale brings another giveaway!</title>
+              <link>${articleUrl}</link>
+              <description><![CDATA[
+                <a href="https://www.gog.com/game/example?source=news">Example</a>
+              ]]></description>
+            </item>
+          `)
+        )
+      }
+      if (url === articleUrl) {
+        return responseAt(
+          `
+            <meta property="og:title" content="Back to School Sale brings another giveaway!">
+            <meta property="og:image" content="//images.gog.com/news-sale.jpg">
+            <time class="article__date" datetime="2026-08-26T16:00"></time>
+            <a href="${campaignUrl}?source=news">Back to School Sale</a>
+            <a href="https://www.gog.com/game/example?source=news">Example game</a>
+            <p>Back to School Sale ends on September 10th, 1 PM UTC.</p>
+            <p>The Sale also includes a giveaway.</p>
+          `,
+          articleUrl
+        )
+      }
+      if (url === campaignUrl) {
+        return responseAt(
+          `
+            <meta property="og:image" content="https://images.gog.com/back-to-school-art.jpg">
+            <h1>Back to School Sale</h1>
+          `,
+          'https://www.gog.com/es/back-to-school-sale?source=news'
+        )
+      }
+      throw new Error(`Unexpected URL: ${url}`)
+    },
+  })
+
+  assert.equal(result.campaigns.length, 1)
+  assert.deepEqual(result.campaigns[0], {
+    sourceUid: 'https://www.gog.com/back-to-school-sale',
+    name: 'Back to School Sale',
+    storeSlug: 'gog',
+    state: 'live',
+    lifecycleBasis: 'official-source',
+    ends: {
+      precision: 'datetime',
+      value: '2026-09-10T13:00:00+00:00',
+    },
+    officialUrl: 'https://www.gog.com/back-to-school-sale',
+    sourceUrl: articleUrl,
+    artworkUrl: 'https://images.gog.com/back-to-school-art.jpg',
+  })
+  assert.equal(calls.some((url) => url.includes('/game/')), false)
+})
+
+test('GOG accepts the current locale-less Sale links exposed by its Home', async () => {
+  const campaignUrl = 'https://www.gog.com/back-to-school-sale'
+  const result = await runGogAdapter({
+    now: new Date('2026-08-30T00:00:00Z'),
+    fetch: async (input) => {
+      const url = input.toString()
+      if (url === 'https://www.gog.com/en/') {
+        return new Response(
+          validGogHome(
+            `<a href="${campaignUrl}">8000+ deals up to -95%</a>`
+          )
+        )
+      }
+      if (url === 'https://www.gog.com/frontpage/rss') {
+        return new Response(gogFeed())
+      }
+      if (url === campaignUrl) {
+        return responseAt('<h1>Back to School Sale</h1>', campaignUrl)
+      }
+      throw new Error(`Unexpected URL: ${url}`)
+    },
+  })
+
+  assert.deepEqual(result.campaigns.map(({ name, sourceUid }) => ({
+    name,
+    sourceUid,
+  })), [
+    {
+      name: 'Back to School Sale',
+      sourceUid: 'https://www.gog.com/back-to-school-sale',
+    },
+  ])
+})
+
+test('GOG reuses a locale-bearing source UID from an equivalent known campaign', async () => {
+  const currentUrl = 'https://www.gog.com/back-to-school-sale'
+  const persistedUrl = 'https://www.gog.com/en/back-to-school-sale'
+  const knownCampaign = {
+    campaignKey: 'gog-persisted-back-to-school',
+    sourceUid: persistedUrl,
+    name: 'Back to School Sale',
+    state: 'live',
+    officialUrl: persistedUrl,
+    sourceUrl: 'https://www.gog.com/en/',
+  }
+  const result = await runGogAdapter({
+    now: new Date('2026-08-30T00:00:00Z'),
+    knownCampaigns: [knownCampaign],
+    fetch: async (input) => {
+      const url = input.toString()
+      if (url === 'https://www.gog.com/en/') {
+        return new Response(
+          validGogHome(
+            `<a href="${currentUrl}">8000+ deals up to -95%</a>`
+          )
+        )
+      }
+      if (url === 'https://www.gog.com/frontpage/rss') {
+        return new Response(gogFeed())
+      }
+      if (url === currentUrl || url === persistedUrl) {
+        return responseAt('<h1>Back to School Sale</h1>', currentUrl)
+      }
+      throw new Error(`Unexpected URL: ${url}`)
+    },
+  })
+
+  assert.equal(result.campaigns.length, 1)
+  assert.equal(result.campaigns[0].sourceUid, persistedUrl)
+  assert.equal(result.campaigns[0].officialUrl, currentUrl)
+})
+
+test('GOG ignores a giveaway-only News item without fetching product links', async () => {
+  const articleUrl = 'https://www.gog.com/en/news/free_game_giveaway'
+  const calls = []
+  const result = await runGogAdapter({
+    now: new Date('2026-08-30T00:00:00Z'),
+    fetch: async (input) => {
+      const url = input.toString()
+      calls.push(url)
+      if (url === 'https://www.gog.com/en/') {
+        return new Response(validGogHome())
+      }
+      if (url === 'https://www.gog.com/frontpage/rss') {
+        return new Response(
+          gogFeed(`
+            <item>
+              <title>Giveaway: claim a free game</title>
+              <link>${articleUrl}</link>
+              <description><![CDATA[
+                <a href="https://www.gog.com/game/free_example">Free game</a>
+              ]]></description>
+            </item>
+          `)
+        )
+      }
+      throw new Error(`Unexpected traversal: ${url}`)
+    },
+  })
+
+  assert.deepEqual(result.campaigns, [])
+  assert.deepEqual(calls, [
+    'https://www.gog.com/en/',
+    'https://www.gog.com/frontpage/rss',
+  ])
+})
+
+test('GOG returns an empty healthy result for recognized surfaces with no campaigns', async () => {
+  const result = await runGogAdapter({
+    now: new Date('2026-08-30T00:00:00Z'),
+    fetch: async (input) =>
+      new Response(
+        input.toString() === 'https://www.gog.com/en/'
+          ? validGogHome()
+          : gogFeed()
+      ),
+  })
+
+  assert.deepEqual(result.campaigns, [])
+  assert.equal(result.sourceUrls.length, 2)
+})
+
+test('GOG rejects an HTTP 200 response whose News discovery contract is unrecognizable', async () => {
+  await assert.rejects(
+    runGogAdapter({
+      now: new Date('2026-08-30T00:00:00Z'),
+      fetch: async (input) =>
+        new Response(
+          input.toString() === 'https://www.gog.com/en/'
+            ? validGogHome()
+            : '<html><main>GOG News is unavailable</main></html>'
+        ),
+    }),
+    (error) => error.code === 'OFFICIAL_CAMPAIGN_DISCOVERY_UNAVAILABLE'
+  )
 })
 
 test('EA uses general official discovery and rejects a product-only deals grid', async () => {

@@ -10,6 +10,8 @@ documentation, not a replacement for the Product Authority.
   `starts_at` / `ends_at`. Nullable `artwork_url` stores only safe HTTPS
   artwork discovered from metadata on a campaign-specific official page.
 - `public.sales_source_health` has one internal row for each canonical store.
+- `public.campaign_monitor_token_verifier()` exposes only the one-way invocation
+  verifier to `service_role`; it is the sole custom public function.
 - `campaign-monitoring` is the only monitoring Edge Function. Its ten adapters
   run independently and can write only the two tables above.
 - The frontend reads only live/upcoming `sales_campaigns` rows through the
@@ -125,8 +127,15 @@ snapshots, not invariants; the scheduler may change them as official sources
 change.
 
 The original scheduler gate included a complete probe, a forced
-failure-isolation probe, and before/after protected-object comparisons. Auth
-users, identities, profiles, tracked items, `official_ps_store_deals`,
-`automation_runs`, and `ps_ingest_queue` were unchanged by that validation.
-Blocked sources remain visible as `temporarily_unavailable` and are retried on
-every cycle rather than replaced with third-party or manual data.
+failure-isolation probe, and before/after write-boundary comparisons. Blocked
+sources remain visible as `temporarily_unavailable` and are retried on every
+cycle rather than replaced with third-party or manual data.
+
+## Post-transition repository boundary
+
+The database's current application-facing public schema contains only
+`sales_campaigns`, `sales_source_health`, and the invocation verifier described
+above. Applied transition migrations remain immutable history under
+`supabase/migrations/`; there is no separate operational legacy SQL directory,
+catalog/pricing pipeline, user-account backend, or ingestion worker in the
+current architecture.

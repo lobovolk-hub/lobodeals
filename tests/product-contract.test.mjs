@@ -466,7 +466,7 @@ test('Sales source boundary reads only the new public feed and has no manual reg
   assert.doesNotMatch(source, /curated|manual.*event|autumn/i)
 })
 
-test('repository guidance reflects closed authority and the later SQL gate', async () => {
+test('repository guidance reflects closed authority and the completed legacy transition', async () => {
   const agents = await readFile(path.join(root, 'AGENTS.md'), 'utf8')
   const readme = await readFile(path.join(root, 'README.md'), 'utf8')
   const assetDoc = await readFile(
@@ -476,7 +476,8 @@ test('repository guidance reflects closed authority and the later SQL gate', asy
 
   assert.match(agents, /25 August 2026/)
   assert.match(agents, /P1–P11 are CLOSED/)
-  assert.match(agents, /tracked \`sql\/\` directory is a temporary protected exception/)
+  assert.doesNotMatch(agents, /temporary protected exception/)
+  assert.doesNotMatch(readme, /tracked \`sql\/\` directory/)
   assert.doesNotMatch(readme, /purely static|minimal, static/i)
   assert.match(readme, /campaign-monitoring/)
 

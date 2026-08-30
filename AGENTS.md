@@ -120,44 +120,45 @@ Those scheduler gates closed on 26 August 2026. The single active job
 invoke all ten adapters. A blocked adapter is retried every cycle and is never
 filtered out of scheduling.
 
-## Protected infrastructure and later gates
+## Current infrastructure and security boundaries
 
 Keep the repository and Git history, GitHub repository, `lobodeals.com` and
 useful DNS, the existing Vercel project/integration, the existing Supabase
 Project, useful configuration and secrets, appropriate LoboDeals brand assets,
 GTM when useful, and `NEXT_PUBLIC_SITE_URL`.
 
-The tracked `sql/` directory is a temporary protected exception. It remains
-until the separately authorized remote Supabase cleanup plan closes its
-dependencies. Do not expand or reuse legacy SQL for the new product.
+The current Supabase application boundary consists of
+`public.sales_campaigns`, `public.sales_source_health`,
+`public.campaign_monitor_token_verifier()`, Edge Function
+`campaign-monitoring`, Vault secret `campaign_monitor_token`, and the single
+`campaign-monitoring-every-4-hours` cron job. Keep that boundary small. The
+frontend uses only `NEXT_PUBLIC_SUPABASE_URL` and
+`NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`; never introduce a Supabase secret into
+the frontend or Vercel runtime.
 
-Do not touch `D:\\Proyectos\\worker-playstation-ingest` in this pass. Local or
-remote Worker retirement requires separate authorization.
-
-Do not delete or mutate remote Supabase legacy content, the Supabase Project,
-Auth users, identities, profiles, or tracked data.
+The legacy Worker, user/account tracking schema, non-user catalog/pricing
+backend, and operational `sql/` scripts were retired through their authorized
+transition gates. Applied transition migrations in `supabase/migrations/` are
+the durable history. Do not recreate or route current work through retired
+systems.
 
 ## Local authorization and prohibitions
 
-Local rebuild work may create, modify, and delete files; remove dead npm
-dependencies; and run tests, lint, and build.
+Authorized local product work may create, modify, and delete files; remove dead
+npm dependencies; and run tests, lint, and build.
 
 Without later explicit authorization, do not:
 
 - commit, push, deploy, or open a pull request;
 - modify production, Vercel, Cloudflare, GitHub remote state, DNS, or domains;
 - modify remote Supabase schemas, data, functions, RPC, triggers, cron, Edge
-  Functions, users, identities, profiles, or tracked items;
-- retire the remote PlayStation ingestion Worker or its routes, triggers, or
-  secrets;
+  Functions, Vault, or Auth;
 - rotate, delete, or expose secrets;
 - use `git reset`, `git clean`, destructive checkout/restore, automatic stash,
   or broad revert.
 
-The pre-existing uncommitted rebuild is authorized work. Preserve compatible
-parts and consciously remove incompatible legacy systems; never discard the
-working tree in bulk and never create archive, legacy, backup, `.old`, or `.bak`
-copies.
+Preserve user work and never discard the working tree in bulk. Do not create
+archive, legacy, backup, `.old`, or `.bak` copies.
 
 ## Next.js and verification
 
@@ -172,7 +173,7 @@ After every broad change run:
 - `git status --short`
 - `git diff --stat`
 
-Do not commit the result.
+Do not commit unless the active gate explicitly authorizes it.
 
 <!-- BEGIN:nextjs-agent-rules -->
 

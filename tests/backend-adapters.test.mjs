@@ -62,6 +62,42 @@ const gogFeed = (items = '') => `
   <rss version="2.0"><channel><title>GOG.com News</title>${items}</channel></rss>
 `
 
+const eaDealsUrl = 'https://www.ea.com/sales/deals'
+const eaNewsUrl = 'https://www.ea.com/news'
+
+const validEaDeals = (content = '') => `
+  <html>
+    <head><link rel="canonical" href="${eaDealsUrl}"></head>
+    <body>
+      <ea-hybrid-themedsale-controller target-dom-id="ea-sale-row">
+      </ea-hybrid-themedsale-controller>
+      <ea-hybrid-themedsale-row id="ea-sale-row" title-text="Player favorites">
+        <ea-hybrid-themedsale-product
+          link-url="/games/example/buy"
+          label-text="Save 50%">
+        </ea-hybrid-themedsale-product>
+        ${content}
+      </ea-hybrid-themedsale-row>
+    </body>
+  </html>
+`
+
+const validEaNews = (content = '') => `
+  <html>
+    <head><link href="${eaNewsUrl}" rel="canonical"></head>
+    <body>
+      <div id="__next">
+        <main>
+          <h1>News &amp; Updates</h1>
+          <a href="/news/company-update">Company update</a>
+          ${content}
+        </main>
+      </div>
+      <script id="__NEXT_DATA__" type="application/json">{}</script>
+    </body>
+  </html>
+`
+
 test('partial discovery never ends a known campaign merely because it is absent', () => {
   assert.deepEqual(
     campaignKeysToEnd({
@@ -650,27 +686,171 @@ test('GOG rejects an HTTP 200 response whose News discovery contract is unrecogn
   )
 })
 
-test('EA uses general official discovery and rejects a product-only deals grid', async () => {
+test('EA returns a successful partial empty result for recognized official surfaces', async () => {
   const calls = []
+  const result = await runEaAppAdapter({
+    now: new Date('2026-08-30T00:00:00Z'),
+    fetch: async (input) => {
+      const url = input.toString()
+      calls.push(url)
+      if (url === eaDealsUrl) return new Response(validEaDeals())
+      if (url === eaNewsUrl) return new Response(validEaNews())
+      throw new Error(`Unexpected traversal: ${url}`)
+    },
+  })
+
+  assert.deepEqual(result.campaigns, [])
+  assert.equal(result.coverage, 'partial')
+  assert.deepEqual(result.explicitlyEndedSourceUids, [])
+  assert.deepEqual(calls, [eaDealsUrl, eaNewsUrl])
+})
+
+test('EA rejects HTTP 200 Deals markup without the recognized discovery contract', async () => {
   await assert.rejects(
     runEaAppAdapter({
-      now: new Date('2026-08-26T00:00:00Z'),
-      fetch: async (input) => {
-        const url = input.toString()
-        calls.push(url)
-        if (url.includes('/sales/deals')) {
-          return new Response(
-            '<ea-hybrid-themedsale-product link-url="/games/example/buy" label-text="Save 50%"></ea-hybrid-themedsale-product>'
-          )
-        }
-        if (url.endsWith('/news')) return new Response('<main>EA News</main>')
-        throw new Error(`Unexpected product traversal: ${url}`)
-      },
+      now: new Date('2026-08-30T00:00:00Z'),
+      fetch: async (input) =>
+        new Response(
+          input.toString() === eaDealsUrl
+            ? `<html><head><link rel="canonical" href="${eaDealsUrl}"></head><body><main>Featured games</main></body></html>`
+            : validEaNews()
+        ),
     }),
-    (error) => error.code === 'OFFICIAL_CAMPAIGN_DISCOVERY_UNAVAILABLE'
+    (error) =>
+      error.code === 'OFFICIAL_CAMPAIGN_DISCOVERY_UNAVAILABLE' &&
+      error.blocked === false
   )
-  assert.equal(calls.some((url) => url.includes('/summer-sale')), false)
-  assert.equal(calls.some((url) => url.includes('/games/example')), false)
+})
+
+test('EA rejects HTTP 200 News markup without the recognized discovery contract', async () => {
+  await assert.rejects(
+    runEaAppAdapter({
+      now: new Date('2026-08-30T00:00:00Z'),
+      fetch: async (input) =>
+        new Response(
+          input.toString() === eaDealsUrl
+            ? validEaDeals()
+            : `<html><head><link rel="canonical" href="${eaNewsUrl}"></head><body><main>News unavailable</main><script id="__NEXT_DATA__">{}</script></body></html>`
+        ),
+    }),
+    (error) =>
+      error.code === 'OFFICIAL_CAMPAIGN_DISCOVERY_UNAVAILABLE' &&
+      error.blocked === false
+  )
+})
+
+test('EA preserves blocked semantics when either official source returns HTTP 403', async () => {
+  for (const blockedUrl of [eaDealsUrl, eaNewsUrl]) {
+    await assert.rejects(
+      runEaAppAdapter({
+        now: new Date('2026-08-30T00:00:00Z'),
+        fetch: async (input) => {
+          const url = input.toString()
+          if (url === blockedUrl) {
+            return new Response('Forbidden', { status: 403 })
+          }
+          return new Response(
+            url === eaDealsUrl ? validEaDeals() : validEaNews()
+          )
+        },
+      }),
+      (error) => error.code === 'HTTP_403' && error.blocked === true
+    )
+  }
+})
+
+test('EA partial empty discovery does not end a known campaign by absence', async () => {
+  const known = {
+    campaignKey: 'ea-known-sale',
+    sourceUid: 'https://www.ea.com/sales/summer-sale',
+    name: 'EA Summer Sale',
+    state: 'live',
+    officialUrl: 'https://www.ea.com/sales/summer-sale',
+    sourceUrl: eaDealsUrl,
+  }
+  const result = await runEaAppAdapter({
+    now: new Date('2026-08-30T00:00:00Z'),
+    knownCampaigns: [known],
+    fetch: async (input) => {
+      const url = input.toString()
+      if (url === eaDealsUrl) return new Response(validEaDeals())
+      if (url === eaNewsUrl) return new Response(validEaNews())
+      if (url === known.officialUrl) {
+        return new Response('<main>EA Summer Sale remains available.</main>')
+      }
+      throw new Error(`Unexpected URL: ${url}`)
+    },
+  })
+
+  assert.deepEqual(result.campaigns, [])
+  assert.deepEqual(result.explicitlyEndedSourceUids, [])
+  assert.deepEqual(
+    campaignKeysToEnd({
+      sourceSucceeded: true,
+      coverage: result.coverage,
+      activeCampaigns: [
+        active({
+          campaign_key: known.campaignKey,
+          source_uid: known.sourceUid,
+        }),
+      ],
+      detectedCampaigns: result.campaigns,
+      explicitlyEndedSourceUids: result.explicitlyEndedSourceUids,
+      now: new Date('2026-08-30T00:00:00Z'),
+    }),
+    []
+  )
+})
+
+test('EA still detects a valid official campaign-level Sale link', async () => {
+  const campaignUrl = 'https://www.ea.com/sales/summer-sale'
+  const calls = []
+  const result = await runEaAppAdapter({
+    now: new Date('2026-08-30T00:00:00Z'),
+    fetch: async (input) => {
+      const url = input.toString()
+      calls.push(url)
+      if (url === eaDealsUrl) {
+        return new Response(
+          validEaDeals(`<a href="${campaignUrl}">EA Summer Sale</a>`)
+        )
+      }
+      if (url === eaNewsUrl) return new Response(validEaNews())
+      if (url === campaignUrl) {
+        return new Response(
+          '<meta property="og:title" content="EA Summer Sale"><main>The EA Summer Sale is live now.</main>'
+        )
+      }
+      throw new Error(`Unexpected URL: ${url}`)
+    },
+  })
+
+  assert.equal(result.campaigns.length, 1)
+  assert.equal(result.campaigns[0].name, 'EA Summer Sale')
+  assert.equal(result.campaigns[0].officialUrl, campaignUrl)
+  assert.deepEqual(calls, [eaDealsUrl, eaNewsUrl, campaignUrl])
+})
+
+test('EA does not convert or traverse ordinary game links that mention a Sale', async () => {
+  const productUrl = 'https://www.ea.com/games/example/buy'
+  const calls = []
+  const result = await runEaAppAdapter({
+    now: new Date('2026-08-30T00:00:00Z'),
+    fetch: async (input) => {
+      const url = input.toString()
+      calls.push(url)
+      if (url === eaDealsUrl) {
+        return new Response(
+          validEaDeals(`<a href="${productUrl}">Summer Sale: Save 75%</a>`)
+        )
+      }
+      if (url === eaNewsUrl) return new Response(validEaNews())
+      throw new Error(`Unexpected product traversal: ${url}`)
+    },
+  })
+
+  assert.deepEqual(result.campaigns, [])
+  assert.equal(calls.includes(productUrl), false)
 })
 
 test('Epic can use official campaign-level HTML when the source permits it', async () => {

@@ -25,7 +25,7 @@ import {
 } from './_shared/persistence.ts'
 
 const JSON_HEADERS = { 'Content-Type': 'application/json; charset=utf-8' }
-const ADAPTER_VERSION = '6'
+const ADAPTER_VERSION = '7'
 
 type MonitorRequest = Readonly<{
   mode?: 'probe' | 'persist'

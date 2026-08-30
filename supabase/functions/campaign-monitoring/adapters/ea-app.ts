@@ -16,6 +16,74 @@ import type { AdapterResult, DetectedCampaign, StoreAdapter } from '../_shared/t
 const DEALS_URL = 'https://www.ea.com/sales/deals'
 const NEWS_URL = 'https://www.ea.com/news'
 
+function tagAttribute(tag: string, name: string): string | null {
+  const match = new RegExp(
+    `\\b${name}\\s*=\\s*(?:"([^"]*)"|'([^']*)')`,
+    'i'
+  ).exec(tag)
+  return match ? decodeHtml(match[1] ?? match[2] ?? '') : null
+}
+
+function hasCanonicalUrl(html: string, expected: string): boolean {
+  const expectedUrl = new URL(expected)
+
+  return [...html.matchAll(/<link\b[^>]*>/gi)].some((match) => {
+    const rel = tagAttribute(match[0], 'rel')
+    const href = tagAttribute(match[0], 'href')
+    if (!rel?.split(/\s+/).includes('canonical') || !href) return false
+
+    try {
+      const actual = new URL(href, expectedUrl)
+      actual.search = ''
+      actual.hash = ''
+      return actual.toString() === expectedUrl.toString()
+    } catch {
+      return false
+    }
+  })
+}
+
+function assertDealsDiscoveryContract(html: string): void {
+  const recognized =
+    hasCanonicalUrl(html, DEALS_URL) &&
+    /<ea-hybrid-themedsale-controller\b/i.test(html) &&
+    /<ea-hybrid-themedsale-row\b/i.test(html) &&
+    /<ea-hybrid-themedsale-product\b/i.test(html)
+
+  if (!recognized) {
+    throw new AdapterError(
+      'OFFICIAL_CAMPAIGN_DISCOVERY_UNAVAILABLE',
+      'EA Deals no longer exposes the recognized official themed-sale surface'
+    )
+  }
+}
+
+function assertNewsDiscoveryContract(html: string): void {
+  const hasHeading = [...html.matchAll(/<h1\b[^>]*>([\s\S]*?)<\/h1>/gi)].some(
+    (match) => textFromHtml(match[1]) === 'News & Updates'
+  )
+  const hasArticleLink = extractAnchors(html, NEWS_URL).some(({ href }) => {
+    const url = new URL(href)
+    return (
+      url.hostname === 'www.ea.com' &&
+      /^\/news\/[^/]+\/?$/i.test(url.pathname)
+    )
+  })
+  const recognized =
+    hasCanonicalUrl(html, NEWS_URL) &&
+    /<script\b[^>]*id=["']__NEXT_DATA__["'][^>]*>/i.test(html) &&
+    /<main\b/i.test(html) &&
+    hasHeading &&
+    hasArticleLink
+
+  if (!recognized) {
+    throw new AdapterError(
+      'OFFICIAL_CAMPAIGN_DISCOVERY_UNAVAILABLE',
+      'EA News no longer exposes the recognized official News & Updates surface'
+    )
+  }
+}
+
 function customElementLinks(
   html: string,
   baseUrl: string
@@ -76,18 +144,13 @@ export const runEaAppAdapter: StoreAdapter = async ({
     fetchOfficialText(fetch, DEALS_URL),
     fetchOfficialText(fetch, NEWS_URL),
   ])
+  assertDealsDiscoveryContract(dealsHtml)
+  assertNewsDiscoveryContract(newsHtml)
+
   const links = uniqueBy(
     [...campaignLinks(dealsHtml, DEALS_URL), ...campaignLinks(newsHtml, NEWS_URL)],
     ({ href }) => href
   )
-
-  if (links.length === 0) {
-    throw new AdapterError(
-      'OFFICIAL_CAMPAIGN_DISCOVERY_UNAVAILABLE',
-      'EA official deals exposes discounted products but no campaign-level discovery contract, and official news exposes no current EA app sale campaign links',
-      true
-    )
-  }
 
   const settled = await Promise.allSettled(
     links.map(async ({ href, label }): Promise<DetectedCampaign | null> => {

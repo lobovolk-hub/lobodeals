@@ -425,60 +425,1506 @@ test('Microsoft reads campaign metadata without treating page sections as campai
   assert.equal(result.coverage, 'partial')
 })
 
-test('PlayStation prioritizes US Store campaign modules and keeps Blog complementary', async () => {
-  const storeUrl = 'https://store.playstation.com/en-us/pages/latest'
-  const graphqlUrl = 'https://web.np.playstation.com/api/graphql/v1/'
-  const campaignUrl = 'https://store.playstation.com/en-us/pages/summer-savings'
-  const result = await runPlayStationStoreAdapter({
-    now: new Date('2026-08-26T00:00:00Z'),
-    fetch: async (input, init) => {
-      const url = input.toString()
-      if (url === storeUrl) {
-        return new Response(
-          `<script id="__NEXT_DATA__">${JSON.stringify({
-            runtimeConfig: {
-              emsClientId: 'official-client',
-              service: { gqlBrowser: { host: graphqlUrl } },
-            },
-          })}</script>`
-        )
-      }
-      if (url === 'https://blog.playstation.com/category/ps-store/') {
-        return new Response('<main>No complementary article</main>')
-      }
-      if (url === graphqlUrl) {
-        assert.equal(init?.method, 'POST')
-        return Response.json({
-          data: {
-            emsExperienceRetrieve: {
-              views: [
-                {
-                  components: [
-                    {
-                      altText: 'Summer Savings Sale',
-                      link: { target: campaignUrl },
-                    },
-                  ],
-                },
-              ],
-            },
+const psGraphqlUrl = 'https://web.np.playstation.com/api/graphql/v1/op'
+const psBlogUrl = 'https://blog.playstation.com/category/ps-store/'
+const psExperienceHash =
+  'b5078800ed1bdebee9800979f9306abeadc5169030263f7095fe573b12e52270'
+const psDefaultViewHash =
+  'fc2998417fe7297a559b7f3798bf1c5e1650d88e926269bf6d8bd2cce3fddc76'
+
+const psCategoryUrl = (categoryId) =>
+  `https://store.playstation.com/en-us/category/${categoryId}/1`
+
+const psCategoryLink = (categoryId, localizedName = `cat.gma.${categoryId}`) => ({
+  __typename: 'EMSLink',
+  localizedName,
+  target: categoryId,
+  type: 'EMS_CATEGORY',
+})
+
+const psView = ({ purpose, reportingName, components = [] }) => ({
+  __typename: 'EMSView',
+  components,
+  purpose,
+  reportingName,
+})
+
+const psDealsNavigation = () =>
+  psView({
+    purpose: 'COLLECTION',
+    reportingName: 'DEALSLINKS',
+    components: [
+      {
+        __typename: 'EMSImageComponent',
+        altText: 'All deals',
+        link: psCategoryLink('all-deals'),
+      },
+    ],
+  })
+
+const psLatestNavigation = () =>
+  psView({
+    purpose: 'COLLECTION',
+    reportingName: 'LATESTWHATSHOT',
+    components: [],
+  })
+
+function psExperience(alias, views) {
+  return {
+    data: {
+      emsExperienceRetrieve: {
+        __typename: 'EMSExperience',
+        alias,
+        id: 'experience-us',
+        views: [
+          {
+            __typename: 'EMSViewCollection',
+            childViews: views,
+            reportingName: alias.toUpperCase(),
+            type: 'STORE_CAROUSEL',
           },
-        })
-      }
-      if (url === campaignUrl) {
-        return new Response(
-          '<meta property="og:title" content="Summer Savings Sale"><p>Save now.</p>'
+        ],
+      },
+    },
+  }
+}
+
+function psDefaultView(text = 'Promotion') {
+  return {
+    data: {
+      emsDefaultViewRetrieve: {
+        __typename: 'EMSViewCollection',
+        childViews: [
+          psView({
+            purpose: 'SIMPLE_TEXT',
+            components: [{ __typename: 'EMSTextComponent', text }],
+          }),
+          psView({
+            purpose: 'CATEGORY_GRID',
+            components: [{ __typename: 'EMSGridComponent' }],
+          }),
+        ],
+        reportingName: 'INTERNAL_PROMOTION_NAME',
+      },
+    },
+  }
+}
+
+function psDealsCampaign({
+  categoryId = 'publisher-week',
+  label = 'Publisher Week',
+  artwork = 'https://image.api.playstation.com/publisher-week.jpg',
+  action = 'PUBLISHER_WEEK_PROMO',
+  description,
+} = {}) {
+  return psView({
+    purpose: 'COLLECTION',
+    reportingName: 'DEALSTOP',
+    components: [
+      {
+        __typename: 'EMSImageComponent',
+        altText: label,
+        imageUrl: artwork,
+        link: psCategoryLink(categoryId),
+        telemetryData: {
+          contentSource: 'emsBanner',
+          interactAction: action,
+          interactLink: `EMS_CATEGORY:${categoryId}:cat.gma.${categoryId}`,
+        },
+      },
+      ...(description
+        ? [{ __typename: 'EMSTextComponent', text: description }]
+        : []),
+    ],
+  })
+}
+
+function psHero({
+  categoryId = 'gamescom',
+  title = 'Gamescom',
+  description = 'Games featured in this promotion.',
+  cta = 'Save Now',
+  artwork = 'https://image.api.playstation.com/gamescom.jpg',
+  linkType = 'EMS_CATEGORY',
+} = {}) {
+  const link =
+    linkType === 'EMS_CATEGORY'
+      ? psCategoryLink(categoryId)
+      : { __typename: 'EMSLink', target: categoryId, type: linkType }
+  return psView({
+    purpose: 'HERO',
+    reportingName: 'LATESTMUSTSEE',
+    components: [
+      {
+        __typename: 'EMSImageComponent',
+        altText: title,
+        imageUrl: artwork,
+        link,
+        priceSourceId: 'must-not-be-followed',
+        telemetryData: {
+          contentSource: 'emsBanner',
+          interactAction: 'CURRENT_WEB_HERO_PROMO',
+        },
+      },
+      { __typename: 'EMSTextComponent', text: title },
+      { __typename: 'EMSTextComponent', text: description },
+      ...(cta
+        ? [
+            {
+              __typename: 'EMSTextComponent',
+              link,
+              text: cta,
+              telemetryData: { interactCta: cta },
+            },
+          ]
+        : []),
+    ],
+  })
+}
+
+function psFixtureFetch({
+  dealsViews = [psDealsNavigation()],
+  latestViews = [psLatestNavigation()],
+  defaultViews = {},
+  blogHtml = '<main>No campaign articles</main>',
+  blogArticles = {},
+  intercept,
+} = {}) {
+  const calls = []
+  const fetch = async (input, init = {}) => {
+    const href = input.toString()
+    calls.push({ href, init })
+    const intercepted = await intercept?.(href, init)
+    if (intercepted) return intercepted
+
+    const url = new URL(href)
+    if (`${url.origin}${url.pathname}` === psGraphqlUrl) {
+      const operationName = url.searchParams.get('operationName')
+      const variables = JSON.parse(url.searchParams.get('variables'))
+      if (operationName === 'getExperience') {
+        return Response.json(
+          psExperience(
+            variables.alias,
+            variables.alias === 'deals' ? dealsViews : latestViews
+          )
         )
       }
-      throw new Error(`Unexpected URL: ${url}`)
+      if (operationName === 'getDefaultView') {
+        const response = defaultViews[variables.categoryId]
+        if (!response) throw new Error(`Unexpected default view: ${variables.categoryId}`)
+        return Response.json(response)
+      }
+      throw new Error(`Unexpected PlayStation operation: ${operationName}`)
+    }
+    if (href === psBlogUrl) return new Response(blogHtml)
+    if (href in blogArticles) return new Response(blogArticles[href])
+    throw new Error(`Unexpected URL: ${href}`)
+  }
+  return { calls, fetch }
+}
+
+test('PlayStation uses the exact official persisted GET contract and correlates Deals with Latest', async () => {
+  const dealsArtwork = 'https://image.api.playstation.com/deals-gamescom.jpg'
+  const latestArtwork = 'https://image.api.playstation.com/latest-gamescom.jpg'
+  const fixture = psFixtureFetch({
+    dealsViews: [
+      psDealsCampaign({
+        categoryId: 'gamescom',
+        label: 'Promotion',
+        artwork: dealsArtwork,
+        action: '0826_GAMESCOM_WEB_TOP_DEALS_PROMO',
+      }),
+      psDealsNavigation(),
+    ],
+    latestViews: [
+      psHero({ categoryId: 'gamescom', artwork: latestArtwork }),
+      psLatestNavigation(),
+    ],
+  })
+  const result = await runPlayStationStoreAdapter({
+    now: new Date('2026-08-31T00:00:00Z'),
+    fetch: fixture.fetch,
+  })
+
+  const operations = fixture.calls.filter(({ href }) =>
+    href.startsWith(`${psGraphqlUrl}?`)
+  )
+  assert.equal(operations.length, 2)
+  assert.deepEqual(
+    operations.map(({ href }) => {
+      const url = new URL(href)
+      return JSON.parse(url.searchParams.get('variables')).alias
+    }).sort(),
+    ['deals', 'latest']
+  )
+  for (const { href, init } of operations) {
+    const url = new URL(href)
+    const headers = new Headers(init.headers)
+    assert.equal(init.method, 'GET')
+    assert.equal(init.body, undefined)
+    assert.equal(url.searchParams.get('operationName'), 'getExperience')
+    assert.deepEqual(JSON.parse(url.searchParams.get('extensions')), {
+      persistedQuery: { version: 1, sha256Hash: psExperienceHash },
+    })
+    assert.equal(headers.get('accept'), 'application/json')
+    assert.equal(headers.get('content-type'), 'application/json')
+    assert.equal(headers.get('accept-language'), 'en-US')
+    assert.equal(headers.get('x-apollo-operation-name'), 'getExperience')
+    assert.equal(headers.get('apollo-require-preflight'), 'true')
+    assert.equal(headers.get('x-psn-store-locale-override'), 'en-us')
+  }
+  assert.equal(result.coverage, 'partial')
+  assert.equal(result.sourceUrl, 'https://store.playstation.com/en-us/pages/deals')
+  assert.deepEqual(result.sourceUrls, [
+    'https://store.playstation.com/en-us/pages/deals',
+    psGraphqlUrl,
+    'https://store.playstation.com/en-us/pages/latest',
+    psBlogUrl,
+  ])
+  assert.deepEqual(result.campaigns, [
+    {
+      sourceUid: psCategoryUrl('gamescom'),
+      name: 'Gamescom',
+      storeSlug: 'playstation-store',
+      state: 'live',
+      lifecycleBasis: 'official-source',
+      officialUrl: psCategoryUrl('gamescom'),
+      sourceUrl: 'https://store.playstation.com/en-us/pages/deals',
+      artworkUrl: latestArtwork,
+    },
+  ])
+})
+
+test('PlayStation validates GraphQL errors, malformed EMS and blocked HTTP responses', async () => {
+  const graphqlErrors = psFixtureFetch({
+    intercept: (href) =>
+      href.includes('alias%22%3A%22deals')
+        ? Response.json({ errors: [{ message: 'PersistedQueryNotFound' }] })
+        : undefined,
+  })
+  await assert.rejects(
+    runPlayStationStoreAdapter({
+      now: new Date('2026-08-31T00:00:00Z'),
+      fetch: graphqlErrors.fetch,
+    }),
+    (error) =>
+      error.code === 'OFFICIAL_STORE_CONTRACT_UNAVAILABLE' && !error.blocked
+  )
+
+  const malformed = psFixtureFetch({
+    intercept: (href) =>
+      href.includes('alias%22%3A%22deals')
+        ? Response.json({ data: { emsExperienceRetrieve: { views: [] } } })
+        : undefined,
+  })
+  await assert.rejects(
+    runPlayStationStoreAdapter({
+      now: new Date('2026-08-31T00:00:00Z'),
+      fetch: malformed.fetch,
+    }),
+    (error) =>
+      error.code === 'OFFICIAL_STORE_CONTRACT_UNAVAILABLE' && !error.blocked
+  )
+
+  const blocked = psFixtureFetch({
+    intercept: (href) =>
+      href.startsWith(psGraphqlUrl)
+        ? new Response('Forbidden', { status: 403 })
+        : undefined,
+  })
+  await assert.rejects(
+    runPlayStationStoreAdapter({
+      now: new Date('2026-08-31T00:00:00Z'),
+      fetch: blocked.fetch,
+    }),
+    (error) => error.code === 'HTTP_403' && error.blocked
+  )
+})
+
+test('PlayStation distinguishes a valid zero-campaign surface from a broken discovery contract', async () => {
+  const valid = psFixtureFetch()
+  const result = await runPlayStationStoreAdapter({
+    now: new Date('2026-08-31T00:00:00Z'),
+    fetch: valid.fetch,
+  })
+  assert.deepEqual(result.campaigns, [])
+
+  const broken = psFixtureFetch({
+    intercept: (href) => {
+      const url = new URL(href)
+      if (url.searchParams.get('operationName') !== 'getExperience') return undefined
+      const { alias } = JSON.parse(url.searchParams.get('variables'))
+      if (alias !== 'deals') return undefined
+      const response = psExperience('deals', [psDealsNavigation()])
+      response.data.emsExperienceRetrieve.views[0].reportingName = 'UNKNOWN'
+      return Response.json(response)
+    },
+  })
+  await assert.rejects(
+    runPlayStationStoreAdapter({
+      now: new Date('2026-08-31T00:00:00Z'),
+      fetch: broken.fetch,
+    }),
+    (error) => error.code === 'OFFICIAL_STORE_CONTRACT_UNAVAILABLE'
+  )
+
+  const unrelatedDeals = psFixtureFetch({
+    dealsViews: [
+      psView({
+        purpose: 'HERO',
+        reportingName: 'DEALSFEAT',
+        components: [
+          {
+            __typename: 'EMSImageComponent',
+            altText: 'PlayStation Visa Credit Card',
+            link: {
+              __typename: 'EMSLink',
+              target: 'https://www.playstation.com/en-us/playstation-credit-card/',
+              type: 'URI',
+            },
+            telemetryData: { interactAction: 'CREDIT_CARD_OTHER' },
+          },
+        ],
+      }),
+    ],
+  })
+  await assert.rejects(
+    runPlayStationStoreAdapter({
+      now: new Date('2026-08-31T00:00:00Z'),
+      fetch: unrelatedDeals.fetch,
+    }),
+    (error) =>
+      error.code === 'OFFICIAL_STORE_CONTRACT_UNAVAILABLE' && !error.blocked
+  )
+
+  const wrongRegion = psFixtureFetch({
+    dealsViews: [
+      psView({
+        purpose: 'COLLECTION',
+        reportingName: 'DEALS_SIEE_EN_GB',
+        components: [{ __typename: 'EMSTextComponent', text: 'Deals' }],
+      }),
+    ],
+  })
+  await assert.rejects(
+    runPlayStationStoreAdapter({
+      now: new Date('2026-08-31T00:00:00Z'),
+      fetch: wrongRegion.fetch,
+    }),
+    (error) => error.code === 'OFFICIAL_STORE_CONTRACT_UNAVAILABLE'
+  )
+})
+
+test('PlayStation excludes permanent navigation, non-Sales and product-level EMS links', async () => {
+  const excluded = [
+    'All Deals',
+    'Free To Play',
+    'PlayStation Plus',
+    'Add-ons by Game',
+    'PlayStation Visa Credit Card',
+    'Hardware Sale',
+    'Controller Promotion',
+    'Merch Sale',
+  ]
+  for (const label of excluded) {
+    const fixture = psFixtureFetch({
+      dealsViews: [psDealsCampaign({ label }), psDealsNavigation()],
+    })
+    const result = await runPlayStationStoreAdapter({
+      now: new Date('2026-08-31T00:00:00Z'),
+      fetch: fixture.fetch,
+    })
+    assert.deepEqual(result.campaigns, [], label)
+  }
+
+  const concept = psFixtureFetch({
+    latestViews: [
+      psHero({
+        categoryId: 'UP0000-PRODUCT-ID',
+        title: 'Individual Game Sale',
+        linkType: 'CONCEPT',
+      }),
+      psLatestNavigation(),
+    ],
+  })
+  const result = await runPlayStationStoreAdapter({
+    now: new Date('2026-08-31T00:00:00Z'),
+    fetch: concept.fetch,
+  })
+  assert.deepEqual(result.campaigns, [])
+  assert.equal(
+    concept.calls.some(({ href }) =>
+      /(?:\/product\/|\/concept\/|\/catalog\/|category.?grid)/i.test(href)
+    ),
+    false
+  )
+})
+
+test('PlayStation separates permanent navigation from mixed digital-game campaigns', async () => {
+  const blackFriday = psFixtureFetch({
+    dealsViews: [
+      psDealsCampaign({
+        categoryId: 'black-friday',
+        label: 'Black Friday Sale - save on games, consoles and accessories',
+        action: 'BLACK_FRIDAY_PROMO',
+      }),
+      psDealsNavigation(),
+    ],
+  })
+  const blackFridayResult = await runPlayStationStoreAdapter({
+    now: new Date('2026-08-31T00:00:00Z'),
+    fetch: blackFriday.fetch,
+  })
+  assert.deepEqual(blackFridayResult.campaigns.map(({ name }) => name), [
+    'Black Friday Sale - save on games, consoles and accessories',
+  ])
+
+  const doubleDiscounts = psFixtureFetch({
+    dealsViews: [
+      psDealsCampaign({
+        categoryId: 'double-discounts',
+        label: 'PlayStation Plus Double Discounts Sale',
+        description: 'Save on select games and titles with campaign discounts.',
+        action: 'PS_PLUS_DOUBLE_DISCOUNTS_PROMO',
+      }),
+      psDealsNavigation(),
+    ],
+  })
+  const doubleDiscountsResult = await runPlayStationStoreAdapter({
+    now: new Date('2026-08-31T00:00:00Z'),
+    fetch: doubleDiscounts.fetch,
+  })
+  assert.deepEqual(doubleDiscountsResult.campaigns.map(({ name }) => name), [
+    'PlayStation Plus Double Discounts Sale',
+  ])
+})
+
+test('PlayStation accepts a campaign-level themed promotion but omits an ambiguous internal identity', async () => {
+  const publisher = psFixtureFetch({
+    dealsViews: [
+      psDealsCampaign({
+        categoryId: 'publisher-week',
+        label: 'Publisher Spotlight',
+        action: 'PUBLISHER_WEEK_PROMO',
+      }),
+      psDealsNavigation(),
+    ],
+  })
+  const published = await runPlayStationStoreAdapter({
+    now: new Date('2026-08-31T00:00:00Z'),
+    fetch: publisher.fetch,
+  })
+  assert.deepEqual(published.campaigns.map(({ name }) => name), [
+    'Publisher Spotlight',
+  ])
+
+  const ambiguous = psFixtureFetch({
+    dealsViews: [
+      psDealsCampaign({
+        categoryId: 'ambiguous',
+        label: 'Promotion',
+        action: 'INTERNAL_FRANCHISE_PROMO',
+      }),
+      psDealsNavigation(),
+    ],
+    defaultViews: { ambiguous: psDefaultView('Promotion') },
+  })
+  const omitted = await runPlayStationStoreAdapter({
+    now: new Date('2026-08-31T00:00:00Z'),
+    fetch: ambiguous.fetch,
+  })
+  assert.deepEqual(omitted.campaigns, [])
+  const defaultCall = ambiguous.calls.find(({ href }) =>
+    href.includes('operationName=getDefaultView')
+  )
+  assert.ok(defaultCall)
+  const defaultUrl = new URL(defaultCall.href)
+  assert.deepEqual(JSON.parse(defaultUrl.searchParams.get('extensions')), {
+    persistedQuery: { version: 1, sha256Hash: psDefaultViewHash },
+  })
+  assert.deepEqual(JSON.parse(defaultUrl.searchParams.get('variables')), {
+    categoryId: 'ambiguous',
+    experienceId: 'experience-us',
+    localizedKeyId: 'cat.gma.ambiguous',
+  })
+
+  const defaultNamed = psFixtureFetch({
+    dealsViews: [
+      psDealsCampaign({
+        categoryId: 'default-named',
+        label: 'Promotion',
+        action: 'THEMED_PROMO',
+      }),
+      psDealsNavigation(),
+    ],
+    defaultViews: {
+      'default-named': psDefaultView('Franchise Festival'),
+    },
+  })
+  const named = await runPlayStationStoreAdapter({
+    now: new Date('2026-08-31T00:00:00Z'),
+    fetch: defaultNamed.fetch,
+  })
+  assert.deepEqual(named.campaigns.map(({ name }) => name), [
+    'Franchise Festival',
+  ])
+})
+
+test('PlayStation applies conservative exact lifecycle rules without reviving history', async () => {
+  async function detect(description, now = '2026-09-05T00:00:00Z') {
+    const fixture = psFixtureFetch({
+      latestViews: [
+        psHero({
+          categoryId: 'timed-sale',
+          title: 'Timed Sale',
+          description,
+          cta: null,
+        }),
+        psLatestNavigation(),
+      ],
+    })
+    return runPlayStationStoreAdapter({ now: new Date(now), fetch: fixture.fetch })
+  }
+
+  const exact = await detect(
+    'The sale starts September 1, 2026 at 10:00 AM UTC and ends September 10, 2026 at 1:00 PM UTC.'
+  )
+  assert.deepEqual(exact.campaigns[0], {
+    sourceUid: psCategoryUrl('timed-sale'),
+    name: 'Timed Sale',
+    storeSlug: 'playstation-store',
+    state: 'live',
+    lifecycleBasis: 'exact-time',
+    starts: { precision: 'datetime', value: '2026-09-01T10:00:00+00:00' },
+    ends: { precision: 'datetime', value: '2026-09-10T13:00:00+00:00' },
+    officialUrl: psCategoryUrl('timed-sale'),
+    sourceUrl: 'https://store.playstation.com/en-us/pages/latest',
+    artworkUrl: 'https://image.api.playstation.com/gamescom.jpg',
+  })
+
+  const dateOnlyFixture = psFixtureFetch({
+    latestViews: [
+      psHero({
+        categoryId: 'calendar-sale',
+        title: 'Calendar Sale',
+        description: 'The sale runs August 31 through September 10, 2026.',
+      }),
+      psLatestNavigation(),
+    ],
+  })
+  const dateOnly = await runPlayStationStoreAdapter({
+    now: new Date('2026-09-05T00:00:00Z'),
+    fetch: dateOnlyFixture.fetch,
+  })
+  assert.deepEqual(dateOnly.campaigns[0].starts, {
+    precision: 'date',
+    value: '2026-08-31',
+  })
+  assert.deepEqual(dateOnly.campaigns[0].ends, {
+    precision: 'date',
+    value: '2026-09-10',
+  })
+  assert.equal(dateOnly.campaigns[0].lifecycleBasis, 'official-source')
+
+  const futureDateOnlyFixture = psFixtureFetch({
+    dealsViews: [
+      psDealsCampaign({
+        categoryId: 'future-calendar-sale',
+        label: 'Future Calendar Sale',
+        description: 'The sale runs September 10 through September 20, 2026.',
+      }),
+      psDealsNavigation(),
+    ],
+  })
+  const futureDateOnly = await runPlayStationStoreAdapter({
+    now: new Date('2026-08-31T12:00:00Z'),
+    fetch: futureDateOnlyFixture.fetch,
+  })
+  assert.equal(futureDateOnly.campaigns[0].state, 'upcoming')
+  assert.deepEqual(futureDateOnly.campaigns[0].starts, {
+    precision: 'date',
+    value: '2026-09-10',
+  })
+  assert.deepEqual(futureDateOnly.campaigns[0].ends, {
+    precision: 'date',
+    value: '2026-09-20',
+  })
+
+  assert.deepEqual(
+    (
+      await detect('The sale ends September 10, 2026 at 1:00 PM UTC.')
+    ).campaigns,
+    []
+  )
+  assert.equal(
+    (
+      await detect(
+        'The sale starts September 10, 2026 at 1:00 PM UTC.',
+        '2026-09-05T00:00:00Z'
+      )
+    ).campaigns[0].state,
+    'upcoming'
+  )
+  assert.deepEqual(
+    (
+      await detect(
+        'The sale starts September 1, 2026 at 10:00 AM UTC.',
+        '2026-09-05T00:00:00Z'
+      )
+    ).campaigns,
+    []
+  )
+  assert.deepEqual(
+    (
+      await detect(
+        'The sale starts July 1, 2026 at 10:00 AM UTC and ends July 10, 2026 at 1:00 PM UTC. The sale is live now.'
+      )
+    ).campaigns,
+    []
+  )
+})
+
+test('PlayStation Blog adds only qualifying upcoming campaigns and deduplicates Store categories', async () => {
+  const validArticle =
+    'https://blog.playstation.com/2026/08/31/holiday-sale-coming-soon/'
+  const singleGameArticle =
+    'https://blog.playstation.com/2026/08/31/individual-game-sale/'
+  const sharedCategory = 'holiday-sale'
+  const fixture = psFixtureFetch({
+    dealsViews: [
+      psDealsCampaign({
+        categoryId: sharedCategory,
+        label: 'Holiday Sale',
+        action: 'HOLIDAY_SALE_PROMO',
+      }),
+      psDealsNavigation(),
+    ],
+    blogHtml: `
+      <a href="${validArticle}">Holiday Sale coming soon</a>
+      <a href="${singleGameArticle}">Individual Game Sale</a>
+    `,
+    blogArticles: {
+      [validArticle]: `
+        <meta property="og:title" content="Holiday Sale">
+        <meta property="og:image" content="https://blog.playstation.com/holiday.jpg">
+        <p>The PlayStation Store Holiday Sale is live now with games and discounts.</p>
+        <a href="${psCategoryUrl(sharedCategory)}">Shop the sale</a>
+      `,
+      [singleGameArticle]: `
+        <meta property="og:title" content="Individual Game Sale">
+        <p>This PlayStation Store single-game discount is coming soon.</p>
+      `,
+    },
+  })
+  const result = await runPlayStationStoreAdapter({
+    now: new Date('2026-08-31T00:00:00Z'),
+    fetch: fixture.fetch,
+  })
+  assert.equal(result.campaigns.length, 1)
+  assert.equal(result.campaigns[0].sourceUid, psCategoryUrl(sharedCategory))
+  assert.equal(result.campaigns[0].state, 'live')
+
+  const upcomingFixture = psFixtureFetch({
+    blogHtml: `<a href="${validArticle}">Holiday Sale coming soon</a>`,
+    blogArticles: {
+      [validArticle]: `
+        <meta property="og:title" content="Holiday Sale">
+        <meta property="og:image" content="https://blog.playstation.com/holiday.jpg">
+        <p>The PlayStation Store Holiday Sale starts September 2, 2026 at 10:00 AM UTC with games and discounts.</p>
+      `,
+    },
+  })
+  const upcoming = await runPlayStationStoreAdapter({
+    now: new Date('2026-08-31T00:00:00Z'),
+    fetch: upcomingFixture.fetch,
+  })
+  assert.deepEqual(
+    upcoming.campaigns.map(({ name, state, starts, artworkUrl }) => ({
+      name,
+      state,
+      starts,
+      artworkUrl,
+    })),
+    [
+      {
+        name: 'Holiday Sale',
+        state: 'upcoming',
+        starts: {
+          precision: 'datetime',
+          value: '2026-09-02T10:00:00+00:00',
+        },
+        artworkUrl: 'https://blog.playstation.com/holiday.jpg',
+      },
+    ]
+  )
+})
+
+test('PlayStation Blog campaign-page links deduplicate one exact Store public name', async () => {
+  const categoryUrl = psCategoryUrl('summer-category')
+  const pageUrls = [
+    'https://store.playstation.com/en-us/pages/SummerSale2026',
+    'https://store.playstation.com/pages/SummerSale2026',
+  ]
+
+  for (const [index, pageUrl] of pageUrls.entries()) {
+    const article = `https://blog.playstation.com/2026/08/31/summer-sale-page-${index}/`
+    const fixture = psFixtureFetch({
+      dealsViews: [
+        psDealsCampaign({
+          categoryId: 'summer-category',
+          label: 'Summer Sale 2026',
+          action: 'SUMMER_SALE_2026_PROMO',
+        }),
+        psDealsNavigation(),
+      ],
+      blogHtml: `<a href="${article}">Summer Sale 2026</a>`,
+      blogArticles: {
+        [article]: `
+          <meta property="og:title" content="Summer Sale 2026">
+          <article class="post-single">
+            <p>The Summer Sale 2026 promotion is live now with select games and titles.</p>
+            <a href="${pageUrl}">Shop the campaign</a>
+          </article>
+        `,
+      },
+    })
+    const result = await runPlayStationStoreAdapter({
+      now: new Date('2026-08-31T00:00:00Z'),
+      fetch: fixture.fetch,
+    })
+
+    assert.equal(result.campaigns.length, 1, pageUrl)
+    assert.equal(result.campaigns[0].sourceUid, categoryUrl, pageUrl)
+    assert.equal(result.campaigns[0].officialUrl, categoryUrl, pageUrl)
+    assert.equal(
+      fixture.calls.some(({ href }) =>
+        /(?:\/product\/|\/concept\/|\/catalog\/|category.?grid)/i.test(href)
+      ),
+      false,
+      pageUrl
+    )
+  }
+
+  const conflictingArticle =
+    'https://blog.playstation.com/2026/08/31/summer-sale-conflicting-state/'
+  const conflicting = psFixtureFetch({
+    dealsViews: [
+      psDealsCampaign({
+        categoryId: 'summer-category',
+        label: 'Summer Sale 2026',
+        action: 'SUMMER_SALE_2026_PROMO',
+      }),
+      psDealsNavigation(),
+    ],
+    blogHtml: `<a href="${conflictingArticle}">Summer Sale 2026</a>`,
+    blogArticles: {
+      [conflictingArticle]: `
+        <meta property="og:title" content="Summer Sale 2026">
+        <article class="post-single">
+          <p>The Summer Sale 2026 promotion starts September 10, 2026 at 10 AM UTC with select games and titles.</p>
+          <a href="${pageUrls[0]}">Shop the campaign</a>
+        </article>
+      `,
+    },
+  })
+  const conflictingResult = await runPlayStationStoreAdapter({
+    now: new Date('2026-08-31T00:00:00Z'),
+    fetch: conflicting.fetch,
+  })
+  assert.equal(conflictingResult.campaigns.length, 1)
+  assert.equal(conflictingResult.campaigns[0].sourceUid, categoryUrl)
+  assert.equal(conflictingResult.campaigns[0].state, 'live')
+  assert.equal(conflictingResult.campaigns[0].starts, undefined)
+})
+
+test('PlayStation Blog campaign-page name fallback rejects year mismatches and ambiguous Store names', async () => {
+  const wrongYearArticle =
+    'https://blog.playstation.com/2026/08/31/summer-sale-2025-page/'
+  const wrongYear = psFixtureFetch({
+    dealsViews: [
+      psDealsCampaign({
+        categoryId: 'summer-2026',
+        label: 'Summer Sale 2026',
+        action: 'SUMMER_2026_PROMO',
+      }),
+      psDealsNavigation(),
+    ],
+    blogHtml: `<a href="${wrongYearArticle}">Summer Sale 2025</a>`,
+    blogArticles: {
+      [wrongYearArticle]: `
+        <meta property="og:title" content="Summer Sale 2025">
+        <article class="post-single">
+          <p>The Summer Sale 2025 promotion is live now with select games and titles.</p>
+          <a href="https://store.playstation.com/en-us/pages/SummerSale2025">Shop the campaign</a>
+        </article>
+      `,
+    },
+  })
+  const wrongYearResult = await runPlayStationStoreAdapter({
+    now: new Date('2026-08-31T00:00:00Z'),
+    fetch: wrongYear.fetch,
+  })
+  assert.equal(wrongYearResult.campaigns.length, 2)
+  assert.deepEqual(
+    wrongYearResult.campaigns.map(({ sourceUid }) => sourceUid),
+    [psCategoryUrl('summer-2026'), wrongYearArticle]
+  )
+
+  const ambiguousArticle =
+    'https://blog.playstation.com/2026/08/31/shared-summer-sale-page/'
+  const ambiguous = psFixtureFetch({
+    dealsViews: [
+      psDealsCampaign({
+        categoryId: 'shared-summer-a',
+        label: 'Shared Summer Sale',
+        action: 'SHARED_SUMMER_A_PROMO',
+      }),
+      psDealsCampaign({
+        categoryId: 'shared-summer-b',
+        label: 'Shared Summer Sale',
+        action: 'SHARED_SUMMER_B_PROMO',
+      }),
+      psDealsNavigation(),
+    ],
+    blogHtml: `<a href="${ambiguousArticle}">Shared Summer Sale</a>`,
+    blogArticles: {
+      [ambiguousArticle]: `
+        <meta property="og:title" content="Shared Summer Sale">
+        <article class="post-single">
+          <p>The Shared Summer Sale is live now with select games and titles.</p>
+          <a href="https://store.playstation.com/en-us/pages/SharedSummerSale">Shop the campaign</a>
+        </article>
+      `,
+    },
+  })
+  const ambiguousResult = await runPlayStationStoreAdapter({
+    now: new Date('2026-08-31T00:00:00Z'),
+    fetch: ambiguous.fetch,
+  })
+  assert.equal(ambiguousResult.campaigns.length, 3)
+  assert.equal(
+    ambiguousResult.campaigns.some(({ sourceUid }) => sourceUid === ambiguousArticle),
+    true
+  )
+})
+
+test('PlayStation Blog name fallback requires a non-navigation Store campaign-page link', async () => {
+  const standaloneArticle =
+    'https://blog.playstation.com/2026/08/31/autumn-festival-blog-only/'
+  const standalone = psFixtureFetch({
+    dealsViews: [
+      psDealsCampaign({
+        categoryId: 'autumn-store',
+        label: 'Autumn Festival',
+        action: 'AUTUMN_FESTIVAL_PROMO',
+      }),
+      psDealsNavigation(),
+    ],
+    blogHtml: `<a href="${standaloneArticle}">Autumn Festival</a>`,
+    blogArticles: {
+      [standaloneArticle]: `
+        <meta property="og:title" content="Autumn Festival">
+        <article class="post-single">
+          <p>The PlayStation Store Autumn Festival promotion is live now with select games and titles.</p>
+        </article>
+      `,
+    },
+  })
+  const standaloneResult = await runPlayStationStoreAdapter({
+    now: new Date('2026-08-31T00:00:00Z'),
+    fetch: standalone.fetch,
+  })
+  assert.equal(standaloneResult.campaigns.length, 2)
+  assert.equal(
+    standaloneResult.campaigns.some(({ sourceUid }) => sourceUid === standaloneArticle),
+    true
+  )
+
+  for (const slug of ['latest', 'deals', 'collections']) {
+    const article = `https://blog.playstation.com/2026/08/31/generic-${slug}-page/`
+    const generic = psFixtureFetch({
+      blogHtml: `<a href="${article}">Generic Page Sale</a>`,
+      blogArticles: {
+        [article]: `
+          <meta property="og:title" content="Generic Page Sale">
+          <article class="post-single">
+            <p>The Generic Page Sale is live now with select games and titles.</p>
+            <a href="https://store.playstation.com/en-us/pages/${slug}">Shop now</a>
+          </article>
+        `,
+      },
+    })
+    const genericResult = await runPlayStationStoreAdapter({
+      now: new Date('2026-08-31T00:00:00Z'),
+      fetch: generic.fetch,
+    })
+    assert.deepEqual(genericResult.campaigns, [], slug)
+  }
+})
+
+test('PlayStation Blog discovers dated articles before strict campaign-level classification', async () => {
+  const daysOfPlay =
+    'https://blog.playstation.com/2026/08/31/days-of-play-2026/'
+  const astroBot =
+    'https://blog.playstation.com/2026/08/31/astro-bot-sale/'
+  const doubleDiscounts =
+    'https://blog.playstation.com/2026/08/31/playstation-plus-double-discounts/'
+  const monthlyGames =
+    'https://blog.playstation.com/2026/08/31/ps-plus-monthly-games/'
+  const blackFriday =
+    'https://blog.playstation.com/2026/08/31/black-friday-2026/'
+  const ambiguous =
+    'https://blog.playstation.com/2026/08/31/ambiguous-promotion/'
+  const fixture = psFixtureFetch({
+    blogHtml: `
+      <a href="${daysOfPlay}">Days of Play 2026</a>
+      <a href="${astroBot}">Astro Bot Sale</a>
+      <a href="${doubleDiscounts}">PlayStation Plus Double Discounts</a>
+      <a href="${monthlyGames}">PS Plus Monthly Games</a>
+      <a href="${blackFriday}">Black Friday 2026</a>
+      <a href="${ambiguous}">Official promotion</a>
+    `,
+    blogArticles: {
+      [daysOfPlay]: `
+        <meta property="og:title" content="Days of Play 2026">
+        <p>The Days of Play 2026 PlayStation Store promotion is coming soon with select games and titles.</p>
+      `,
+      [astroBot]: `
+        <meta property="og:title" content="Astro Bot Sale">
+        <p>PlayStation Store offers Astro Bot at 30% off.</p>
+      `,
+      [doubleDiscounts]: `
+        <meta property="og:title" content="PlayStation Plus Double Discounts">
+        <p>The PlayStation Plus Double Discounts PlayStation Store promotion is live now with multiple games discounted.</p>
+      `,
+      [monthlyGames]: `
+        <meta property="og:title" content="PS Plus Monthly Games">
+        <p>The PlayStation Store PS Plus Monthly Games are available now.</p>
+      `,
+      [blackFriday]: `
+        <meta property="og:title" content="Black Friday 2026">
+        <p>The Black Friday 2026 PlayStation Store promotion is live now with select games discounted, alongside consoles and accessories.</p>
+      `,
+      [ambiguous]: `
+        <meta property="og:title" content="Promotion">
+        <p>The PlayStation Store promotion is live now with select games discounted.</p>
+      `,
+    },
+  })
+  const result = await runPlayStationStoreAdapter({
+    now: new Date('2026-08-31T00:00:00Z'),
+    fetch: fixture.fetch,
+  })
+
+  assert.deepEqual(
+    result.campaigns.map(({ name, state }) => ({ name, state })),
+    [
+      { name: 'Days of Play 2026', state: 'upcoming' },
+      { name: 'PlayStation Plus Double Discounts', state: 'live' },
+      { name: 'Black Friday 2026', state: 'live' },
+    ]
+  )
+  assert.equal(
+    fixture.calls.filter(({ href }) => href.startsWith('https://blog.playstation.com/2026/')).length,
+    6
+  )
+})
+
+test('PlayStation Blog accepts list breadth only when the list is introduced as campaign games', async () => {
+  const singleGame =
+    'https://blog.playstation.com/2026/08/31/astro-bot-editions-sale/'
+  const publisher =
+    'https://blog.playstation.com/2026/08/31/publisher-sale-games/'
+  const oneGame =
+    'https://blog.playstation.com/2026/08/31/publisher-sale-one-game/'
+  const editorial =
+    'https://blog.playstation.com/2026/08/31/editorial-sale-bullets/'
+  const fixture = psFixtureFetch({
+    blogHtml: `
+      <a href="${singleGame}">Astro Bot Sale</a>
+      <a href="${publisher}">Publisher Sale</a>
+      <a href="${oneGame}">One Game Sale</a>
+      <a href="${editorial}">Editorial Sale</a>
+    `,
+    blogArticles: {
+      [singleGame]: `
+        <meta property="og:title" content="Astro Bot Sale">
+        <article class="post-single">
+          <p>The Astro Bot Sale is live now on PlayStation Store with Astro Bot at 30% off.</p>
+          <ul>
+            <li>Standard Edition</li>
+            <li>Digital Deluxe Edition</li>
+            <li>Bonus Content</li>
+          </ul>
+        </article>
+        <footer>
+          <p>The sale includes the following games:</p>
+          <ul><li>Nav Game A</li><li>Nav Game B</li><li>Nav Game C</li></ul>
+        </footer>
+      `,
+      [publisher]: `
+        <meta property="og:title" content="Publisher Sale">
+        <article>
+          <p>The PlayStation Store Publisher Sale is live now.</p>
+          <p>The sale includes the following games:</p>
+          <ul><li>Game A</li><li>Game B</li></ul>
+        </article>
+      `,
+      [oneGame]: `
+        <meta property="og:title" content="One Game Sale">
+        <article>
+          <p>The PlayStation Store One Game Sale is live now.</p>
+          <p>The sale includes the following game:</p>
+          <ul><li>Game A</li></ul>
+        </article>
+      `,
+      [editorial]: `
+        <meta property="og:title" content="Editorial Sale">
+        <article>
+          <p>The Editorial Sale is live now on PlayStation Store with Astro Bot at 30% off.</p>
+          <p>Article highlights:</p>
+          <ul>
+            <li>Developer interview</li>
+            <li>Accessibility features</li>
+            <li>Launch trailer</li>
+          </ul>
+        </article>
+      `,
     },
   })
 
-  assert.deepEqual(result.campaigns.map(({ name }) => name), [
-    'Summer Savings Sale',
+  const result = await runPlayStationStoreAdapter({
+    now: new Date('2026-08-31T00:00:00Z'),
+    fetch: fixture.fetch,
+  })
+
+  assert.deepEqual(result.campaigns.map(({ name }) => name), ['Publisher Sale'])
+})
+
+test('PlayStation Blog timing ignores historical promotions and dates from other events', async () => {
+  const article =
+    'https://blog.playstation.com/2026/08/31/holiday-campaign-preview/'
+  const fixture = psFixtureFetch({
+    blogHtml: `<a href="${article}">Holiday campaign preview</a>`,
+    blogArticles: {
+      [article]: `
+        <meta property="og:title" content="Holiday Sale">
+        <p>The PlayStation Store Holiday Sale is coming soon with select games and titles.</p>
+        <p>Last year's promotion ran July 1 through July 10, 2025.</p>
+        <p>The Gamescom event begins September 5, 2026 at 10:00 AM UTC.</p>
+      `,
+    },
+  })
+  const result = await runPlayStationStoreAdapter({
+    now: new Date('2026-08-31T00:00:00Z'),
+    fetch: fixture.fetch,
+  })
+
+  assert.equal(result.campaigns.length, 1)
+  assert.equal(result.campaigns[0].name, 'Holiday Sale')
+  assert.equal(result.campaigns[0].state, 'upcoming')
+  assert.equal(result.campaigns[0].starts, undefined)
+  assert.equal(result.campaigns[0].ends, undefined)
+})
+
+test('PlayStation Blog timing matches campaign names by words instead of weak substrings', async () => {
+  const daysOfPlay =
+    'https://blog.playstation.com/2026/08/31/days-of-play-timing/'
+  const blackFriday =
+    'https://blog.playstation.com/2026/08/31/black-friday-timing/'
+  const fixture = psFixtureFetch({
+    blogHtml: `
+      <a href="${daysOfPlay}">Days of Play 2026</a>
+      <a href="${blackFriday}">Black Friday 2026</a>
+    `,
+    blogArticles: {
+      [daysOfPlay]: `
+        <meta property="og:title" content="Days of Play 2026">
+        <article class="post-single">
+          <p>The PlayStation Store promotion includes select games and titles.</p>
+          <p>Days of Play 2025 promotion starts June 1, 2025 at 10 AM UTC and ends June 12, 2025 at 10 AM UTC.</p>
+          <p>The Summer Sale starts September 5, 2026 at 10 AM UTC and features new gameplay.</p>
+          <p>Days of Play 2026 is coming soon.</p>
+        </article>
+      `,
+      [blackFriday]: `
+        <meta property="og:title" content="Black Friday 2026">
+        <article class="post-single">
+          <p>The PlayStation Store promotion includes select games and titles.</p>
+          <p>Black Friday 2025 promotion starts November 20, 2025 at 10 AM UTC.</p>
+          <p>The Friday gameplay event starts September 5, 2026 at 10 AM UTC.</p>
+          <p>Black Friday 2026 is coming soon.</p>
+        </article>
+      `,
+    },
+  })
+
+  const result = await runPlayStationStoreAdapter({
+    now: new Date('2026-08-31T00:00:00Z'),
+    fetch: fixture.fetch,
+  })
+  const byName = new Map(result.campaigns.map((entry) => [entry.name, entry]))
+
+  assert.equal(byName.get('Days of Play 2026').state, 'upcoming')
+  assert.equal(byName.get('Days of Play 2026').starts, undefined)
+  assert.equal(byName.get('Black Friday 2026').state, 'upcoming')
+  assert.equal(byName.get('Black Friday 2026').starts, undefined)
+
+  const exactDaysOfPlay =
+    'https://blog.playstation.com/2026/08/31/days-of-play-exact-timing/'
+  const exactFixture = psFixtureFetch({
+    blogHtml: `<a href="${exactDaysOfPlay}">Days of Play 2026</a>`,
+    blogArticles: {
+      [exactDaysOfPlay]: `
+        <meta property="og:title" content="Days of Play 2026">
+        <article class="post-single">
+          <p>The PlayStation Store promotion includes select games and titles.</p>
+          <p>The Days of Play 2026 promotion starts September 10, 2026 at 10 AM UTC.</p>
+        </article>
+      `,
+    },
+  })
+  const exactResult = await runPlayStationStoreAdapter({
+    now: new Date('2026-08-31T00:00:00Z'),
+    fetch: exactFixture.fetch,
+  })
+  assert.deepEqual(exactResult.campaigns[0].starts, {
+    precision: 'datetime',
+    value: '2026-09-10T10:00:00+00:00',
+  })
+})
+
+test('PlayStation Store timing remains authoritative while Blog only enriches compatible fields', async () => {
+  const exactArticle =
+    'https://blog.playstation.com/2026/09/05/exact-merge-sale/'
+  const exactFixture = psFixtureFetch({
+    dealsViews: [
+      psDealsCampaign({
+        categoryId: 'exact-merge',
+        label: 'Exact Merge Sale',
+        description:
+          'The Exact Merge Sale starts September 1, 2026 at 10:00 AM UTC and ends September 10, 2026 at 1:00 PM UTC.',
+      }),
+      psDealsNavigation(),
+    ],
+    blogHtml: `<a href="${exactArticle}">Exact Merge Sale</a>`,
+    blogArticles: {
+      [exactArticle]: `
+        <meta property="og:title" content="Exact Merge Sale">
+        <p>The PlayStation Store Exact Merge Sale is live now with select games and titles.</p>
+        <p>The Exact Merge Sale ends September 9, 2026 at 5:00 PM UTC.</p>
+        <a href="${psCategoryUrl('exact-merge')}">Shop the sale</a>
+      `,
+    },
+  })
+  const exact = await runPlayStationStoreAdapter({
+    now: new Date('2026-09-05T00:00:00Z'),
+    fetch: exactFixture.fetch,
+  })
+  assert.deepEqual(exact.campaigns[0].starts, {
+    precision: 'datetime',
+    value: '2026-09-01T10:00:00+00:00',
+  })
+  assert.deepEqual(exact.campaigns[0].ends, {
+    precision: 'datetime',
+    value: '2026-09-10T13:00:00+00:00',
+  })
+  assert.equal(exact.campaigns[0].lifecycleBasis, 'exact-time')
+
+  const endOnlyArticle =
+    'https://blog.playstation.com/2026/09/05/end-only-merge-sale/'
+  const endOnlyFixture = psFixtureFetch({
+    dealsViews: [
+      psDealsCampaign({
+        categoryId: 'end-only-merge',
+        label: 'End Only Merge Sale',
+      }),
+      psDealsNavigation(),
+    ],
+    blogHtml: `<a href="${endOnlyArticle}">End Only Merge Sale</a>`,
+    blogArticles: {
+      [endOnlyArticle]: `
+        <meta property="og:title" content="End Only Merge Sale">
+        <p>The PlayStation Store End Only Merge Sale is live now with select games and titles.</p>
+        <p>The End Only Merge Sale ends September 10, 2026 at 1:00 PM UTC.</p>
+        <a href="${psCategoryUrl('end-only-merge')}">Shop the sale</a>
+      `,
+    },
+  })
+  const endOnly = await runPlayStationStoreAdapter({
+    now: new Date('2026-09-05T00:00:00Z'),
+    fetch: endOnlyFixture.fetch,
+  })
+  assert.equal(endOnly.campaigns[0].starts, undefined)
+  assert.deepEqual(endOnly.campaigns[0].ends, {
+    precision: 'datetime',
+    value: '2026-09-10T13:00:00+00:00',
+  })
+  assert.equal(endOnly.campaigns[0].lifecycleBasis, 'official-source')
+
+  const dateArticle =
+    'https://blog.playstation.com/2026/08/31/date-merge-sale/'
+  const dateFixture = psFixtureFetch({
+    dealsViews: [
+      psDealsCampaign({
+        categoryId: 'date-merge',
+        label: 'Date Merge Sale',
+        description:
+          'The Date Merge Sale starts September 10, 2026 at 1:00 PM UTC.',
+      }),
+      psDealsNavigation(),
+    ],
+    blogHtml: `<a href="${dateArticle}">Date Merge Sale</a>`,
+    blogArticles: {
+      [dateArticle]: `
+        <meta property="og:title" content="Date Merge Sale">
+        <p>The PlayStation Store Date Merge Sale runs September 10 through September 20, 2026 with select games and titles.</p>
+        <a href="${psCategoryUrl('date-merge')}">Shop the sale</a>
+      `,
+    },
+  })
+  const dateMerge = await runPlayStationStoreAdapter({
+    now: new Date('2026-08-31T00:00:00Z'),
+    fetch: dateFixture.fetch,
+  })
+  assert.deepEqual(dateMerge.campaigns[0].starts, {
+    precision: 'datetime',
+    value: '2026-09-10T13:00:00+00:00',
+  })
+  assert.deepEqual(dateMerge.campaigns[0].ends, {
+    precision: 'date',
+    value: '2026-09-20',
+  })
+})
+
+test('PlayStation partial absence and complementary Blog failure preserve known campaigns', async () => {
+  const knownCategory = psCategoryUrl('known-sale')
+  const knownCampaign = {
+    campaignKey: 'playstation-known-sale',
+    sourceUid: knownCategory,
+    name: 'Known Sale',
+    state: 'live',
+    officialUrl: knownCategory,
+    sourceUrl: 'https://store.playstation.com/en-us/pages/deals',
+  }
+  const fixture = psFixtureFetch({
+    dealsViews: [
+      psDealsCampaign({ categoryId: 'current-sale', label: 'Current Sale' }),
+      psDealsNavigation(),
+    ],
+    intercept: (href) =>
+      href === psBlogUrl ? new Response('Unavailable', { status: 503 }) : undefined,
+  })
+  const result = await runPlayStationStoreAdapter({
+    now: new Date('2026-08-31T00:00:00Z'),
+    knownCampaigns: [knownCampaign],
+    fetch: fixture.fetch,
+  })
+  assert.deepEqual(result.campaigns.map(({ name }) => name), ['Current Sale'])
+  assert.deepEqual(result.explicitlyEndedSourceUids, [])
+  assert.deepEqual(
+    campaignKeysToEnd({
+      sourceSucceeded: true,
+      coverage: result.coverage,
+      activeCampaigns: [
+        active({
+          campaign_key: knownCampaign.campaignKey,
+          source_uid: knownCampaign.sourceUid,
+        }),
+      ],
+      detectedCampaigns: result.campaigns,
+      explicitlyEndedSourceUids: result.explicitlyEndedSourceUids,
+      now: new Date('2026-08-31T00:00:00Z'),
+    }),
+    []
+  )
+})
+
+test('PlayStation can explicitly end a known campaign from its persisted exact end', async () => {
+  const knownCategory = psCategoryUrl('finished-sale')
+  const fixture = psFixtureFetch()
+  const result = await runPlayStationStoreAdapter({
+    now: new Date('2026-08-31T00:00:00Z'),
+    knownCampaigns: [
+      {
+        campaignKey: 'playstation-finished-sale',
+        sourceUid: knownCategory,
+        name: 'Finished Sale',
+        state: 'live',
+        officialUrl: knownCategory,
+        sourceUrl: 'https://store.playstation.com/en-us/pages/deals',
+        endsAt: '2026-08-30T23:59:00Z',
+      },
+    ],
+    fetch: fixture.fetch,
+  })
+  assert.deepEqual(result.explicitlyEndedSourceUids, [knownCategory])
+  assert.equal(
+    fixture.calls.some(({ href }) =>
+      /(?:\/product\/|\/concept\/|\/catalog\/|category.?grid)/i.test(href)
+    ),
+    false
+  )
+})
+
+test('PlayStation current detection overrides stale exact and historical Blog endings', async () => {
+  const categoryId = 'current-wins'
+  const categoryUrl = psCategoryUrl(categoryId)
+  const knownCampaign = {
+    campaignKey: 'playstation-current-wins',
+    sourceUid: categoryUrl,
+    name: 'Current Wins Sale',
+    state: 'live',
+    officialUrl: categoryUrl,
+    sourceUrl: 'https://store.playstation.com/en-us/pages/deals',
+  }
+  const currentViews = [
+    psDealsCampaign({
+      categoryId,
+      label: 'Current Wins Sale',
+      action: 'CURRENT_WINS_PROMO',
+    }),
+    psDealsNavigation(),
+  ]
+
+  const staleExactFixture = psFixtureFetch({ dealsViews: currentViews })
+  const staleExact = await runPlayStationStoreAdapter({
+    now: new Date('2026-08-31T00:00:00Z'),
+    knownCampaigns: [
+      { ...knownCampaign, endsAt: '2026-08-30T23:59:00Z' },
+    ],
+    fetch: staleExactFixture.fetch,
+  })
+  assert.equal(staleExact.campaigns[0].sourceUid, categoryUrl)
+  assert.equal(staleExact.campaigns[0].state, 'live')
+  assert.deepEqual(staleExact.explicitlyEndedSourceUids, [])
+
+  const historicArticle =
+    'https://blog.playstation.com/2026/08/20/current-wins-sale-ended/'
+  const historicBlogFixture = psFixtureFetch({
+    dealsViews: currentViews,
+    blogHtml: `<a href="${historicArticle}">Current Wins Sale</a>`,
+    blogArticles: {
+      [historicArticle]: `
+        <meta property="og:title" content="Current Wins Sale">
+        <article class="post-single">
+          <p>The PlayStation Store Current Wins Sale includes select games and titles.</p>
+          <p>The Current Wins Sale starts August 1, 2026 at 10 AM UTC and ends August 20, 2026 at 10 AM UTC.</p>
+          <a href="${categoryUrl}">Shop the sale</a>
+        </article>
+      `,
+    },
+  })
+  const historicBlog = await runPlayStationStoreAdapter({
+    now: new Date('2026-08-31T00:00:00Z'),
+    knownCampaigns: [knownCampaign],
+    fetch: historicBlogFixture.fetch,
+  })
+  assert.equal(historicBlog.campaigns[0].sourceUid, categoryUrl)
+  assert.equal(historicBlog.campaigns[0].state, 'live')
+  assert.deepEqual(historicBlog.explicitlyEndedSourceUids, [])
+})
+
+test('PlayStation anchors known Blog endings to the persisted campaign identity', async () => {
+  const otherEnded =
+    'https://blog.playstation.com/2026/08/01/holiday-sale-continues/'
+  const knownEnded =
+    'https://blog.playstation.com/2026/08/02/holiday-sale-ended/'
+  const referentEnded =
+    'https://blog.playstation.com/2026/08/03/holiday-sale-referent-ended/'
+  const failed =
+    'https://blog.playstation.com/2026/08/04/holiday-sale-unavailable/'
+  const fixture = psFixtureFetch({
+    blogArticles: {
+      [otherEnded]: `
+        <meta property="og:title" content="Holiday Sale">
+        <article class="post-single">
+          <p>The Summer Sale has ended. Holiday Sale continues with select games.</p>
+        </article>
+      `,
+      [knownEnded]: `
+        <meta property="og:title" content="Holiday Sale">
+        <article class="post-single"><p>The Holiday Sale has now ended.</p></article>
+      `,
+      [referentEnded]: `
+        <meta property="og:title" content="Holiday Sale">
+        <article class="post-single"><p>This sale has now ended.</p></article>
+      `,
+    },
+    intercept: (href) =>
+      href === failed ? new Response('Unavailable', { status: 503 }) : undefined,
+  })
+  const knownCampaigns = [otherEnded, knownEnded, referentEnded, failed].map(
+    (articleUrl) => ({
+      campaignKey: `playstation-${new URL(articleUrl).pathname.split('/').at(-2)}`,
+      sourceUid: articleUrl,
+      name: 'Holiday Sale',
+      state: 'live',
+      officialUrl: articleUrl,
+      sourceUrl: articleUrl,
+    })
+  )
+  const result = await runPlayStationStoreAdapter({
+    now: new Date('2026-08-31T00:00:00Z'),
+    knownCampaigns,
+    fetch: fixture.fetch,
+  })
+  assert.deepEqual(result.explicitlyEndedSourceUids, [
+    knownEnded,
+    referentEnded,
   ])
-  assert.equal(result.sourceUrl, storeUrl)
-  assert.equal(result.sourceUrls.length, 3)
+  for (const articleUrl of [otherEnded, knownEnded, referentEnded, failed]) {
+    assert.equal(
+      fixture.calls.filter(({ href }) => href === articleUrl).length,
+      1,
+      articleUrl
+    )
+  }
+})
+
+test('PlayStation known Blog endings require matching recurring-campaign years', async () => {
+  const wrongYear =
+    'https://blog.playstation.com/2026/08/05/days-of-play-wrong-year/'
+  const wrongIdentityYear =
+    'https://blog.playstation.com/2026/08/06/days-of-play-wrong-identity-year/'
+  const matchingYear =
+    'https://blog.playstation.com/2026/08/07/days-of-play-matching-year/'
+  const fixture = psFixtureFetch({
+    blogArticles: {
+      [wrongYear]: `
+        <meta property="og:title" content="Days of Play 2026">
+        <article class="post-single">
+          <p>Days of Play 2025 has ended. Days of Play 2026 continues.</p>
+        </article>
+      `,
+      [wrongIdentityYear]: `
+        <meta property="og:title" content="Days of Play 2025">
+        <article class="post-single"><p>This sale has ended.</p></article>
+      `,
+      [matchingYear]: `
+        <meta property="og:title" content="Days of Play 2026">
+        <article class="post-single"><p>Days of Play 2026 has ended.</p></article>
+      `,
+    },
+  })
+  const knownCampaigns = [wrongYear, wrongIdentityYear, matchingYear].map(
+    (articleUrl) => ({
+      campaignKey: `playstation-${new URL(articleUrl).pathname.split('/').at(-2)}`,
+      sourceUid: articleUrl,
+      name: 'Days of Play 2026',
+      state: 'live',
+      officialUrl: articleUrl,
+      sourceUrl: articleUrl,
+    })
+  )
+
+  const result = await runPlayStationStoreAdapter({
+    now: new Date('2026-08-31T00:00:00Z'),
+    knownCampaigns,
+    fetch: fixture.fetch,
+  })
+
+  assert.deepEqual(result.explicitlyEndedSourceUids, [matchingYear])
 })
 
 test('Nintendo discovers campaign tabs without traversing the product catalog', async () => {

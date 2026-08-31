@@ -15,7 +15,7 @@ export type StoreSlug = (typeof STORE_SLUGS)[number]
 export type CampaignState = 'live' | 'upcoming' | 'ended'
 
 export const SOURCE_URLS: Readonly<Record<StoreSlug, string>> = {
-  'playstation-store': 'https://store.playstation.com/en-us/pages/latest',
+  'playstation-store': 'https://store.playstation.com/en-us/pages/deals',
   'nintendo-eshop': 'https://www.nintendo.com/us/store/sales-and-deals/',
   'microsoft-store':
     'https://www.xbox.com/en-US/promotions/sales/sales-and-specials',

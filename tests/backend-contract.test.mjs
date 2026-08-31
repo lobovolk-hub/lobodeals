@@ -91,7 +91,7 @@ test('all adapter authorities are official and US-first where a region exists', 
   const adapters = await adapterSource()
   const authority = `${types}\n${adapters}`
   const expectedOfficialHosts = [
-    'store.playstation.com/en-us/pages/latest',
+    'store.playstation.com/en-us/pages/deals',
     'blog.playstation.com',
     'www.nintendo.com/us/store/sales-and-deals/',
     'www.xbox.com/en-US/',

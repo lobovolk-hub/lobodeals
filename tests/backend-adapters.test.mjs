@@ -8,6 +8,7 @@ import { runGogAdapter } from '../supabase/functions/campaign-monitoring/adapter
 import { runMicrosoftStoreAdapter } from '../supabase/functions/campaign-monitoring/adapters/microsoft-store.ts'
 import { runNintendoEshopAdapter } from '../supabase/functions/campaign-monitoring/adapters/nintendo-eshop.ts'
 import { runPlayStationStoreAdapter } from '../supabase/functions/campaign-monitoring/adapters/playstation-store.ts'
+import { runRockstarStoreAdapter } from '../supabase/functions/campaign-monitoring/adapters/rockstar-store.ts'
 import { runSteamAdapter } from '../supabase/functions/campaign-monitoring/adapters/steam.ts'
 import { runUbisoftStoreAdapter } from '../supabase/functions/campaign-monitoring/adapters/ubisoft-store.ts'
 import { campaignKeysToEnd } from '../supabase/functions/campaign-monitoring/_shared/reconcile.ts'
@@ -64,6 +65,163 @@ const gogFeed = (items = '') => `
 
 const eaDealsUrl = 'https://www.ea.com/sales/deals'
 const eaNewsUrl = 'https://www.ea.com/news'
+const rockstarSalesUrl = 'https://www.rockstargames.com/newswire?tag=661'
+const rockstarGraphHost = 'graph.rockstargames.com'
+const rockstarListHash =
+  '9e0e0c370d9f0dc1390e163449304c09758fb555c7e554a891924606b0a4f1e4'
+const rockstarPostHash =
+  '22e736db7ec6bb5a053095866f612041a308719f3b2551b0bd2e866921b7053b'
+
+const rockstarSalesTag = { id: 661, name: 'Sales' }
+
+const rockstarSummary = ({
+  id = 'historic-sale',
+  title = 'The Rockstar Store Holiday Sale',
+  url = `/newswire/article/${id}/rockstar-store-holiday-sale`,
+  tags = [rockstarSalesTag],
+  artwork,
+} = {}) => ({
+  id,
+  url,
+  title,
+  name_slug: url.split('/').at(-1),
+  created: '12/3/24, 6:37 PM',
+  created_formatted: 'December 3, 2024',
+  primary_tags: tags,
+  secondary_tags: null,
+  preview_images_parsed: {
+    newswire_block: {
+      square: null,
+      d16x9: artwork ?? null,
+      _fallback: null,
+    },
+  },
+})
+
+const rockstarPost = ({
+  id = 'historic-sale',
+  title = 'The Rockstar Store Holiday Sale',
+  body = `
+    <p>The Rockstar Store Holiday Sale includes select games for PC.</p>
+    <a href="https://store.rockstargames.com/game/one">Game one</a>
+    <a href="https://store.rockstargames.com/game/two">Game two</a>
+    <p>Sale ends January 7, 2025 at 11:59 p.m. ET.</p>
+  `,
+  tags = [rockstarSalesTag],
+} = {}) => ({
+  post: {
+    id,
+    title,
+    subtitle: '',
+    content: '',
+    show_related: true,
+    created: '12/3/24, 6:37 PM',
+    created_formatted: 'December 3, 2024',
+    posts_hero: null,
+    primary_tags: [{ id: 43, name: 'Rockstar Games' }],
+    secondary_tags: tags,
+    jsx: 2,
+    posts_jsx: null,
+    tina: { id: 1, payload: { blocks: [{ content: body }] }, variables: {}, status: 'published' },
+  },
+  root_url_translations: null,
+  related: { results: [] },
+})
+
+function rockstarListPage(
+  results,
+  {
+    page = 1,
+    pageCount = results.length === 0 ? 0 : 1,
+    count = results.length,
+    perPage = 20,
+    nextPage = page < pageCount,
+    prevPage = page > 1,
+  } = {}
+) {
+  return {
+    meta: { title: 'Newswire' },
+    posts: {
+      paging: { page, pageCount, count, perPage, nextPage, prevPage },
+      results,
+    },
+  }
+}
+
+function rockstarGraphRequest(input) {
+  const url = new URL(input.toString())
+  assert.equal(url.hostname, rockstarGraphHost)
+  return {
+    url,
+    operation: url.searchParams.get('operationName'),
+    variables: JSON.parse(url.searchParams.get('variables') ?? '{}'),
+    extensions: JSON.parse(url.searchParams.get('extensions') ?? '{}'),
+    query: url.searchParams.get('query'),
+  }
+}
+
+function createRockstarFetcher({
+  pages = new Map([[1, rockstarListPage([rockstarSummary()])]]),
+  posts = new Map([['historic-sale', rockstarPost()]]),
+  apqMiss = [],
+  calls = [],
+} = {}) {
+  const misses = new Set(apqMiss)
+  return async (input, init) => {
+    const request = rockstarGraphRequest(input)
+    calls.push({ ...request, init })
+    assert.equal(init?.headers.Accept, 'application/json')
+    assert.equal(request.variables.tagIdHash ?? '661', '661')
+
+    if (misses.has(request.operation) && request.query === null) {
+      misses.delete(request.operation)
+      return Response.json({ errors: [{ message: 'PersistedQueryNotFound' }] })
+    }
+    if (request.operation === 'NewswireList') {
+      const page = pages.get(request.variables.page)
+      if (!page) throw new Error(`Missing Rockstar list page ${request.variables.page}`)
+      return Response.json({ data: page, errors: null })
+    }
+    if (request.operation === 'NewswirePost') {
+      const post = posts.get(request.variables.id_hash)
+      if (!post) throw new Error(`Missing Rockstar post ${request.variables.id_hash}`)
+      return Response.json({ data: post, errors: null })
+    }
+    throw new Error(`Unexpected Rockstar operation: ${request.operation}`)
+  }
+}
+
+function runRockstarTestPost({
+  id,
+  summaryTitle,
+  postTitle = summaryTitle,
+  body,
+  now = new Date('2026-08-30T00:00:00Z'),
+  includeHistoricalHealthEvidence = false,
+}) {
+  const summaries = [
+    rockstarSummary({
+      id,
+      title: summaryTitle,
+      url: `/newswire/article/${id}/${id}`,
+    }),
+  ]
+  const posts = new Map([
+    [id, rockstarPost({ id, title: postTitle, body })],
+  ])
+  if (includeHistoricalHealthEvidence) {
+    summaries.push(rockstarSummary())
+    posts.set('historic-sale', rockstarPost())
+  }
+
+  return runRockstarStoreAdapter({
+    now,
+    fetch: createRockstarFetcher({
+      pages: new Map([[1, rockstarListPage(summaries)]]),
+      posts,
+    }),
+  })
+}
 
 const validEaDeals = (content = '') => `
   <html>
@@ -851,6 +1009,1062 @@ test('EA does not convert or traverse ordinary game links that mention a Sale', 
 
   assert.deepEqual(result.campaigns, [])
   assert.equal(calls.includes(productUrl), false)
+})
+
+test('Rockstar returns a healthy partial empty result for a verified historical Sales surface', async () => {
+  const calls = []
+  const result = await runRockstarStoreAdapter({
+    now: new Date('2026-08-30T00:00:00Z'),
+    fetch: createRockstarFetcher({ calls }),
+  })
+
+  assert.deepEqual(result.campaigns, [])
+  assert.equal(result.coverage, 'partial')
+  assert.deepEqual(result.explicitlyEndedSourceUids, [])
+  assert.equal(result.sourceUrl, rockstarSalesUrl)
+  assert.deepEqual(result.sourceUrls, [
+    rockstarSalesUrl,
+    'https://graph.rockstargames.com?origin=https%3A%2F%2Fwww.rockstargames.com',
+  ])
+
+  const listCall = calls.find(({ operation }) => operation === 'NewswireList')
+  assert.equal(listCall.query, null)
+  assert.equal(listCall.variables.tagIdHash, '661')
+  assert.equal(listCall.variables.tagId, undefined)
+  assert.equal(
+    listCall.extensions.persistedQuery.sha256Hash,
+    rockstarListHash
+  )
+  assert.equal(
+    calls.some(({ url }) =>
+      /(?:tag_id=43|[?&]tag=43(?:&|$))/i.test(url.toString())
+    ),
+    false
+  )
+})
+
+test('Rockstar retries an APQ cache miss with the canonical full query', async () => {
+  const calls = []
+  const result = await runRockstarStoreAdapter({
+    now: new Date('2026-08-30T00:00:00Z'),
+    fetch: createRockstarFetcher({ calls, apqMiss: ['NewswireList'] }),
+  })
+
+  assert.deepEqual(result.campaigns, [])
+  const listCalls = calls.filter(
+    ({ operation }) => operation === 'NewswireList'
+  )
+  assert.equal(listCalls.length, 2)
+  assert.equal(listCalls[0].query, null)
+  assert.match(listCalls[1].query, /^query NewswireList\(/)
+  assert.equal(
+    listCalls[1].extensions.persistedQuery.sha256Hash,
+    rockstarListHash
+  )
+})
+
+test('Rockstar fails safely on non-APQ GraphQL errors', async () => {
+  await assert.rejects(
+    runRockstarStoreAdapter({
+      now: new Date('2026-08-30T00:00:00Z'),
+      fetch: async () =>
+        Response.json({ errors: [{ message: 'FieldsOnCorrectType' }] }),
+    }),
+    (error) =>
+      error.code === 'OFFICIAL_CAMPAIGN_DISCOVERY_UNAVAILABLE' &&
+      error.blocked === false
+  )
+})
+
+test('Rockstar preserves HTTP failure and blocked semantics', async () => {
+  await assert.rejects(
+    runRockstarStoreAdapter({
+      now: new Date('2026-08-30T00:00:00Z'),
+      fetch: async () => new Response('Forbidden', { status: 403 }),
+    }),
+    (error) => error.code === 'HTTP_403' && error.blocked === true
+  )
+
+  for (const fetcher of [
+    async () => new Response('Unavailable', { status: 500 }),
+    async () => {
+      throw new Error('network unavailable')
+    },
+  ]) {
+    await assert.rejects(
+      runRockstarStoreAdapter({
+        now: new Date('2026-08-30T00:00:00Z'),
+        fetch: fetcher,
+      }),
+      (error) => error.blocked === false
+    )
+  }
+})
+
+test('Rockstar rejects an HTTP 200 response with a broken GraphQL shape', async () => {
+  await assert.rejects(
+    runRockstarStoreAdapter({
+      now: new Date('2026-08-30T00:00:00Z'),
+      fetch: async () =>
+        Response.json({ data: { meta: { title: 'Newswire' }, posts: null } }),
+    }),
+    (error) => error.code === 'OFFICIAL_CAMPAIGN_DISCOVERY_UNAVAILABLE'
+  )
+})
+
+test('Rockstar does not report false healthy when Sales 661 loses historical evidence', async () => {
+  const noTagSummary = rockstarSummary({ tags: [] })
+  const noTagPost = rockstarPost({ tags: [] })
+  await assert.rejects(
+    runRockstarStoreAdapter({
+      now: new Date('2026-08-30T00:00:00Z'),
+      fetch: createRockstarFetcher({
+        pages: new Map([[1, rockstarListPage([noTagSummary])]]),
+        posts: new Map([['historic-sale', noTagPost]]),
+      }),
+    }),
+    (error) => error.code === 'OFFICIAL_CAMPAIGN_DISCOVERY_UNAVAILABLE'
+  )
+
+  await assert.rejects(
+    runRockstarStoreAdapter({
+      now: new Date('2026-08-30T00:00:00Z'),
+      fetch: createRockstarFetcher({
+        pages: new Map([[1, rockstarListPage([])]]),
+        posts: new Map(),
+      }),
+    }),
+    (error) => error.code === 'OFFICIAL_CAMPAIGN_DISCOVERY_UNAVAILABLE'
+  )
+
+  const unrecognizable = rockstarSummary({
+    id: 'unrecognizable-sales-post',
+    title: 'Special Offers This Week',
+    url: '/newswire/article/unrecognizable-sales-post/special-offers',
+  })
+  await assert.rejects(
+    runRockstarStoreAdapter({
+      now: new Date('2026-08-30T00:00:00Z'),
+      fetch: createRockstarFetcher({
+        pages: new Map([[1, rockstarListPage([unrecognizable])]]),
+        posts: new Map([
+          [
+            'unrecognizable-sales-post',
+            rockstarPost({
+              id: 'unrecognizable-sales-post',
+              title: unrecognizable.title,
+              body: '<p>Read about this week at Rockstar Games.</p>',
+            }),
+          ],
+        ]),
+      }),
+    }),
+    (error) => error.code === 'OFFICIAL_CAMPAIGN_DISCOVERY_UNAVAILABLE'
+  )
+})
+
+test('Rockstar does not treat a Humble Bundle Sale as historical Store health evidence', async () => {
+  const id = 'humble-bundle-sale'
+  const summary = rockstarSummary({
+    id,
+    title: 'Humble Bundle Sale',
+    url: `/newswire/article/${id}/${id}`,
+  })
+
+  await assert.rejects(
+    runRockstarStoreAdapter({
+      now: new Date('2026-08-30T00:00:00Z'),
+      fetch: createRockstarFetcher({
+        pages: new Map([[1, rockstarListPage([summary])]]),
+        posts: new Map([
+          [
+            id,
+            rockstarPost({
+              id,
+              title: summary.title,
+              body: `
+                <p>The Humble Bundle Sale includes multiple PC games.</p>
+                <a href="https://www.humblebundle.com/games/rockstar">View bundle</a>
+              `,
+            }),
+          ],
+        ]),
+      }),
+    }),
+    (error) => error.code === 'OFFICIAL_CAMPAIGN_DISCOVERY_UNAVAILABLE'
+  )
+})
+
+test('Rockstar processes every declared Sales page', async () => {
+  const calls = []
+  const unrelated = rockstarSummary({
+    id: 'mobile-sale',
+    title: 'San Andreas Anniversary Mobile Sale',
+    url: '/newswire/article/mobile-sale/san-andreas-mobile-sale',
+  })
+  const pages = new Map([
+    [
+      1,
+      rockstarListPage([unrelated], {
+        page: 1,
+        pageCount: 2,
+        count: 2,
+        perPage: 1,
+        nextPage: true,
+        prevPage: false,
+      }),
+    ],
+    [
+      2,
+      rockstarListPage([rockstarSummary()], {
+        page: 2,
+        pageCount: 2,
+        count: 2,
+        perPage: 1,
+        nextPage: false,
+        prevPage: true,
+      }),
+    ],
+  ])
+  const result = await runRockstarStoreAdapter({
+    now: new Date('2026-08-30T00:00:00Z'),
+    fetch: createRockstarFetcher({
+      pages,
+      posts: new Map([
+        [
+          'mobile-sale',
+          rockstarPost({
+            id: 'mobile-sale',
+            title: unrelated.title,
+            body: '<p>Save on the App Store and Google Play.</p>',
+          }),
+        ],
+        ['historic-sale', rockstarPost()],
+      ]),
+      calls,
+    }),
+  })
+
+  assert.deepEqual(result.campaigns, [])
+  assert.deepEqual(
+    calls
+      .filter(({ operation }) => operation === 'NewswireList')
+      .map(({ variables }) => variables.page),
+    [1, 2]
+  )
+})
+
+test('Rockstar rejects incoherent or looping pagination', async () => {
+  const repeatedPage = rockstarListPage([rockstarSummary()], {
+    page: 1,
+    pageCount: 2,
+    count: 2,
+    perPage: 1,
+    nextPage: true,
+    prevPage: false,
+  })
+  await assert.rejects(
+    runRockstarStoreAdapter({
+      now: new Date('2026-08-30T00:00:00Z'),
+      fetch: createRockstarFetcher({
+        pages: new Map([
+          [1, repeatedPage],
+          [2, repeatedPage],
+        ]),
+      }),
+    }),
+    (error) => error.code === 'OFFICIAL_CAMPAIGN_DISCOVERY_UNAVAILABLE'
+  )
+
+  const prematureEnd = rockstarListPage([rockstarSummary()], {
+    page: 1,
+    pageCount: 2,
+    count: 2,
+    perPage: 1,
+    nextPage: false,
+    prevPage: false,
+  })
+  await assert.rejects(
+    runRockstarStoreAdapter({
+      now: new Date('2026-08-30T00:00:00Z'),
+      fetch: createRockstarFetcher({
+        pages: new Map([[1, prematureEnd]]),
+      }),
+    }),
+    (error) => error.code === 'OFFICIAL_CAMPAIGN_DISCOVERY_UNAVAILABLE'
+  )
+})
+
+test('Rockstar detects a campaign-level Store Sale with exact lifecycle and stable identity', async () => {
+  const calls = []
+  const id = 'summer-sale'
+  const summary = rockstarSummary({
+    id,
+    title: 'Rockstar Store Summer Sale',
+    url: `http://www.rockstargames.com/newswire/article/${id}/rockstar-store-summer-sale/?tracking=ignored#hero`,
+    artwork:
+      'https://media-rockstargames-com.akamaized.net/tina-uploads/posts/summer-sale/art.jpg',
+  })
+  const post = rockstarPost({
+    id,
+    title: 'Rockstar Store Summer Sale',
+    body: `
+      <p>The Rockstar Store Summer Sale is live with select games for PC.</p>
+      <p>Sale starts August 30, 2026 at 10:00 AM UTC and ends September 10, 2026 at 1:00 PM UTC.</p>
+      <a href="https://store.rockstargames.com/game/one">Game one</a>
+      <a href="https://store.rockstargames.com/game/two">Game two</a>
+    `,
+  })
+  const result = await runRockstarStoreAdapter({
+    now: new Date('2026-08-30T12:00:00Z'),
+    fetch: createRockstarFetcher({
+      pages: new Map([[1, rockstarListPage([summary])]]),
+      posts: new Map([[id, post]]),
+      calls,
+    }),
+  })
+
+  assert.deepEqual(result.campaigns, [
+    {
+      sourceUid:
+        'https://www.rockstargames.com/newswire/article/summer-sale/rockstar-store-summer-sale',
+      name: 'Rockstar Store Summer Sale',
+      storeSlug: 'rockstar-store',
+      state: 'live',
+      lifecycleBasis: 'exact-time',
+      starts: {
+        precision: 'datetime',
+        value: '2026-08-30T10:00:00+00:00',
+      },
+      ends: {
+        precision: 'datetime',
+        value: '2026-09-10T13:00:00+00:00',
+      },
+      officialUrl:
+        'https://www.rockstargames.com/newswire/article/summer-sale/rockstar-store-summer-sale',
+      sourceUrl: rockstarSalesUrl,
+      artworkUrl:
+        'https://media-rockstargames-com.akamaized.net/tina-uploads/posts/summer-sale/art.jpg',
+    },
+  ])
+  const postCall = calls.find(({ operation }) => operation === 'NewswirePost')
+  assert.equal(
+    postCall.extensions.persistedQuery.sha256Hash,
+    rockstarPostHash
+  )
+  assert.equal(
+    calls.every(({ url }) => url.hostname === rockstarGraphHost),
+    true
+  )
+})
+
+test('Rockstar publishes a qualifying Sale explicitly reported live without timing', async () => {
+  const id = 'live-without-timing'
+  const result = await runRockstarStoreAdapter({
+    now: new Date('2026-08-30T00:00:00Z'),
+    fetch: createRockstarFetcher({
+      pages: new Map([
+        [
+          1,
+          rockstarListPage([
+            rockstarSummary({
+              id,
+              title: 'Rockstar Store Summer Sale',
+              url: `/newswire/article/${id}/rockstar-store-summer-sale`,
+            }),
+          ]),
+        ],
+      ]),
+      posts: new Map([
+        [
+          id,
+          rockstarPost({
+            id,
+            title: 'Rockstar Store Summer Sale',
+            body: `
+              <p>The Rockstar Store Summer Sale is live now with select games for PC.</p>
+              <a href="https://store.rockstargames.com/game/one">Game one</a>
+            `,
+          }),
+        ],
+      ]),
+    }),
+  })
+
+  assert.equal(result.campaigns.length, 1)
+  assert.equal(result.campaigns[0].state, 'live')
+  assert.equal(result.campaigns[0].lifecycleBasis, 'official-source')
+  assert.equal(result.campaigns[0].starts, undefined)
+  assert.equal(result.campaigns[0].ends, undefined)
+})
+
+test('Rockstar publishes a qualifying Sale explicitly reported upcoming without timing', async () => {
+  const id = 'upcoming-without-timing'
+  const result = await runRockstarStoreAdapter({
+    now: new Date('2026-08-30T00:00:00Z'),
+    fetch: createRockstarFetcher({
+      pages: new Map([
+        [
+          1,
+          rockstarListPage([
+            rockstarSummary({
+              id,
+              title: 'Rockstar Warehouse Holiday Sale',
+              url: `/newswire/article/${id}/rockstar-warehouse-holiday-sale`,
+            }),
+          ]),
+        ],
+      ]),
+      posts: new Map([
+        [
+          id,
+          rockstarPost({
+            id,
+            title: 'Rockstar Warehouse Holiday Sale',
+            body: `
+              <p>The Rockstar Warehouse Holiday Sale is coming soon with multiple PC games.</p>
+              <a href="https://warehouse.rockstargames.com/game/one">Game one</a>
+            `,
+          }),
+        ],
+      ]),
+    }),
+  })
+
+  assert.equal(result.campaigns.length, 1)
+  assert.equal(result.campaigns[0].state, 'upcoming')
+  assert.equal(result.campaigns[0].lifecycleBasis, 'official-source')
+  assert.equal(result.campaigns[0].starts, undefined)
+  assert.equal(result.campaigns[0].ends, undefined)
+})
+
+test('Rockstar preserves a future exact end while explicit source state remains upcoming', async () => {
+  const result = await runRockstarTestPost({
+    id: 'upcoming-with-future-end',
+    summaryTitle: 'Rockstar Store Holiday Sale',
+    body: `
+      <p>The Rockstar Store Holiday Sale is coming soon with select PC games.</p>
+      <a href="https://store.rockstargames.com/game/one">Game one</a>
+      <p>Sale ends September 10, 2026 at 1:00 PM UTC.</p>
+    `,
+  })
+
+  assert.equal(result.campaigns.length, 1)
+  assert.equal(result.campaigns[0].state, 'upcoming')
+  assert.equal(result.campaigns[0].lifecycleBasis, 'official-source')
+  assert.equal(result.campaigns[0].starts, undefined)
+  assert.deepEqual(result.campaigns[0].ends, {
+    precision: 'datetime',
+    value: '2026-09-10T13:00:00+00:00',
+  })
+})
+
+test('Rockstar preserves a future exact end while explicit source state remains live', async () => {
+  const result = await runRockstarTestPost({
+    id: 'live-with-future-end',
+    summaryTitle: 'Rockstar Store Holiday Sale',
+    body: `
+      <p>The Rockstar Store Holiday Sale is live now with select PC games.</p>
+      <a href="https://store.rockstargames.com/game/one">Game one</a>
+      <p>Sale ends September 10, 2026 at 1:00 PM UTC.</p>
+    `,
+  })
+
+  assert.equal(result.campaigns.length, 1)
+  assert.equal(result.campaigns[0].state, 'live')
+  assert.equal(result.campaigns[0].lifecycleBasis, 'official-source')
+  assert.equal(result.campaigns[0].starts, undefined)
+  assert.deepEqual(result.campaigns[0].ends, {
+    precision: 'datetime',
+    value: '2026-09-10T13:00:00+00:00',
+  })
+})
+
+test('Rockstar does not revive an explicit live claim after its exact end', async () => {
+  const result = await runRockstarTestPost({
+    id: 'historic-live-with-exact-end',
+    summaryTitle: 'Rockstar Store Holiday Sale',
+    body: `
+      <p>The Rockstar Store Holiday Sale is live now with select PC games.</p>
+      <a href="https://store.rockstargames.com/game/one">Game one</a>
+      <p>Sale ends January 7, 2025 at 11:59 PM UTC.</p>
+    `,
+  })
+
+  assert.deepEqual(result.campaigns, [])
+})
+
+test('Rockstar derives upcoming from an exact future start without inventing an end', async () => {
+  const result = await runRockstarTestPost({
+    id: 'future-start-only',
+    summaryTitle: 'Rockstar Store Holiday Sale',
+    body: `
+      <p>The Rockstar Store Holiday Sale includes select PC games.</p>
+      <a href="https://store.rockstargames.com/game/one">Game one</a>
+      <p>Sale starts September 10, 2026 at 1:00 PM UTC.</p>
+    `,
+  })
+
+  assert.equal(result.campaigns.length, 1)
+  assert.equal(result.campaigns[0].state, 'upcoming')
+  assert.equal(result.campaigns[0].lifecycleBasis, 'official-source')
+  assert.deepEqual(result.campaigns[0].starts, {
+    precision: 'datetime',
+    value: '2026-09-10T13:00:00+00:00',
+  })
+  assert.equal(result.campaigns[0].ends, undefined)
+})
+
+test('Rockstar preserves a passed exact start when explicit source state is live', async () => {
+  const result = await runRockstarTestPost({
+    id: 'passed-start-explicit-live',
+    summaryTitle: 'Rockstar Store Holiday Sale',
+    now: new Date('2026-09-11T00:00:00Z'),
+    body: `
+      <p>The Rockstar Store Holiday Sale is live now with select PC games.</p>
+      <a href="https://store.rockstargames.com/game/one">Game one</a>
+      <p>Sale starts September 10, 2026 at 1:00 PM UTC.</p>
+    `,
+  })
+
+  assert.equal(result.campaigns.length, 1)
+  assert.equal(result.campaigns[0].state, 'live')
+  assert.equal(result.campaigns[0].lifecycleBasis, 'official-source')
+  assert.deepEqual(result.campaigns[0].starts, {
+    precision: 'datetime',
+    value: '2026-09-10T13:00:00+00:00',
+  })
+  assert.equal(result.campaigns[0].ends, undefined)
+})
+
+test('Rockstar does not publish a passed exact start without current source state', async () => {
+  const result = await runRockstarTestPost({
+    id: 'passed-start-no-current-state',
+    summaryTitle: 'Rockstar Store Holiday Sale',
+    now: new Date('2026-09-11T00:00:00Z'),
+    body: `
+      <p>The Rockstar Store Holiday Sale includes select PC games.</p>
+      <a href="https://store.rockstargames.com/game/one">Game one</a>
+      <p>Sale starts September 10, 2026 at 1:00 PM UTC.</p>
+    `,
+  })
+
+  assert.deepEqual(result.campaigns, [])
+})
+
+test('Rockstar does not publish a qualifying Sale without timing or explicit state', async () => {
+  const id = 'no-state-or-timing'
+  const result = await runRockstarStoreAdapter({
+    now: new Date('2026-08-30T00:00:00Z'),
+    fetch: createRockstarFetcher({
+      pages: new Map([
+        [
+          1,
+          rockstarListPage([
+            rockstarSummary({
+              id,
+              title: 'Rockstar Store Summer Sale',
+              url: `/newswire/article/${id}/rockstar-store-summer-sale`,
+            }),
+          ]),
+        ],
+      ]),
+      posts: new Map([
+        [
+          id,
+          rockstarPost({
+            id,
+            title: 'Rockstar Store Summer Sale',
+            body: `
+              <p>Explore select games for PC in the Rockstar Store Summer Sale. Shop now.</p>
+              <a href="https://store.rockstargames.com/game/one">Game one</a>
+            `,
+          }),
+        ],
+      ]),
+    }),
+  })
+
+  assert.deepEqual(result.campaigns, [])
+})
+
+test('Rockstar does not revive a clearly historical date-only range from stale live prose', async () => {
+  const result = await runRockstarTestPost({
+    id: 'historic-date-only-live',
+    summaryTitle: 'Rockstar Store Holiday Sale',
+    body: `
+      <p>The Rockstar Store Holiday Sale is live now with select PC games.</p>
+      <p>December 3, 2024 through January 7, 2025.</p>
+      <a href="https://store.rockstargames.com/game/one">Game one</a>
+    `,
+  })
+
+  assert.deepEqual(result.campaigns, [])
+})
+
+test('Rockstar inspects every Sales summary before strict Store campaign classification', async () => {
+  const id = 'broad-summary'
+  const title = 'Save Big This Weekend'
+  const result = await runRockstarStoreAdapter({
+    now: new Date('2026-08-30T00:00:00Z'),
+    fetch: createRockstarFetcher({
+      pages: new Map([
+        [
+          1,
+          rockstarListPage([
+            rockstarSummary({
+              id,
+              title,
+              url: `/newswire/article/${id}/holiday-sale`,
+            }),
+          ]),
+        ],
+      ]),
+      posts: new Map([
+        [
+          id,
+          rockstarPost({
+            id,
+            title,
+            body: `
+              <p>The Rockstar Store Holiday Sale is live now with a selection of PC games.</p>
+              <a href="https://store.rockstargames.com/game/one">Game one</a>
+            `,
+          }),
+        ],
+      ]),
+    }),
+  })
+
+  assert.equal(result.campaigns.length, 1)
+  assert.equal(result.campaigns[0].name, title)
+  assert.equal(result.campaigns[0].state, 'live')
+})
+
+test('Rockstar accepts explicit Rockstar Games Sale identity with qualifying Store evidence', async () => {
+  const result = await runRockstarTestPost({
+    id: 'rockstar-games-holiday-sale',
+    summaryTitle: 'Rockstar Games Holiday Sale',
+    body: `
+      <p>The Rockstar Games Holiday Sale is live now with select PC games.</p>
+      <a href="https://store.rockstargames.com/game/one">Game one</a>
+    `,
+  })
+
+  assert.equal(result.campaigns.length, 1)
+  assert.equal(result.campaigns[0].name, 'Rockstar Games Holiday Sale')
+  assert.equal(result.campaigns[0].state, 'live')
+})
+
+test('Rockstar rejects Rockstar Games Sale identity without an official Store CTA', async () => {
+  const result = await runRockstarTestPost({
+    id: 'rockstar-games-sale-without-cta',
+    summaryTitle: 'Rockstar Games Sale',
+    includeHistoricalHealthEvidence: true,
+    body: `
+      <p>The Rockstar Games Sale is live now with select PC games.</p>
+    `,
+  })
+
+  assert.deepEqual(result.campaigns, [])
+})
+
+test('Rockstar accepts a GTA Franchise Sale with strict Store campaign evidence', async () => {
+  const result = await runRockstarTestPost({
+    id: 'gta-franchise-sale',
+    summaryTitle: 'GTA Franchise Sale',
+    body: `
+      <p>The GTA Franchise Sale is live now with select PC games.</p>
+      <a href="https://store.rockstargames.com/game/one">Game one</a>
+    `,
+  })
+
+  assert.equal(result.campaigns.length, 1)
+  assert.equal(result.campaigns[0].name, 'GTA Franchise Sale')
+  assert.equal(result.campaigns[0].state, 'live')
+})
+
+test('Rockstar accepts a Publisher Sale with strict Store campaign evidence', async () => {
+  const result = await runRockstarTestPost({
+    id: 'rockstar-publisher-sale',
+    summaryTitle: 'Rockstar Publisher Sale',
+    body: `
+      <p>The Rockstar Publisher Sale is live now with multiple PC games.</p>
+      <a href="https://store.rockstargames.com/game/one">Game one</a>
+    `,
+  })
+
+  assert.equal(result.campaigns.length, 1)
+  assert.equal(result.campaigns[0].name, 'Rockstar Publisher Sale')
+  assert.equal(result.campaigns[0].state, 'live')
+})
+
+test('Rockstar still rejects an individual Sale with one game link and no breadth', async () => {
+  const result = await runRockstarTestPost({
+    id: 'individual-red-dead-sale',
+    summaryTitle: 'Red Dead Redemption Sale',
+    includeHistoricalHealthEvidence: true,
+    body: `
+      <p>The Red Dead Redemption Sale is live now for PC.</p>
+      <a href="https://store.rockstargames.com/game/red-dead-redemption">Buy now</a>
+    `,
+  })
+
+  assert.deepEqual(result.campaigns, [])
+})
+
+test('Rockstar recognizes plural Deals as explicit live campaign state', async () => {
+  const result = await runRockstarTestPost({
+    id: 'rockstar-games-deals-live',
+    summaryTitle: 'Rockstar Games Deals',
+    body: `
+      <p>Rockstar Games Deals are live now with select PC games.</p>
+      <a href="https://store.rockstargames.com/game/one">Game one</a>
+    `,
+  })
+
+  assert.equal(result.campaigns.length, 1)
+  assert.equal(result.campaigns[0].state, 'live')
+})
+
+test('Rockstar recognizes plural Savings as explicit upcoming campaign state', async () => {
+  const result = await runRockstarTestPost({
+    id: 'holiday-savings-upcoming',
+    summaryTitle: 'Holiday Savings',
+    body: `
+      <p>Holiday Savings are coming soon with select PC games.</p>
+      <a href="https://store.rockstargames.com/game/one">Game one</a>
+    `,
+  })
+
+  assert.equal(result.campaigns.length, 1)
+  assert.equal(result.campaigns[0].state, 'upcoming')
+})
+
+test('Rockstar accepts Holiday Offers with strict Store campaign evidence', async () => {
+  const result = await runRockstarTestPost({
+    id: 'holiday-offers',
+    summaryTitle: 'Holiday Offers',
+    body: `
+      <p>Holiday Offers are live now with select PC games.</p>
+      <a href="https://store.rockstargames.com/game/one">Game one</a>
+    `,
+  })
+
+  assert.equal(result.campaigns.length, 1)
+  assert.equal(result.campaigns[0].name, 'Holiday Offers')
+  assert.equal(result.campaigns[0].state, 'live')
+})
+
+test('Rockstar accepts Spring Promotion with strict Store campaign evidence', async () => {
+  const result = await runRockstarTestPost({
+    id: 'spring-promotion',
+    summaryTitle: 'Spring Promotion',
+    body: `
+      <p>Spring Promotion is live now with multiple PC games and savings.</p>
+      <a href="https://store.rockstargames.com/game/one">Game one</a>
+    `,
+  })
+
+  assert.equal(result.campaigns.length, 1)
+  assert.equal(result.campaigns[0].name, 'Spring Promotion')
+  assert.equal(result.campaigns[0].state, 'live')
+})
+
+test('Rockstar rejects a generic Event without commercial campaign evidence', async () => {
+  const eventId = 'gta-online-event'
+  const eventSummary = rockstarSummary({
+    id: eventId,
+    title: 'GTA Online Event',
+    url: `/newswire/article/${eventId}/${eventId}`,
+  })
+  const result = await runRockstarStoreAdapter({
+    now: new Date('2026-08-30T00:00:00Z'),
+    fetch: createRockstarFetcher({
+      pages: new Map([
+        [1, rockstarListPage([eventSummary, rockstarSummary()])],
+      ]),
+      posts: new Map([
+        [
+          eventId,
+          rockstarPost({
+            id: eventId,
+            title: eventSummary.title,
+            body: `
+              <p>The GTA Online Event is live now with select PC games.</p>
+              <a href="https://store.rockstargames.com/game/one">Game one</a>
+            `,
+          }),
+        ],
+        ['historic-sale', rockstarPost()],
+      ]),
+    }),
+  })
+
+  assert.deepEqual(result.campaigns, [])
+})
+
+test('Rockstar preserves an exact Deals end with explicit live campaign state', async () => {
+  const result = await runRockstarTestPost({
+    id: 'rockstar-games-deals-end',
+    summaryTitle: 'Rockstar Games Deals',
+    body: `
+      <p>Rockstar Games Deals are live now with select PC games.</p>
+      <a href="https://store.rockstargames.com/game/one">Game one</a>
+      <p>Deals end September 10, 2026 at 1:00 PM UTC.</p>
+    `,
+  })
+
+  assert.equal(result.campaigns.length, 1)
+  assert.equal(result.campaigns[0].state, 'live')
+  assert.deepEqual(result.campaigns[0].ends, {
+    precision: 'datetime',
+    value: '2026-09-10T13:00:00+00:00',
+  })
+})
+
+test('Rockstar excludes merch, rewards, GTA+, giveaways and individual discounts', async () => {
+  const summaries = [
+    rockstarSummary({
+      id: 'merch-sale',
+      title: 'Rockstar Store Holiday Sale',
+      url: '/newswire/article/merch-sale/rockstar-store-holiday-sale',
+    }),
+    rockstarSummary({
+      id: 'individual-sale',
+      title: 'Rockstar Store Red Dead Redemption Sale',
+      url: '/newswire/article/individual-sale/red-dead-redemption-sale',
+    }),
+    rockstarSummary({
+      id: 'rewards',
+      title: 'GTA Online Triple Rewards Sale',
+      url: '/newswire/article/rewards/gta-online-triple-rewards',
+    }),
+    rockstarSummary({
+      id: 'giveaway',
+      title: 'GTA+ Giveaway Sale',
+      url: '/newswire/article/giveaway/gta-plus-giveaway',
+    }),
+    rockstarSummary(),
+  ]
+  const posts = new Map([
+    [
+      'merch-sale',
+      rockstarPost({
+        id: 'merch-sale',
+        title: 'Rockstar Store Holiday Sale',
+        body: `
+          <p>Apparel, collectibles, and merchandise are on sale now.</p>
+          <a href="https://store.rockstargames.com/merchandise/hat">Hat</a>
+          <p>Sale ends September 10, 2026 at 1:00 PM UTC.</p>
+        `,
+      }),
+    ],
+    [
+      'individual-sale',
+      rockstarPost({
+        id: 'individual-sale',
+        title: 'Rockstar Store Red Dead Redemption Sale',
+        body: `
+          <p>Save 20% on Red Dead Redemption for PC. Explore Rockstar Games titles.</p>
+          <a href="https://store.rockstargames.com/game/red-dead-redemption">Buy now</a>
+          <p>Sale ends September 10, 2026 at 1:00 PM UTC.</p>
+        `,
+      }),
+    ],
+    [
+      'rewards',
+      rockstarPost({
+        id: 'rewards',
+        title: 'GTA Online Triple Rewards Sale',
+        body: '<p>Earn GTA Online rewards this week.</p>',
+      }),
+    ],
+    [
+      'giveaway',
+      rockstarPost({
+        id: 'giveaway',
+        title: 'GTA+ Giveaway Sale',
+        body: '<p>Claim a GTA+ subscription giveaway.</p>',
+      }),
+    ],
+    ['historic-sale', rockstarPost()],
+  ])
+  const calls = []
+  const result = await runRockstarStoreAdapter({
+    now: new Date('2026-08-30T00:00:00Z'),
+    fetch: createRockstarFetcher({
+      pages: new Map([[1, rockstarListPage(summaries)]]),
+      posts,
+      calls,
+    }),
+  })
+
+  assert.deepEqual(result.campaigns, [])
+  assert.deepEqual(
+    calls
+      .filter(({ operation }) => operation === 'NewswirePost')
+      .map(({ variables }) => variables.id_hash),
+    ['merch-sale', 'individual-sale', 'rewards', 'giveaway', 'historic-sale']
+  )
+})
+
+test('Rockstar partial absence and failed article verification preserve known campaigns', async () => {
+  const knownId = 'known-sale'
+  const known = {
+    campaignKey: 'rockstar-known',
+    sourceUid: `https://www.rockstargames.com/newswire/article/${knownId}/known-sale`,
+    name: 'Rockstar Store Known Sale',
+    state: 'live',
+    officialUrl: `https://www.rockstargames.com/newswire/article/${knownId}/known-sale`,
+    sourceUrl: rockstarSalesUrl,
+  }
+  const posts = new Map([
+    ['historic-sale', rockstarPost()],
+    [
+      knownId,
+      rockstarPost({
+        id: knownId,
+        title: known.name,
+        body: '<p>The Rockstar Store Known Sale remains announced.</p>',
+      }),
+    ],
+  ])
+  const result = await runRockstarStoreAdapter({
+    now: new Date('2026-08-30T00:00:00Z'),
+    knownCampaigns: [known],
+    fetch: createRockstarFetcher({ posts }),
+  })
+  assert.deepEqual(result.explicitlyEndedSourceUids, [])
+  assert.deepEqual(
+    campaignKeysToEnd({
+      sourceSucceeded: true,
+      coverage: result.coverage,
+      activeCampaigns: [
+        active({
+          campaign_key: known.campaignKey,
+          source_uid: known.sourceUid,
+        }),
+      ],
+      detectedCampaigns: result.campaigns,
+      explicitlyEndedSourceUids: result.explicitlyEndedSourceUids,
+      now: new Date('2026-08-30T00:00:00Z'),
+    }),
+    []
+  )
+
+  const failedVerification = await runRockstarStoreAdapter({
+    now: new Date('2026-08-30T00:00:00Z'),
+    knownCampaigns: [known],
+    fetch: async (input, init) => {
+      const request = rockstarGraphRequest(input)
+      if (
+        request.operation === 'NewswirePost' &&
+        request.variables.id_hash === knownId
+      ) {
+        return new Response('Unavailable', { status: 500 })
+      }
+      return createRockstarFetcher()(input, init)
+    },
+  })
+  assert.deepEqual(failedVerification.explicitlyEndedSourceUids, [])
+})
+
+test('Rockstar ends a known campaign only from explicit article evidence or an exact passed end', async () => {
+  const explicitId = 'explicit-ended'
+  const exactId = 'exact-ended'
+  const knownCampaigns = [
+    {
+      campaignKey: explicitId,
+      sourceUid: `https://www.rockstargames.com/newswire/article/${explicitId}/sale`,
+      name: 'Rockstar Store Explicit Sale',
+      state: 'live',
+      officialUrl: `https://www.rockstargames.com/newswire/article/${explicitId}/sale`,
+      sourceUrl: rockstarSalesUrl,
+    },
+    {
+      campaignKey: exactId,
+      sourceUid: `https://www.rockstargames.com/newswire/article/${exactId}/sale`,
+      name: 'Rockstar Store Exact Sale',
+      state: 'live',
+      officialUrl: `https://www.rockstargames.com/newswire/article/${exactId}/sale`,
+      sourceUrl: rockstarSalesUrl,
+    },
+  ]
+  const posts = new Map([
+    ['historic-sale', rockstarPost()],
+    [
+      explicitId,
+      rockstarPost({
+        id: explicitId,
+        title: knownCampaigns[0].name,
+        body: '<p>The sale has ended.</p>',
+      }),
+    ],
+    [
+      exactId,
+      rockstarPost({
+        id: exactId,
+        title: knownCampaigns[1].name,
+        body: `
+          <p>The Rockstar Store Exact Sale includes select games for PC.</p>
+          <p>Sale ends January 7, 2025 at 11:59 p.m. ET.</p>
+        `,
+      }),
+    ],
+  ])
+  const result = await runRockstarStoreAdapter({
+    now: new Date('2026-08-30T00:00:00Z'),
+    knownCampaigns,
+    fetch: createRockstarFetcher({ posts }),
+  })
+
+  assert.deepEqual(result.explicitlyEndedSourceUids, [
+    knownCampaigns[0].sourceUid,
+    knownCampaigns[1].sourceUid,
+  ])
+})
+
+test('Rockstar explicit known-campaign ending supports plural Sales vocabulary conservatively', async () => {
+  const endedId = 'plural-deals-ended'
+  const futureId = 'plural-deals-future-end'
+  const knownCampaigns = [endedId, futureId].map((id) => ({
+    campaignKey: id,
+    sourceUid: `https://www.rockstargames.com/newswire/article/${id}/deals`,
+    name: 'Rockstar Games Deals',
+    state: 'live',
+    officialUrl: `https://www.rockstargames.com/newswire/article/${id}/deals`,
+    sourceUrl: rockstarSalesUrl,
+  }))
+  const result = await runRockstarStoreAdapter({
+    now: new Date('2026-08-30T00:00:00Z'),
+    knownCampaigns,
+    fetch: createRockstarFetcher({
+      posts: new Map([
+        ['historic-sale', rockstarPost()],
+        [
+          endedId,
+          rockstarPost({
+            id: endedId,
+            title: knownCampaigns[0].name,
+            body: '<p>Rockstar Games Deals have ended.</p>',
+          }),
+        ],
+        [
+          futureId,
+          rockstarPost({
+            id: futureId,
+            title: knownCampaigns[1].name,
+            body: '<p>Deals end September 10, 2026 at 1:00 PM UTC.</p>',
+          }),
+        ],
+      ]),
+    }),
+  })
+
+  assert.deepEqual(result.explicitlyEndedSourceUids, [
+    knownCampaigns[0].sourceUid,
+  ])
 })
 
 test('Epic can use official campaign-level HTML when the source permits it', async () => {

@@ -207,13 +207,15 @@ test('adapters use only shared automatic artwork discovery with no mappings', as
   const adapters = entries.map(({ source }) => source).join('\n')
 
   assert.equal(
-    entries.every(({ name, source }) =>
-      source.includes(
-        name === 'microsoft-store.ts' || name === 'rockstar-store.ts'
+    entries.every(({ name, source }) => {
+      const sharedArtworkUtility =
+        name === 'microsoft-store.ts'
           ? 'discoverOfficialArtwork'
-          : 'extractOfficialArtwork'
-      )
-    ),
+          : name === 'rockstar-store.ts'
+            ? 'isSafeArtworkUrl'
+            : 'extractOfficialArtwork'
+      return source.includes(sharedArtworkUtility)
+    }),
     true
   )
   assert.doesNotMatch(

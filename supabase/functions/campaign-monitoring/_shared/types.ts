@@ -26,7 +26,7 @@ export const SOURCE_URLS: Readonly<Record<StoreSlug, string>> = {
   'ea-app': 'https://www.ea.com/sales/deals',
   'ubisoft-store': 'https://store.ubisoft.com/us/deals',
   'battle-net': 'https://news.blizzard.com/en-us/api/feed/blizzard?offset=0',
-  'rockstar-store': 'https://www.rockstargames.com/newswire?tag_id=43',
+  'rockstar-store': 'https://www.rockstargames.com/newswire?tag=661',
 }
 
 export type DateOnlyBoundary = Readonly<{

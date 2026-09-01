@@ -5,9 +5,9 @@ import {
   exactTimeState,
   monthNumber,
 } from '../_shared/campaign.ts'
-import { extractOfficialArtwork, isSafeArtworkUrl } from '../_shared/artwork.ts'
+import { isSafeArtworkUrl } from '../_shared/artwork.ts'
 import { uniqueBy } from '../_shared/html.ts'
-import { fetchOfficialText } from '../_shared/http.ts'
+import { fetchOfficialJson } from '../_shared/http.ts'
 import {
   extractEnglishDateOnlyRange,
   extractExactEnglishDateTimes,
@@ -22,7 +22,9 @@ import type {
 } from '../_shared/types.ts'
 
 const SALES_URL = 'https://store.epicgames.com/sales-and-specials'
-const SSR_MARKER = 'window.__REACT_QUERY_INITIAL_QUERIES__'
+const GRAPHQL_URL = 'https://store.epicgames.com/graphql'
+const STOREFRONT_DISCOVER_HASH =
+  'aed7a7d1ba0945df842b06cb8b42d5d2cad76d8b4dec51dfb294d7c18047960d'
 const DEALS_OF_THE_WEEK_UID = 'epic-storefront:deals-of-the-week'
 
 const CAMPAIGN_PATTERN =
@@ -41,11 +43,6 @@ const EPIC_ARTWORK_HOSTS = new Set([
 ])
 
 type JsonObject = Readonly<Record<string, unknown>>
-
-type DiscoverSurface = Readonly<{
-  layout: unknown
-  layoutSlug: string | null
-}>
 
 type EpicTiming = Readonly<{
   ends?: SourceBoundary
@@ -86,136 +83,68 @@ function unavailable(message: string): AdapterError {
   return new AdapterError('OFFICIAL_CAMPAIGN_DISCOVERY_UNAVAILABLE', message)
 }
 
-function assignedJson(html: string): unknown {
-  const markerIndex = html.indexOf(SSR_MARKER)
-  if (markerIndex < 0) {
-    throw unavailable('Epic Sales & Specials SSR discovery marker is missing')
-  }
-
-  const equalsIndex = html.indexOf('=', markerIndex + SSR_MARKER.length)
-  const assignmentGap = html.slice(
-    markerIndex + SSR_MARKER.length,
-    equalsIndex < 0 ? undefined : equalsIndex
-  )
-  if (equalsIndex < 0 || assignmentGap.trim()) {
-    throw unavailable('Epic Sales & Specials SSR assignment is malformed')
-  }
-
-  let start = equalsIndex + 1
-  while (start < html.length && /\s/.test(html[start])) start += 1
-  if (html[start] !== '[' && html[start] !== '{') {
-    throw unavailable('Epic Sales & Specials SSR assignment is not JSON')
-  }
-
-  const stack: string[] = []
-  let quoted = false
-  let escaped = false
-  for (let index = start; index < html.length; index += 1) {
-    const character = html[index]
-    if (quoted) {
-      if (escaped) escaped = false
-      else if (character === '\\') escaped = true
-      else if (character === '"') quoted = false
-      continue
-    }
-    if (character === '"') {
-      quoted = true
-      continue
-    }
-    if (character === '{') stack.push('}')
-    else if (character === '[') stack.push(']')
-    else if (character === '}' || character === ']') {
-      if (stack.pop() !== character) {
-        throw unavailable('Epic Sales & Specials SSR JSON is unbalanced')
-      }
-      if (stack.length === 0) {
-        try {
-          return JSON.parse(html.slice(start, index + 1)) as unknown
-        } catch {
-          throw unavailable('Epic Sales & Specials SSR JSON is invalid')
-        }
-      }
-    }
-  }
-
-  throw unavailable('Epic Sales & Specials SSR JSON is incomplete')
-}
-
-function queryEntries(value: unknown): readonly JsonObject[] {
-  if (Array.isArray(value)) {
-    return value.flatMap((entry) => {
-      const candidate = object(entry)
-      return candidate ? [candidate] : []
-    })
-  }
-  const root = object(value)
-  if (!root) return []
-  const queries = Array.isArray(root.queries) ? root.queries : Object.values(root)
-  return queries.flatMap((entry) => {
-    const candidate = object(entry)
-    return candidate ? [candidate] : []
+function graphQlErrors(value: unknown): readonly JsonObject[] | null {
+  if (value === undefined || value === null) return []
+  if (!Array.isArray(value)) return null
+  const errors = value.flatMap((entry) => {
+    const error = object(entry)
+    return error ? [error] : []
   })
+  return errors.length === value.length ? errors : null
 }
 
-function queryKeyHasValue(value: unknown, expected: string): boolean {
-  if (value === expected) return true
-  if (Array.isArray(value)) {
-    return value.some((entry) => queryKeyHasValue(entry, expected))
-  }
-  const candidate = object(value)
-  return candidate
-    ? Object.values(candidate).some((entry) => queryKeyHasValue(entry, expected))
-    : false
-}
+async function storefrontDiscover(
+  fetcher: typeof fetch,
+  layoutSlug: string | null
+): Promise<JsonObject> {
+  const url = new URL(GRAPHQL_URL)
+  url.searchParams.set('operationName', 'storefrontDiscover')
+  url.searchParams.set(
+    'variables',
+    JSON.stringify({ layoutSlug, locale: 'en-US', country: 'US', layoutType: 'sale' })
+  )
+  url.searchParams.set(
+    'extensions',
+    JSON.stringify({
+      persistedQuery: { version: 1, sha256Hash: STOREFRONT_DISCOVER_HASH },
+    })
+  )
 
-function queryKeyHasPair(
-  value: unknown,
-  key: string,
-  expected: string | null
-): boolean {
-  if (
-    Array.isArray(value) &&
-    value.length === 2 &&
-    value[0] === key &&
-    value[1] === expected
-  ) {
-    return true
-  }
-  if (Array.isArray(value)) {
-    return value.some((entry) => queryKeyHasPair(entry, key, expected))
-  }
-  const candidate = object(value)
-  if (!candidate) return false
-  if (Object.hasOwn(candidate, key) && candidate[key] === expected) return true
-  return Object.values(candidate).some((entry) =>
-    queryKeyHasPair(entry, key, expected)
-  )
-}
-
-function discoverSurface(html: string, expectedSlug: string | null): DiscoverSurface {
-  const entries = queryEntries(assignedJson(html))
-  const discoverQueries = entries.filter(({ queryKey }) =>
-    queryKeyHasValue(queryKey, 'storefrontDiscover')
-  )
-  const query = discoverQueries.find(
-    ({ queryKey }) =>
-      queryKeyHasPair(queryKey, 'country', 'US') &&
-      queryKeyHasPair(queryKey, 'locale', 'en-US') &&
-      queryKeyHasPair(queryKey, 'layoutType', 'sale') &&
-      queryKeyHasPair(queryKey, 'layoutSlug', expectedSlug)
-  )
-  if (!query) {
-    throw unavailable('Epic storefrontDiscover does not match the US sale contract')
+  let response: unknown
+  try {
+    response = await fetchOfficialJson<unknown>(fetcher, url.toString(), {
+      method: 'GET',
+      headers: { 'Content-Type': 'application/json' },
+    })
+  } catch (error) {
+    if (error instanceof AdapterError && error.code === 'INVALID_OFFICIAL_RESPONSE') {
+      throw unavailable('Epic storefrontDiscover did not return valid JSON')
+    }
+    throw error
   }
 
-  const state = object(query.state)
-  const data = object(state?.data)
+  const envelope = object(response)
+  const errors = graphQlErrors(envelope?.errors)
+  if (!envelope || errors === null || errors.length > 0) {
+    const persistedQueryMissing = errors?.some((error) =>
+      /PersistedQueryNotFound/i.test(
+        `${string(error.message) ?? ''} ${string(object(error.extensions)?.code) ?? ''}`
+      )
+    )
+    throw unavailable(
+      persistedQueryMissing
+        ? 'Epic storefrontDiscover persisted query is unavailable'
+        : 'Epic storefrontDiscover returned GraphQL errors'
+    )
+  }
+
+  const data = object(envelope.data)
   const storefront = object(data?.Storefront)
-  const layout = storefront?.discoverLayout
-  if (state?.status !== 'success' || (!object(layout) && !Array.isArray(layout))) {
-    throw unavailable('Epic storefrontDiscover did not return a successful layout')
+  const layout = object(storefront?.discoverLayout)
+  if (!data || !storefront || !layout) {
+    throw unavailable('Epic storefrontDiscover response shape is unavailable')
   }
-  return { layout, layoutSlug: expectedSlug }
+  return layout
 }
 
 const STRUCTURAL_KEYS = new Set([
@@ -692,20 +621,16 @@ function landingExplicitlyEnded(name: string, description: string): boolean {
   ).test(description)
 }
 
-function parseLanding(html: string, url: string, now: Date): LandingInfo {
+function parseLanding(layout: JsonObject, url: string, now: Date): LandingInfo {
   const canonicalUrl = campaignLandingUrl(url)
   if (!canonicalUrl) throw unavailable('Epic campaign landing URL is invalid')
-  const slug = canonicalUrl.split('/').at(-1)!
-  const { layout } = discoverSurface(html, slug)
   const header = pageHeader(layout)
   if (!header) throw unavailable('Epic campaign landing PageHeader is missing')
   const name = publicNameFromModule(header)
   if (!name) throw unavailable('Epic campaign landing public name is unavailable')
   const description = fieldStrings(header, ['description', 'subtitle', 'text']).join(' ')
   const text = `${name} ${description}`.trim()
-  const metaArtwork = extractOfficialArtwork(html, canonicalUrl)
-  const artworkUrl =
-    nodeArtwork(header, canonicalUrl) ?? safeEpicArtwork(metaArtwork, canonicalUrl)
+  const artworkUrl = nodeArtwork(header, canonicalUrl)
   return {
     ...(artworkUrl ? { artworkUrl } : {}),
     ended: landingExplicitlyEnded(name, description),
@@ -746,9 +671,8 @@ export const runEpicGamesStoreAdapter: StoreAdapter = async ({
   fetch,
   knownCampaigns = [],
 }) => {
-  const mainHtml = await fetchOfficialText(fetch, SALES_URL)
-  const mainSurface = discoverSurface(mainHtml, null)
-  validateMainHeader(mainSurface.layout)
+  const mainLayout = await storefrontDiscover(fetch, null)
+  validateMainHeader(mainLayout)
 
   const landingCache = new Map<string, Promise<LandingInfo>>()
   const loadLanding = (url: string): Promise<LandingInfo> => {
@@ -756,14 +680,15 @@ export const runEpicGamesStoreAdapter: StoreAdapter = async ({
     if (!canonicalUrl) return Promise.reject(unavailable('Invalid Epic landing URL'))
     const existing = landingCache.get(canonicalUrl)
     if (existing) return existing
-    const pending = fetchOfficialText(fetch, canonicalUrl).then((html) =>
-      parseLanding(html, canonicalUrl, now)
+    const slug = canonicalUrl.split('/').at(-1)!
+    const pending = storefrontDiscover(fetch, slug).then((layout) =>
+      parseLanding(layout, canonicalUrl, now)
     )
     landingCache.set(canonicalUrl, pending)
     return pending
   }
 
-  const candidates = structuralNodes(mainSurface.layout).flatMap((node) => {
+  const candidates = structuralNodes(mainLayout).flatMap((node) => {
     const candidate = moduleCandidate(node, now)
     return candidate ? [candidate] : []
   })
@@ -866,7 +791,7 @@ export const runEpicGamesStoreAdapter: StoreAdapter = async ({
   return {
     storeSlug: 'epic-games-store',
     sourceUrl: SALES_URL,
-    sourceUrls: [SALES_URL],
+    sourceUrls: [SALES_URL, GRAPHQL_URL],
     coverage: 'partial',
     campaigns,
     explicitlyEndedSourceUids,

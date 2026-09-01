@@ -257,56 +257,40 @@ const validEaNews = (content = '') => `
 `
 
 const epicSalesUrl = 'https://store.epicgames.com/sales-and-specials'
+const epicGraphqlUrl = 'https://store.epicgames.com/graphql'
+const epicStorefrontDiscoverHash =
+  'aed7a7d1ba0945df842b06cb8b42d5d2cad76d8b4dec51dfb294d7c18047960d'
 const epicDealsUrl =
   'https://store.epicgames.com/browse?sortBy=relevancy&tag=deals%20of%20the%20week&count=40'
 
-function epicSsr({
-  country = 'US',
-  locale = 'en-US',
-  layoutType = 'sale',
-  layoutSlug = null,
-  status = 'success',
-  elements = [],
-} = {}) {
-  const queries = [
-    {
-      queryKey: [
-        'storefrontDiscover',
-        ['country', country],
-        ['layoutSlug', layoutSlug],
-        ['layoutType', layoutType],
-        ['locale', locale],
-        'fixture-hash',
-      ],
-      state: {
-        status,
-        data: {
-          Storefront: {
-            discoverLayout: { modules: elements },
-          },
-        },
+function epicGraphqlEnvelope(modules = []) {
+  return JSON.stringify({
+    data: {
+      Storefront: {
+        discoverLayout: { modules },
       },
     },
-  ]
-  return `<script>window.__REACT_QUERY_INITIAL_QUERIES__ = ${JSON.stringify({ mutations: [], queries })};</script>`
+  })
 }
 
-function epicMain(modules = [], overrides = {}) {
-  return epicSsr({
-    ...overrides,
-    elements: [
+function epicMain(modules = []) {
+  return epicGraphqlEnvelope([
       {
         __typename: 'PageHeader',
         type: 'PageHeader',
         title: 'Epic Games Sales & Specials',
+        description: 'Official Epic Games Store Sales & Specials.',
+        banner: {
+          src: 'https://cdn2.unrealengine.com/sales-and-specials.jpg',
+          altText: 'Epic Games Store Sales & Specials',
+        },
       },
       {
         __typename: 'StorefrontSubModules',
         type: 'subModules',
         modules,
       },
-    ],
-  })
+    ])
 }
 
 function epicDealsOfTheWeek() {
@@ -323,17 +307,12 @@ function epicDealsOfTheWeek() {
   }
 }
 
-function epicLanding(
-  slug,
-  {
-    title,
-    description = '',
-    banner = 'https://static-assets-prod.epicgames.com/campaign.jpg',
-  }
-) {
-  return epicSsr({
-    layoutSlug: slug,
-    elements: [
+function epicLanding({
+  title,
+  description = '',
+  banner = 'https://static-assets-prod.epicgames.com/campaign.jpg',
+}) {
+  return epicGraphqlEnvelope([
       {
         __typename: 'PageHeader',
         type: 'PageHeader',
@@ -341,8 +320,23 @@ function epicLanding(
         description,
         banner: { src: banner },
       },
-    ],
-  })
+    ])
+}
+
+function epicGraphqlRequest(input, init) {
+  const url = new URL(input.toString())
+  return {
+    url,
+    init,
+    operationName: url.searchParams.get('operationName'),
+    variables: JSON.parse(url.searchParams.get('variables') ?? 'null'),
+    extensions: JSON.parse(url.searchParams.get('extensions') ?? 'null'),
+  }
+}
+
+function epicRequestedPublicUrl(input) {
+  const { layoutSlug } = epicGraphqlRequest(input).variables
+  return layoutSlug === null ? epicSalesUrl : `${epicSalesUrl}/${layoutSlug}`
 }
 
 const epicKnown = (overrides = {}) => ({
@@ -3612,7 +3606,7 @@ test('Rockstar explicit known-campaign ending supports plural Sales vocabulary c
   ])
 })
 
-test('Epic parses the exact US SSR source and detects Deals of the Week without product traversal', async () => {
+test('Epic uses the official persisted GraphQL GET and detects only Deals of the Week', async () => {
   const calls = []
   const modules = [
     epicDealsOfTheWeek(),
@@ -3656,16 +3650,31 @@ test('Epic parses the exact US SSR source and detects Deals of the Week without 
   ]
   const result = await runEpicGamesStoreAdapter({
     now: new Date('2026-08-31T00:00:00Z'),
-    fetch: async (input) => {
-      calls.push(input.toString())
-      assert.equal(input.toString(), epicSalesUrl)
+    fetch: async (input, init) => {
+      const request = epicGraphqlRequest(input, init)
+      calls.push(request)
+      assert.equal(request.url.origin + request.url.pathname, epicGraphqlUrl)
+      assert.equal(request.init?.method, 'GET')
+      assert.equal(request.operationName, 'storefrontDiscover')
+      assert.deepEqual(request.variables, {
+        layoutSlug: null,
+        locale: 'en-US',
+        country: 'US',
+        layoutType: 'sale',
+      })
+      assert.deepEqual(request.extensions, {
+        persistedQuery: {
+          version: 1,
+          sha256Hash: epicStorefrontDiscoverHash,
+        },
+      })
       return new Response(epicMain(modules))
     },
   })
 
-  assert.deepEqual(calls, [epicSalesUrl])
+  assert.equal(calls.length, 1)
   assert.equal(result.sourceUrl, epicSalesUrl)
-  assert.deepEqual(result.sourceUrls, [epicSalesUrl])
+  assert.deepEqual(result.sourceUrls, [epicSalesUrl, epicGraphqlUrl])
   assert.equal(result.coverage, 'partial')
   assert.equal(result.campaigns.length, 1)
   assert.deepEqual(result.campaigns[0], {
@@ -3679,9 +3688,9 @@ test('Epic parses the exact US SSR source and detects Deals of the Week without 
     artworkUrl: 'https://cdn1.epicgames.com/deals-of-the-week.jpg',
   })
   assert.equal(
-    calls.some((url) =>
+    calls.some(({ url }) =>
       /(?:\/news\/|egs-platform-service|\/browse|\/p\/|catalog|offer|price)/i.test(
-        url.replace(epicSalesUrl, '')
+        url.toString()
       )
     ),
     false
@@ -3703,7 +3712,7 @@ test('Epic preserves a named primary campaign when landing enrichment fails', as
   const result = await runEpicGamesStoreAdapter({
     now: new Date('2026-08-31T00:00:00Z'),
     fetch: async (input) => {
-      const url = input.toString()
+      const url = epicRequestedPublicUrl(input)
       if (url === epicSalesUrl) {
         return new Response(
           epicMain([
@@ -3740,7 +3749,7 @@ test('Epic omits a landing-dependent candidate when enrichment fails without a s
   const result = await runEpicGamesStoreAdapter({
     now: new Date('2026-08-31T00:00:00Z'),
     fetch: async (input) => {
-      const url = input.toString()
+      const url = epicRequestedPublicUrl(input)
       if (url === epicSalesUrl) {
         return new Response(
           epicMain([
@@ -3766,7 +3775,7 @@ test('Epic keeps the primary identity when a valid landing names a different end
   const result = await runEpicGamesStoreAdapter({
     now: new Date('2026-08-31T00:00:00Z'),
     fetch: async (input) => {
-      const url = input.toString()
+      const url = epicRequestedPublicUrl(input)
       if (url === epicSalesUrl) {
         return new Response(
           epicMain([
@@ -3781,7 +3790,7 @@ test('Epic keeps the primary identity when a valid landing names a different end
       }
       if (url === campaignUrl) {
         return new Response(
-          epicLanding('publisher-sale', {
+          epicLanding({
             title: 'Summer Sale',
             description: 'Summer Sale has ended, but more deals await.',
           })
@@ -3810,7 +3819,7 @@ test('Epic still enriches a current campaign from an exact-name landing', async 
   const result = await runEpicGamesStoreAdapter({
     now: new Date('2026-08-31T00:00:00Z'),
     fetch: async (input) => {
-      const url = input.toString()
+      const url = epicRequestedPublicUrl(input)
       if (url === epicSalesUrl) {
         return new Response(
           epicMain([
@@ -3825,7 +3834,7 @@ test('Epic still enriches a current campaign from an exact-name landing', async 
       }
       if (url === campaignUrl) {
         return new Response(
-          epicLanding('publisher-sale', {
+          epicLanding({
             title: 'Publisher Sale',
             description: 'Publisher Sale ends September 10, 2026 at 1:00 PM UTC.',
           })
@@ -3902,7 +3911,7 @@ test('Epic reuses a unique known source UID when the same named campaign gains a
     now: new Date('2026-08-31T00:00:00Z'),
     knownCampaigns: [known],
     fetch: async (input) => {
-      const url = input.toString()
+      const url = epicRequestedPublicUrl(input)
       if (url === epicSalesUrl) {
         return new Response(
           epicMain([
@@ -3917,7 +3926,7 @@ test('Epic reuses a unique known source UID when the same named campaign gains a
       }
       if (url === campaignUrl) {
         return new Response(
-          epicLanding('publisher-sale', {
+          epicLanding({
             title: 'Publisher Sale',
             description: 'Publisher Sale has ended, but more deals await.',
           })
@@ -3946,7 +3955,7 @@ test('Epic reuses a unique known source UID when the same named campaign loses i
     now: new Date('2026-08-31T00:00:00Z'),
     knownCampaigns: [known],
     fetch: async (input) => {
-      const url = input.toString()
+      const url = epicRequestedPublicUrl(input)
       if (url === epicSalesUrl) {
         return new Response(
           epicMain([
@@ -3960,7 +3969,7 @@ test('Epic reuses a unique known source UID when the same named campaign loses i
       }
       if (url === campaignUrl) {
         return new Response(
-          epicLanding('publisher-sale', {
+          epicLanding({
             title: 'Publisher Sale',
             description: 'Publisher Sale remains live.',
           })
@@ -4073,17 +4082,17 @@ test('Epic new source UIDs preserve punctuation, symbols, and campaign years', a
   )
 })
 
-test('Epic rejects missing, malformed, foreign-region, and foreign-locale SSR contracts', async (t) => {
+test('Epic rejects invalid JSON, GraphQL errors, and malformed envelopes', async (t) => {
   const cases = [
-    ['missing marker', '<main>Epic Games Sales & Specials</main>'],
+    ['invalid JSON', '{"data":'],
+    ['GraphQL errors', JSON.stringify({ errors: [{ message: 'Unavailable' }] })],
+    ['missing data', JSON.stringify({})],
+    ['missing Storefront', JSON.stringify({ data: {} })],
+    ['missing discoverLayout', JSON.stringify({ data: { Storefront: {} } })],
     [
-      'malformed JSON',
-      '<script>window.__REACT_QUERY_INITIAL_QUERIES__ = [{"broken":];</script>',
+      'malformed discoverLayout',
+      JSON.stringify({ data: { Storefront: { discoverLayout: [] } } }),
     ],
-    ['missing storefrontDiscover', epicSsr().replace('storefrontDiscover', 'other')],
-    ['foreign country', epicMain([], { country: 'CA' })],
-    ['foreign locale', epicMain([], { locale: 'fr-FR' })],
-    ['unsuccessful query', epicMain([], { status: 'error' })],
     [
       'wrong layout identity',
       epicMain().replace('Epic Games Sales & Specials', 'Epic Games Store'),
@@ -4104,19 +4113,45 @@ test('Epic rejects missing, malformed, foreign-region, and foreign-locale SSR co
   }
 })
 
+test('Epic rejects PersistedQueryNotFound without a POST fallback', async () => {
+  const calls = []
+  await assert.rejects(
+    runEpicGamesStoreAdapter({
+      now: new Date('2026-08-31T00:00:00Z'),
+      fetch: async (input, init) => {
+        calls.push(epicGraphqlRequest(input, init))
+        return Response.json({
+          errors: [
+            {
+              message: 'PersistedQueryNotFound',
+              extensions: { code: 'PERSISTED_QUERY_NOT_FOUND' },
+            },
+          ],
+        })
+      },
+    }),
+    (error) => error?.code === 'OFFICIAL_CAMPAIGN_DISCOVERY_UNAVAILABLE'
+  )
+
+  assert.equal(calls.length, 1)
+  assert.equal(calls[0].init?.method, 'GET')
+  assert.equal(calls[0].operationName, 'storefrontDiscover')
+})
+
 test('Epic ends a matching known campaign only from its anchored official landing', async () => {
   const campaignUrl = `${epicSalesUrl}/epic-savings`
   const calls = []
   const result = await runEpicGamesStoreAdapter({
     now: new Date('2026-08-31T00:00:00Z'),
     knownCampaigns: [epicKnown()],
-    fetch: async (input) => {
-      const url = input.toString()
-      calls.push(url)
+    fetch: async (input, init) => {
+      const request = epicGraphqlRequest(input, init)
+      const url = epicRequestedPublicUrl(input)
+      calls.push(request)
       if (url === epicSalesUrl) return new Response(epicMain())
       if (url === campaignUrl) {
         return new Response(
-          epicLanding('epic-savings', {
+          epicLanding({
             title: 'Epic Savings Sale',
             description: 'Epic Savings Sale has ended, but more deals await.',
           })
@@ -4128,7 +4163,11 @@ test('Epic ends a matching known campaign only from its anchored official landin
 
   assert.deepEqual(result.campaigns, [])
   assert.deepEqual(result.explicitlyEndedSourceUids, [campaignUrl])
-  assert.deepEqual(calls, [epicSalesUrl, campaignUrl])
+  assert.equal(calls.length, 2)
+  assert.equal(calls[0].variables.layoutSlug, null)
+  assert.equal(calls[1].variables.layoutSlug, 'epic-savings')
+  assert.equal(calls[1].url.origin + calls[1].url.pathname, epicGraphqlUrl)
+  assert.equal(calls[1].init?.method, 'GET')
 })
 
 test('Epic requires an exact known name even when its official landing URL matches', async () => {
@@ -4138,11 +4177,11 @@ test('Epic requires an exact known name even when its official landing URL match
     now: new Date('2026-08-31T00:00:00Z'),
     knownCampaigns: [known],
     fetch: async (input) => {
-      const url = input.toString()
+      const url = epicRequestedPublicUrl(input)
       if (url === epicSalesUrl) return new Response(epicMain())
       if (url === summerUrl) {
         return new Response(
-          epicLanding('summer-sale', {
+          epicLanding({
             title: 'Summer Sale',
             description: 'Summer Sale has ended, but more deals await.',
           })
@@ -4161,7 +4200,7 @@ test('Epic preserves a known campaign when its landing verification fails', asyn
     now: new Date('2026-08-31T00:00:00Z'),
     knownCampaigns: [epicKnown()],
     fetch: async (input) =>
-      input.toString() === epicSalesUrl
+      epicRequestedPublicUrl(input) === epicSalesUrl
         ? new Response(epicMain())
         : new Response('Unavailable', { status: 503 }),
   })
@@ -4219,14 +4258,14 @@ test('Epic validates a linked campaign landing once and deduplicates its stable 
   const result = await runEpicGamesStoreAdapter({
     now: new Date('2026-08-31T00:00:00Z'),
     fetch: async (input) => {
-      const url = input.toString()
+      const url = epicRequestedPublicUrl(input)
       calls.push(url)
       if (url === epicSalesUrl) {
         return new Response(epicMain([currentModule, currentModule]))
       }
       if (url === campaignUrl) {
         return new Response(
-          epicLanding('epic-savings', {
+          epicLanding({
             title: 'Epic Savings Sale',
             description: 'Epic Savings Sale is live with deals on select games.',
           })

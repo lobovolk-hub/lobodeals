@@ -211,7 +211,7 @@ test('adapters use only shared automatic artwork discovery with no mappings', as
       const sharedArtworkUtility =
         name === 'microsoft-store.ts'
           ? 'discoverOfficialArtwork'
-          : name === 'rockstar-store.ts'
+          : name === 'rockstar-store.ts' || name === 'epic-games-store.ts'
             ? 'isSafeArtworkUrl'
             : 'extractOfficialArtwork'
       return source.includes(sharedArtworkUtility)

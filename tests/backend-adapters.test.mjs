@@ -256,6 +256,105 @@ const validEaNews = (content = '') => `
   </html>
 `
 
+const epicSalesUrl = 'https://store.epicgames.com/sales-and-specials'
+const epicDealsUrl =
+  'https://store.epicgames.com/browse?sortBy=relevancy&tag=deals%20of%20the%20week&count=40'
+
+function epicSsr({
+  country = 'US',
+  locale = 'en-US',
+  layoutType = 'sale',
+  layoutSlug = null,
+  status = 'success',
+  elements = [],
+} = {}) {
+  const queries = [
+    {
+      queryKey: [
+        'storefrontDiscover',
+        ['country', country],
+        ['layoutSlug', layoutSlug],
+        ['layoutType', layoutType],
+        ['locale', locale],
+        'fixture-hash',
+      ],
+      state: {
+        status,
+        data: {
+          Storefront: {
+            discoverLayout: { modules: elements },
+          },
+        },
+      },
+    },
+  ]
+  return `<script>window.__REACT_QUERY_INITIAL_QUERIES__ = ${JSON.stringify({ mutations: [], queries })};</script>`
+}
+
+function epicMain(modules = [], overrides = {}) {
+  return epicSsr({
+    ...overrides,
+    elements: [
+      {
+        __typename: 'PageHeader',
+        type: 'PageHeader',
+        title: 'Epic Games Sales & Specials',
+      },
+      {
+        __typename: 'StorefrontSubModules',
+        type: 'subModules',
+        modules,
+      },
+    ],
+  })
+}
+
+function epicDealsOfTheWeek() {
+  return {
+    __typename: 'StorefrontBreaker',
+    type: 'breaker',
+    title: 'Check out all the deals for this week.',
+    image: {
+      alt: 'Epic Games Store Deals of the Week',
+      src: 'https://cdn1.epicgames.com/deals-of-the-week.jpg',
+    },
+    link: { src: epicDealsUrl, linkText: 'Browse' },
+    offer: { namespace: '', id: '' },
+  }
+}
+
+function epicLanding(
+  slug,
+  {
+    title,
+    description = '',
+    banner = 'https://static-assets-prod.epicgames.com/campaign.jpg',
+  }
+) {
+  return epicSsr({
+    layoutSlug: slug,
+    elements: [
+      {
+        __typename: 'PageHeader',
+        type: 'PageHeader',
+        title,
+        description,
+        banner: { src: banner },
+      },
+    ],
+  })
+}
+
+const epicKnown = (overrides = {}) => ({
+  campaignKey: 'epic-savings',
+  sourceUid: `${epicSalesUrl}/epic-savings`,
+  name: 'Epic Savings Sale',
+  state: 'live',
+  officialUrl: `${epicSalesUrl}/epic-savings`,
+  sourceUrl: epicSalesUrl,
+  ...overrides,
+})
+
 test('partial discovery never ends a known campaign merely because it is absent', () => {
   assert.deepEqual(
     campaignKeysToEnd({
@@ -319,7 +418,7 @@ test('explicit official source-ended verification can end a campaign', async () 
     name: 'Epic Savings Sale',
     state: 'live',
     officialUrl: 'https://store.epicgames.com/sales-and-specials/epic-savings',
-    sourceUrl: 'https://store.epicgames.com/en-US/sales-and-specials',
+    sourceUrl: 'https://store.epicgames.com/sales-and-specials',
   }
   const ended = await verifyKnownCampaigns(
     async () => new Response('<main>The sale has ended.</main>'),
@@ -3513,30 +3612,683 @@ test('Rockstar explicit known-campaign ending supports plural Sales vocabulary c
   ])
 })
 
-test('Epic can use official campaign-level HTML when the source permits it', async () => {
-  const campaignUrl =
-    'https://store.epicgames.com/en-US/sales-and-specials/epic-savings'
+test('Epic parses the exact US SSR source and detects Deals of the Week without product traversal', async () => {
+  const calls = []
+  const modules = [
+    epicDealsOfTheWeek(),
+    {
+      __typename: 'StorefrontBreaker',
+      type: 'breaker',
+      title: 'Sonic Racing: CrossWorlds',
+      description: 'Save on one game.',
+      offer: { namespace: 'sonic', id: 'sonic-offer' },
+      link: { src: '/p/sonic-racing-crossworlds', linkText: 'Buy now' },
+    },
+    {
+      __typename: 'StorefrontBreaker',
+      type: 'breaker',
+      title: 'Dead by Daylight',
+      description: 'Individual discount.',
+      offer: { namespace: 'dbd', id: 'dbd-offer' },
+      link: { src: '/p/dead-by-daylight', linkText: 'Buy now' },
+    },
+    {
+      __typename: 'StorefrontCardGroup',
+      type: 'cardGroup',
+      title: 'Current Sales & Specials',
+      offers: [
+        { id: 'one', price: { discount: 50 } },
+        { id: 'two', price: { discount: 30 } },
+      ],
+    },
+    {
+      __typename: 'StorefrontBreaker',
+      title: 'Free Games',
+      description: 'Claim free games this week.',
+      link: { href: '/free-games' },
+    },
+    {
+      __typename: 'StorefrontBreaker',
+      title: 'Epic Hardware Sale',
+      description: 'Save on controllers and headsets.',
+      link: { href: '/browse?tag=hardware' },
+    },
+  ]
   const result = await runEpicGamesStoreAdapter({
-    now: new Date('2026-08-10T00:00:00Z'),
+    now: new Date('2026-08-31T00:00:00Z'),
+    fetch: async (input) => {
+      calls.push(input.toString())
+      assert.equal(input.toString(), epicSalesUrl)
+      return new Response(epicMain(modules))
+    },
+  })
+
+  assert.deepEqual(calls, [epicSalesUrl])
+  assert.equal(result.sourceUrl, epicSalesUrl)
+  assert.deepEqual(result.sourceUrls, [epicSalesUrl])
+  assert.equal(result.coverage, 'partial')
+  assert.equal(result.campaigns.length, 1)
+  assert.deepEqual(result.campaigns[0], {
+    sourceUid: 'epic-storefront:deals-of-the-week',
+    name: 'Deals of the Week',
+    storeSlug: 'epic-games-store',
+    state: 'live',
+    lifecycleBasis: 'official-source',
+    officialUrl: epicDealsUrl,
+    sourceUrl: epicSalesUrl,
+    artworkUrl: 'https://cdn1.epicgames.com/deals-of-the-week.jpg',
+  })
+  assert.equal(
+    calls.some((url) =>
+      /(?:\/news\/|egs-platform-service|\/browse|\/p\/|catalog|offer|price)/i.test(
+        url.replace(epicSalesUrl, '')
+      )
+    ),
+    false
+  )
+})
+
+test('Epic accepts a recognized Sales & Specials layout with zero campaigns', async () => {
+  const result = await runEpicGamesStoreAdapter({
+    now: new Date('2026-08-31T00:00:00Z'),
+    fetch: async () => new Response(epicMain()),
+  })
+
+  assert.deepEqual(result.campaigns, [])
+  assert.deepEqual(result.explicitlyEndedSourceUids, [])
+})
+
+test('Epic preserves a named primary campaign when landing enrichment fails', async () => {
+  const campaignUrl = `${epicSalesUrl}/publisher-sale`
+  const result = await runEpicGamesStoreAdapter({
+    now: new Date('2026-08-31T00:00:00Z'),
     fetch: async (input) => {
       const url = input.toString()
-      if (url.includes('/sales-and-specials') && url !== campaignUrl) {
-        return new Response(`<a href="${campaignUrl}">Epic Savings Sale</a>`)
-      }
-      if (url.includes('/news/')) return new Response('<main>News</main>')
-      if (url.includes('egs-platform-service')) return Response.json({})
-      if (url === campaignUrl) {
+      if (url === epicSalesUrl) {
         return new Response(
-          '<meta property="og:title" content="Epic Savings Sale"><p>The sale is live. Deals end August 20, 2026 at 11:00 am EDT.</p>'
+          epicMain([
+            {
+              __typename: 'StorefrontBreaker',
+              type: 'breaker',
+              title: 'Publisher Sale',
+              description: 'Save on a selection of games.',
+              link: { src: campaignUrl, linkText: 'Browse' },
+            },
+          ])
         )
       }
-      throw new Error(`Unexpected URL: ${url}`)
+      if (url === campaignUrl) return new Response('Unavailable', { status: 503 })
+      throw new Error(`Unexpected Epic URL: ${url}`)
+    },
+  })
+
+  assert.deepEqual(result.campaigns, [
+    {
+      sourceUid: 'epic-storefront:publisher%20sale',
+      name: 'Publisher Sale',
+      storeSlug: 'epic-games-store',
+      state: 'live',
+      lifecycleBasis: 'official-source',
+      officialUrl: campaignUrl,
+      sourceUrl: epicSalesUrl,
+    },
+  ])
+})
+
+test('Epic omits a landing-dependent candidate when enrichment fails without a safe public name', async () => {
+  const campaignUrl = `${epicSalesUrl}/unnamed-campaign`
+  const result = await runEpicGamesStoreAdapter({
+    now: new Date('2026-08-31T00:00:00Z'),
+    fetch: async (input) => {
+      const url = input.toString()
+      if (url === epicSalesUrl) {
+        return new Response(
+          epicMain([
+            {
+              __typename: 'StorefrontBreaker',
+              type: 'breaker',
+              description: 'Save on a selection of games during our sale.',
+              link: { src: campaignUrl, linkText: 'Browse' },
+            },
+          ])
+        )
+      }
+      if (url === campaignUrl) return new Response('Unavailable', { status: 503 })
+      throw new Error(`Unexpected Epic URL: ${url}`)
+    },
+  })
+
+  assert.deepEqual(result.campaigns, [])
+})
+
+test('Epic keeps the primary identity when a valid landing names a different ended campaign', async () => {
+  const campaignUrl = `${epicSalesUrl}/publisher-sale`
+  const result = await runEpicGamesStoreAdapter({
+    now: new Date('2026-08-31T00:00:00Z'),
+    fetch: async (input) => {
+      const url = input.toString()
+      if (url === epicSalesUrl) {
+        return new Response(
+          epicMain([
+            {
+              __typename: 'StorefrontBreaker',
+              title: 'Publisher Sale',
+              description: 'Save on a selection of games.',
+              link: { src: campaignUrl },
+            },
+          ])
+        )
+      }
+      if (url === campaignUrl) {
+        return new Response(
+          epicLanding('publisher-sale', {
+            title: 'Summer Sale',
+            description: 'Summer Sale has ended, but more deals await.',
+          })
+        )
+      }
+      throw new Error(`Unexpected Epic URL: ${url}`)
+    },
+  })
+
+  assert.deepEqual(result.campaigns, [
+    {
+      sourceUid: 'epic-storefront:publisher%20sale',
+      name: 'Publisher Sale',
+      storeSlug: 'epic-games-store',
+      state: 'live',
+      lifecycleBasis: 'official-source',
+      officialUrl: campaignUrl,
+      sourceUrl: epicSalesUrl,
+    },
+  ])
+  assert.deepEqual(result.explicitlyEndedSourceUids, [])
+})
+
+test('Epic still enriches a current campaign from an exact-name landing', async () => {
+  const campaignUrl = `${epicSalesUrl}/publisher-sale`
+  const result = await runEpicGamesStoreAdapter({
+    now: new Date('2026-08-31T00:00:00Z'),
+    fetch: async (input) => {
+      const url = input.toString()
+      if (url === epicSalesUrl) {
+        return new Response(
+          epicMain([
+            {
+              __typename: 'StorefrontBreaker',
+              title: 'Publisher Sale',
+              description: 'Save on a selection of games.',
+              link: { src: campaignUrl },
+            },
+          ])
+        )
+      }
+      if (url === campaignUrl) {
+        return new Response(
+          epicLanding('publisher-sale', {
+            title: 'Publisher Sale',
+            description: 'Publisher Sale ends September 10, 2026 at 1:00 PM UTC.',
+          })
+        )
+      }
+      throw new Error(`Unexpected Epic URL: ${url}`)
     },
   })
 
   assert.equal(result.campaigns.length, 1)
+  assert.equal(result.campaigns[0].name, 'Publisher Sale')
+  assert.equal(result.campaigns[0].sourceUid, 'epic-storefront:publisher%20sale')
+  assert.deepEqual(result.campaigns[0].ends, {
+    precision: 'datetime',
+    value: '2026-09-10T13:00:00+00:00',
+  })
+  assert.equal(
+    result.campaigns[0].artworkUrl,
+    'https://static-assets-prod.epicgames.com/campaign.jpg'
+  )
+})
+
+test('Epic separates concise public names from campaign-level qualification', async () => {
+  const result = await runEpicGamesStoreAdapter({
+    now: new Date('2026-08-31T00:00:00Z'),
+    fetch: async () =>
+      new Response(
+        epicMain([
+          {
+            __typename: 'StorefrontBreaker',
+            title: 'Black Friday',
+            description: 'Save on a selection of games and DLC.',
+          },
+          {
+            __typename: 'StorefrontBreaker',
+            title: 'Publisher Week',
+            description: 'Save on select games.',
+          },
+          {
+            __typename: 'StorefrontBreaker',
+            title: 'Gamescom',
+            description: 'Discounts on multiple titles.',
+          },
+          {
+            __typename: 'StorefrontBreaker',
+            title: 'Holiday Event',
+            description: 'Save on a range of games.',
+          },
+          {
+            __typename: 'StorefrontBreaker',
+            title: 'Game Spotlight',
+            description: 'Explore a selection of games.',
+          },
+        ])
+      ),
+  })
+
+  assert.deepEqual(
+    result.campaigns.map(({ name }) => name),
+    ['Black Friday', 'Publisher Week', 'Gamescom', 'Holiday Event']
+  )
+})
+
+test('Epic reuses a unique known source UID when the same named campaign gains a landing', async () => {
+  const campaignUrl = `${epicSalesUrl}/publisher-sale`
+  const known = epicKnown({
+    campaignKey: 'publisher-sale',
+    sourceUid: 'epic-existing:publisher-sale',
+    name: 'Publisher Sale',
+    officialUrl: epicSalesUrl,
+    endsAt: '2026-08-30T18:00:00Z',
+  })
+  const result = await runEpicGamesStoreAdapter({
+    now: new Date('2026-08-31T00:00:00Z'),
+    knownCampaigns: [known],
+    fetch: async (input) => {
+      const url = input.toString()
+      if (url === epicSalesUrl) {
+        return new Response(
+          epicMain([
+            {
+              __typename: 'StorefrontBreaker',
+              title: 'Publisher Sale',
+              description: 'Save on a selection of games.',
+              link: { src: campaignUrl },
+            },
+          ])
+        )
+      }
+      if (url === campaignUrl) {
+        return new Response(
+          epicLanding('publisher-sale', {
+            title: 'Publisher Sale',
+            description: 'Publisher Sale has ended, but more deals await.',
+          })
+        )
+      }
+      throw new Error(`Unexpected Epic URL: ${url}`)
+    },
+  })
+
+  assert.equal(result.campaigns.length, 1)
+  assert.equal(result.campaigns[0].sourceUid, known.sourceUid)
+  assert.equal(result.campaigns[0].officialUrl, campaignUrl)
+  assert.equal(result.campaigns[0].state, 'live')
+  assert.deepEqual(result.explicitlyEndedSourceUids, [])
+})
+
+test('Epic reuses a unique known source UID when the same named campaign loses its landing', async () => {
+  const campaignUrl = `${epicSalesUrl}/publisher-sale`
+  const known = epicKnown({
+    campaignKey: 'publisher-sale',
+    sourceUid: 'epic-existing:publisher-sale-with-landing',
+    name: 'Publisher Sale',
+    officialUrl: campaignUrl,
+  })
+  const result = await runEpicGamesStoreAdapter({
+    now: new Date('2026-08-31T00:00:00Z'),
+    knownCampaigns: [known],
+    fetch: async (input) => {
+      const url = input.toString()
+      if (url === epicSalesUrl) {
+        return new Response(
+          epicMain([
+            {
+              __typename: 'StorefrontBreaker',
+              title: 'Publisher Sale',
+              description: 'Save on a selection of games.',
+            },
+          ])
+        )
+      }
+      if (url === campaignUrl) {
+        return new Response(
+          epicLanding('publisher-sale', {
+            title: 'Publisher Sale',
+            description: 'Publisher Sale remains live.',
+          })
+        )
+      }
+      throw new Error(`Unexpected Epic URL: ${url}`)
+    },
+  })
+
+  assert.equal(result.campaigns.length, 1)
+  assert.equal(result.campaigns[0].sourceUid, known.sourceUid)
+})
+
+test('Epic never chooses arbitrarily between duplicate known public names', async () => {
+  const knownCampaigns = ['one', 'two'].map((sourceUid) =>
+    epicKnown({
+      campaignKey: sourceUid,
+      sourceUid: `epic-existing:${sourceUid}`,
+      name: 'Publisher Sale',
+      officialUrl: epicSalesUrl,
+    })
+  )
+  const result = await runEpicGamesStoreAdapter({
+    now: new Date('2026-08-31T00:00:00Z'),
+    knownCampaigns,
+    fetch: async () =>
+      new Response(
+        epicMain([
+          {
+            __typename: 'StorefrontBreaker',
+            title: 'Publisher Sale',
+            description: 'Save on a selection of games.',
+          },
+        ])
+      ),
+  })
+
+  assert.equal(result.campaigns.length, 1)
+  assert.equal(result.campaigns[0].sourceUid, 'epic-storefront:publisher%20sale')
+  assert.equal(
+    knownCampaigns.some(
+      ({ sourceUid }) => sourceUid === result.campaigns[0].sourceUid
+    ),
+    false
+  )
+})
+
+test('Epic source UID matching never correlates substring-only campaign names', async () => {
+  const known = epicKnown({
+    campaignKey: 'publisher-sale',
+    sourceUid: 'epic-existing:publisher-sale',
+    name: 'Publisher Sale',
+    officialUrl: epicSalesUrl,
+  })
+  const result = await runEpicGamesStoreAdapter({
+    now: new Date('2026-08-31T00:00:00Z'),
+    knownCampaigns: [known],
+    fetch: async () =>
+      new Response(
+        epicMain([
+          {
+            __typename: 'StorefrontBreaker',
+            title: 'Publisher Sale Deluxe',
+            description: 'Save on a selection of games.',
+          },
+        ])
+      ),
+  })
+
+  assert.equal(result.campaigns.length, 1)
+  assert.equal(
+    result.campaigns[0].sourceUid,
+    'epic-storefront:publisher%20sale%20deluxe'
+  )
+})
+
+test('Epic new source UIDs preserve punctuation, symbols, and campaign years', async () => {
+  const names = [
+    'Games & Add-ons Sale',
+    'Games Add-ons Sale',
+    'Publisher Sale 2025',
+    'Publisher Sale 2026',
+  ]
+  const result = await runEpicGamesStoreAdapter({
+    now: new Date('2026-08-31T00:00:00Z'),
+    fetch: async () =>
+      new Response(
+        epicMain(
+          names.map((title) => ({
+            __typename: 'StorefrontBreaker',
+            title,
+            description: 'Save on a selection of games.',
+          }))
+        )
+      ),
+  })
+
+  assert.deepEqual(
+    result.campaigns.map(({ name }) => name),
+    names
+  )
+  assert.deepEqual(
+    result.campaigns.map(({ sourceUid }) => sourceUid),
+    [
+      'epic-storefront:games%20%26%20add-ons%20sale',
+      'epic-storefront:games%20add-ons%20sale',
+      'epic-storefront:publisher%20sale%202025',
+      'epic-storefront:publisher%20sale%202026',
+    ]
+  )
+})
+
+test('Epic rejects missing, malformed, foreign-region, and foreign-locale SSR contracts', async (t) => {
+  const cases = [
+    ['missing marker', '<main>Epic Games Sales & Specials</main>'],
+    [
+      'malformed JSON',
+      '<script>window.__REACT_QUERY_INITIAL_QUERIES__ = [{"broken":];</script>',
+    ],
+    ['missing storefrontDiscover', epicSsr().replace('storefrontDiscover', 'other')],
+    ['foreign country', epicMain([], { country: 'CA' })],
+    ['foreign locale', epicMain([], { locale: 'fr-FR' })],
+    ['unsuccessful query', epicMain([], { status: 'error' })],
+    [
+      'wrong layout identity',
+      epicMain().replace('Epic Games Sales & Specials', 'Epic Games Store'),
+    ],
+  ]
+
+  for (const [name, html] of cases) {
+    await t.test(name, async () => {
+      await assert.rejects(
+        runEpicGamesStoreAdapter({
+          now: new Date('2026-08-31T00:00:00Z'),
+          fetch: async () => new Response(html),
+        }),
+        (error) =>
+          error?.code === 'OFFICIAL_CAMPAIGN_DISCOVERY_UNAVAILABLE'
+      )
+    })
+  }
+})
+
+test('Epic ends a matching known campaign only from its anchored official landing', async () => {
+  const campaignUrl = `${epicSalesUrl}/epic-savings`
+  const calls = []
+  const result = await runEpicGamesStoreAdapter({
+    now: new Date('2026-08-31T00:00:00Z'),
+    knownCampaigns: [epicKnown()],
+    fetch: async (input) => {
+      const url = input.toString()
+      calls.push(url)
+      if (url === epicSalesUrl) return new Response(epicMain())
+      if (url === campaignUrl) {
+        return new Response(
+          epicLanding('epic-savings', {
+            title: 'Epic Savings Sale',
+            description: 'Epic Savings Sale has ended, but more deals await.',
+          })
+        )
+      }
+      throw new Error(`Unexpected Epic URL: ${url}`)
+    },
+  })
+
+  assert.deepEqual(result.campaigns, [])
+  assert.deepEqual(result.explicitlyEndedSourceUids, [campaignUrl])
+  assert.deepEqual(calls, [epicSalesUrl, campaignUrl])
+})
+
+test('Epic requires an exact known name even when its official landing URL matches', async () => {
+  const summerUrl = `${epicSalesUrl}/summer-sale`
+  const known = epicKnown({ officialUrl: summerUrl })
+  const result = await runEpicGamesStoreAdapter({
+    now: new Date('2026-08-31T00:00:00Z'),
+    knownCampaigns: [known],
+    fetch: async (input) => {
+      const url = input.toString()
+      if (url === epicSalesUrl) return new Response(epicMain())
+      if (url === summerUrl) {
+        return new Response(
+          epicLanding('summer-sale', {
+            title: 'Summer Sale',
+            description: 'Summer Sale has ended, but more deals await.',
+          })
+        )
+      }
+      throw new Error(`Unexpected Epic URL: ${url}`)
+    },
+  })
+
+  assert.deepEqual(result.explicitlyEndedSourceUids, [])
+})
+
+test('Epic preserves a known campaign when its landing verification fails', async () => {
+  const campaignUrl = `${epicSalesUrl}/epic-savings`
+  const result = await runEpicGamesStoreAdapter({
+    now: new Date('2026-08-31T00:00:00Z'),
+    knownCampaigns: [epicKnown()],
+    fetch: async (input) =>
+      input.toString() === epicSalesUrl
+        ? new Response(epicMain())
+        : new Response('Unavailable', { status: 503 }),
+  })
+
+  assert.deepEqual(result.campaigns, [])
+  assert.deepEqual(result.explicitlyEndedSourceUids, [])
+  assert.equal(campaignUrl, epicKnown().officialUrl)
+})
+
+test('Epic current evidence dominates a stale known exact end', async () => {
+  const result = await runEpicGamesStoreAdapter({
+    now: new Date('2026-08-31T00:00:00Z'),
+    knownCampaigns: [
+      epicKnown({
+        sourceUid: 'epic-storefront:deals-of-the-week',
+        name: 'Deals of the Week',
+        officialUrl: epicDealsUrl,
+        endsAt: '2026-08-30T18:00:00Z',
+      }),
+    ],
+    fetch: async () => new Response(epicMain([epicDealsOfTheWeek()])),
+  })
+
+  assert.equal(result.campaigns.length, 1)
+  assert.deepEqual(result.explicitlyEndedSourceUids, [])
+})
+
+test('Epic partial coverage does not end a known campaign absent from the main surface', async () => {
+  const result = await runEpicGamesStoreAdapter({
+    now: new Date('2026-08-31T00:00:00Z'),
+    knownCampaigns: [
+      epicKnown({
+        sourceUid: 'epic-storefront:deals-of-the-week',
+        name: 'Deals of the Week',
+        officialUrl: epicDealsUrl,
+      }),
+    ],
+    fetch: async () => new Response(epicMain()),
+  })
+
+  assert.equal(result.coverage, 'partial')
+  assert.deepEqual(result.explicitlyEndedSourceUids, [])
+})
+
+test('Epic validates a linked campaign landing once and deduplicates its stable identity', async () => {
+  const campaignUrl = `${epicSalesUrl}/epic-savings`
+  const calls = []
+  const currentModule = {
+    __typename: 'StorefrontBreaker',
+    type: 'breaker',
+    title: 'Epic Savings Sale',
+    description: 'Save on a selection of games and add-ons.',
+    link: { src: `${campaignUrl}?lang=en-US#hero`, linkText: 'Browse' },
+  }
+  const result = await runEpicGamesStoreAdapter({
+    now: new Date('2026-08-31T00:00:00Z'),
+    fetch: async (input) => {
+      const url = input.toString()
+      calls.push(url)
+      if (url === epicSalesUrl) {
+        return new Response(epicMain([currentModule, currentModule]))
+      }
+      if (url === campaignUrl) {
+        return new Response(
+          epicLanding('epic-savings', {
+            title: 'Epic Savings Sale',
+            description: 'Epic Savings Sale is live with deals on select games.',
+          })
+        )
+      }
+      throw new Error(`Unexpected Epic URL: ${url}`)
+    },
+  })
+
+  assert.equal(result.campaigns.length, 1)
+  assert.equal(
+    result.campaigns[0].sourceUid,
+    'epic-storefront:epic%20savings%20sale'
+  )
   assert.equal(result.campaigns[0].name, 'Epic Savings Sale')
-  assert.equal(result.sourceUrls.length, 3)
+  assert.equal(result.campaigns[0].officialUrl, campaignUrl)
+  assert.equal(result.campaigns[0].state, 'live')
+  assert.equal(
+    calls.filter((url) => url === campaignUrl).length,
+    1
+  )
+})
+
+test('Epic accepts a campaign-level games and add-ons sale but excludes free and hardware-only modules', async () => {
+  const result = await runEpicGamesStoreAdapter({
+    now: new Date('2026-08-31T00:00:00Z'),
+    fetch: async () =>
+      new Response(
+        epicMain([
+          {
+            __typename: 'StorefrontBreaker',
+            title: 'Games & Add-ons Sale',
+            description:
+              'Save on a selection of games and DLC add-ons, plus a free giveaway.',
+            link: { href: '/browse?tag=games-and-add-ons-sale' },
+          },
+          {
+            __typename: 'StorefrontBreaker',
+            title: 'Free Games Sale',
+            description: 'Claim free games only.',
+            link: { href: '/free-games' },
+          },
+          {
+            __typename: 'StorefrontBreaker',
+            title: 'Hardware Sale',
+            description: 'Controllers and headsets only.',
+            link: { href: '/browse?tag=hardware' },
+          },
+          {
+            __typename: 'StorefrontBreaker',
+            title: 'Free Play Days',
+            description: 'Play selected games for free this weekend.',
+            link: { href: '/browse?tag=free-play-days' },
+          },
+        ])
+      ),
+  })
+
+  assert.deepEqual(
+    result.campaigns.map(({ name }) => name),
+    ['Games & Add-ons Sale']
+  )
 })
 
 test('Steam preserves date-only announcements as upcoming until a live surface confirms them', async () => {

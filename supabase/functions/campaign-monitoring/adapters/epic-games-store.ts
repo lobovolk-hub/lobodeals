@@ -1,46 +1,744 @@
 import {
   campaign,
-  expireAtExactEnd,
-  isExcludedCampaignText,
-  isSaleCampaignText,
+  canonicalDate,
+  dateBoundary,
+  exactTimeState,
+  monthNumber,
 } from '../_shared/campaign.ts'
-import { extractAnchors, extractMeta, textFromHtml, uniqueBy } from '../_shared/html.ts'
-import { extractOfficialArtwork } from '../_shared/artwork.ts'
+import { extractOfficialArtwork, isSafeArtworkUrl } from '../_shared/artwork.ts'
+import { uniqueBy } from '../_shared/html.ts'
 import { fetchOfficialText } from '../_shared/http.ts'
-import { extractExactEnglishDateTimes } from '../_shared/time.ts'
+import {
+  extractEnglishDateOnlyRange,
+  extractExactEnglishDateTimes,
+} from '../_shared/time.ts'
 import { AdapterError } from '../_shared/types.ts'
-import { sourceExplicitlyEndsCampaign, verifyKnownCampaigns } from '../_shared/verification.ts'
-import type { AdapterResult, DetectedCampaign, StoreAdapter } from '../_shared/types.ts'
+import type {
+  AdapterResult,
+  DetectedCampaign,
+  KnownCampaign,
+  SourceBoundary,
+  StoreAdapter,
+} from '../_shared/types.ts'
 
-const SALES_URL = 'https://store.epicgames.com/en-US/sales-and-specials'
-const NEWS_URL = 'https://store.epicgames.com/en-US/news/'
-const NEWS_API_URL =
-  'https://egs-platform-service.store.epicgames.com/api/v2/public/content/news'
+const SALES_URL = 'https://store.epicgames.com/sales-and-specials'
+const SSR_MARKER = 'window.__REACT_QUERY_INITIAL_QUERIES__'
+const DEALS_OF_THE_WEEK_UID = 'epic-storefront:deals-of-the-week'
 
-function campaignLinks(
-  html: string,
-  baseUrl: string
-): readonly { href: string; label: string; sourceUrl: string }[] {
-  return uniqueBy(
-    extractAnchors(html, baseUrl)
-      .filter(({ href, label }) => {
-        const url = new URL(href)
-        return (
-          url.hostname === 'store.epicgames.com' &&
-          (/\/sales-and-specials\//i.test(url.pathname) ||
-            /\/news\/[^/]+/i.test(url.pathname)) &&
-          isSaleCampaignText(`${url.pathname} ${label}`) &&
-          !isExcludedCampaignText(label)
-        )
-      })
-      .map((link) => ({ ...link, sourceUrl: baseUrl })),
-    ({ href }) => {
-      const url = new URL(href)
-      url.search = ''
-      url.hash = ''
-      return url.toString()
-    }
+const CAMPAIGN_PATTERN =
+  /\b(?:sale|sales|deals?|savings|promotion|discount event|festival)\b/i
+const COMMERCIAL_PATTERN =
+  /\b(?:sales?|deals?|savings?|promotions?|discounts?|discounted|save)\b/i
+const BREADTH_PATTERN =
+  /\b(?:(?:select(?:ed)?|multiple|several|various|many)\s+(?:games|titles)|(?:selection|range|lineup)\s+of\s+(?:games|titles)|games?\s+(?:and|with)\s+(?:dlc|add-ons?|discounts?|deals?|offers?))\b/i
+const FREE_OR_NON_DIGITAL_PATTERN =
+  /\b(?:free games?|free-to-play|free to play|giveaways?|demos?|free weekends?|free play days?|hardware|consoles?|controllers?|headsets?|merch(?:andise)?|apparel)\b/i
+const DIGITAL_GAME_PATTERN = /\b(?:digital\s+)?(?:games?|titles?)\b/i
+const EPIC_ARTWORK_HOSTS = new Set([
+  'cdn1.epicgames.com',
+  'cdn2.unrealengine.com',
+  'static-assets-prod.epicgames.com',
+])
+
+type JsonObject = Readonly<Record<string, unknown>>
+
+type DiscoverSurface = Readonly<{
+  layout: unknown
+  layoutSlug: string | null
+}>
+
+type EpicTiming = Readonly<{
+  ends?: SourceBoundary
+  lifecycleBasis: 'official-source' | 'exact-time'
+  starts?: SourceBoundary
+  state: 'live' | 'upcoming' | 'ended'
+}>
+
+type ModuleCandidate = Readonly<{
+  artworkUrl?: string
+  landingUrl?: string
+  name?: string
+  officialUrl: string
+  text: string
+  timing: EpicTiming
+}>
+
+type LandingInfo = Readonly<{
+  artworkUrl?: string
+  ended: boolean
+  name: string
+  text: string
+  timing: EpicTiming
+  url: string
+}>
+
+function object(value: unknown): JsonObject | null {
+  return value !== null && typeof value === 'object' && !Array.isArray(value)
+    ? (value as JsonObject)
+    : null
+}
+
+function string(value: unknown): string | undefined {
+  return typeof value === 'string' && value.trim() ? value.trim() : undefined
+}
+
+function unavailable(message: string): AdapterError {
+  return new AdapterError('OFFICIAL_CAMPAIGN_DISCOVERY_UNAVAILABLE', message)
+}
+
+function assignedJson(html: string): unknown {
+  const markerIndex = html.indexOf(SSR_MARKER)
+  if (markerIndex < 0) {
+    throw unavailable('Epic Sales & Specials SSR discovery marker is missing')
+  }
+
+  const equalsIndex = html.indexOf('=', markerIndex + SSR_MARKER.length)
+  const assignmentGap = html.slice(
+    markerIndex + SSR_MARKER.length,
+    equalsIndex < 0 ? undefined : equalsIndex
   )
+  if (equalsIndex < 0 || assignmentGap.trim()) {
+    throw unavailable('Epic Sales & Specials SSR assignment is malformed')
+  }
+
+  let start = equalsIndex + 1
+  while (start < html.length && /\s/.test(html[start])) start += 1
+  if (html[start] !== '[' && html[start] !== '{') {
+    throw unavailable('Epic Sales & Specials SSR assignment is not JSON')
+  }
+
+  const stack: string[] = []
+  let quoted = false
+  let escaped = false
+  for (let index = start; index < html.length; index += 1) {
+    const character = html[index]
+    if (quoted) {
+      if (escaped) escaped = false
+      else if (character === '\\') escaped = true
+      else if (character === '"') quoted = false
+      continue
+    }
+    if (character === '"') {
+      quoted = true
+      continue
+    }
+    if (character === '{') stack.push('}')
+    else if (character === '[') stack.push(']')
+    else if (character === '}' || character === ']') {
+      if (stack.pop() !== character) {
+        throw unavailable('Epic Sales & Specials SSR JSON is unbalanced')
+      }
+      if (stack.length === 0) {
+        try {
+          return JSON.parse(html.slice(start, index + 1)) as unknown
+        } catch {
+          throw unavailable('Epic Sales & Specials SSR JSON is invalid')
+        }
+      }
+    }
+  }
+
+  throw unavailable('Epic Sales & Specials SSR JSON is incomplete')
+}
+
+function queryEntries(value: unknown): readonly JsonObject[] {
+  if (Array.isArray(value)) {
+    return value.flatMap((entry) => {
+      const candidate = object(entry)
+      return candidate ? [candidate] : []
+    })
+  }
+  const root = object(value)
+  if (!root) return []
+  const queries = Array.isArray(root.queries) ? root.queries : Object.values(root)
+  return queries.flatMap((entry) => {
+    const candidate = object(entry)
+    return candidate ? [candidate] : []
+  })
+}
+
+function queryKeyHasValue(value: unknown, expected: string): boolean {
+  if (value === expected) return true
+  if (Array.isArray(value)) {
+    return value.some((entry) => queryKeyHasValue(entry, expected))
+  }
+  const candidate = object(value)
+  return candidate
+    ? Object.values(candidate).some((entry) => queryKeyHasValue(entry, expected))
+    : false
+}
+
+function queryKeyHasPair(
+  value: unknown,
+  key: string,
+  expected: string | null
+): boolean {
+  if (
+    Array.isArray(value) &&
+    value.length === 2 &&
+    value[0] === key &&
+    value[1] === expected
+  ) {
+    return true
+  }
+  if (Array.isArray(value)) {
+    return value.some((entry) => queryKeyHasPair(entry, key, expected))
+  }
+  const candidate = object(value)
+  if (!candidate) return false
+  if (Object.hasOwn(candidate, key) && candidate[key] === expected) return true
+  return Object.values(candidate).some((entry) =>
+    queryKeyHasPair(entry, key, expected)
+  )
+}
+
+function discoverSurface(html: string, expectedSlug: string | null): DiscoverSurface {
+  const entries = queryEntries(assignedJson(html))
+  const discoverQueries = entries.filter(({ queryKey }) =>
+    queryKeyHasValue(queryKey, 'storefrontDiscover')
+  )
+  const query = discoverQueries.find(
+    ({ queryKey }) =>
+      queryKeyHasPair(queryKey, 'country', 'US') &&
+      queryKeyHasPair(queryKey, 'locale', 'en-US') &&
+      queryKeyHasPair(queryKey, 'layoutType', 'sale') &&
+      queryKeyHasPair(queryKey, 'layoutSlug', expectedSlug)
+  )
+  if (!query) {
+    throw unavailable('Epic storefrontDiscover does not match the US sale contract')
+  }
+
+  const state = object(query.state)
+  const data = object(state?.data)
+  const storefront = object(data?.Storefront)
+  const layout = storefront?.discoverLayout
+  if (state?.status !== 'success' || (!object(layout) && !Array.isArray(layout))) {
+    throw unavailable('Epic storefrontDiscover did not return a successful layout')
+  }
+  return { layout, layoutSlug: expectedSlug }
+}
+
+const STRUCTURAL_KEYS = new Set([
+  'children',
+  'components',
+  'content',
+  'data',
+  'elements',
+  'layout',
+  'modules',
+  'pageHeader',
+  'rows',
+  'sections',
+  'subModules',
+])
+const BLOCKED_CHILD_KEYS = new Set([
+  'browseResults',
+  'catalog',
+  'offer',
+  'offers',
+  'price',
+  'prices',
+  'product',
+  'products',
+])
+
+function nodeType(value: JsonObject): string {
+  return (
+    string(value.__typename) ??
+    string(value.type) ??
+    string(value.moduleType) ??
+    ''
+  )
+}
+
+function looksStructural(value: unknown): boolean {
+  const candidate = object(value)
+  if (!candidate) return false
+  return /^(?:PageHeader|Storefront)/i.test(nodeType(candidate))
+}
+
+function structuralNodes(root: unknown): readonly JsonObject[] {
+  const nodes: JsonObject[] = []
+  const queue: unknown[] = [root]
+  const seen = new Set<object>()
+
+  while (queue.length > 0) {
+    const value = queue.shift()
+    if (Array.isArray(value)) {
+      queue.push(...value)
+      continue
+    }
+    const candidate = object(value)
+    if (!candidate || seen.has(candidate)) continue
+    seen.add(candidate)
+    nodes.push(candidate)
+
+    for (const [key, child] of Object.entries(candidate)) {
+      if (BLOCKED_CHILD_KEYS.has(key)) continue
+      if (STRUCTURAL_KEYS.has(key)) {
+        queue.push(child)
+        continue
+      }
+      if (Array.isArray(child) && child.some(looksStructural)) queue.push(child)
+      else if (looksStructural(child)) queue.push(child)
+    }
+  }
+  return nodes
+}
+
+function nestedStrings(value: unknown, depth = 0): readonly string[] {
+  if (depth > 4) return []
+  if (typeof value === 'string') return value.trim() ? [value.trim()] : []
+  if (Array.isArray(value)) {
+    return value.flatMap((entry) => nestedStrings(entry, depth + 1))
+  }
+  const candidate = object(value)
+  return candidate
+    ? Object.values(candidate).flatMap((entry) => nestedStrings(entry, depth + 1))
+    : []
+}
+
+function fieldStrings(node: JsonObject, fields: readonly string[]): readonly string[] {
+  return fields.flatMap((field) => nestedStrings(node[field]))
+}
+
+function publicText(node: JsonObject): readonly string[] {
+  return uniqueBy(
+    [
+      ...fieldStrings(node, ['title', 'titleGroup']),
+      ...fieldStrings(object(node.image) ?? {}, ['alt']),
+      ...fieldStrings(node, ['description', 'subtitle', 'text']),
+    ]
+      .map((value) => value.replace(/\s+/g, ' ').trim())
+      .filter(Boolean),
+    (value) => value
+  )
+}
+
+function normalizeIdentity(value: string): string {
+  return value.toLowerCase().replace(/\s+/g, ' ').trim()
+}
+
+function cleanPublicName(value: string): string | null {
+  const collapsed = value.replace(/\s+/g, ' ').trim()
+  if (/\bDeals of the Week\b/i.test(collapsed)) return 'Deals of the Week'
+  const cleaned = collapsed
+    .replace(/^Epic Games Store\s+/i, '')
+    .replace(/\s+[|–—-]\s+Epic Games Store.*$/i, '')
+    .trim()
+  if (
+    cleaned.length < 3 ||
+    cleaned.length > 100 ||
+    /^(?:Epic Games )?Sales\s*(?:&|and)\s*Specials$/i.test(cleaned) ||
+    /^(?:Current )?Sales\s*(?:&|and)\s*Specials$/i.test(cleaned) ||
+    /^(?:shop|learn|see|view|browse|check out)(?:\s+now|\s+more|\s+the\s+deals?)?$/i.test(
+      cleaned
+    ) ||
+    /^(?:save|shop|explore|discover|browse|check out|get|find|enjoy)\b/i.test(
+      cleaned
+    ) ||
+    (/\w[.!?]$/.test(cleaned) && cleaned.split(/\s+/).length > 8)
+  ) {
+    return null
+  }
+  return cleaned
+}
+
+function publicNameFromModule(node: JsonObject): string | null {
+  if (publicText(node).some((value) => /\bDeals of the Week\b/i.test(value))) {
+    return 'Deals of the Week'
+  }
+
+  const preferredValues = [
+    ...fieldStrings(node, ['title', 'titleGroup']),
+    ...fieldStrings(object(node.image) ?? {}, ['alt']),
+  ]
+  for (const value of preferredValues) {
+    const name = cleanPublicName(value)
+    if (name) return name
+  }
+
+  for (const value of fieldStrings(node, ['description', 'subtitle', 'text'])) {
+    const name = cleanPublicName(value)
+    if (
+      name &&
+      name.split(/\s+/).length <= 6 &&
+      !/[.!?]$/.test(name) &&
+      (CAMPAIGN_PATTERN.test(name) ||
+        /\b(?:black friday|cyber monday|gamescom|holiday event|publisher week)\b/i.test(
+          name
+        ))
+    ) {
+      return name
+    }
+  }
+  return null
+}
+
+function pageHeader(layout: unknown): JsonObject | null {
+  return (
+    structuralNodes(layout).find((node) => /PageHeader/i.test(nodeType(node))) ??
+    null
+  )
+}
+
+function headerTitle(header: JsonObject): string | null {
+  return (
+    fieldStrings(header, ['title'])
+      .map((value) => value.replace(/\s+/g, ' ').trim())
+      .find(Boolean) ?? null
+  )
+}
+
+function validateMainHeader(layout: unknown): void {
+  const header = pageHeader(layout)
+  const title = header ? headerTitle(header) : null
+  if (
+    !title ||
+    !/^Epic Games(?: Store)? Sales\s*(?:&|and)\s*Specials$/i.test(title)
+  ) {
+    throw unavailable('Epic discoverLayout is not the Sales & Specials surface')
+  }
+}
+
+function rawLinkValues(node: JsonObject): readonly string[] {
+  return uniqueBy(
+    [
+      ...nestedStrings(node.link),
+      ...nestedStrings(node.cta),
+      ...nestedStrings(node.action),
+      ...nestedStrings(node.destination),
+      ...nestedStrings(node.href),
+      ...nestedStrings(node.url),
+    ].filter((value) => /^(?:https?:\/\/|\/)/i.test(value)),
+    (value) => value
+  )
+}
+
+function officialLinks(node: JsonObject): readonly URL[] {
+  return rawLinkValues(node).flatMap((value) => {
+    try {
+      const url = new URL(value, SALES_URL)
+      if (
+        url.protocol !== 'https:' ||
+        url.hostname !== 'store.epicgames.com' ||
+        url.username ||
+        url.password
+      ) {
+        return []
+      }
+      url.hash = ''
+      return [url]
+    } catch {
+      return []
+    }
+  })
+}
+
+function campaignLandingUrl(value: string): string | null {
+  try {
+    const url = new URL(value)
+    if (url.protocol !== 'https:' || url.hostname !== 'store.epicgames.com') {
+      return null
+    }
+    const match = /^\/(?:en-US\/)?sales-and-specials\/([^/]+)\/?$/i.exec(
+      url.pathname
+    )
+    if (!match) return null
+    return `https://store.epicgames.com/sales-and-specials/${match[1]}`
+  } catch {
+    return null
+  }
+}
+
+function browseUrl(links: readonly URL[]): string | null {
+  const link = links.find((url) => /^\/(?:en-US\/)?browse\/?$/i.test(url.pathname))
+  return link?.toString() ?? null
+}
+
+function isDealsOfTheWeek(text: string, browse: string | null): boolean {
+  if (/\bDeals of the Week\b/i.test(text)) return true
+  if (!browse || !/\bdeals?\b.*\bweek\b/i.test(text)) return false
+  return new URL(browse).searchParams
+    .getAll('tag')
+    .some((tag) => normalizeIdentity(tag) === 'deals of the week')
+}
+
+function safeEpicArtwork(value: unknown, baseUrl = SALES_URL): string | undefined {
+  if (typeof value !== 'string') return undefined
+  try {
+    const url = new URL(value, baseUrl).toString()
+    return isSafeArtworkUrl(url) && EPIC_ARTWORK_HOSTS.has(new URL(url).hostname)
+      ? url
+      : undefined
+  } catch {
+    return undefined
+  }
+}
+
+function nodeArtwork(node: JsonObject, baseUrl = SALES_URL): string | undefined {
+  for (const value of [
+    ...nestedStrings(node.image),
+    ...nestedStrings(node.banner),
+    ...nestedStrings(node.heroImage),
+  ]) {
+    const artwork = safeEpicArtwork(value, baseUrl)
+    if (artwork) return artwork
+  }
+  return undefined
+}
+
+function dateOnlyBoundaryFromMarker(
+  text: string,
+  marker: 'start' | 'end'
+): SourceBoundary | undefined {
+  const months =
+    '(January|February|March|April|May|June|July|August|September|October|November|December)'
+  const action = marker === 'start' ? '(?:starts?|begins?)' : '(?:ends?)'
+  const match = new RegExp(
+    `\\b${action}\\s+(?:on\\s+)?${months}\\s+(\\d{1,2})(?:st|nd|rd|th)?,?\\s+(20\\d{2})\\b`,
+    'i'
+  ).exec(text)
+  if (!match) return undefined
+  const month = monthNumber(match[1])
+  if (!month) return undefined
+  return dateBoundary(canonicalDate(Number(match[3]), month, Number(match[2])))
+}
+
+function timingFromText(text: string, now: Date, currentEvidence: boolean): EpicTiming {
+  const exact = extractExactEnglishDateTimes(text)
+  const hasStart = /\b(?:starts?|begins?|from)\b/i.test(text)
+  const hasEnd = /\b(?:ends?|until|through)\b/i.test(text)
+  if (hasStart && hasEnd && exact.length >= 2) {
+    const starts = exact[0]
+    const ends = exact[exact.length - 1]
+    try {
+      const state = exactTimeState(starts, ends, now)
+      if (state === 'ended' && currentEvidence) {
+        return { lifecycleBasis: 'official-source', state: 'live' }
+      }
+      return { starts, ends, lifecycleBasis: 'exact-time', state }
+    } catch {
+      // Ignore incompatible exact instants rather than inventing reconciliation.
+    }
+  }
+
+  if (exact.length === 1 && hasStart !== hasEnd) {
+    const boundary = exact[0]
+    if (hasStart) {
+      return {
+        starts: boundary,
+        lifecycleBasis: 'official-source',
+        state: Date.parse(boundary.value) > now.getTime() ? 'upcoming' : 'live',
+      }
+    }
+    if (Date.parse(boundary.value) <= now.getTime() && !currentEvidence) {
+      return { ends: boundary, lifecycleBasis: 'official-source', state: 'ended' }
+    }
+    return {
+      ...(Date.parse(boundary.value) > now.getTime() ? { ends: boundary } : {}),
+      lifecycleBasis: 'official-source',
+      state: 'live',
+    }
+  }
+
+  const range = extractEnglishDateOnlyRange(text)
+  const today = now.toISOString().slice(0, 10)
+  if (range) {
+    const ended = range.ends.value < today
+    return {
+      starts: range.starts,
+      ends: range.ends,
+      lifecycleBasis: 'official-source',
+      state:
+        range.starts.value > today
+          ? 'upcoming'
+          : ended && !currentEvidence
+            ? 'ended'
+            : 'live',
+    }
+  }
+
+  const starts = dateOnlyBoundaryFromMarker(text, 'start')
+  const ends = dateOnlyBoundaryFromMarker(text, 'end')
+  if (starts || ends) {
+    return {
+      ...(starts ? { starts } : {}),
+      ...(ends && (ends.value >= today || !currentEvidence) ? { ends } : {}),
+      lifecycleBasis: 'official-source',
+      state:
+        starts && starts.value > today
+          ? 'upcoming'
+          : ends && ends.value < today && !currentEvidence
+            ? 'ended'
+            : 'live',
+    }
+  }
+
+  return {
+    lifecycleBasis: 'official-source',
+    state: /\bcoming soon\b/i.test(text) ? 'upcoming' : 'live',
+  }
+}
+
+function individualProductNode(node: JsonObject, links: readonly URL[]): boolean {
+  const offer = object(node.offer)
+  return Boolean(
+    string(offer?.namespace) ||
+    string(offer?.id) ||
+    links.some((url) => /^\/(?:en-US\/)?p\//i.test(url.pathname))
+  )
+}
+
+function excludedWithoutDigitalSale(name: string, text: string): boolean {
+  const combined = `${name} ${text}`
+  if (!FREE_OR_NON_DIGITAL_PATTERN.test(combined)) return false
+  const saleText = combined.replace(
+    new RegExp(FREE_OR_NON_DIGITAL_PATTERN.source, 'gi'),
+    ' '
+  )
+  return !(
+    DIGITAL_GAME_PATTERN.test(saleText) &&
+    (CAMPAIGN_PATTERN.test(saleText) || BREADTH_PATTERN.test(saleText))
+  )
+}
+
+function qualifiesCampaignModule(
+  text: string,
+  landingUrl: string | null,
+  dealsOfTheWeek: boolean
+): boolean {
+  return Boolean(
+    dealsOfTheWeek ||
+      landingUrl ||
+      CAMPAIGN_PATTERN.test(text) ||
+      (COMMERCIAL_PATTERN.test(text) && BREADTH_PATTERN.test(text))
+  )
+}
+
+function moduleCandidate(node: JsonObject, now: Date): ModuleCandidate | null {
+  const type = nodeType(node)
+  if (
+    /PageHeader|StorefrontSubModules|StorefrontCardGroup/i.test(type) ||
+    Array.isArray(node.offers)
+  ) {
+    return null
+  }
+
+  const links = officialLinks(node)
+  if (individualProductNode(node, links)) return null
+  const landingUrl = links.map(({ href }) => campaignLandingUrl(href)).find(Boolean)
+  const browse = browseUrl(links)
+  const text = publicText(node).join(' ')
+  const dealsOfTheWeek = isDealsOfTheWeek(text, browse)
+  const name = dealsOfTheWeek ? 'Deals of the Week' : publicNameFromModule(node)
+  if (!qualifiesCampaignModule(text, landingUrl ?? null, dealsOfTheWeek)) {
+    return null
+  }
+  if (!landingUrl && !name) return null
+  if (excludedWithoutDigitalSale(name ?? '', text)) return null
+
+  const officialUrl = landingUrl ?? browse ?? SALES_URL
+  const artworkUrl = nodeArtwork(node)
+  return {
+    ...(artworkUrl ? { artworkUrl } : {}),
+    ...(landingUrl ? { landingUrl } : {}),
+    ...(name ? { name } : {}),
+    officialUrl,
+    text,
+    timing: timingFromText(text, now, true),
+  }
+}
+
+function newSourceUid(name: string): string {
+  const normalizedName = normalizeIdentity(name)
+  if (normalizedName === 'deals of the week') {
+    return DEALS_OF_THE_WEEK_UID
+  }
+  return `epic-storefront:${encodeURIComponent(normalizedName)}`
+}
+
+function stableSourceUid(
+  name: string,
+  landingUrl: string | undefined,
+  knownCampaigns: readonly KnownCampaign[]
+): string {
+  if (landingUrl) {
+    const canonicalLanding = campaignLandingUrl(landingUrl)
+    const landingMatches = canonicalLanding
+      ? knownCampaigns.filter((known) =>
+          [known.officialUrl, known.sourceUid].some(
+            (value) => campaignLandingUrl(value) === canonicalLanding
+          )
+        )
+      : []
+    if (landingMatches.length === 1) return landingMatches[0].sourceUid
+  }
+
+  const normalizedName = normalizeIdentity(name)
+  const nameMatches = knownCampaigns.filter(
+    (known) => normalizeIdentity(known.name) === normalizedName
+  )
+  return nameMatches.length === 1
+    ? nameMatches[0].sourceUid
+    : newSourceUid(name)
+}
+
+function landingExplicitlyEnded(name: string, description: string): boolean {
+  const escapedName = name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+  return new RegExp(
+    `(?:^|\\b)${escapedName}\\s+(?:(?:has|have)\\s+(?:now\\s+)?(?:ended|finished)|is\\s+(?:now\\s+)?over)\\b`,
+    'i'
+  ).test(description)
+}
+
+function parseLanding(html: string, url: string, now: Date): LandingInfo {
+  const canonicalUrl = campaignLandingUrl(url)
+  if (!canonicalUrl) throw unavailable('Epic campaign landing URL is invalid')
+  const slug = canonicalUrl.split('/').at(-1)!
+  const { layout } = discoverSurface(html, slug)
+  const header = pageHeader(layout)
+  if (!header) throw unavailable('Epic campaign landing PageHeader is missing')
+  const name = publicNameFromModule(header)
+  if (!name) throw unavailable('Epic campaign landing public name is unavailable')
+  const description = fieldStrings(header, ['description', 'subtitle', 'text']).join(' ')
+  const text = `${name} ${description}`.trim()
+  const metaArtwork = extractOfficialArtwork(html, canonicalUrl)
+  const artworkUrl =
+    nodeArtwork(header, canonicalUrl) ?? safeEpicArtwork(metaArtwork, canonicalUrl)
+  return {
+    ...(artworkUrl ? { artworkUrl } : {}),
+    ended: landingExplicitlyEnded(name, description),
+    name,
+    text,
+    timing: timingFromText(text, now, false),
+    url: canonicalUrl,
+  }
+}
+
+function comparableIdentity(value: string): string {
+  try {
+    const url = new URL(value)
+    url.hash = ''
+    url.search = ''
+    url.pathname = url.pathname.replace(/\/+$/, '')
+    return url.toString()
+  } catch {
+    return value.trim()
+  }
+}
+
+function knownExplicitEnds(
+  knownCampaigns: readonly KnownCampaign[],
+  now: Date
+): readonly string[] {
+  return knownCampaigns.flatMap((known) => {
+    const exactEndPassed =
+      Boolean(known.endsAt) &&
+      Number.isFinite(Date.parse(known.endsAt!)) &&
+      now.getTime() >= Date.parse(known.endsAt!)
+    return exactEndPassed ? [known.sourceUid] : []
+  })
 }
 
 export const runEpicGamesStoreAdapter: StoreAdapter = async ({
@@ -48,83 +746,127 @@ export const runEpicGamesStoreAdapter: StoreAdapter = async ({
   fetch,
   knownCampaigns = [],
 }) => {
-  const sourceResults = await Promise.allSettled([
-    fetchOfficialText(fetch, SALES_URL),
-    fetchOfficialText(fetch, NEWS_URL),
-    fetchOfficialText(fetch, NEWS_API_URL, {
-      headers: {
-        Accept: 'application/json',
-        Origin: 'https://store.epicgames.com',
-        Referer: NEWS_URL,
-      },
-    }),
-  ])
-  const successfulHtml = sourceResults.flatMap((result, index) =>
-    result.status === 'fulfilled' && index < 2
-      ? [{ html: result.value, sourceUrl: index === 0 ? SALES_URL : NEWS_URL }]
-      : []
-  )
+  const mainHtml = await fetchOfficialText(fetch, SALES_URL)
+  const mainSurface = discoverSurface(mainHtml, null)
+  validateMainHeader(mainSurface.layout)
 
-  if (successfulHtml.length === 0) {
-    const failures = sourceResults.map((result) =>
-      result.status === 'rejected' && result.reason instanceof AdapterError
-        ? result.reason.code
-        : result.status
+  const landingCache = new Map<string, Promise<LandingInfo>>()
+  const loadLanding = (url: string): Promise<LandingInfo> => {
+    const canonicalUrl = campaignLandingUrl(url)
+    if (!canonicalUrl) return Promise.reject(unavailable('Invalid Epic landing URL'))
+    const existing = landingCache.get(canonicalUrl)
+    if (existing) return existing
+    const pending = fetchOfficialText(fetch, canonicalUrl).then((html) =>
+      parseLanding(html, canonicalUrl, now)
     )
-    throw new AdapterError(
-      'OFFICIAL_SOURCE_AUTOMATION_BLOCKED',
-      `Epic official Sales & Specials and News HTML are unavailable to server-side monitoring (${failures.join(', ')})`,
-      true
-    )
+    landingCache.set(canonicalUrl, pending)
+    return pending
   }
 
-  const links = uniqueBy(
-    successfulHtml.flatMap(({ html, sourceUrl }) =>
-      campaignLinks(html, sourceUrl)
-    ),
-    ({ href }) => href
-  )
-  const settled = await Promise.allSettled(
-    links.map(async ({ href, label, sourceUrl }): Promise<DetectedCampaign | null> => {
-      const officialUrl = new URL(href)
-      officialUrl.search = ''
-      officialUrl.hash = ''
-      const html = await fetchOfficialText(fetch, officialUrl.toString())
-      if (sourceExplicitlyEndsCampaign(html)) return null
-      const title = extractMeta(html, 'og:title') ?? label
-      const text = textFromHtml(html)
-      if (!isSaleCampaignText(`${title} ${text.slice(0, 800)}`)) return null
-      if (isExcludedCampaignText(title)) return null
-      const exact = extractExactEnglishDateTimes(text)
-      const ends = exact.length > 0 ? exact[exact.length - 1] : undefined
+  const candidates = structuralNodes(mainSurface.layout).flatMap((node) => {
+    const candidate = moduleCandidate(node, now)
+    return candidate ? [candidate] : []
+  })
+  const campaignFromMain = (
+    candidate: ModuleCandidate,
+    name: string,
+    useLandingIdentity = true
+  ): DetectedCampaign =>
+    campaign({
+      sourceUid: stableSourceUid(
+        name,
+        useLandingIdentity ? candidate.landingUrl : undefined,
+        knownCampaigns
+      ),
+      name,
+      storeSlug: 'epic-games-store',
+      state: candidate.timing.state,
+      lifecycleBasis: candidate.timing.lifecycleBasis,
+      ...(candidate.timing.starts ? { starts: candidate.timing.starts } : {}),
+      ...(candidate.timing.ends ? { ends: candidate.timing.ends } : {}),
+      officialUrl: candidate.officialUrl,
+      sourceUrl: SALES_URL,
+      ...(candidate.artworkUrl ? { artworkUrl: candidate.artworkUrl } : {}),
+    })
+  const settledCampaigns = await Promise.allSettled(
+    candidates.map(async (candidate): Promise<DetectedCampaign | null> => {
+      if (!candidate.landingUrl) {
+        if (!candidate.name || candidate.timing.state === 'ended') return null
+        return campaignFromMain(candidate, candidate.name)
+      }
+
+      let landing: LandingInfo
+      try {
+        landing = await loadLanding(candidate.landingUrl)
+      } catch {
+        return candidate.name ? campaignFromMain(candidate, candidate.name) : null
+      }
+      if (
+        candidate.name &&
+        normalizeIdentity(candidate.name) !== normalizeIdentity(landing.name)
+      ) {
+        return campaignFromMain(candidate, candidate.name, false)
+      }
+      if (excludedWithoutDigitalSale(landing.name, `${candidate.text} ${landing.text}`)) {
+        return null
+      }
+      const timing =
+        landing.ended || landing.timing.state === 'ended'
+          ? candidate.timing
+          : landing.timing
       return campaign({
-        sourceUid: officialUrl.toString(),
-        name: title,
+        sourceUid: stableSourceUid(landing.name, landing.url, knownCampaigns),
+        name: landing.name,
         storeSlug: 'epic-games-store',
-        state: expireAtExactEnd('live', ends, now),
-        lifecycleBasis: 'official-source',
-        ends,
-        officialUrl: officialUrl.toString(),
-        sourceUrl,
-        artworkUrl: extractOfficialArtwork(html, officialUrl.toString()),
+        state: timing.state,
+        lifecycleBasis: timing.lifecycleBasis,
+        ...(timing.starts ? { starts: timing.starts } : {}),
+        ...(timing.ends ? { ends: timing.ends } : {}),
+        officialUrl: landing.url,
+        sourceUrl: SALES_URL,
+        ...(candidate.artworkUrl ?? landing.artworkUrl
+          ? { artworkUrl: candidate.artworkUrl ?? landing.artworkUrl }
+          : {}),
       })
     })
   )
-  const rejected = settled.find((result) => result.status === 'rejected')
-  if (rejected?.status === 'rejected') throw rejected.reason
-  const campaigns = settled.flatMap((result) =>
-    result.status === 'fulfilled' && result.value ? [result.value] : []
+  const campaigns = uniqueBy(
+    settledCampaigns.flatMap((result) =>
+      result.status === 'fulfilled' && result.value ? [result.value] : []
+    ),
+    ({ sourceUid }) => sourceUid
   )
-  const explicitlyEndedSourceUids = await verifyKnownCampaigns(
-    fetch,
-    knownCampaigns,
-    ['store.epicgames.com']
+
+  const knownLandingResults = await Promise.allSettled(
+    knownCampaigns.map(async (known): Promise<string | null> => {
+      const officialUrl =
+        campaignLandingUrl(known.officialUrl) ??
+        campaignLandingUrl(known.sourceUid)
+      if (!officialUrl) return null
+      const landing = await loadLanding(officialUrl)
+      return landing.ended &&
+        normalizeIdentity(landing.name) === normalizeIdentity(known.name)
+        ? known.sourceUid
+        : null
+    })
   )
+  const currentSourceUids = new Set(
+    campaigns.map(({ sourceUid }) => comparableIdentity(sourceUid))
+  )
+  const explicitlyEndedSourceUids = uniqueBy(
+    [
+      ...knownExplicitEnds(knownCampaigns, now),
+      ...knownLandingResults.flatMap((result) =>
+        result.status === 'fulfilled' && result.value ? [result.value] : []
+      ),
+    ],
+    (value) => value
+  ).filter((sourceUid) => !currentSourceUids.has(comparableIdentity(sourceUid)))
 
   return {
     storeSlug: 'epic-games-store',
     sourceUrl: SALES_URL,
-    sourceUrls: [SALES_URL, NEWS_URL, NEWS_API_URL],
+    sourceUrls: [SALES_URL],
     coverage: 'partial',
     campaigns,
     explicitlyEndedSourceUids,

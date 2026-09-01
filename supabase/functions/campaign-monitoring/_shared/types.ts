@@ -21,7 +21,7 @@ export const SOURCE_URLS: Readonly<Record<StoreSlug, string>> = {
     'https://www.xbox.com/en-US/promotions/sales/sales-and-specials',
   steam:
     'https://partner.steamgames.com/doc/marketing/upcoming_events?l=english',
-  'epic-games-store': 'https://store.epicgames.com/en-US/sales-and-specials',
+  'epic-games-store': 'https://store.epicgames.com/sales-and-specials',
   gog: 'https://www.gog.com/en/',
   'ea-app': 'https://www.ea.com/sales/deals',
   'ubisoft-store': 'https://store.ubisoft.com/us/deals',

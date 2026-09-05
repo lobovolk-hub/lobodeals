@@ -4,7 +4,13 @@
   --background: #101010;
   --foreground: #f4f1eb;
   --accent: #990303;
+  --accent-readable: #c84b4b;
   --neutral: #71706e;
+  --surface: #151515;
+  --surface-muted: #121212;
+  --surface-raised: #1a1a1a;
+  --text-muted: #aaa8a4;
+  --border-subtle: rgba(255, 255, 255, 0.1);
   color-scheme: dark;
 }
 
@@ -63,14 +69,6 @@ a {
 
 .home-upcoming-section {
   contain: paint;
-}
-
-.primary-navigation {
-  scrollbar-width: none;
-}
-
-.primary-navigation::-webkit-scrollbar {
-  display: none;
 }
 
 @keyframes live-signal {

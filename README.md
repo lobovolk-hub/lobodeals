@@ -45,11 +45,15 @@ Operational details and current source health are in `docs/sales-backend.md`.
 - `/pc`
 - `/nintendo`
 - `/xbox`
-- `/services/[slug]` for each canonical store
+- `/services/[slug]` for the seven independent PC store profiles
 - `/about`
 
-`/deals` is a 301 redirect to `/sales`. Removed catalog, game, authentication,
-profile, and tracking routes return 404.
+The three single-store ecosystems are consolidated into their platform routes:
+PlayStation Store uses `/playstation`, Nintendo eShop uses `/nintendo`, and
+Xbox Store uses `/xbox`. Their former `/services/...` profile URLs
+return specific 301 redirects to those canonical routes. `/deals` remains a 301
+redirect to `/sales`. Removed catalog, game, authentication, profile, and
+tracking routes return 404.
 
 ## Local development
 

@@ -90,7 +90,9 @@ export function SalesBrowser({
         >
           <p className="mx-auto my-8 w-[calc(100%-2rem)] max-w-7xl rounded-lg border border-dashed border-white/15 bg-[#171717] px-5 py-5 text-sm leading-6 text-[#9b9a98] sm:w-[calc(100%-3rem)] lg:w-[calc(100%-4rem)]">
             {selectionState === 'unavailable'
-              ? 'Sales data is temporarily unavailable for this store.'
+              ? selectedStoreSlug === null
+                ? 'Sales data is temporarily unavailable.'
+                : 'Sales data is temporarily unavailable for this store.'
               : 'No current or upcoming official campaigns detected.'}
           </p>
         </section>
@@ -98,6 +100,7 @@ export function SalesBrowser({
         <CampaignSections
           campaigns={visibleCampaigns}
           idPrefix="sales"
+          analyticsSurface="sales"
           showStore
         />
       )}

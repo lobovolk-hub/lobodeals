@@ -13,7 +13,7 @@ artwork.
 |---|---|---|---|
 | PlayStation Store | `public/services/playstation-store/logo.png` | [PlayStation Store](https://www.playstation.com/en-au/about-playstation-store/) and its first-party image CDN | VERIFIED |
 | Nintendo eShop | `public/services/nintendo-eshop/logo.png` | [Nintendo US](https://www.nintendo.com/us/) and its first-party asset CDN | VERIFIED |
-| Microsoft / Xbox Store | `public/platforms/xbox/logo.png` | [Xbox US](https://www.xbox.com/en-US/) and its official global header asset | VERIFIED |
+| Xbox Store | `public/platforms/xbox/logo.png` | [Xbox US](https://www.xbox.com/en-US/) and its official global header asset | VERIFIED |
 | Steam | `public/services/steam/logo.png` | [Steam Store](https://store.steampowered.com/) and its official static CDN | VERIFIED |
 | Epic Games Store | `public/services/epic-games-store/logo.png` | [Epic Games Store](https://store.epicgames.com/en-US/) and its first-party CDN | VERIFIED |
 | GOG | `public/services/gog/logo.png` | [GOG press kit](https://www.gog.com/pressroom/press-kit/) | VERIFIED |
@@ -27,7 +27,7 @@ unchanged from the official Xbox global header asset published by
 `https://www.xbox.com/en-US/` at
 `https://uhf.microsoft.com/images/xbox/RW8TP2.png`. It is the official white
 header variant selected for contrast on the dark-only UI. It represents the
-canonical Microsoft / Xbox Store throughout the gaming frontend while the
+canonical Xbox Store throughout the gaming frontend while the
 store slug, URLs, and backend entity remain unchanged.
 
 The Home platform spotlight reuses the verified PlayStation Store, Nintendo,

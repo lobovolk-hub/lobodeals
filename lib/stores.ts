@@ -63,9 +63,9 @@ export const stores = [
   },
   {
     slug: 'microsoft-store',
-    name: 'Microsoft / Xbox Store',
+    name: 'Xbox Store',
     description:
-      'Microsoft’s official digital store for Windows PC and Xbox games.',
+      'Xbox’s official digital store for Xbox consoles and Windows PC.',
     platforms: ['pc', 'xbox'],
     digitalScope:
       'Digital Windows PC and Xbox games, editions, bundles, and add-on content.',
@@ -197,11 +197,28 @@ export const stores = [
 
 export type StoreSlug = (typeof stores)[number]['slug']
 
+export const singleStoreCanonicalRoutes: Partial<Record<StoreSlug, string>> = {
+  'playstation-store': '/playstation',
+  'nintendo-eshop': '/nintendo',
+  'microsoft-store': '/xbox',
+}
+
 const storesBySlug = new Map<string, Store>(
   stores.map((store) => [store.slug, store] as const)
 )
 
 export const storeStaticParams = stores.map(({ slug }) => ({ slug }))
+
+export const storeProfileStaticParams = stores
+  .filter(({ slug }) => !singleStoreCanonicalRoutes[slug])
+  .map(({ slug }) => ({ slug }))
+
+export function getStorePublicHref(store: Pick<Store, 'slug'>): string {
+  return (
+    singleStoreCanonicalRoutes[store.slug as StoreSlug] ??
+    `/services/${store.slug}`
+  )
+}
 
 export function getStoreBySlug(slug: string): Store | undefined {
   return storesBySlug.get(slug)

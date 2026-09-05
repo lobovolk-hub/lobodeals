@@ -45,9 +45,10 @@ test('StoreCard and profile hero give the shared StoreLogo contract a real width
   const profile = await source('app/services/[slug]/page.tsx')
   const profileHero = await source('components/store-profile-hero.tsx')
 
+  assert.match(card, /className="relative w-full[^"]*"/)
   assert.match(
     card,
-    /className="relative w-full[^\"]*">\s*<StoreLogo store=\{store\}/
+    /<StoreLogo[\s\S]*?store=\{store\}[\s\S]*?eager=\{eagerLogo\}[\s\S]*?\/>/
   )
   assert.match(profile, /<StoreProfileHero store=\{store\} \/>/)
   assert.match(
@@ -72,7 +73,7 @@ test('PC card routes, Xbox identity, and store colors remain unchanged', () => {
 
   assert.equal(pcStores.length, 8)
   assert.equal(new Set(pcStores.map((store) => store.slug)).size, 8)
-  assert.equal(microsoft?.name, 'Microsoft / Xbox Store')
+  assert.equal(microsoft?.name, 'Xbox Store')
   assert.equal(microsoft?.logo?.src, '/platforms/xbox/logo.png')
   assert.equal(Object.keys(storeVisualTreatments).length, 10)
   assert.match(storeVisualTreatments['microsoft-store'].surface, /155b32/)

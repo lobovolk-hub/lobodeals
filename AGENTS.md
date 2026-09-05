@@ -30,7 +30,7 @@ The ten canonical stores are:
 
 1. PlayStation Store
 2. Nintendo eShop
-3. Microsoft / Xbox Store
+3. Xbox Store
 4. Steam
 5. Epic Games Store
 6. GOG
@@ -39,7 +39,7 @@ The ten canonical stores are:
 9. Battle.net
 10. Rockstar Store
 
-Microsoft / Xbox Store is one canonical store projected onto both PC and Xbox.
+Xbox Store is one canonical store projected onto both PC and Xbox.
 A campaign belongs primarily to one canonical store; platform pages are
 projections of that store relationship.
 
@@ -64,8 +64,19 @@ Canonical public routes:
 - `/pc`
 - `/nintendo`
 - `/xbox`
-- `/services/[slug]`
+- `/services/[slug]` for independent store profiles
 - `/about`
+
+Single-store ecosystem routing amendment — APPROVED 1 September 2026:
+
+- `/playstation` is the canonical public page for PlayStation and PlayStation Store.
+- `/nintendo` is the canonical public page for Nintendo and Nintendo eShop.
+- `/xbox` is the canonical public page for Xbox and Xbox Store.
+- `/services/playstation-store` returns 301 to `/playstation`.
+- `/services/nintendo-eshop` returns 301 to `/nintendo`.
+- `/services/microsoft-store` returns 301 to `/xbox`.
+- PC remains the multi-store ecosystem hub and Xbox Store remains
+  one canonical Directory entity reused by PC and Xbox.
 
 SEO transition:
 
@@ -88,9 +99,13 @@ designed store-identity fallback remains required.
 Required home order: sticky header, hero, Explore by Platform, Live now,
 Upcoming, footer.
 
-Each platform page contains Official Stores, Live now, and Upcoming. Each store
-profile contains normalized identity, objective information, platforms,
-digital scope, official CTA, Live now, and Upcoming.
+PC contains Official Stores, Live now, and Upcoming. PlayStation, Nintendo, and
+Xbox are single-store ecosystems: their platform pages integrate the objective
+information, digital scope, and official CTA for their one canonical store
+directly, followed by Live now and Upcoming, without a redundant one-card
+Official Stores section. Each remaining independent store profile contains
+normalized identity, objective information, platforms, digital scope, official
+CTA, Live now, and Upcoming.
 
 Campaign time rules:
 

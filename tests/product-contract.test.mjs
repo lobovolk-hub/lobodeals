@@ -20,6 +20,11 @@ const approvedSlugs = [
   'rockstar-store',
 ]
 
+const independentProfileSlugs = approvedSlugs.filter(
+  (slug) =>
+    !['playstation-store', 'nintendo-eshop', 'microsoft-store'].includes(slug)
+)
+
 const excludedStoreNames = [
   'Fanatical',
   'Green Man Gaming',
@@ -164,19 +169,19 @@ test('registry contains exactly the ten canonical stores with unique slugs', asy
   }
 })
 
-test('Microsoft and Xbox share one canonical store and Rockstar is present', async () => {
+test('Xbox Store is one canonical store across PC and Xbox and Rockstar is present', async () => {
   const { getStoreBySlug, getStoresByPlatform, stores } = await loadStores()
-  const microsoftXbox = getStoreBySlug('microsoft-store')
+  const xboxStore = getStoreBySlug('microsoft-store')
   const rockstar = getStoreBySlug('rockstar-store')
 
-  assert.equal(microsoftXbox.name, 'Microsoft / Xbox Store')
-  assert.deepEqual(microsoftXbox.platforms, ['pc', 'xbox'])
+  assert.equal(xboxStore.name, 'Xbox Store')
+  assert.deepEqual(xboxStore.platforms, ['pc', 'xbox'])
   assert.equal(
-    microsoftXbox.officialUrl,
+    xboxStore.officialUrl,
     'https://apps.microsoft.com/games?hl=en-US&gl=US'
   )
   assert.equal(
-    stores.filter((store) => /Microsoft|Xbox/.test(store.name)).length,
+    stores.filter((store) => /Xbox/.test(store.name)).length,
     1
   )
   assert.equal(getStoresByPlatform('xbox').length, 1)
@@ -255,7 +260,7 @@ test('public route implementations match the approved surface', async () => {
   }
 })
 
-test('/deals is the only configured redirect and uses the exact 301 contract', async () => {
+test('only the four approved exact 301 redirects are configured', async () => {
   const require = createRequire(import.meta.url)
   const loadConfig = require('next/dist/server/config').default
   const { PHASE_PRODUCTION_SERVER } = require('next/constants')
@@ -270,8 +275,26 @@ test('/deals is the only configured redirect and uses the exact 301 contract', a
       destination: '/sales',
       statusCode: 301,
     },
+    {
+      source: '/services/playstation-store',
+      destination: '/playstation',
+      statusCode: 301,
+    },
+    {
+      source: '/services/nintendo-eshop',
+      destination: '/nintendo',
+      statusCode: 301,
+    },
+    {
+      source: '/services/microsoft-store',
+      destination: '/xbox',
+      statusCode: 301,
+    },
   ])
-  assert.equal('permanent' in redirects[0], false)
+
+  for (const redirect of redirects) {
+    assert.equal('permanent' in redirect, false)
+  }
 })
 
 test('sitemap contains only current canonical routes', async () => {
@@ -295,7 +318,7 @@ test('sitemap contains only current canonical routes', async () => {
     '/pc',
     '/nintendo',
     '/xbox',
-    ...approvedSlugs.map((slug) => '/services/' + slug),
+    ...independentProfileSlugs.map((slug) => '/services/' + slug),
   ]
 
   assert.deepEqual(paths, expectedPaths)
@@ -315,8 +338,8 @@ test('robots allows the public site without masking retired routes', async () =>
   assert.match(robots.sitemap, /\/sitemap\.xml$/)
 })
 
-test('store profiles are static, reject unknown slugs, and contain campaign sections', async () => {
-  const { storeStaticParams } = await loadStores()
+test('seven independent store profiles are static, reject unknown slugs, and contain campaign sections', async () => {
+  const { storeProfileStaticParams } = await loadStores()
   const routeSource = await readFile(
     path.join(root, 'app/services/[slug]/page.tsx'),
     'utf8'
@@ -327,11 +350,11 @@ test('store profiles are static, reject unknown slugs, and contain campaign sect
   )
 
   assert.deepEqual(
-    storeStaticParams.map(({ slug }) => slug),
-    approvedSlugs
+    storeProfileStaticParams.map(({ slug }) => slug),
+    independentProfileSlugs
   )
   assert.doesNotMatch(routeSource, /export const dynamicParams = false/)
-  assert.match(routeSource, /return storeStaticParams/)
+  assert.match(routeSource, /return storeProfileStaticParams/)
   assert.match(routeSource, /if \(!store\) notFound\(\)/)
   assert.match(routeSource, /<StoreProfileHero store=\{store\}/)
   assert.match(heroSource, /<StoreLogo store=\{store\}/)
@@ -359,11 +382,16 @@ test('home, platform, Sales, and shell protect the approved structure', async ()
     path.join(root, 'components/site-shell.tsx'),
     'utf8'
   )
+  const navigation = await readFile(
+    path.join(root, 'components/site-navigation.tsx'),
+    'utf8'
+  )
 
   assert.ok(home.indexOf('Explore by Platform') < home.indexOf('<CampaignSections'))
   assert.match(home, /<HomeHero \/>/)
   assert.match(hero, /Know where official game sales are happening/)
   assert.ok(platform.indexOf('Official Stores') < platform.indexOf('<CampaignSections'))
+  assert.match(platform, /<SingleStoreSummary[\s\S]*?platform=\{platform\}[\s\S]*?name=\{name\}[\s\S]*?store=\{singleStore\}[\s\S]*?\/>/)
   assert.match(sales, /<SalesBrowser/)
   assert.match(browser, /<header[\s\S]*data-sales-header[\s\S]*<select/)
   assert.match(browser, /<span className="sr-only">Filter by store<\/span>/)
@@ -376,8 +404,31 @@ test('home, platform, Sales, and shell protect the approved structure', async ()
   assert.match(sections, /groups\.upcoming\.map/)
   assert.doesNotMatch(sections, /dataUnavailable\s*\?\s*null\s*:/)
   assert.match(shell, /sticky top-0/)
-  assert.match(shell, /href: '\/sales'/)
+  assert.match(shell, /<SiteNavigation \/>/)
+  assert.match(shell, /href="\/"/)
+  assert.match(shell, /href="\/about"/)
   assert.match(shell, /A LoboVolk brand/)
+
+  for (const destination of [
+    '/playstation',
+    '/pc',
+    '/nintendo',
+    '/xbox',
+    '/sales',
+  ]) {
+    assert.match(navigation, new RegExp(`href: '${destination}'`))
+  }
+
+  assert.doesNotMatch(navigation, /href: '\/'/)
+  assert.doesNotMatch(navigation, /href: '\/about'/)
+  assert.match(navigation, /usePathname/)
+  assert.match(
+    navigation,
+    /href === '\/pc' && pathname\.startsWith\('\/services\/'\)/
+  )
+  assert.match(navigation, /aria-current=\{active \? 'page' : undefined\}/)
+  assert.match(navigation, /aria-expanded=\{menuOpen\}/)
+  assert.match(navigation, /Mobile primary navigation/)
 })
 
 test('visual pass keeps Home public-facing and makes cards fully navigable', async () => {

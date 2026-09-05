@@ -57,6 +57,7 @@ export default async function HomePage() {
       <CampaignSections
         campaigns={salesFeed.campaigns}
         idPrefix="home"
+        analyticsSurface="home"
         showStore
         homePreview
         dataUnavailable={isSalesUnavailableForStores(

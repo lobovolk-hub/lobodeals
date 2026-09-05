@@ -53,7 +53,7 @@ artwork discovery without changing lifecycle behavior.
 | --- | --- | --- |
 | PlayStation Store | US Store `store.playstation.com/en-us/pages/latest`, its public EMS module service, and US PlayStation Blog as a complement | Campaign modules are primary; product/category grids are never traversed. The EMS service currently returns HTTP 403 to Edge, so the adapter is blocked rather than treating Blog as complete. |
 | Nintendo eShop | US `nintendo.com/us/store/sales-and-deals/` plus `nintendo.com/us/whatsnew/` | Campaign tabs/pages are discovered without reading embedded product data. Promotion news is complementary. |
-| Microsoft / Xbox Store | US `xbox.com/en-US/promotions/sales/sales-and-specials` | Only embedded `CampsiteChannel.Games.Sale` campaign metadata is accepted. The hub is partial; product, hardware, and Game Pass sections are ignored. |
+| Xbox Store | US `xbox.com/en-US/promotions/sales/sales-and-specials` | Only embedded `CampsiteChannel.Games.Sale` campaign metadata is accepted. The hub is partial; product, hardware, and Game Pass sections are ignored. |
 | Steam | Steamworks upcoming-events calendar plus US `store.steampowered.com` homepage campaign links | Steamworks provides date-only Upcoming campaigns. A campaign becomes Live only when an official Store sale surface confirms it. Product specials are not traversed. |
 | Epic Games Store | US Sales & Specials HTML, official News HTML, and the official public news service | The adapter can parse campaign-level HTML when available. Edge currently receives HTTP 403, HTTP 403, and HTTP 400 respectively, so it is blocked. |
 | GOG | `gog.com/en/` and linked official campaign pages | Campaign links include both `/en/promo/...` and campaign-specific `...sale` paths. The homepage is partial. |
@@ -114,7 +114,7 @@ The public feed contained 34 campaigns: 13 Live and 21 Upcoming, with no ended
 rows. The per-store snapshot was:
 
 - Nintendo eShop: 6 Live;
-- Microsoft / Xbox Store: 1 Live;
+- Xbox Store: 1 Live;
 - Steam: 3 Live and 21 Upcoming;
 - GOG: 1 Live;
 - Ubisoft Store: 1 Live;

@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import { CampaignCard } from '@/components/campaign-card'
+import type { AnalyticsSurface } from '@/lib/analytics'
 import { UpcomingCampaignList } from '@/components/upcoming-campaign-list'
 import { UpcomingRail } from '@/components/upcoming-rail'
 import {
@@ -14,9 +15,12 @@ import {
 type CampaignSectionsProps = {
   campaigns: readonly OfficialCampaign[]
   idPrefix: string
+  analyticsSurface: AnalyticsSurface
   showStore?: boolean
   dataUnavailable?: boolean
   homePreview?: boolean
+  emptyLiveMessage?: string
+  emptyUpcomingMessage?: string
 }
 
 const MAX_TIMEOUT_DELAY = 2_147_000_000
@@ -25,9 +29,12 @@ const BOUNDARY_SETTLE_DELAY = 50
 export function CampaignSections({
   campaigns,
   idPrefix,
+  analyticsSurface,
   showStore = true,
   dataUnavailable = false,
   homePreview = false,
+  emptyLiveMessage = 'No live official store campaigns are available in the current Sales feed.',
+  emptyUpcomingMessage = 'No upcoming official store campaigns are available in the current Sales feed.',
 }: CampaignSectionsProps) {
   const [currentTime, setCurrentTime] = useState<number | null>(null)
 
@@ -109,6 +116,7 @@ export function CampaignSections({
                   store={store}
                   state="live"
                   showStore={showStore}
+                  analyticsSurface={analyticsSurface}
                 />
               ))}
             </div>
@@ -116,7 +124,7 @@ export function CampaignSections({
             <p className="mt-5 rounded-lg border border-dashed border-white/15 bg-[#171717] px-5 py-5 text-sm leading-6 text-[#9b9a98]">
               {dataUnavailable
                 ? 'Current campaign availability cannot be confirmed right now.'
-                : 'No live official store campaigns are available in the current Sales feed.'}
+                : emptyLiveMessage}
             </p>
           )}
         </div>
@@ -163,6 +171,7 @@ export function CampaignSections({
                       store={store}
                       state="upcoming"
                       showStore={showStore}
+                      analyticsSurface={analyticsSurface}
                       compact
                     />
                   </div>
@@ -172,13 +181,14 @@ export function CampaignSections({
               <UpcomingCampaignList
                 campaigns={groups.upcoming}
                 showStore={showStore}
+                analyticsSurface={analyticsSurface}
               />
             )
           ) : (
             <p className="mt-5 rounded-lg border border-dashed border-white/15 bg-[#171717] px-5 py-5 text-sm leading-6 text-[#9b9a98]">
               {dataUnavailable
                 ? 'Upcoming campaign availability cannot be confirmed right now.'
-                : 'No upcoming official store campaigns are available in the current Sales feed.'}
+                : emptyUpcomingMessage}
             </p>
           )}
         </div>

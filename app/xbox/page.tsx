@@ -3,7 +3,7 @@ import { PlatformPage } from '@/components/platform-page'
 
 export const metadata: Metadata = {
   title: 'Xbox',
-  description: 'Official Microsoft / Xbox Store sales, live and announced.',
+  description: 'Official Xbox Store sales, live and announced.',
   alternates: { canonical: '/xbox' },
 }
 

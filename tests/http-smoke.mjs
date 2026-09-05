@@ -121,8 +121,7 @@ try {
     '/nintendo',
     '/xbox',
     '/about',
-    '/services/playstation-store',
-    '/services/microsoft-store',
+    '/services/steam',
     '/services/rockstar-store',
   ]
 
@@ -131,9 +130,18 @@ try {
     assert.equal(response.status, 200, route)
   }
 
-  const redirect = await fetchRoute(baseUrl, '/deals')
-  assert.equal(redirect.response.status, 301)
-  assert.equal(redirect.response.headers.get('location'), '/sales')
+  const redirects = new Map([
+    ['/deals', '/sales'],
+    ['/services/playstation-store', '/playstation'],
+    ['/services/nintendo-eshop', '/nintendo'],
+    ['/services/microsoft-store', '/xbox'],
+  ])
+
+  for (const [source, destination] of redirects) {
+    const redirect = await fetchRoute(baseUrl, source)
+    assert.equal(redirect.response.status, 301, source)
+    assert.equal(redirect.response.headers.get('location'), destination, source)
+  }
 
   const retiredRoutes = [
     '/catalog',
@@ -154,10 +162,10 @@ try {
   const canonicalRoutes = new Map([
     ['/', 'https://lobodeals.com/'],
     ['/sales', 'https://lobodeals.com/sales'],
-    [
-      '/services/microsoft-store',
-      'https://lobodeals.com/services/microsoft-store',
-    ],
+    ['/playstation', 'https://lobodeals.com/playstation'],
+    ['/nintendo', 'https://lobodeals.com/nintendo'],
+    ['/xbox', 'https://lobodeals.com/xbox'],
+    ['/services/steam', 'https://lobodeals.com/services/steam'],
     [
       '/services/rockstar-store',
       'https://lobodeals.com/services/rockstar-store',
@@ -186,5 +194,5 @@ assert.equal(
 )
 
 console.log(
-  'HTTP smoke passed: 10 current routes, 1 exact redirect, 8 real 404s, 4 canonicals, and no NoFallbackError.'
+  'HTTP smoke passed: current canonical routes, 4 exact redirects, 8 real 404s, 7 canonicals, and no NoFallbackError.'
 )

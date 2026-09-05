@@ -8,6 +8,21 @@ const nextConfig: NextConfig = {
         destination: '/sales',
         statusCode: 301,
       },
+      {
+        source: '/services/playstation-store',
+        destination: '/playstation',
+        statusCode: 301,
+      },
+      {
+        source: '/services/nintendo-eshop',
+        destination: '/nintendo',
+        statusCode: 301,
+      },
+      {
+        source: '/services/microsoft-store',
+        destination: '/xbox',
+        statusCode: 301,
+      },
     ]
   },
 };

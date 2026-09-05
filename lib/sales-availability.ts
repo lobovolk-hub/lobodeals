@@ -1,3 +1,16 @@
+const ALL_STORE_SLUGS = [
+  'playstation-store',
+  'nintendo-eshop',
+  'microsoft-store',
+  'steam',
+  'epic-games-store',
+  'gog',
+  'ea-app',
+  'ubisoft-store',
+  'battle-net',
+  'rockstar-store',
+] as const
+
 export type SalesAvailability = Readonly<{
   storeSlug: string
   availability: 'available' | 'temporarily_unavailable'
@@ -38,7 +51,15 @@ export function getSalesSelectionState({
   sourceUnavailable: boolean
 }>): SalesSelectionState {
   if (selectedStoreSlug === null) {
-    return campaignCount > 0 ? 'content' : 'empty'
+    if (campaignCount > 0) return 'content'
+
+    const unavailable = isSalesUnavailableForStores(
+      availability,
+      ALL_STORE_SLUGS,
+      sourceUnavailable
+    )
+
+    return unavailable ? 'unavailable' : 'empty'
   }
 
   const unavailable = isSalesUnavailableForStores(

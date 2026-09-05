@@ -5,14 +5,14 @@ import { StoreProfileHero } from '@/components/store-profile-hero'
 import { getCampaignsByStore } from '@/lib/sales'
 import { getSalesSelectionState } from '@/lib/sales-availability'
 import { loadSalesFeed } from '@/lib/sales-source'
-import { getStoreBySlug, storeStaticParams } from '@/lib/stores'
+import { getStoreBySlug, storeProfileStaticParams } from '@/lib/stores'
 
 type StorePageProps = {
   params: Promise<{ slug: string }>
 }
 
 export function generateStaticParams() {
-  return storeStaticParams
+  return storeProfileStaticParams
 }
 
 export async function generateMetadata({
@@ -82,7 +82,10 @@ export default async function StoreProfilePage({ params }: StorePageProps) {
           <CampaignSections
             campaigns={campaigns}
             idPrefix={`store-${store.slug}`}
+            analyticsSurface="store_profile"
             showStore={false}
+            emptyLiveMessage="No live official store campaigns right now."
+            emptyUpcomingMessage="No upcoming official store campaigns are currently announced."
           />
         </>
       )}

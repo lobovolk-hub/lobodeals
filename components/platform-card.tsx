@@ -32,7 +32,7 @@ const platformPresentation = {
   xbox: {
     href: '/xbox',
     name: 'Xbox',
-    description: 'Microsoft / Xbox Store sales for console and PC.',
+    description: 'Xbox Store sales for Xbox and PC.',
     gradient: 'from-[#155b32] via-[#183824] to-[#171717]',
   },
 } as const satisfies Record<

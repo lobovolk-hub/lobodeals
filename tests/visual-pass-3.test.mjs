@@ -60,16 +60,16 @@ test('platform cards share one hierarchy and remove the redundant label', async 
   assert.match(platform, /eight PC stores/)
 })
 
-test('Microsoft store contract stays canonical while Xbox owns its gaming visual', async () => {
+test('Xbox Store keeps the existing internal store contract and Xbox visual identity', async () => {
   const stores = await source('lib/stores.ts')
   const docs = await source('docs/service-brand-assets.md')
 
   assert.match(stores, /slug: 'microsoft-store'/)
-  assert.match(stores, /name: 'Microsoft \/ Xbox Store'/)
+  assert.match(stores, /name: 'Xbox Store'/)
   assert.match(stores, /platforms: \['pc', 'xbox'\]/)
   assert.match(stores, /officialUrl: 'https:\/\/apps\.microsoft\.com\/games\?hl=en-US&gl=US'/)
   assert.match(stores, /slug: 'microsoft-store'[\s\S]*?src: '\/platforms\/xbox\/logo\.png'/)
-  assert.match(docs, /canonical Microsoft \/ Xbox Store throughout the gaming frontend/)
+  assert.match(docs, /canonical Xbox Store throughout the gaming frontend/)
   await assert.rejects(
     access(path.join(root, 'public/services/microsoft-store/logo.png'))
   )

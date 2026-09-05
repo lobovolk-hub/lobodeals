@@ -10,6 +10,7 @@ import {
   runSteamAdapter,
 } from '../supabase/functions/campaign-monitoring/adapters/steam.ts'
 import { getSalesSelectionState } from '../lib/sales-availability.ts'
+import { stores } from '../lib/stores.ts'
 
 const root = process.cwd()
 
@@ -60,6 +61,11 @@ const availability = [
   },
 ]
 
+const healthyAvailability = stores.map(({ slug }) => ({
+  storeSlug: slug,
+  availability: 'available',
+}))
+
 test('sales selection keeps partial source health separate from aggregate content', () => {
   assert.equal(
     getSalesSelectionState({
@@ -76,6 +82,24 @@ test('sales selection keeps partial source health separate from aggregate conten
       campaignCount: 0,
       availability,
       sourceUnavailable: true,
+    }),
+    'unavailable'
+  )
+  assert.equal(
+    getSalesSelectionState({
+      selectedStoreSlug: null,
+      campaignCount: 0,
+      availability,
+      sourceUnavailable: false,
+    }),
+    'unavailable'
+  )
+  assert.equal(
+    getSalesSelectionState({
+      selectedStoreSlug: null,
+      campaignCount: 0,
+      availability: healthyAvailability,
+      sourceUnavailable: false,
     }),
     'empty'
   )
@@ -138,7 +162,9 @@ test('sales browser renders one state for blocked or empty selections', async ()
   const browser = await source('components/sales-browser.tsx')
 
   assert.match(browser, /selectionState === 'unavailable' \|\| selectionState === 'empty'/)
+  assert.match(browser, /Sales data is temporarily unavailable\./)
   assert.match(browser, /Sales data is temporarily unavailable for this store\./)
+  assert.match(browser, /selectedStoreSlug === null/)
   assert.match(browser, /No current or upcoming official campaigns detected\./)
   assert.match(browser, /Previously confirmed campaigns remain visible\./)
   assert.doesNotMatch(browser, /Sales data is temporarily unavailable\.<\/p>[\s\S]*Current campaign availability/)

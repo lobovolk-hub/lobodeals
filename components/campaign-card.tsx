@@ -1,6 +1,7 @@
 import { CampaignArtwork } from '@/components/campaign-artwork'
 import { CampaignTiming } from '@/components/campaign-timing'
 import { StoreLogo } from '@/components/store-logo'
+import type { AnalyticsSurface } from '@/lib/analytics'
 import {
   type CampaignBoundary,
   type CampaignState,
@@ -11,6 +12,7 @@ type CampaignCardProps = CampaignWithStore & {
   state: Extract<CampaignState, 'live' | 'upcoming'>
   showStore: boolean
   compact?: boolean
+  analyticsSurface: AnalyticsSurface
 }
 
 function getPrimaryTiming(
@@ -36,6 +38,7 @@ export function CampaignCard({
   store,
   state,
   showStore,
+  analyticsSurface,
   compact = false,
 }: CampaignCardProps) {
   const timing = getPrimaryTiming(campaign, state)
@@ -44,6 +47,14 @@ export function CampaignCard({
     <article className="h-full">
       <a
         href={campaign.officialUrl}
+        data-lobodeals-outbound="true"
+        data-analytics-surface={analyticsSurface}
+        data-outbound-type="sale"
+        data-store-slug={store.slug}
+        data-store-name={store.name}
+        data-sale-campaign-id={campaign.id}
+        data-sale-campaign-name={campaign.name}
+        data-link-mode="official"
         target="_blank"
         rel="noopener noreferrer"
         aria-label={`View ${campaign.name} on ${store.name} (opens in a new tab)`}

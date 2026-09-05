@@ -2,6 +2,7 @@
 
 import { CampaignTiming } from '@/components/campaign-timing'
 import { StoreLogo } from '@/components/store-logo'
+import type { AnalyticsSurface } from '@/lib/analytics'
 import {
   formatCompactCampaignBoundary,
   type CampaignBoundary,
@@ -11,6 +12,7 @@ import {
 type UpcomingCampaignListProps = {
   campaigns: readonly CampaignWithStore[]
   showStore: boolean
+  analyticsSurface: AnalyticsSurface
 }
 
 function dateTimeValue(boundary: CampaignBoundary): string {
@@ -50,6 +52,7 @@ function CampaignDateRange({
 export function UpcomingCampaignList({
   campaigns,
   showStore,
+  analyticsSurface,
 }: UpcomingCampaignListProps) {
   return (
     <div className="mt-5 overflow-hidden rounded-xl border border-white/10 bg-[#151515]">
@@ -67,6 +70,14 @@ export function UpcomingCampaignList({
           >
             <a
               href={campaign.officialUrl}
+              data-lobodeals-outbound="true"
+              data-analytics-surface={analyticsSurface}
+              data-outbound-type="sale"
+              data-store-slug={store.slug}
+              data-store-name={store.name}
+              data-sale-campaign-id={campaign.id}
+              data-sale-campaign-name={campaign.name}
+              data-link-mode="official"
               target="_blank"
               rel="noopener noreferrer"
               aria-label={`View ${campaign.name} on ${store.name} (opens in a new tab)`}

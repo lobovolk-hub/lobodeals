@@ -1,5 +1,6 @@
 import type { Metadata, Viewport } from 'next'
 import Script from 'next/script'
+import { OutboundAnalytics } from '@/components/outbound-analytics'
 import { Geist, Geist_Mono } from 'next/font/google'
 import { SiteFooter, SiteHeader } from '@/components/site-shell'
 import './globals.css'
@@ -32,7 +33,7 @@ export const metadata: Metadata = {
     template: '%s | LoboDeals',
   },
   description:
-    'Find official digital stores and their live or announced sale campaigns for the United States market.',
+    'Find official digital game stores and see their live or announced sale campaigns.',
   authors: [{ name: 'LoboDeals' }],
   creator: 'LoboDeals',
   publisher: 'LoboVolk',
@@ -41,15 +42,14 @@ export const metadata: Metadata = {
     siteName: 'LoboDeals',
     title: 'LoboDeals — Official game sales',
     description:
-      'Official digital store sale campaigns for the United States market.',
+      'Official digital game stores and their live or announced sale campaigns.',
     url: '/',
-    locale: 'en_US',
     images: [
       {
         url: '/og/lobodeals-og.png',
         width: 1200,
         height: 630,
-        alt: 'LoboDeals — Official game sales. United States.',
+        alt: 'LoboDeals — Official game sales.',
       },
     ],
   },
@@ -57,7 +57,7 @@ export const metadata: Metadata = {
     card: 'summary_large_image',
     title: 'LoboDeals — Official game sales',
     description:
-      'Official digital store sale campaigns for the United States market.',
+      'Official digital game stores and their live or announced sale campaigns.',
     images: ['/og/lobodeals-og.png'],
   },
   robots: {
@@ -82,6 +82,7 @@ export default function RootLayout({
       className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
     >
       <body className="min-h-full bg-[#101010] text-[#f4f1eb]">
+        <OutboundAnalytics />
         {gtmId ? (
           <>
             <Script id="google-tag-manager" strategy="afterInteractive">

@@ -63,7 +63,7 @@ const heroSlides = [
     platform: 'Xbox',
     href: '/xbox',
     storeCount: '1 store',
-    note: 'One Microsoft / Xbox Store across PC and console',
+    note: 'One Xbox Store across PC and console',
     logo: {
       src: '/platforms/xbox/logo.png',
       width: 410,

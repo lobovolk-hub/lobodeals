@@ -1,5 +1,6 @@
 import { CampaignSections } from '@/components/campaign-sections'
 import { PlatformHero } from '@/components/platform-hero'
+import { SingleStoreSummary } from '@/components/single-store-summary'
 import { StoreCard } from '@/components/store-card'
 import { getCampaignsByPlatform } from '@/lib/sales'
 import { getPlatformSalesState } from '@/lib/sales-availability'
@@ -13,6 +14,7 @@ type PlatformPageProps = {
 
 export async function PlatformPage({ platform, name }: PlatformPageProps) {
   const platformStores = getStoresByPlatform(platform)
+  const singleStore = platformStores.length === 1 ? platformStores[0] : null
   const salesFeed = await loadSalesFeed()
   const campaigns = getCampaignsByPlatform(
     salesFeed.campaigns,
@@ -27,41 +29,45 @@ export async function PlatformPage({ platform, name }: PlatformPageProps) {
 
   return (
     <main>
-      <PlatformHero
-        platform={platform}
-        name={name}
-        storeCount={platformStores.length}
-      />
+      {singleStore ? (
+        <SingleStoreSummary
+          platform={platform}
+          name={name}
+          store={singleStore}
+        />
+      ) : (
+        <>
+          <PlatformHero
+            platform={platform}
+            name={name}
+            storeCount={platformStores.length}
+          />
 
-      <section
-        aria-labelledby={`${platform}-stores-heading`}
-        className="mx-auto w-full max-w-7xl px-4 py-10 sm:px-6 lg:px-8"
-      >
-        <p className="text-xs font-bold uppercase tracking-[0.2em] text-[#71706e]">
-          Directory
-        </p>
-        <h2
-          id={`${platform}-stores-heading`}
-          className="mt-2 text-2xl font-semibold tracking-tight text-white"
-        >
-          Official Stores
-        </h2>
-        <div
-          className={`mt-5 grid auto-rows-fr gap-4 ${
-            platform === 'pc'
-              ? 'md:grid-cols-2 xl:grid-cols-4'
-              : 'max-w-md'
-          }`}
-        >
-          {platformStores.map((store, index) => (
-            <StoreCard
-              key={store.slug}
-              store={store}
-              eagerLogo={index === 0}
-            />
-          ))}
-        </div>
-      </section>
+          <section
+            aria-labelledby={`${platform}-stores-heading`}
+            className="mx-auto w-full max-w-7xl px-4 py-10 sm:px-6 lg:px-8"
+          >
+            <p className="text-xs font-bold uppercase tracking-[0.2em] text-[#71706e]">
+              Directory
+            </p>
+            <h2
+              id={`${platform}-stores-heading`}
+              className="mt-2 text-2xl font-semibold tracking-tight text-white"
+            >
+              Official Stores
+            </h2>
+            <div className="mt-5 grid auto-rows-fr gap-4 md:grid-cols-2 xl:grid-cols-4">
+              {platformStores.map((store, index) => (
+                <StoreCard
+                  key={store.slug}
+                  store={store}
+                  eagerLogo={index === 0}
+                />
+              ))}
+            </div>
+          </section>
+        </>
+      )}
 
       {platformState === 'unavailable' ? (
         <section
@@ -91,7 +97,8 @@ export async function PlatformPage({ platform, name }: PlatformPageProps) {
           <CampaignSections
             campaigns={campaigns}
             idPrefix={`${platform}-campaigns`}
-            showStore
+            analyticsSurface="platform"
+            showStore={platformStores.length > 1}
           />
         </>
       )}

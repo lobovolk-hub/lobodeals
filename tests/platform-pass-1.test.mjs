@@ -5,6 +5,7 @@ import test from 'node:test'
 
 import { getPlatformSalesState } from '../lib/sales-availability.ts'
 import {
+  getStorePublicHref,
   getStoresByPlatform,
   stores,
 } from '../lib/stores.ts'
@@ -16,7 +17,7 @@ async function source(relativePath) {
   return readFile(path.join(root, relativePath), 'utf8')
 }
 
-test('platform hero is static, shared, concise, and uses four approved identities', async () => {
+test('platform hero keeps the approved rich shared visual baseline without assigning PC to a store', async () => {
   const hero = await source('components/platform-hero.tsx')
   const page = await source('components/platform-page.tsx')
   const routeSources = await Promise.all(
@@ -27,11 +28,21 @@ test('platform hero is static, shared, concise, and uses four approved identitie
 
   assert.match(page, /<PlatformHero/)
   assert.match(hero, /data-platform-hero=\{platform\}/)
-  assert.match(hero, /from-\[#0759a5\][\s\S]*from-\[#235b78\][\s\S]*from-\[#b10718\][\s\S]*from-\[#16803d\]/)
+  assert.match(hero, /platformHeroTreatments/)
+  assert.match(hero, /bg-gradient-to-br/)
+  assert.match(hero, /treatment\.surface/)
+  assert.match(hero, /from-\[#0759a5\]/)
+  assert.match(hero, /from-\[#235b78\]/)
+  assert.match(hero, /from-\[#b10718\]/)
+  assert.match(hero, /from-\[#16803d\]/)
+  assert.match(hero, /background-image:linear-gradient/)
+  assert.match(hero, /rotate-45/)
+  assert.match(hero, /text-white\/\[0\.065\]/)
   assert.match(hero, /playstation-store\/logo\.png/)
-  assert.match(hero, /steam\/logo\.png/)
+  assert.doesNotMatch(hero, /steam\/logo\.png/)
   assert.match(hero, /nintendo-eshop\/logo\.png/)
   assert.match(hero, /platforms\/xbox\/logo\.png/)
+  assert.match(hero, />\s*PC\s*</)
   assert.doesNotMatch(hero, /carousel|autoplay|<button/i)
   assert.doesNotMatch(`${page}\n${routeSources.join('\n')}`, /United States|US market|tracked market|market scope/i)
 })
@@ -47,24 +58,40 @@ test('platform store counts and campaign projections remain exact', () => {
   )
 })
 
-test('store cards share visual tokens and one accessible profile link', async () => {
+test('store cards are compact LoboDeals-first directory entries with canonical destinations', async () => {
   const card = await source('components/store-card.tsx')
+  const playstation = stores.find((store) => store.slug === 'playstation-store')
+  const nintendo = stores.find((store) => store.slug === 'nintendo-eshop')
+  const microsoft = stores.find((store) => store.slug === 'microsoft-store')
+  const steam = stores.find((store) => store.slug === 'steam')
 
   assert.equal(Object.keys(storeVisualTreatments).length, 10)
   assert.equal((card.match(/<Link\b/g) || []).length, 1)
-  assert.match(card, /href=\{`\/services\/\$\{store\.slug\}`\}/)
-  assert.match(card, /aria-label=\{`View \$\{store\.name\} store profile`\}/)
+  assert.match(card, /href=\{getStorePublicHref\(store\)\}/)
+  assert.equal(getStorePublicHref(playstation), '/playstation')
+  assert.equal(getStorePublicHref(nintendo), '/nintendo')
+  assert.equal(getStorePublicHref(microsoft), '/xbox')
+  assert.equal(getStorePublicHref(steam), '/services/steam')
+  assert.match(card, /aria-label=\{`View \$\{store\.name\}`\}/)
+  assert.match(card, /getStoreVisualTreatment/)
+  assert.match(card, /bg-gradient-to-br/)
+  assert.match(card, /min-h-80/)
+  assert.match(card, /visual\.surface/)
+  assert.match(card, /visual\.border/)
+  assert.match(card, /visual\.logoSurface/)
+  assert.match(card, /visual\.tag/)
+  assert.match(card, /visual\.cta/)
+  assert.doesNotMatch(card, /store\.digitalScope|Digital content/)
   assert.match(card, /focus-visible:outline/)
-  assert.match(card, /motion-reduce:hover:translate-y-0/)
   assert.match(card, /View store/)
   assert.doesNotMatch(card, /rating|ranking|recommended|best store/i)
 })
 
-test('Xbox visual identity preserves the Microsoft canonical store contract', () => {
+test('Xbox Store keeps one canonical internal entity across PC and Xbox', () => {
   const microsoft = stores.find((store) => store.slug === 'microsoft-store')
 
   assert.ok(microsoft)
-  assert.equal(microsoft.name, 'Microsoft / Xbox Store')
+  assert.equal(microsoft.name, 'Xbox Store')
   assert.deepEqual(microsoft.platforms, ['pc', 'xbox'])
   assert.equal(microsoft.logo?.src, '/platforms/xbox/logo.png')
   assert.match(storeVisualTreatments['microsoft-store'].surface, /155b32/)

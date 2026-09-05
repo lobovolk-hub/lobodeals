@@ -1,5 +1,5 @@
 import type { MetadataRoute } from 'next'
-import { stores } from '@/lib/stores'
+import { storeProfileStaticParams } from '@/lib/stores'
 
 const siteUrl = (process.env.NEXT_PUBLIC_SITE_URL || 'https://lobodeals.com').replace(
   /\/$/,
@@ -14,7 +14,7 @@ const routes = [
   '/pc',
   '/nintendo',
   '/xbox',
-  ...stores.map(({ slug }) => `/services/${slug}`),
+  ...storeProfileStaticParams.map(({ slug }) => `/services/${slug}`),
 ]
 
 export default function sitemap(): MetadataRoute.Sitemap {

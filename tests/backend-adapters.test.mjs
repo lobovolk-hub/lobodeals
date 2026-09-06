@@ -4467,23 +4467,164 @@ test('Steam preserves date-only announcements as upcoming until a live surface c
       2026 Fests Oct 26 Nov 2 Steam Scream V Registration details Next Fest
     </main>
   `
+
   const result = await runSteamAdapter({
     now: new Date('2026-10-03T00:00:00Z'),
     fetch: async (input) =>
-      new Response(input.toString().includes('partner.steamgames.com') ? html : ''),
+      new Response(
+        input
+          .toString()
+          .includes('partner.steamgames.com')
+          ? html
+          : ''
+      ),
   })
 
-  const autumn = result.campaigns.find(({ name }) => name === 'Steam Autumn Sale')
+  const autumn = result.campaigns.find(
+    ({ name }) =>
+      name === 'Steam Autumn Sale'
+  )
+
   assert.equal(autumn?.state, 'upcoming')
+
   assert.deepEqual(autumn?.starts, {
     precision: 'date',
     value: '2026-10-01',
   })
+
   assert.deepEqual(autumn?.ends, {
     precision: 'date',
     value: '2026-10-08',
   })
-  assert.equal(result.sourceUrls.length, 2)
+
+  assert.equal(result.sourceUrls.length, 3)
+})
+
+test('Steam News officially confirms a calendar Fest live with an exact Pacific end', async () => {
+  const calendarHtml = `
+    <main>Upcoming Steam Events
+      2026 Fests Aug 31 Sep 7 Steam PvE Survival Crafting Fest Registration details Next Fest
+    </main>
+  `
+
+  const announcementUrl =
+    'https://steamcommunity.com/ogg/593110/announcements/detail/713410954077929731'
+
+  const newsPayload = {
+    appnews: {
+      newsitems: [
+        {
+          title:
+            'Steam PvE Survival Crafting Fest is here!',
+          contents:
+            "Steam's PvE Survival Crafting Fest is on now through September 7th at 10 a.m. PT, with a full week of discounts.",
+          feedname:
+            'steam_community_blog',
+          date:
+            Date.parse(
+              '2026-08-31T17:09:41Z'
+            ) / 1000,
+          url: announcementUrl,
+        },
+      ],
+    },
+  }
+
+  const fetcher = async (input) => {
+    const url = input.toString()
+
+    if (
+      url.includes(
+        'partner.steamgames.com'
+      )
+    ) {
+      return new Response(calendarHtml)
+    }
+
+    if (
+      url.startsWith(
+        'https://store.steampowered.com/'
+      )
+    ) {
+      return new Response('')
+    }
+
+    if (
+      url.startsWith(
+        'https://api.steampowered.com/ISteamNews/GetNewsForApp/v2/'
+      )
+    ) {
+      return Response.json(newsPayload)
+    }
+
+    throw new Error(
+      `Unexpected Steam URL: ${url}`
+    )
+  }
+
+  const current = await runSteamAdapter({
+    now: new Date(
+      '2026-09-06T22:00:00Z'
+    ),
+    fetch: fetcher,
+  })
+
+  const live = current.campaigns.find(
+    ({ name }) =>
+      name ===
+      'Steam PvE Survival Crafting Fest'
+  )
+
+  assert.equal(live?.state, 'live')
+
+  assert.equal(
+    live?.lifecycleBasis,
+    'official-source'
+  )
+
+  assert.deepEqual(live?.starts, {
+    precision: 'date',
+    value: '2026-08-31',
+  })
+
+  assert.deepEqual(live?.ends, {
+    precision: 'datetime',
+    value:
+      '2026-09-07T10:00:00-07:00',
+  })
+
+  assert.equal(
+    live?.officialUrl,
+    announcementUrl
+  )
+
+  assert.match(
+    live?.sourceUrl ?? '',
+    /^https:\/\/api\.steampowered\.com\/ISteamNews\/GetNewsForApp\/v2\//
+  )
+
+  const afterExactEnd =
+    await runSteamAdapter({
+      now: new Date(
+        '2026-09-07T17:00:01Z'
+      ),
+      fetch: fetcher,
+    })
+
+  const ended =
+    afterExactEnd.campaigns.find(
+      ({ name }) =>
+        name ===
+        'Steam PvE Survival Crafting Fest'
+    )
+
+  assert.equal(ended?.state, 'ended')
+
+  assert.deepEqual(ended?.ends, {
+    precision: 'datetime',
+    value:
+      '2026-09-07T10:00:00-07:00',
+  })
 })
 
 test('Ubisoft evaluates every campaign link and does not retain the former ten-item cap', async () => {

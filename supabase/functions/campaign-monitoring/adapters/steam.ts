@@ -1,6 +1,7 @@
 import {
   campaign,
   canonicalDate,
+  exactBoundary,
   exactTimeState,
   expireAtExactEnd,
   isExcludedCampaignText,
@@ -18,11 +19,18 @@ import { extractOfficialArtwork } from '../_shared/artwork.ts'
 import { fetchOfficialText } from '../_shared/http.ts'
 import { extractExactEnglishDateTimes } from '../_shared/time.ts'
 import { verifyKnownCampaigns } from '../_shared/verification.ts'
-import type { AdapterResult, DetectedCampaign, StoreAdapter } from '../_shared/types.ts'
+import type {
+  AdapterResult,
+  DetectedCampaign,
+  SourceBoundary,
+  StoreAdapter,
+} from '../_shared/types.ts'
 
 const CALENDAR_URL =
   'https://partner.steamgames.com/doc/marketing/upcoming_events?l=english'
 const STORE_HOME_URL = 'https://store.steampowered.com/?cc=us&l=english'
+const NEWS_API_URL =
+  'https://api.steampowered.com/ISteamNews/GetNewsForApp/v2/?appid=593110&count=30&maxlength=0'
 const MONTH =
   '(January|February|March|April|May|June|July|August|September|October|November|December)'
 const CAMPAIGN_KIND = '(?:sale|fest|festival|promotion|deals?)'
@@ -36,6 +44,14 @@ type SteamPartnerEvent = Readonly<{
 
 type SteamGroup = Readonly<{
   group_name?: unknown
+}>
+
+type SteamNewsItem = Readonly<{
+  title?: unknown
+  contents?: unknown
+  feedname?: unknown
+  date?: unknown
+  url?: unknown
 }>
 
 function normalizeTitle(value: string): string {
@@ -285,6 +301,308 @@ function comparableName(value: string): string {
     .trim()
 }
 
+function steamNewsItems(payload: unknown): readonly SteamNewsItem[] {
+  if (!payload || typeof payload !== 'object') return []
+
+  const appnews = (payload as { appnews?: unknown }).appnews
+  if (!appnews || typeof appnews !== 'object') return []
+
+  const items = (appnews as { newsitems?: unknown }).newsitems
+  if (!Array.isArray(items)) return []
+
+  return items.filter(
+    (item): item is SteamNewsItem =>
+      Boolean(item) && typeof item === 'object'
+  )
+}
+
+function normalizeSteamNewsText(value: unknown): string {
+  if (typeof value !== 'string') return ''
+
+  return normalizeTitle(
+    value
+      .replace(/\[\/?[a-z][^\]]*\]/gi, ' ')
+      .replace(/<[^>]+>/g, ' ')
+  )
+}
+
+function steamNewsReportsLive(value: string): boolean {
+  return /\b(?:is\s+on\s+now|is\s+live\s+now|has\s+begun|has\s+started|from\s+now\s+through|join\s+us\s+now)\b/i.test(
+    value
+  )
+}
+
+function pacificOffset(
+  year: number,
+  month: number,
+  day: number
+): '-07:00' | '-08:00' | null {
+  const probe = new Date(
+    Date.UTC(year, month - 1, day, 19, 0, 0)
+  )
+
+  const parts = new Intl.DateTimeFormat('en-US', {
+    timeZone: 'America/Los_Angeles',
+    hour12: false,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+  }).formatToParts(probe)
+
+  const values = new Map(
+    parts.map(({ type, value }) => [type, value])
+  )
+
+  const localAsUtc = Date.UTC(
+    Number(values.get('year')),
+    Number(values.get('month')) - 1,
+    Number(values.get('day')),
+    Number(values.get('hour')),
+    Number(values.get('minute'))
+  )
+
+  const offsetMinutes = Math.round(
+    (localAsUtc - probe.getTime()) / 60_000
+  )
+
+  if (offsetMinutes === -420) return '-07:00'
+  if (offsetMinutes === -480) return '-08:00'
+
+  return null
+}
+
+function steamNewsExactEnd(
+  text: string,
+  starts: SourceBoundary | undefined
+): SourceBoundary | undefined {
+  if (starts?.precision !== 'date') return undefined
+
+  const match = new RegExp(
+    `\\b(?:through|until)\\s+${MONTH}\\s+(\\d{1,2})(?:st|nd|rd|th)?(?:,?\\s+(20\\d{2}))?\\s+at\\s+(\\d{1,2})(?::(\\d{2}))?\\s*(a\\.?m\\.?|p\\.?m\\.?)\\s*(PT|Pacific(?: Time)?|PST|PDT)\\b`,
+    'i'
+  ).exec(text)
+
+  if (!match) return undefined
+
+  const endMonth = monthNumber(match[1])
+  if (!endMonth) return undefined
+
+  const startYear = Number(starts.value.slice(0, 4))
+  const startMonth = Number(starts.value.slice(5, 7))
+
+  let year = match[3]
+    ? Number(match[3])
+    : startYear
+
+  if (!match[3] && endMonth < startMonth) {
+    year += 1
+  }
+
+  const day = Number(match[2])
+  let hour = Number(match[4])
+  const minute = Number(match[5] ?? '0')
+  const meridiem =
+    match[6].toLowerCase().replaceAll('.', '')
+
+  if (meridiem === 'pm' && hour < 12) hour += 12
+  if (meridiem === 'am' && hour === 12) hour = 0
+
+  if (hour > 23 || minute > 59) return undefined
+
+  const zoneToken = match[7]
+    .toUpperCase()
+    .replace(/\s+TIME$/, '')
+
+  const offset =
+    zoneToken === 'PDT'
+      ? '-07:00'
+      : zoneToken === 'PST'
+        ? '-08:00'
+        : zoneToken === 'PT' ||
+            zoneToken === 'PACIFIC'
+          ? pacificOffset(year, endMonth, day)
+          : null
+
+  if (!offset) return undefined
+
+  try {
+    return exactBoundary(
+      `${canonicalDate(year, endMonth, day)}T${hour
+        .toString()
+        .padStart(2, '0')}:${minute
+        .toString()
+        .padStart(2, '0')}:00${offset}`
+    )
+  } catch {
+    return undefined
+  }
+}
+
+function steamCommunityAnnouncementUrl(
+  value: unknown
+): string | null {
+  if (typeof value !== 'string') return null
+
+  try {
+    const url = new URL(value)
+
+    if (
+      url.protocol !== 'https:' ||
+      url.hostname !== 'steamcommunity.com' ||
+      !/^\/ogg\/593110\/announcements\/detail\/\d+\/?$/i.test(
+        url.pathname
+      )
+    ) {
+      return null
+    }
+
+    url.search = ''
+    url.hash = ''
+
+    return url.toString()
+  } catch {
+    return null
+  }
+}
+
+function steamNewsMatchesUpcoming(
+  item: SteamNewsItem,
+  entry: DetectedCampaign
+): boolean {
+  if (item.feedname !== 'steam_community_blog') {
+    return false
+  }
+
+  if (entry.starts?.precision !== 'date') {
+    return false
+  }
+
+  if (!steamCommunityAnnouncementUrl(item.url)) {
+    return false
+  }
+
+  const published = Number(item.date)
+
+  if (
+    !Number.isFinite(published) ||
+    published <= 0
+  ) {
+    return false
+  }
+
+  const startYear =
+    Number(entry.starts.value.slice(0, 4))
+
+  const publishedYear =
+    new Date(published * 1_000).getUTCFullYear()
+
+  if (publishedYear !== startYear) {
+    return false
+  }
+
+  const text = normalizeSteamNewsText(
+    `${typeof item.title === 'string'
+      ? item.title
+      : ''} ${
+      typeof item.contents === 'string'
+        ? item.contents
+        : ''
+    }`
+  )
+
+  if (!steamNewsReportsLive(text)) {
+    return false
+  }
+
+  const needle = comparableName(entry.name)
+  const haystack = comparableName(text)
+
+  return (
+    needle.length >= 6 &&
+    ` ${haystack} `.includes(` ${needle} `)
+  )
+}
+
+async function discoverSteamNewsCampaigns(
+  now: Date,
+  fetcher: typeof fetch,
+  upcoming: readonly DetectedCampaign[]
+): Promise<readonly DetectedCampaign[]> {
+  let response: Response
+
+  try {
+    response = await fetcher(NEWS_API_URL, {
+      headers: {
+        Accept: 'application/json',
+        'Accept-Language': 'en-US,en;q=0.9',
+      },
+    })
+  } catch {
+    return []
+  }
+
+  if (!response.ok) return []
+
+  let payload: unknown
+
+  try {
+    payload = await response.json()
+  } catch {
+    return []
+  }
+
+  const items = steamNewsItems(payload)
+  const campaigns: DetectedCampaign[] = []
+
+  for (const entry of upcoming) {
+    const item = items.find((candidate) =>
+      steamNewsMatchesUpcoming(candidate, entry)
+    )
+
+    if (!item) continue
+
+    const officialUrl =
+      steamCommunityAnnouncementUrl(item.url)
+
+    if (!officialUrl) continue
+
+    const text = normalizeSteamNewsText(
+      `${typeof item.title === 'string'
+        ? item.title
+        : ''} ${
+        typeof item.contents === 'string'
+          ? item.contents
+          : ''
+      }`
+    )
+
+    const ends =
+      steamNewsExactEnd(text, entry.starts)
+
+    campaigns.push(
+      campaign({
+        sourceUid: entry.sourceUid,
+        name: entry.name,
+        storeSlug: 'steam',
+        state: expireAtExactEnd(
+          'live',
+          ends,
+          now
+        ),
+        lifecycleBasis: 'official-source',
+        starts: entry.starts,
+        ends: ends ?? entry.ends,
+        officialUrl,
+        sourceUrl: NEWS_API_URL,
+      })
+    )
+  }
+
+  return campaigns
+}
+
 async function discoverLiveCampaigns(
   now: Date,
   fetcher: typeof fetch,
@@ -375,21 +693,54 @@ export const runSteamAdapter: StoreAdapter = async ({
     fetchOfficialText(fetch, STORE_HOME_URL),
   ])
   const upcoming = parseUpcomingCalendar(calendarHtml)
-  const [live, explicitlyEndedSourceUids] = await Promise.all([
-    discoverLiveCampaigns(now, fetch, homeHtml, upcoming),
-    verifyKnownCampaigns(fetch, knownCampaigns, [
-      'partner.steamgames.com',
-      'store.steampowered.com',
-    ]),
-  ])
-  const liveUids = new Set(live.map((entry) => entry.sourceUid))
+  const [storeLive, newsConfirmed, explicitlyEndedSourceUids] =
+    await Promise.all([
+      discoverLiveCampaigns(
+        now,
+        fetch,
+        homeHtml,
+        upcoming
+      ),
+      discoverSteamNewsCampaigns(
+        now,
+        fetch,
+        upcoming
+      ),
+      verifyKnownCampaigns(
+        fetch,
+        knownCampaigns,
+        [
+          'partner.steamgames.com',
+          'store.steampowered.com',
+          'steamcommunity.com',
+        ]
+      ),
+    ])
+
+  const live = uniqueBy(
+    [...storeLive, ...newsConfirmed],
+    (entry) => entry.sourceUid
+  )
+
+  const liveUids = new Set(
+    live.map((entry) => entry.sourceUid)
+  )
 
   return {
     storeSlug: 'steam',
     sourceUrl: CALENDAR_URL,
-    sourceUrls: [CALENDAR_URL, STORE_HOME_URL],
+    sourceUrls: [
+      CALENDAR_URL,
+      STORE_HOME_URL,
+      NEWS_API_URL,
+    ],
     coverage: 'partial',
-    campaigns: [...live, ...upcoming.filter((entry) => !liveUids.has(entry.sourceUid))],
+    campaigns: [
+      ...live,
+      ...upcoming.filter(
+        (entry) => !liveUids.has(entry.sourceUid)
+      ),
+    ],
     explicitlyEndedSourceUids,
   } satisfies AdapterResult
 }

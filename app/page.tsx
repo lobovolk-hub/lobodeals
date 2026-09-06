@@ -11,8 +11,8 @@ export const metadata: Metadata = {
 }
 
 const platforms = [
-  'playstation',
   'pc',
+  'playstation',
   'nintendo',
   'xbox',
 ] as const satisfies readonly Platform[]

@@ -5,8 +5,8 @@ import { usePathname } from 'next/navigation'
 import { useState, type KeyboardEvent } from 'react'
 
 const navigation = [
-  { href: '/playstation', label: 'PlayStation' },
   { href: '/pc', label: 'PC' },
+  { href: '/playstation', label: 'PlayStation' },
   { href: '/nintendo', label: 'Nintendo' },
   { href: '/xbox', label: 'Xbox' },
   { href: '/sales', label: 'Sales' },

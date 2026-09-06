@@ -67,7 +67,7 @@ test('Xbox Store keeps the existing internal store contract and Xbox visual iden
   assert.match(stores, /slug: 'microsoft-store'/)
   assert.match(stores, /name: 'Xbox Store'/)
   assert.match(stores, /platforms: \['pc', 'xbox'\]/)
-  assert.match(stores, /officialUrl: 'https:\/\/apps\.microsoft\.com\/games\?hl=en-US&gl=US'/)
+  assert.match(stores, /officialUrl: 'https:\/\/www\.xbox\.com\/en-US\/games'/)
   assert.match(stores, /slug: 'microsoft-store'[\s\S]*?src: '\/platforms\/xbox\/logo\.png'/)
   assert.match(docs, /canonical Xbox Store throughout the gaming frontend/)
   await assert.rejects(

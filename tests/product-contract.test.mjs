@@ -172,13 +172,14 @@ test('registry contains exactly the ten canonical stores with unique slugs', asy
 test('Xbox Store is one canonical store across PC and Xbox and Rockstar is present', async () => {
   const { getStoreBySlug, getStoresByPlatform, stores } = await loadStores()
   const xboxStore = getStoreBySlug('microsoft-store')
+  const eaApp = getStoreBySlug('ea-app')
   const rockstar = getStoreBySlug('rockstar-store')
 
   assert.equal(xboxStore.name, 'Xbox Store')
   assert.deepEqual(xboxStore.platforms, ['pc', 'xbox'])
   assert.equal(
     xboxStore.officialUrl,
-    'https://apps.microsoft.com/games?hl=en-US&gl=US'
+    'https://www.xbox.com/en-US/games'
   )
   assert.equal(
     stores.filter((store) => /Xbox/.test(store.name)).length,
@@ -188,6 +189,9 @@ test('Xbox Store is one canonical store across PC and Xbox and Rockstar is prese
   assert.equal(getStoresByPlatform('pc').length, 8)
   assert.equal(getStoresByPlatform('playstation').length, 1)
   assert.equal(getStoresByPlatform('nintendo').length, 1)
+
+  assert.equal(eaApp.name, 'EA app')
+  assert.equal(eaApp.officialUrl, 'https://www.ea.com/games')
 
   assert.equal(rockstar.name, 'Rockstar Store')
   assert.deepEqual(rockstar.platforms, ['pc'])
@@ -362,6 +366,30 @@ test('seven independent store profiles are static, reject unknown slugs, and con
   assert.match(routeSource, /<CampaignSections/)
 })
 
+test('Header, Explore by Platform, and Home hero use PC-first platform order', async () => {
+  const home = await readFile(path.join(root, 'app/page.tsx'), 'utf8')
+  const navigation = await readFile(
+    path.join(root, 'components/site-navigation.tsx'),
+    'utf8'
+  )
+  const hero = await readFile(
+    path.join(root, 'components/home-hero.tsx'),
+    'utf8'
+  )
+
+  assert.match(
+    navigation,
+    /const navigation = \[\s*\{ href: '\/pc', label: 'PC' \},\s*\{ href: '\/playstation', label: 'PlayStation' \},\s*\{ href: '\/nintendo', label: 'Nintendo' \},\s*\{ href: '\/xbox', label: 'Xbox' \},\s*\{ href: '\/sales', label: 'Sales' \},\s*\]/
+  )
+  assert.match(
+    home,
+    /const platforms = \[\s*'pc',\s*'playstation',\s*'nintendo',\s*'xbox',\s*\]/
+  )
+  assert.match(
+    hero,
+    /const heroSlides = \[\s*\{\s*platform: 'PC'[\s\S]*?\{\s*platform: 'PlayStation'[\s\S]*?\{\s*platform: 'Nintendo'[\s\S]*?\{\s*platform: 'Xbox'/
+  )
+})
 test('home, platform, Sales, and shell protect the approved structure', async () => {
   const home = await readFile(path.join(root, 'app/page.tsx'), 'utf8')
   const hero = await readFile(path.join(root, 'components/home-hero.tsx'), 'utf8')

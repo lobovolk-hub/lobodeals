@@ -71,7 +71,7 @@ export const stores = [
       'Digital Windows PC and Xbox games, editions, bundles, and add-on content.',
     marketScope:
       'LoboDeals follows the United States storefront and its official digital sale campaigns.',
-    officialUrl: 'https://apps.microsoft.com/games?hl=en-US&gl=US',
+    officialUrl: 'https://www.xbox.com/en-US/games',
     logo: {
       src: '/platforms/xbox/logo.png',
       width: 410,
@@ -139,7 +139,7 @@ export const stores = [
       'Digital EA PC games, editions, bundles, and downloadable content.',
     marketScope:
       'LoboDeals follows United States availability and official EA sale campaigns.',
-    officialUrl: 'https://www.ea.com/ea-app',
+    officialUrl: 'https://www.ea.com/games',
     logo: {
       src: '/services/ea-app/logo.png',
       width: 60,

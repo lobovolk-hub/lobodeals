@@ -14,21 +14,6 @@ const ROTATION_INTERVAL_MS = 8_000
 
 const heroSlides = [
   {
-    platform: 'PlayStation',
-    href: '/playstation',
-    storeCount: '1 store',
-    note: 'PlayStation Store sales, live and announced',
-    logo: {
-      src: '/services/playstation-store/logo.png',
-      width: 800,
-      height: 800,
-      className: 'h-32 w-32 sm:h-36 sm:w-36 lg:h-44 lg:w-44',
-    },
-    surface: 'from-[#0759a5] via-[#082b55] to-[#0b0f15]',
-    glow: 'bg-[#168eea]/45',
-    line: 'from-[#38a7ff]/0 via-[#38a7ff]/60 to-[#38a7ff]/0',
-  },
-  {
     platform: 'PC',
     href: '/pc',
     storeCount: '8 stores',
@@ -42,6 +27,21 @@ const heroSlides = [
     surface: 'from-[#235b78] via-[#182f40] to-[#0b0f14]',
     glow: 'bg-[#4ba3d1]/35',
     line: 'from-[#7cc7ea]/0 via-[#7cc7ea]/55 to-[#7cc7ea]/0',
+  },
+  {
+    platform: 'PlayStation',
+    href: '/playstation',
+    storeCount: '1 store',
+    note: 'PlayStation Store sales, live and announced',
+    logo: {
+      src: '/services/playstation-store/logo.png',
+      width: 800,
+      height: 800,
+      className: 'h-32 w-32 sm:h-36 sm:w-36 lg:h-44 lg:w-44',
+    },
+    surface: 'from-[#0759a5] via-[#082b55] to-[#0b0f15]',
+    glow: 'bg-[#168eea]/45',
+    line: 'from-[#38a7ff]/0 via-[#38a7ff]/60 to-[#38a7ff]/0',
   },
   {
     platform: 'Nintendo',

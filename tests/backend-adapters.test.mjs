@@ -515,7 +515,137 @@ test('Microsoft reads campaign metadata without treating page sections as campai
   })
 
   assert.deepEqual(result.campaigns.map(({ name }) => name), ['gamescom Sale'])
+  assert.equal(result.campaigns[0].state, 'live')
+  assert.equal(result.campaigns[0].ends, undefined)
   assert.equal(result.coverage, 'partial')
+})
+
+test('Xbox Store preserves a campaign date-only end without inventing an hour and ends it once clearly past', async () => {
+  const sourceUrl =
+    'https://www.xbox.com/en-US/promotions/sales/sales-and-specials'
+  const campaignKey = 'CampsiteChannel.Games.Sale.2026.gamescomsale0825'
+  const officialUrl = `https://www.xbox.com/games/browse/${campaignKey}`
+  const sourceHtml = `
+    <a href="${officialUrl}">SHOP MORE</a>
+    <script>{"channelMetadata":{"${campaignKey}":{"type":2,"data":{"channelTitleModuleData":{"title":"gamescom Sale","description":"Save up to 50%."}}}}}</script>
+  `
+  const landingHtml = `
+    <html>
+      <head>
+        <meta property="og:title" content="gamescom Sale">
+      </head>
+      <body>
+        <h1>gamescom Sale</h1>
+        <p>Sale ends 8/31.</p>
+      </body>
+    </html>
+  `
+
+  const result = await runMicrosoftStoreAdapter({
+    now: new Date('2026-09-02T12:00:00Z'),
+    fetch: async (input) => {
+      const href =
+        typeof input === 'string'
+          ? input
+          : input instanceof URL
+            ? input.toString()
+            : input.url
+
+      return new Response(href === sourceUrl ? sourceHtml : landingHtml, {
+        status: 200,
+      })
+    },
+  })
+
+  assert.equal(result.campaigns.length, 1)
+  assert.deepEqual(result.campaigns[0].ends, {
+    precision: 'date',
+    value: '2026-08-31',
+  })
+  assert.equal(result.campaigns[0].state, 'ended')
+  assert.equal(result.campaigns[0].lifecycleBasis, 'official-source')
+})
+
+test('Xbox Store preserves an exact official campaign end when the landing publishes a timezone', async () => {
+  const sourceUrl =
+    'https://www.xbox.com/en-US/promotions/sales/sales-and-specials'
+  const campaignKey = 'CampsiteChannel.Games.Sale.2026.gamescomsale0825'
+  const officialUrl = `https://www.xbox.com/games/browse/${campaignKey}`
+  const sourceHtml = `
+    <a href="${officialUrl}">SHOP MORE</a>
+    <script>{"channelMetadata":{"${campaignKey}":{"type":2,"data":{"channelTitleModuleData":{"title":"gamescom Sale"}}}}}</script>
+  `
+  const landingHtml = `
+    <h1>gamescom Sale</h1>
+    <p>Sale ends August 31, 2026 at 11:59 PM PDT.</p>
+  `
+
+  const result = await runMicrosoftStoreAdapter({
+    now: new Date('2026-08-31T20:00:00Z'),
+    fetch: async (input) => {
+      const href =
+        typeof input === 'string'
+          ? input
+          : input instanceof URL
+            ? input.toString()
+            : input.url
+
+      return new Response(href === sourceUrl ? sourceHtml : landingHtml, {
+        status: 200,
+      })
+    },
+  })
+
+  assert.deepEqual(result.campaigns[0].ends, {
+    precision: 'datetime',
+    value: '2026-08-31T23:59:00-07:00',
+  })
+  assert.equal(result.campaigns[0].state, 'live')
+  assert.equal(result.campaigns[0].lifecycleBasis, 'official-source')
+})
+
+test('Xbox Store can finish a known campaign from its date-only official landing after it leaves partial discovery', async () => {
+  const sourceUrl =
+    'https://www.xbox.com/en-US/promotions/sales/sales-and-specials'
+  const campaignKey = 'CampsiteChannel.Games.Sale.2026.gamescomsale0825'
+  const sourceUid = campaignKey.toLowerCase()
+  const officialUrl = `https://www.xbox.com/games/browse/${campaignKey}`
+
+  const result = await runMicrosoftStoreAdapter({
+    now: new Date('2026-09-02T12:00:00Z'),
+    knownCampaigns: [
+      {
+        campaignKey: 'microsoft-store-gamescom',
+        sourceUid,
+        name: 'gamescom Sale',
+        state: 'live',
+        officialUrl,
+        sourceUrl,
+      },
+    ],
+    fetch: async (input) => {
+      const href =
+        typeof input === 'string'
+          ? input
+          : input instanceof URL
+            ? input.toString()
+            : input.url
+
+      if (href === sourceUrl) {
+        return new Response('<h1>XBOX Sales & Specials</h1>', {
+          status: 200,
+        })
+      }
+
+      return new Response(
+        '<h1>gamescom Sale</h1><p>Sale ends 8/31.</p>',
+        { status: 200 }
+      )
+    },
+  })
+
+  assert.deepEqual(result.campaigns, [])
+  assert.deepEqual(result.explicitlyEndedSourceUids, [sourceUid])
 })
 
 const psGraphqlUrl = 'https://web.np.playstation.com/api/graphql/v1/op'

@@ -4559,3 +4559,84 @@ test('known campaigns leaving a partial discovery feed remain active', () => {
     []
   )
 })
+
+test('Xbox Store reads a date-only end from embedded channel metadata for a known campaign', async () => {
+  const sourceUrl =
+    'https://www.xbox.com/en-US/promotions/sales/sales-and-specials'
+  const campaignKey =
+    'CampsiteChannel.Games.Sale.2026.gamescomsale0825'
+  const sourceUid = campaignKey.toLowerCase()
+  const officialUrl =
+    `https://www.xbox.com/games/browse/${campaignKey}`
+
+  const landingHtml = `
+    <html>
+      <head>
+        <title>gamescom Sale | XBOX</title>
+      </head>
+      <body>
+        <script>
+          {
+            "channels": {
+              "channelMetadata": {
+                "CAMPSITECHANNEL.GAMES.SALE.2026.GAMESCOMSALE0825": {
+                  "type": 2,
+                  "data": {
+                    "channelTitleModuleData": {
+                      "title": "gamescom Sale",
+                      "backgroundColor": "#000000",
+                      "description": "Save up to 50%. Sale ends 8\\u002F31.",
+                      "foregroundColor": "#ffffff"
+                    },
+                    "isFilterable": true
+                  }
+                }
+              }
+            }
+          }
+        </script>
+      </body>
+    </html>
+  `
+
+  const result = await runMicrosoftStoreAdapter({
+    now: new Date('2026-09-06T12:00:00Z'),
+    knownCampaigns: [
+      {
+        campaignKey: 'microsoft-store-known-gamescom',
+        sourceUid,
+        name: 'gamescom Sale',
+        state: 'live',
+        officialUrl,
+        sourceUrl,
+      },
+    ],
+    fetch: async (input) => {
+      const url = input.toString()
+
+      if (url === sourceUrl) {
+        return responseAt(
+          '<html><body><h1>XBOX Sales & Specials</h1></body></html>',
+          sourceUrl,
+          { status: 200 }
+        )
+      }
+
+      if (url === officialUrl) {
+        return responseAt(
+          landingHtml,
+          officialUrl,
+          { status: 200 }
+        )
+      }
+
+      throw new Error(`Unexpected Xbox URL: ${url}`)
+    },
+  })
+
+  assert.deepEqual(result.campaigns, [])
+  assert.deepEqual(
+    result.explicitlyEndedSourceUids,
+    [sourceUid]
+  )
+})

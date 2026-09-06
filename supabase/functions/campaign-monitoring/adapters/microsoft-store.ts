@@ -81,6 +81,41 @@ function dateOnlyEnd(
     : undefined
 }
 
+function escapeRegex(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+}
+
+function embeddedChannelTitleText(
+  html: string,
+  identity: string
+): string {
+  const escapedIdentity = escapeRegex(identity)
+  const pattern = new RegExp(
+    `"${escapedIdentity}"\\s*:\\s*\\{\\s*"type"\\s*:\\s*2\\s*,\\s*"data"\\s*:\\s*\\{\\s*"channelTitleModuleData"\\s*:\\s*(\\{[^{}]*\\})`,
+    'i'
+  )
+  const match = pattern.exec(html)
+
+  if (!match) return ''
+
+  try {
+    const metadata = JSON.parse(match[1]) as {
+      title?: unknown
+      description?: unknown
+    }
+
+    return [metadata.title, metadata.description]
+      .filter(
+        (value): value is string =>
+          typeof value === 'string' &&
+          value.trim().length > 0
+      )
+      .map((value) => value.trim())
+      .join(' ')
+  } catch {
+    return ''
+  }
+}
 function campaignEndBoundary(
   text: string,
   identity: string
@@ -154,7 +189,10 @@ async function discoverCampaignTiming(
     )
 
     const ends = campaignEndBoundary(
-      textFromHtml(html),
+      `${textFromHtml(html)} ${embeddedChannelTitleText(
+        html,
+        identity
+      )}`,
       identity
     )
 
@@ -211,12 +249,15 @@ async function verifyKnownXboxCampaigns(
           )
         }
 
-        const text = textFromHtml(html)
+        const visibleText = textFromHtml(html)
 
         return knownAtUrl.flatMap((known) => {
           const ends = campaignEndBoundary(
-            text,
-            `${known.sourceUid} ${known.campaignKey}`
+            `${visibleText} ${embeddedChannelTitleText(
+              html,
+              known.sourceUid
+            )}`,
+            known.sourceUid
           )
 
           return clearlyEnded(ends, now)

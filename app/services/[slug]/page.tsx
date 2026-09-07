@@ -2,7 +2,11 @@ import type { Metadata } from 'next'
 import { notFound } from 'next/navigation'
 import { CampaignSections } from '@/components/campaign-sections'
 import { StoreProfileHero } from '@/components/store-profile-hero'
-import { getCampaignsByStore } from '@/lib/sales'
+import {
+  getCampaignsByStore,
+  projectCampaignStores,
+  projectPublicCampaigns,
+} from '@/lib/sales'
 import { getSalesSelectionState } from '@/lib/sales-availability'
 import { loadSalesFeed } from '@/lib/sales-source'
 import { getStoreBySlug, storeProfileStaticParams } from '@/lib/stores'
@@ -43,6 +47,8 @@ export default async function StoreProfilePage({ params }: StorePageProps) {
 
   const salesFeed = await loadSalesFeed()
   const campaigns = getCampaignsByStore(salesFeed.campaigns, store.slug)
+  const publicCampaigns = projectPublicCampaigns(campaigns)
+  const campaignStores = projectCampaignStores([store])
   const salesState = getSalesSelectionState({
     selectedStoreSlug: store.slug,
     campaignCount: campaigns.length,
@@ -80,7 +86,8 @@ export default async function StoreProfilePage({ params }: StorePageProps) {
             </aside>
           ) : null}
           <CampaignSections
-            campaigns={campaigns}
+            campaigns={publicCampaigns}
+            stores={campaignStores}
             idPrefix={`store-${store.slug}`}
             analyticsSurface="store_profile"
             showStore={false}

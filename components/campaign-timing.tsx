@@ -3,8 +3,10 @@
 import { getCampaignCounter } from '@/lib/campaign-timing'
 import {
   formatCompactCampaignBoundary,
-  type CampaignBoundary,
-  type CampaignState,
+} from '@/lib/public-sales-runtime'
+import type {
+  CampaignBoundary,
+  CampaignState,
 } from '@/lib/sales'
 import { useSharedSecondClock } from '@/lib/use-shared-second-clock'
 

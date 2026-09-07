@@ -50,6 +50,137 @@ test('public product surfaces do not expose the internal market', async () => {
   assert.doesNotMatch(layout, /locale:\s*'en_US'/)
 })
 
+test('client-facing Sales data uses explicit public projections', async () => {
+  const salesModel = await source('lib/sales.ts')
+  const publicRuntime = await source('lib/public-sales-runtime.ts')
+  const sections = await source('components/campaign-sections.tsx')
+  const browser = await source('components/sales-browser.tsx')
+  const home = await source('app/page.tsx')
+  const platform = await source('components/platform-page.tsx')
+  const profile = await source('app/services/[slug]/page.tsx')
+  const salesPage = await source('app/sales/page.tsx')
+
+  assert.ok(
+    salesModel.includes(
+      "export type PublicOfficialCampaign = Omit<OfficialCampaign, 'market'>"
+    )
+  )
+  assert.ok(
+    salesModel.includes('export function projectPublicCampaigns')
+  )
+  assert.ok(
+    salesModel.includes('export function projectCampaignStores')
+  )
+  assert.ok(
+    salesModel.includes('export function groupPublicCampaigns')
+  )
+
+  assert.ok(
+    publicRuntime.includes(
+      'export function groupPublicCampaigns'
+    )
+  )
+  assert.ok(
+    publicRuntime.includes(
+      'export function getNextExactBoundary'
+    )
+  )
+  assert.ok(
+    publicRuntime.includes(
+      'export function formatCompactCampaignBoundary'
+    )
+  )
+  assert.equal(
+    publicRuntime.includes("from './stores'"),
+    false
+  )
+  assert.equal(
+    publicRuntime.includes('getStoreBySlug'),
+    false
+  )
+  assert.equal(
+    publicRuntime.includes('marketScope'),
+    false
+  )
+  assert.equal(
+    publicRuntime.includes('digitalScope'),
+    false
+  )
+
+  assert.ok(
+    sections.includes(
+      'campaigns: readonly PublicOfficialCampaign[]'
+    )
+  )
+  assert.ok(
+    sections.includes('stores: readonly CampaignStore[]')
+  )
+  assert.ok(
+    sections.includes(
+      "from '@/lib/public-sales-runtime'"
+    )
+  )
+  assert.ok(
+    sections.includes('groupPublicCampaigns(')
+  )
+  assert.ok(
+    sections.includes('    campaigns,')
+  )
+  assert.ok(
+    sections.includes('    stores,')
+  )
+
+  assert.ok(
+    home.includes(
+      'projectPublicCampaigns(salesFeed.campaigns)'
+    )
+  )
+  assert.ok(
+    home.includes('projectCampaignStores(stores)')
+  )
+
+  assert.ok(
+    platform.includes('projectPublicCampaigns(campaigns)')
+  )
+  assert.ok(
+    platform.includes(
+      'projectCampaignStores(platformStores)'
+    )
+  )
+
+  assert.ok(
+    profile.includes('projectPublicCampaigns(campaigns)')
+  )
+  assert.ok(
+    profile.includes('projectCampaignStores([store])')
+  )
+
+  assert.ok(
+    salesPage.includes(
+      'projectPublicCampaigns(salesFeed.campaigns)'
+    )
+  )
+  assert.ok(
+    salesPage.includes('projectCampaignStores(stores)')
+  )
+
+  assert.equal(
+    browser.includes("from '@/lib/stores'"),
+    false
+  )
+  assert.ok(
+    browser.includes(
+      'campaigns: readonly PublicOfficialCampaign[]'
+    )
+  )
+  assert.ok(
+    browser.includes('stores: readonly CampaignStore[]')
+  )
+  assert.ok(
+    browser.includes('stores={stores}')
+  )
+})
+
 test('About explains the approved product boundary', async () => {
   const about = await source('app/about/page.tsx')
 

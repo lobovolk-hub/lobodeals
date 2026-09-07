@@ -2,7 +2,11 @@ import { CampaignSections } from '@/components/campaign-sections'
 import { PlatformHero } from '@/components/platform-hero'
 import { SingleStoreSummary } from '@/components/single-store-summary'
 import { StoreCard } from '@/components/store-card'
-import { getCampaignsByPlatform } from '@/lib/sales'
+import {
+  getCampaignsByPlatform,
+  projectCampaignStores,
+  projectPublicCampaigns,
+} from '@/lib/sales'
 import { getPlatformSalesState } from '@/lib/sales-availability'
 import { loadSalesFeed } from '@/lib/sales-source'
 import { getStoresByPlatform, type Platform } from '@/lib/stores'
@@ -20,6 +24,8 @@ export async function PlatformPage({ platform, name }: PlatformPageProps) {
     salesFeed.campaigns,
     platform
   )
+  const publicCampaigns = projectPublicCampaigns(campaigns)
+  const campaignStores = projectCampaignStores(platformStores)
   const platformState = getPlatformSalesState({
     storeSlugs: platformStores.map((store) => store.slug),
     campaignCount: campaigns.length,
@@ -95,7 +101,8 @@ export async function PlatformPage({ platform, name }: PlatformPageProps) {
             </aside>
           ) : null}
           <CampaignSections
-            campaigns={campaigns}
+            campaigns={publicCampaigns}
+            stores={campaignStores}
             idPrefix={`${platform}-campaigns`}
             analyticsSurface="platform"
             showStore={platformStores.length > 1}

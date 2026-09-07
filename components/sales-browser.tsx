@@ -2,16 +2,17 @@
 
 import { useState } from 'react'
 import { CampaignSections } from '@/components/campaign-sections'
-import type { OfficialCampaign } from '@/lib/sales'
+import type {
+  CampaignStore,
+  PublicOfficialCampaign,
+} from '@/lib/sales'
 import {
   getSalesSelectionState,
   type SalesAvailability,
 } from '@/lib/sales-availability'
-import type { Store } from '@/lib/stores'
-
 type SalesBrowserProps = {
-  campaigns: readonly OfficialCampaign[]
-  stores: readonly Store[]
+  campaigns: readonly PublicOfficialCampaign[]
+  stores: readonly CampaignStore[]
   availability: readonly SalesAvailability[]
   sourceUnavailable: boolean
 }
@@ -99,6 +100,7 @@ export function SalesBrowser({
       ) : (
         <CampaignSections
           campaigns={visibleCampaigns}
+          stores={stores}
           idPrefix="sales"
           analyticsSurface="sales"
           showStore

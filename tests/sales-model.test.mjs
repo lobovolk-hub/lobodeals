@@ -217,6 +217,141 @@ test('campaign artwork is optional and safe HTTPS when present', async () => {
   )
 })
 
+test('public client projections omit internal market and store scope fields', async () => {
+  const { projectCampaignStores, projectPublicCampaigns } =
+    await salesModelPromise
+
+  const [campaign] = projectPublicCampaigns([reportedCampaign()])
+
+  assert.equal('market' in campaign, false)
+  assert.equal(campaign.id, 'reported-campaign')
+  assert.equal(campaign.storeSlug, 'steam')
+  assert.deepEqual(campaign.lifecycle, {
+    basis: 'official-source',
+    status: 'upcoming',
+  })
+
+  const [store] = projectCampaignStores([
+    {
+      slug: 'steam',
+      name: 'Steam',
+      description: 'Internal description',
+      platforms: ['pc'],
+      digitalScope: 'Internal digital scope',
+      marketScope: 'Internal market scope',
+      officialUrl: 'https://store.steampowered.com/',
+      logo: null,
+    },
+  ])
+
+  assert.deepEqual(store, {
+    slug: 'steam',
+    name: 'Steam',
+    logo: null,
+  })
+  assert.equal('description' in store, false)
+  assert.equal('platforms' in store, false)
+  assert.equal('digitalScope' in store, false)
+  assert.equal('marketScope' in store, false)
+  assert.equal('officialUrl' in store, false)
+})
+
+test('public Sales runtime is client-safe and preserves lifecycle grouping', async () => {
+  const runtimeSource = await readFile(
+    path.join(root, 'lib/public-sales-runtime.ts'),
+    'utf8'
+  )
+
+  assert.equal(
+    runtimeSource.includes("from './stores'"),
+    false
+  )
+  assert.equal(
+    runtimeSource.includes('getStoreBySlug'),
+    false
+  )
+  assert.equal(
+    runtimeSource.includes('marketScope'),
+    false
+  )
+  assert.equal(
+    runtimeSource.includes('digitalScope'),
+    false
+  )
+  assert.equal(
+    runtimeSource.includes('United States'),
+    false
+  )
+
+  const runtimeTranspiled = transpileTypeScript(
+    runtimeSource,
+    'lib/public-sales-runtime.ts'
+  )
+
+  assert.equal(
+    runtimeTranspiled.includes("from './sales'"),
+    false
+  )
+
+  const runtime = await import(
+    toModuleUrl(runtimeTranspiled)
+  )
+
+  const publicCampaign = {
+    id: 'runtime-live',
+    name: 'Runtime live',
+    storeSlug: 'steam',
+    starts: {
+      precision: 'date',
+      date: '2030-06-01',
+    },
+    ends: {
+      precision: 'datetime',
+      dateTime: '2030-06-10T16:00:00Z',
+    },
+    lifecycle: {
+      basis: 'official-source',
+      status: 'live',
+    },
+    officialUrl: 'https://store.steampowered.com/',
+  }
+
+  const publicStore = {
+    slug: 'steam',
+    name: 'Steam',
+    logo: null,
+  }
+
+  const groups = runtime.groupPublicCampaigns(
+    [publicCampaign],
+    [publicStore],
+    new Date('2030-06-05T00:00:00Z')
+  )
+
+  assert.deepEqual(
+    groups.live.map(
+      (entry) => entry.campaign.id
+    ),
+    ['runtime-live']
+  )
+  assert.equal(groups.upcoming.length, 0)
+
+  assert.equal(
+    runtime.getCampaignState(
+      publicCampaign,
+      new Date('2030-06-10T16:00:00Z')
+    ),
+    'expired'
+  )
+
+  assert.equal(
+    runtime.formatCompactCampaignBoundary(
+      publicCampaign.starts
+    ),
+    'Jun 1, 2030'
+  )
+})
+
 test('source-reported status is not derived from date-only boundaries', async () => {
   const { getCampaignState } = await salesModelPromise
   const upcoming = reportedCampaign()

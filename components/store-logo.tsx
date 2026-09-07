@@ -1,8 +1,8 @@
 import Image from 'next/image'
-import type { Store } from '@/lib/stores'
+import type { CampaignStore } from '@/lib/sales'
 
 type StoreLogoProps = {
-  store: Store
+  store: CampaignStore
   variant?: 'standard' | 'campaign' | 'platform' | 'mini'
   eager?: boolean
 }

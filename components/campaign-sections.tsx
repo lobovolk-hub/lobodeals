@@ -8,12 +8,16 @@ import { UpcomingCampaignList } from '@/components/upcoming-campaign-list'
 import { UpcomingRail } from '@/components/upcoming-rail'
 import {
   getNextExactBoundary,
-  groupCampaigns,
-  type OfficialCampaign,
+  groupPublicCampaigns,
+} from '@/lib/public-sales-runtime'
+import type {
+  CampaignStore,
+  PublicOfficialCampaign,
 } from '@/lib/sales'
 
 type CampaignSectionsProps = {
-  campaigns: readonly OfficialCampaign[]
+  campaigns: readonly PublicOfficialCampaign[]
+  stores: readonly CampaignStore[]
   idPrefix: string
   analyticsSurface: AnalyticsSurface
   showStore?: boolean
@@ -28,6 +32,7 @@ const BOUNDARY_SETTLE_DELAY = 50
 
 export function CampaignSections({
   campaigns,
+  stores,
   idPrefix,
   analyticsSurface,
   showStore = true,
@@ -65,8 +70,9 @@ export function CampaignSections({
     }
   }, [campaigns])
 
-  const groups = groupCampaigns(
+  const groups = groupPublicCampaigns(
     campaigns,
+    stores,
     currentTime === null ? undefined : new Date(currentTime)
   )
 

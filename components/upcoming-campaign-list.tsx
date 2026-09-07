@@ -5,8 +5,10 @@ import { StoreLogo } from '@/components/store-logo'
 import type { AnalyticsSurface } from '@/lib/analytics'
 import {
   formatCompactCampaignBoundary,
-  type CampaignBoundary,
-  type CampaignWithStore,
+} from '@/lib/public-sales-runtime'
+import type {
+  CampaignBoundary,
+  CampaignWithStore,
 } from '@/lib/sales'
 
 type UpcomingCampaignListProps = {

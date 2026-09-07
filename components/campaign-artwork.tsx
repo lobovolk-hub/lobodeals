@@ -3,15 +3,14 @@
 import { useState } from 'react'
 import { StoreLogo } from '@/components/store-logo'
 import { getStoreVisualClassName } from '@/lib/store-visuals'
-import type { Store } from '@/lib/stores'
-import type { CampaignState } from '@/lib/sales'
+import type { CampaignState, CampaignStore } from '@/lib/sales'
 
 type CampaignArtworkProps = {
   artworkUrl?: string
   campaignName: string
   compact: boolean
   state: Extract<CampaignState, 'live' | 'upcoming'>
-  store: Store
+  store: CampaignStore
 }
 
 function ArtworkFallback({

@@ -1,5 +1,9 @@
 import type { Metadata } from 'next'
 import { SalesBrowser } from '@/components/sales-browser'
+import {
+  projectCampaignStores,
+  projectPublicCampaigns,
+} from '@/lib/sales'
 import { loadSalesFeed } from '@/lib/sales-source'
 import { stores } from '@/lib/stores'
 
@@ -11,12 +15,14 @@ export const metadata: Metadata = {
 
 export default async function SalesPage() {
   const salesFeed = await loadSalesFeed()
+  const publicCampaigns = projectPublicCampaigns(salesFeed.campaigns)
+  const campaignStores = projectCampaignStores(stores)
 
   return (
     <main>
       <SalesBrowser
-        campaigns={salesFeed.campaigns}
-        stores={stores}
+        campaigns={publicCampaigns}
+        stores={campaignStores}
         availability={salesFeed.availability}
         sourceUnavailable={salesFeed.sourceUnavailable}
       />

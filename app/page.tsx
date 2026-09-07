@@ -2,6 +2,10 @@ import type { Metadata } from 'next'
 import { CampaignSections } from '@/components/campaign-sections'
 import { HomeHero } from '@/components/home-hero'
 import { PlatformCard } from '@/components/platform-card'
+import {
+  projectCampaignStores,
+  projectPublicCampaigns,
+} from '@/lib/sales'
 import { isSalesUnavailableForStores } from '@/lib/sales-availability'
 import { loadSalesFeed } from '@/lib/sales-source'
 import { stores, type Platform } from '@/lib/stores'
@@ -19,6 +23,8 @@ const platforms = [
 
 export default async function HomePage() {
   const salesFeed = await loadSalesFeed()
+  const publicCampaigns = projectPublicCampaigns(salesFeed.campaigns)
+  const campaignStores = projectCampaignStores(stores)
 
   return (
     <main>
@@ -55,7 +61,8 @@ export default async function HomePage() {
       </section>
 
       <CampaignSections
-        campaigns={salesFeed.campaigns}
+        campaigns={publicCampaigns}
+        stores={campaignStores}
         idPrefix="home"
         analyticsSurface="home"
         showStore

@@ -33,11 +33,15 @@ export type OfficialCampaign = Readonly<{
   artworkUrl?: string
 }>
 
+export type PublicOfficialCampaign = Omit<OfficialCampaign, 'market'>
+
+export type CampaignStore = Pick<Store, 'slug' | 'name' | 'logo'>
+
 export type CampaignState = 'live' | 'upcoming' | 'expired' | 'indeterminate'
 
 export type CampaignWithStore = Readonly<{
-  campaign: OfficialCampaign
-  store: Store
+  campaign: PublicOfficialCampaign
+  store: CampaignStore
 }>
 
 export type CampaignGroups = Readonly<{
@@ -236,6 +240,31 @@ export function validateOfficialCampaigns(
   return campaigns as readonly OfficialCampaign[]
 }
 
+export function projectPublicCampaigns(
+  campaigns: readonly OfficialCampaign[]
+): readonly PublicOfficialCampaign[] {
+  return campaigns.map((campaign) => ({
+    id: campaign.id,
+    name: campaign.name,
+    storeSlug: campaign.storeSlug,
+    starts: campaign.starts,
+    ends: campaign.ends,
+    lifecycle: campaign.lifecycle,
+    officialUrl: campaign.officialUrl,
+    artworkUrl: campaign.artworkUrl,
+  }))
+}
+
+export function projectCampaignStores(
+  stores: readonly Store[]
+): readonly CampaignStore[] {
+  return stores.map((store) => ({
+    slug: store.slug,
+    name: store.name,
+    logo: store.logo,
+  }))
+}
+
 export function formatCampaignBoundary(boundary: CampaignBoundary): string {
   if (!isCampaignBoundary(boundary)) {
     throw new RangeError('Cannot format an invalid campaign boundary')
@@ -283,7 +312,7 @@ export function formatCompactCampaignBoundary(
 }
 
 export function getCampaignState(
-  campaign: OfficialCampaign,
+  campaign: PublicOfficialCampaign,
   referenceTime?: Date
 ): CampaignState {
   if (campaign.lifecycle.basis === 'official-source') {
@@ -407,6 +436,35 @@ export function groupCampaigns(
   return { live, upcoming }
 }
 
+export function groupPublicCampaigns(
+  campaigns: readonly PublicOfficialCampaign[],
+  stores: readonly CampaignStore[],
+  referenceTime?: Date
+): CampaignGroups {
+  const live: CampaignWithStore[] = []
+  const upcoming: CampaignWithStore[] = []
+  const storesBySlug = new Map<string, CampaignStore>(
+    stores.map((store) => [store.slug, store] as const)
+  )
+
+  for (const campaign of campaigns) {
+    const store = storesBySlug.get(campaign.storeSlug)
+
+    if (!store) continue
+
+    const entry = { campaign, store }
+    const state = getCampaignState(campaign, referenceTime)
+
+    if (state === 'live') live.push(entry)
+    if (state === 'upcoming') upcoming.push(entry)
+  }
+
+  live.sort((left, right) => compareByBoundary(left, right, 'ends'))
+  upcoming.sort((left, right) => compareByBoundary(left, right, 'starts'))
+
+  return { live, upcoming }
+}
+
 export function getCampaignsByStore(
   campaigns: readonly OfficialCampaign[],
   storeSlug: string
@@ -424,7 +482,7 @@ export function getCampaignsByPlatform(
 }
 
 export function getNextExactBoundary(
-  campaigns: readonly OfficialCampaign[],
+  campaigns: readonly PublicOfficialCampaign[],
   currentTime: number
 ): number | null {
   let nextBoundary: number | null = null

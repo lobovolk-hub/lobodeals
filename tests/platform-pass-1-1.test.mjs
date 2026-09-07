@@ -58,13 +58,18 @@ test('StoreCard and profile hero give the shared StoreLogo contract a real width
   assert.equal((card.match(/<StoreLogo\b/g) || []).length, 1)
 })
 
-test('Rockstar retains a deliberate fallback without an unapproved asset', async () => {
+test('Rockstar uses the verified official local asset and shared Store lockup', async () => {
   const logo = await source('components/store-logo.tsx')
   const rockstar = stores.find((store) => store.slug === 'rockstar-store')
 
-  assert.equal(rockstar?.logo, null)
-  assert.match(logo, /data-store-logo-fallback="rockstar-store"/)
-  assert.match(logo, />\s*Rockstar\s*</)
+  assert.deepEqual(rockstar?.logo, {
+    src: '/services/rockstar-store/logo.svg',
+    width: 139,
+    height: 128,
+  })
+  assert.match(logo, /data-rockstar-store-lockup/)
+  assert.match(logo, /aria-label="Rockstar Store"/)
+  assert.match(logo, />\s*Store\s*</)
 })
 
 test('PC card routes, Xbox identity, and store colors remain unchanged', () => {

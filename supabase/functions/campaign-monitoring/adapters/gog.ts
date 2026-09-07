@@ -11,7 +11,10 @@ import {
   textFromHtml,
   uniqueBy,
 } from '../_shared/html.ts'
-import { extractOfficialArtwork } from '../_shared/artwork.ts'
+import {
+  extractOfficialArtwork,
+  isSafeArtworkUrl,
+} from '../_shared/artwork.ts'
 import { fetchOfficialPage, fetchOfficialText } from '../_shared/http.ts'
 import { extractExactEnglishDateTimes } from '../_shared/time.ts'
 import { verifyKnownCampaigns } from '../_shared/verification.ts'
@@ -228,6 +231,72 @@ async function discoverNewsCandidates(
   )
 }
 
+function gogCampaignHeroArtwork(html: string): string | undefined {
+  const picture = [...html.matchAll(/<picture\b[^>]*>[\s\S]*?<\/picture>/gi)]
+    .map((match) => match[0])
+    .find((value) =>
+      /\bselenium-id=["']heroBackgroundImage["']/i.test(value)
+    )
+
+  if (!picture) return undefined
+
+  const candidates = [...picture.matchAll(/\bsrcset=["']([^"']+)["']/gi)]
+    .flatMap((match) =>
+      decodeHtml(match[1])
+        .split(',')
+        .map((entry) => entry.trim().split(/\s+/)[0])
+        .filter(Boolean)
+    )
+    .flatMap((value, index) => {
+      try {
+        const url = new URL(value)
+
+        if (
+          url.protocol !== 'https:' ||
+          !/^images(?:-\d+)?\.gog-statics\.com$/i.test(url.hostname) ||
+          !isSafeArtworkUrl(url.toString())
+        ) {
+          return []
+        }
+
+        const dimensions =
+          /_hero_(\d+)x(\d+)(?:_2x)?\.(webp|jpe?g)$/i.exec(
+            url.pathname
+          )
+
+        if (!dimensions) return []
+
+        return [
+          {
+            url: url.toString(),
+            width: Number(dimensions[1]),
+            height: Number(dimensions[2]),
+            webp: dimensions[3].toLowerCase() === 'webp',
+            index,
+          },
+        ]
+      } catch {
+        return []
+      }
+    })
+    .sort((left, right) => {
+      const targetRatio = 16 / 9
+      const leftRatioDistance =
+        Math.abs(left.width / left.height - targetRatio)
+      const rightRatioDistance =
+        Math.abs(right.width / right.height - targetRatio)
+
+      return (
+        leftRatioDistance - rightRatioDistance ||
+        Number(right.webp) - Number(left.webp) ||
+        right.width - left.width ||
+        left.index - right.index
+      )
+    })
+
+  return candidates[0]?.url
+}
+
 function articlePublicationDate(html: string): PublicationDate | null {
   const tags = [...html.matchAll(/<time\b[^>]*>/gi)]
   const articleDate = tags.find((match) => /article__date/i.test(match[0]))
@@ -341,6 +410,7 @@ async function verifyCandidates(
           : undefined) ?? exactSaleEnd(page.text, publication)
       const artworkUrl =
         extractOfficialArtwork(page.text, identityUrl) ??
+        gogCampaignHeroArtwork(page.text) ??
         (candidate.articleHtml
           ? extractOfficialArtwork(candidate.articleHtml, candidate.sourceUrl)
           : undefined)

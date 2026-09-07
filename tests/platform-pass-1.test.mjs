@@ -97,13 +97,18 @@ test('Xbox Store keeps one canonical internal entity across PC and Xbox', () => 
   assert.match(storeVisualTreatments['microsoft-store'].surface, /155b32/)
 })
 
-test('Rockstar keeps its text fallback with a restrained warm visual token', async () => {
+test('Rockstar keeps its restrained warm visual token with the verified official lockup', async () => {
   const logo = await source('components/store-logo.tsx')
   const rockstar = stores.find((store) => store.slug === 'rockstar-store')
 
-  assert.equal(rockstar?.logo, null)
-  assert.match(logo, /data-store-logo-fallback="rockstar-store"/)
-  assert.match(logo, />\s*Rockstar\s*</)
+  assert.deepEqual(rockstar?.logo, {
+    src: '/services/rockstar-store/logo.svg',
+    width: 139,
+    height: 128,
+  })
+  assert.match(logo, /data-rockstar-store-lockup/)
+  assert.match(logo, /aria-label="Rockstar Store"/)
+  assert.match(logo, />\s*Store\s*</)
   assert.match(storeVisualTreatments['rockstar-store'].surface, /72500f/)
 })
 

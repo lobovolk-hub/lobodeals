@@ -20,7 +20,7 @@ artwork.
 | EA app | `public/services/ea-app/logo.png` | [EA games](https://www.ea.com/games) and its first-party content CDN | VERIFIED |
 | Ubisoft Store | `public/services/ubisoft-store/logo.svg` | Exact inline SVG recorded from the [Ubisoft Store US](https://store.ubisoft.com/us/home) UI | VERIFIED |
 | Battle.net | `public/services/battle-net/logo.svg` | [Battle.net desktop](https://download.battle.net/en-us/desktop) and its first-party content CDN | VERIFIED |
-| Rockstar Store | — | No appropriate, verifiable Rockstar Store logo exists in the authorized local asset set. The UI uses a plain text fallback and must not invent or recreate a logo. | UNRESOLVED |
+| Rockstar Store | `public/services/rockstar-store/logo.svg` | [Rockstar Store](https://store.rockstargames.com/) and the official Contentful SVG referenced directly by the Store footer | VERIFIED |
 
 The Xbox identity uses `public/platforms/xbox/logo.png`, downloaded
 unchanged from the official Xbox global header asset published by
@@ -29,6 +29,13 @@ unchanged from the official Xbox global header asset published by
 header variant selected for contrast on the dark-only UI. It represents the
 canonical Xbox Store throughout the gaming frontend while the
 store slug, URLs, and backend entity remain unchanged.
+
+The Rockstar Store identity uses the official R★ SVG referenced directly by
+`https://store.rockstargames.com/` from its Contentful image CDN. The asset is
+stored unchanged as `public/services/rockstar-store/logo.svg` at its native
+139 x 128 viewBox dimensions. LoboDeals composes that verified R★ mark with
+plain UI text as the `R★ | Store` lockup; the Rockstar mark itself is not
+redrawn or modified.
 
 The Home platform spotlight reuses the verified PlayStation Store, Nintendo,
 Steam, and Xbox assets above as brand-only fallbacks. No campaign, game,

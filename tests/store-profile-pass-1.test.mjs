@@ -141,7 +141,7 @@ test('store availability state keeps one notice and preserves confirmed campaign
   assert.doesNotMatch(page, /Current campaign availability cannot be confirmed|Upcoming campaign availability cannot be confirmed/)
 })
 
-test('Xbox Store keeps its canonical internal entity and Rockstar keeps its fallback', async () => {
+test('Xbox Store keeps its canonical internal entity and Rockstar uses its verified official lockup', async () => {
   const microsoft = stores.find(({ slug }) => slug === 'microsoft-store')
   const rockstar = stores.find(({ slug }) => slug === 'rockstar-store')
   const logo = await source('components/store-logo.tsx')
@@ -155,8 +155,14 @@ test('Xbox Store keeps its canonical internal entity and Rockstar keeps its fall
     false
   )
   assert.equal(storeStaticParams.some(({ slug }) => slug === 'xbox-store'), false)
-  assert.equal(rockstar?.logo, null)
-  assert.match(logo, /data-store-logo-fallback="rockstar-store"/)
+
+  assert.deepEqual(rockstar?.logo, {
+    src: '/services/rockstar-store/logo.svg',
+    width: 139,
+    height: 128,
+  })
+  assert.match(logo, /data-rockstar-store-lockup/)
+  assert.match(logo, /aria-label="Rockstar Store"/)
   assert.match(storeVisualTreatments['rockstar-store'].surface, /72500f/)
 })
 

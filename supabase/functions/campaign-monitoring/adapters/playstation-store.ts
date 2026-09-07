@@ -560,7 +560,10 @@ function mergeStoreCandidate(
   current.names.push(...incoming.names)
   current.publicText.push(...incoming.publicText)
   current.internalText.push(...incoming.internalText)
-  if (incoming.seenInLatest) current.images.unshift(...incoming.images)
+  // Deals is the current sale surface. When Deals and Latest identify the
+  // same campaign, keep the Deals banner as the primary campaign artwork
+  // while retaining Latest artwork as a fallback.
+  if (incoming.seenInDeals) current.images.unshift(...incoming.images)
   else current.images.push(...incoming.images)
 }
 

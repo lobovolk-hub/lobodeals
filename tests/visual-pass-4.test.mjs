@@ -60,6 +60,37 @@ test('hero controls are centered, accessible, and reduced motion starts without 
   assert.match(hero, /setAutoplayEnabled\(!media\.matches\)/)
 })
 
+test('Xbox campaign fallback and Rockstar Store use verified brand treatments', async () => {
+  const artwork = await source('components/campaign-artwork.tsx')
+  const storeLogo = await source('components/store-logo.tsx')
+
+  assert.match(
+    artwork,
+    /store\.slug === 'microsoft-store'/
+  )
+  assert.match(
+    artwork,
+    /data-xbox-campaign-brand-fallback/
+  )
+  assert.match(
+    artwork,
+    /<StoreLogo store=\{store\} variant="campaign" \/>/
+  )
+
+  assert.match(
+    storeLogo,
+    /data-rockstar-store-lockup/
+  )
+  assert.match(
+    storeLogo,
+    /aria-label="Rockstar Store"/
+  )
+  assert.match(
+    storeLogo,
+    />\s*Store\s*</
+  )
+})
+
 test('exact datetime countdown covers second, minute, and hour rollovers', () => {
   const boundary = { precision: 'datetime', dateTime: '2026-08-27T13:00:00Z' }
 

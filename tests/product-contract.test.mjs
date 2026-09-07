@@ -44,7 +44,7 @@ const excludedStoreNames = [
 ]
 
 const approvedAssetDirectories = approvedSlugs.filter(
-  (slug) => !['microsoft-store', 'rockstar-store'].includes(slug)
+  (slug) => slug !== 'microsoft-store'
 )
 
 async function exists(relativePath) {
@@ -195,7 +195,11 @@ test('Xbox Store is one canonical store across PC and Xbox and Rockstar is prese
 
   assert.equal(rockstar.name, 'Rockstar Store')
   assert.deepEqual(rockstar.platforms, ['pc'])
-  assert.equal(rockstar.logo, null)
+  assert.deepEqual(rockstar.logo, {
+    src: '/services/rockstar-store/logo.svg',
+    width: 139,
+    height: 128,
+  })
 })
 
 test('only approved store logo directories and own-brand assets remain', async () => {
@@ -212,6 +216,7 @@ test('only approved store logo directories and own-brand assets remain', async (
   for (const protectedPath of [
     'public/og/lobodeals-og.png',
     'public/platforms/xbox/logo.png',
+    'public/services/rockstar-store/logo.svg',
     'app/favicon.ico',
     'app/icon.png',
     'app/apple-icon.png',

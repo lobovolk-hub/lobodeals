@@ -47,6 +47,40 @@ export function StoreLogo({
     )
   }
 
+  if (store.slug === 'rockstar-store') {
+    return (
+      <div
+        data-rockstar-store-lockup
+        className={`flex ${dimensions} items-center justify-center gap-2 px-2 py-1`}
+        aria-label="Rockstar Store"
+      >
+        <Image
+          src={store.logo.src}
+          alt=""
+          width={store.logo.width}
+          height={store.logo.height}
+          loading={eager ? 'eager' : undefined}
+          sizes={sizesByVariant[variant]}
+          className={`${
+            isMini ? 'max-h-7 max-w-full' : 'max-h-16 max-w-[45%]'
+          } w-auto object-contain drop-shadow-[0_8px_24px_rgba(0,0,0,0.35)]`}
+        />
+
+        {!isMini ? (
+          <>
+            <span
+              className="h-10 w-px bg-white/25"
+              aria-hidden="true"
+            />
+            <span className="text-lg font-black uppercase tracking-[0.12em] text-white sm:text-xl">
+              Store
+            </span>
+          </>
+        ) : null}
+      </div>
+    )
+  }
+
   const needsLightTreatment = ['gog', 'ubisoft-store'].includes(store.slug)
 
   return (

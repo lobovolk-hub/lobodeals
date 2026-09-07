@@ -846,7 +846,7 @@ function psFixtureFetch({
   return { calls, fetch }
 }
 
-test('PlayStation uses the exact official persisted GET contract and correlates Deals with Latest', async () => {
+test('PlayStation uses the exact official persisted GET contract, correlates Deals with Latest, and prefers Deals artwork', async () => {
   const dealsArtwork = 'https://image.api.playstation.com/deals-gamescom.jpg'
   const latestArtwork = 'https://image.api.playstation.com/latest-gamescom.jpg'
   const fixture = psFixtureFetch({
@@ -913,7 +913,7 @@ test('PlayStation uses the exact official persisted GET contract and correlates 
       lifecycleBasis: 'official-source',
       officialUrl: psCategoryUrl('gamescom'),
       sourceUrl: 'https://store.playstation.com/en-us/pages/deals',
-      artworkUrl: latestArtwork,
+      artworkUrl: dealsArtwork,
     },
   ])
 })
@@ -2408,6 +2408,56 @@ test('GOG accepts the current locale-less Sale links exposed by its Home', async
       sourceUid: 'https://www.gog.com/back-to-school-sale',
     },
   ])
+})
+
+test('GOG uses official campaign hero artwork when social metadata is absent', async () => {
+  const campaignUrl = 'https://www.gog.com/back-to-school-sale'
+  const hero =
+    'https://images.gog-statics.com/back-to-school_hero_768x423.webp'
+
+  const result = await runGogAdapter({
+    now: new Date('2026-08-30T00:00:00Z'),
+    fetch: async (input) => {
+      const url = input.toString()
+
+      if (url === 'https://www.gog.com/en/') {
+        return new Response(
+          validGogHome(
+            `<a href="${campaignUrl}">8000+ deals up to -95%</a>`
+          )
+        )
+      }
+
+      if (url === 'https://www.gog.com/frontpage/rss') {
+        return new Response(gogFeed())
+      }
+
+      if (url === campaignUrl) {
+        return responseAt(
+          `
+            <h1>Back To School Sale</h1>
+            <picture>
+              <source
+                srcset="${hero}, https://images.gog-statics.com/back-to-school_hero_768x423_2x.webp 2x"
+                type="image/webp">
+              <source
+                srcset="https://images.gog-statics.com/back-to-school_hero_1440x423.webp"
+                type="image/webp">
+              <img
+                selenium-id="heroBackgroundImage"
+                alt="Back To School Sale - background image">
+            </picture>
+          `,
+          campaignUrl
+        )
+      }
+
+      throw new Error(`Unexpected URL: ${url}`)
+    },
+  })
+
+  assert.equal(result.campaigns.length, 1)
+  assert.equal(result.campaigns[0].artworkUrl, hero)
 })
 
 test('GOG reuses a locale-bearing source UID from an equivalent known campaign', async () => {

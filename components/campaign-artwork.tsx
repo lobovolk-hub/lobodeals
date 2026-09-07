@@ -19,6 +19,8 @@ function ArtworkFallback({
   state,
   store,
 }: Omit<CampaignArtworkProps, 'artworkUrl'>) {
+  const xboxBrandFallback = store.slug === 'microsoft-store'
+
   return (
     <div
       data-artwork-fallback
@@ -40,6 +42,17 @@ function ArtworkFallback({
         className="pointer-events-none absolute inset-x-5 top-1/2 h-px -rotate-6 bg-gradient-to-r from-transparent via-white/20 to-transparent"
         aria-hidden="true"
       />
+
+      {xboxBrandFallback ? (
+        <div
+          data-xbox-campaign-brand-fallback
+          className="pointer-events-none absolute right-3 top-1/2 w-40 -translate-y-1/2 opacity-[0.13] sm:right-5 sm:w-48"
+          aria-hidden="true"
+        >
+          <StoreLogo store={store} variant="campaign" />
+        </div>
+      ) : null}
+
       <div className="relative flex h-full flex-col justify-between p-4 sm:p-5">
         <div className="flex min-w-0 items-center gap-2 text-white/70">
           <div className="rounded-md border border-white/10 bg-black/15 px-1">

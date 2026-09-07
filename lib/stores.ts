@@ -191,7 +191,11 @@ export const stores = [
     marketScope:
       'LoboDeals follows the United States storefront and its official digital sale campaigns.',
     officialUrl: 'https://store.rockstargames.com/',
-    logo: null,
+    logo: {
+      src: '/services/rockstar-store/logo.svg',
+      width: 139,
+      height: 128,
+    },
   },
 ] as const satisfies readonly Store[]
 

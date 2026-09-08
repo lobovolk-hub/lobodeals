@@ -1,5 +1,6 @@
 import Link from 'next/link'
 import { StoreLogo } from '@/components/store-logo'
+import { getStoreCreatorCode } from '@/lib/monetization'
 import { platformLabels, type Store } from '@/lib/stores'
 
 type StoreProfileHeroProps = {
@@ -7,6 +8,8 @@ type StoreProfileHeroProps = {
 }
 
 export function StoreProfileHero({ store }: StoreProfileHeroProps) {
+  const creatorCode = getStoreCreatorCode(store.slug)
+
   return (
     <header
       data-store-profile-hero={store.slug}
@@ -75,6 +78,20 @@ export function StoreProfileHero({ store }: StoreProfileHeroProps) {
               <span className="sr-only"> (opens in a new tab)</span>
             </a>
           </div>
+
+          {creatorCode ? (
+            <p
+              data-store-creator-code
+              className="mt-2 text-xs leading-5 text-[#858380]"
+            >
+              Creator code:{' '}
+              <span className="font-bold text-[#bbb9b5]">
+                {creatorCode.code}
+              </span>
+              <span aria-hidden="true"> · </span>
+              {creatorCode.disclosure}
+            </p>
+          ) : null}
         </div>
       </div>
     </header>

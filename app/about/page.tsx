@@ -1,11 +1,11 @@
-import type { Metadata } from 'next'
+import { createPageMetadata } from '@/lib/seo'
 
-export const metadata: Metadata = {
+export const metadata = createPageMetadata({
   title: 'About',
   description:
     'Learn how LoboDeals helps you find official digital game stores and follow official sale campaigns.',
-  alternates: { canonical: '/about' },
-}
+  canonical: '/about',
+})
 
 export default function AboutPage() {
   return (

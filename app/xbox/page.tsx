@@ -1,11 +1,11 @@
-import type { Metadata } from 'next'
 import { PlatformPage } from '@/components/platform-page'
+import { createPageMetadata } from '@/lib/seo'
 
-export const metadata: Metadata = {
+export const metadata = createPageMetadata({
   title: 'Xbox',
   description: 'Official Xbox Store sales, live and announced.',
-  alternates: { canonical: '/xbox' },
-}
+  canonical: '/xbox',
+})
 
 export default function XboxPage() {
   return <PlatformPage platform="xbox" name="Xbox" />

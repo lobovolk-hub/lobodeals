@@ -1,6 +1,7 @@
 import type { Metadata } from 'next'
 import { notFound } from 'next/navigation'
 import { CampaignSections } from '@/components/campaign-sections'
+import { createPageMetadata } from '@/lib/seo'
 import { StoreProfileHero } from '@/components/store-profile-hero'
 import {
   getCampaignsByStore,
@@ -27,16 +28,11 @@ export async function generateMetadata({
 
   if (!store) notFound()
 
-  return {
+  return createPageMetadata({
     title: store.name,
     description: store.description,
-    alternates: { canonical: `/services/${store.slug}` },
-    openGraph: {
-      title: store.name,
-      description: store.description,
-      url: `/services/${store.slug}`,
-    },
-  }
+    canonical: `/services/${store.slug}`,
+  })
 }
 
 export default async function StoreProfilePage({ params }: StorePageProps) {

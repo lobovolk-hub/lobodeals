@@ -47,6 +47,24 @@ function readCanonical(html) {
   return href
 }
 
+function readMetaContent(html, attribute, value) {
+  const tags = html.match(/<meta\s+[^>]*>/gi) ?? []
+
+  for (const tag of tags) {
+    const key = tag.match(
+      new RegExp(`${attribute}=["']([^"']+)["']`, 'i')
+    )?.[1]
+
+    if (key !== value) continue
+
+    const content = tag.match(/content=["']([^"']*)["']/i)?.[1]
+    assert.notEqual(content, undefined, `Expected content for ${value}`)
+    return content
+  }
+
+  assert.fail(`Expected metadata field ${value}`)
+}
+
 async function stopServer(server, exitPromise) {
   if (server.exitCode !== null || server.signalCode !== null) return
 
@@ -115,13 +133,18 @@ try {
 
   const currentRoutes = [
     '/',
-    '/sales',
     '/playstation',
     '/pc',
     '/nintendo',
     '/xbox',
+    '/sales',
     '/about',
     '/services/steam',
+    '/services/epic-games-store',
+    '/services/gog',
+    '/services/ea-app',
+    '/services/ubisoft-store',
+    '/services/battle-net',
     '/services/rockstar-store',
   ]
 
@@ -150,6 +173,7 @@ try {
     '/tracked',
     '/auth/callback',
     '/us/playstation/test',
+    '/us/playstation/saros',
     '/services/unknown-store',
     '/services/microsoft-xbox-store',
   ]
@@ -160,12 +184,28 @@ try {
   }
 
   const canonicalRoutes = new Map([
-    ['/', 'https://lobodeals.com/'],
-    ['/sales', 'https://lobodeals.com/sales'],
+    ['/', 'https://lobodeals.com'],
     ['/playstation', 'https://lobodeals.com/playstation'],
+    ['/pc', 'https://lobodeals.com/pc'],
     ['/nintendo', 'https://lobodeals.com/nintendo'],
     ['/xbox', 'https://lobodeals.com/xbox'],
+    ['/sales', 'https://lobodeals.com/sales'],
+    ['/about', 'https://lobodeals.com/about'],
     ['/services/steam', 'https://lobodeals.com/services/steam'],
+    [
+      '/services/epic-games-store',
+      'https://lobodeals.com/services/epic-games-store',
+    ],
+    ['/services/gog', 'https://lobodeals.com/services/gog'],
+    ['/services/ea-app', 'https://lobodeals.com/services/ea-app'],
+    [
+      '/services/ubisoft-store',
+      'https://lobodeals.com/services/ubisoft-store',
+    ],
+    [
+      '/services/battle-net',
+      'https://lobodeals.com/services/battle-net',
+    ],
     [
       '/services/rockstar-store',
       'https://lobodeals.com/services/rockstar-store',
@@ -178,6 +218,66 @@ try {
       new URL(readCanonical(body)).href,
       new URL(expectedCanonical).href,
       route
+    )
+  }
+
+  const socialTitles = new Map([
+    ['/', 'LoboDeals \u2014 Official game sales'],
+    ['/playstation', 'PlayStation'],
+    ['/pc', 'PC'],
+    ['/nintendo', 'Nintendo'],
+    ['/xbox', 'Xbox'],
+    ['/sales', 'Sales'],
+    ['/about', 'About'],
+    ['/services/steam', 'Steam'],
+    ['/services/epic-games-store', 'Epic Games Store'],
+    ['/services/gog', 'GOG'],
+    ['/services/ea-app', 'EA app'],
+    ['/services/ubisoft-store', 'Ubisoft Store'],
+    ['/services/battle-net', 'Battle.net'],
+    ['/services/rockstar-store', 'Rockstar Store'],
+  ])
+
+  for (const [route, expectedTitle] of socialTitles) {
+    const { body } = await fetchRoute(baseUrl, route)
+    const expectedCanonical = canonicalRoutes.get(route)
+
+    assert.ok(expectedCanonical, route)
+
+    assert.equal(
+      readMetaContent(body, 'property', 'og:title'),
+      expectedTitle,
+      `${route} og:title`
+    )
+
+    assert.equal(
+      readMetaContent(body, 'name', 'twitter:title'),
+      expectedTitle,
+      `${route} twitter:title`
+    )
+
+    assert.equal(
+      new URL(readMetaContent(body, 'property', 'og:url')).href,
+      new URL(expectedCanonical).href,
+      `${route} og:url`
+    )
+
+    assert.equal(
+      new URL(
+        readMetaContent(body, 'property', 'og:image'),
+        'https://lobodeals.com'
+      ).pathname,
+      '/og/lobodeals-og.png',
+      `${route} og:image`
+    )
+
+    assert.equal(
+      new URL(
+        readMetaContent(body, 'name', 'twitter:image'),
+        'https://lobodeals.com'
+      ).pathname,
+      '/og/lobodeals-og.png',
+      `${route} twitter:image`
     )
   }
 
@@ -194,5 +294,5 @@ assert.equal(
 )
 
 console.log(
-  'HTTP smoke passed: current canonical routes, 4 exact redirects, 8 real 404s, 7 canonicals, and no NoFallbackError.'
+  'HTTP smoke passed: 14 current routes, 4 exact redirects, 9 real 404s, 14 canonicals, route-specific social metadata, and no NoFallbackError.'
 )

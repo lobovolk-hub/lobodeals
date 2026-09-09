@@ -1,11 +1,11 @@
-import type { Metadata } from 'next'
 import { PlatformPage } from '@/components/platform-page'
+import { createPageMetadata } from '@/lib/seo'
 
-export const metadata: Metadata = {
+export const metadata = createPageMetadata({
   title: 'PlayStation',
   description: 'Official PlayStation Store sales, live and announced.',
-  alternates: { canonical: '/playstation' },
-}
+  canonical: '/playstation',
+})
 
 export default function PlayStationPage() {
   return <PlatformPage platform="playstation" name="PlayStation" />

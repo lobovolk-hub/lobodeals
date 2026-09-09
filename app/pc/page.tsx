@@ -1,11 +1,11 @@
-import type { Metadata } from 'next'
 import { PlatformPage } from '@/components/platform-page'
+import { createPageMetadata } from '@/lib/seo'
 
-export const metadata: Metadata = {
+export const metadata = createPageMetadata({
   title: 'PC',
   description: 'Official digital PC store sales, live and announced.',
-  alternates: { canonical: '/pc' },
-}
+  canonical: '/pc',
+})
 
 export default function PcPage() {
   return <PlatformPage platform="pc" name="PC" />

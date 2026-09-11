@@ -18,10 +18,11 @@ import {
 import { extractOfficialArtwork } from '../_shared/artwork.ts'
 import { fetchOfficialText } from '../_shared/http.ts'
 import { extractExactEnglishDateTimes } from '../_shared/time.ts'
-import { verifyKnownCampaigns } from '../_shared/verification.ts'
+import { currentCampaignEvidence, sourceExplicitlyEndsCampaign, verifyKnownCampaigns } from '../_shared/verification.ts'
 import type {
   AdapterResult,
   DetectedCampaign,
+  KnownCampaign,
   SourceBoundary,
   StoreAdapter,
 } from '../_shared/types.ts'
@@ -116,6 +117,7 @@ function titleFromCampaignSentence(value: string): string | null {
   const normalized = normalizeTitle(value)
     .replace(/\s+[|–—-]\s+Steam(?:\s+Store)?$/i, '')
     .replace(/\s+Advertising App$/i, '')
+    .replace(/\s+[–—-]\s+Save\s+up\s+to\b.*$/i, '')
   const sentence = new RegExp(
     `^(?:the|a|an)\\s+(.+?\\b${CAMPAIGN_KIND})\\b(?=\\s+(?:is|are|starts?|runs?|returns?|has|ends?)\\b|\\s*[.!–—-]|$)`,
     'i'
@@ -187,6 +189,11 @@ export function extractSteamCampaignTitle(
     const candidate = titleFromCampaignSentence(source)
     if (candidate) return completePublisherTitle(candidate, groupName)
   }
+  // The Store can label a campaign "Publisher Sale" while its landing uses
+  // an anniversary headline. Combine only official campaign and group labels.
+  if (groupName && /^publisher sale$/i.test(fallbackLabel.trim())) {
+    return `${groupName.replace(/\s+Official$/i, '')} Publisher Sale`
+  }
   return null
 }
 
@@ -213,11 +220,14 @@ function parseUpcomingCalendar(html: string): readonly DetectedCampaign[] {
   const text = textFromHtml(html)
   const contentStart = text.lastIndexOf('Upcoming Steam Events')
   if (contentStart < 0) throw new Error('Steam event calendar content was not found')
-  const content = text.slice(contentStart)
+  const content = text.slice(contentStart).replace(
+    new RegExp(`\\b(\\d{1,2}) ${MONTH},? (20\\d{2})\\b`, 'g'),
+    '$2 $1, $3'
+  )
   const campaigns: DetectedCampaign[] = []
 
   const seasonalPattern = new RegExp(
-    `([A-Z][A-Za-z ]+ Sale) \\| ${MONTH} (\\d{1,2}) - (?:${MONTH} )?(\\d{1,2}), (\\d{4})`,
+    `([A-Z][A-Za-z ]+ Sale)(?: 20\\d{2})? \\| ${MONTH} (\\d{1,2})(?:, (20\\d{2}))? - (?:${MONTH} )?(\\d{1,2}), (\\d{4})`,
     'g'
   )
   for (const match of content.matchAll(seasonalPattern)) {
@@ -226,10 +236,12 @@ function parseUpcomingCalendar(html: string): readonly DetectedCampaign[] {
       ? `${seasonalName[1]} Sale`
       : match[1].replace(/^Seasonal Sales\s+/i, '').trim()
     const startMonth = monthNumber(match[2])
-    const endMonth = monthNumber(match[4] ?? match[2])
-    const endYear = Number(match[6])
+    const endMonth = monthNumber(match[5] ?? match[2])
+    const endYear = Number(match[7])
     if (!startMonth || !endMonth) continue
-    const startYear = startMonth > endMonth ? endYear - 1 : endYear
+    const startYear = match[4]
+      ? Number(match[4])
+      : startMonth > endMonth ? endYear - 1 : endYear
     campaigns.push(
       campaign({
         sourceUid: `steamworks-${saleName.toLowerCase().replace(/[^a-z0-9]+/g, '-')}-${startYear}`,
@@ -243,7 +255,7 @@ function parseUpcomingCalendar(html: string): readonly DetectedCampaign[] {
         },
         ends: {
           precision: 'date',
-          value: canonicalDate(endYear, endMonth, Number(match[5])),
+          value: canonicalDate(endYear, endMonth, Number(match[6])),
         },
         officialUrl: CALENDAR_URL,
         sourceUrl: CALENDAR_URL,
@@ -327,7 +339,7 @@ function normalizeSteamNewsText(value: unknown): string {
 }
 
 function steamNewsReportsLive(value: string): boolean {
-  return /\b(?:is\s+on\s+now|is\s+live\s+now|has\s+begun|has\s+started|from\s+now\s+through|join\s+us\s+now)\b/i.test(
+  return /\b(?:is\s+here|is\s+on\s+now|is\s+live\s+now|has\s+begun|has\s+started|from\s+now\s+through|join\s+us\s+now)\b/i.test(
     value
   )
 }
@@ -683,6 +695,40 @@ async function discoverLiveCampaigns(
   )
 }
 
+async function verifyKnownSteamCampaigns(
+  fetcher: typeof fetch,
+  knownCampaigns: readonly KnownCampaign[],
+  now: Date
+): Promise<readonly string[]> {
+  const salePages = new Map<string, KnownCampaign[]>()
+  const otherPages: KnownCampaign[] = []
+  for (const known of knownCampaigns) {
+    try {
+      const url = new URL(known.officialUrl)
+      if (url.hostname === 'store.steampowered.com' && /^\/sale\/[^/]+\/?$/i.test(url.pathname)) {
+        url.search = '?cc=us&l=english'
+        url.hash = ''
+        salePages.set(url.toString(), [...(salePages.get(url.toString()) ?? []), known])
+      } else {
+        otherPages.push(known)
+      }
+    } catch {
+      // An invalid saved URL is not end evidence.
+    }
+  }
+  const [explicit, settled] = await Promise.all([
+    verifyKnownCampaigns(fetcher, otherPages, ['partner.steamgames.com', 'store.steampowered.com', 'steamcommunity.com']),
+    Promise.allSettled([...salePages].map(async ([url, knownAtUrl]) => {
+      const html = await fetchOfficialText(fetcher, url)
+      const timing = extractSteamPartnerTiming(html)
+      const ended = sourceExplicitlyEndsCampaign(html) ||
+        (timing !== null && Date.parse(timing.ends.value) <= now.getTime())
+      return ended ? knownAtUrl.map(({ sourceUid }) => sourceUid) : []
+    })),
+  ])
+  return [...explicit, ...settled.flatMap((entry) => entry.status === 'fulfilled' ? entry.value : [])]
+}
+
 export const runSteamAdapter: StoreAdapter = async ({
   now,
   fetch,
@@ -706,14 +752,10 @@ export const runSteamAdapter: StoreAdapter = async ({
         fetch,
         upcoming
       ),
-      verifyKnownCampaigns(
+      verifyKnownSteamCampaigns(
         fetch,
         knownCampaigns,
-        [
-          'partner.steamgames.com',
-          'store.steampowered.com',
-          'steamcommunity.com',
-        ]
+        now
       ),
     ])
 
@@ -735,12 +777,11 @@ export const runSteamAdapter: StoreAdapter = async ({
       NEWS_API_URL,
     ],
     coverage: 'partial',
-    campaigns: [
+    ...currentCampaignEvidence([
       ...live,
       ...upcoming.filter(
         (entry) => !liveUids.has(entry.sourceUid)
       ),
-    ],
-    explicitlyEndedSourceUids,
+    ], knownCampaigns, explicitlyEndedSourceUids),
   } satisfies AdapterResult
 }

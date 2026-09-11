@@ -7,7 +7,7 @@ import {
 import { extractAnchors, extractMeta, textFromHtml, uniqueBy } from '../_shared/html.ts'
 import { extractOfficialArtwork } from '../_shared/artwork.ts'
 import { fetchOfficialText } from '../_shared/http.ts'
-import { verifyKnownCampaigns } from '../_shared/verification.ts'
+import { currentCampaignEvidence, verifyKnownCampaigns } from '../_shared/verification.ts'
 import { extractExactEnglishDateTimes } from '../_shared/time.ts'
 import type { AdapterResult, DetectedCampaign, StoreAdapter } from '../_shared/types.ts'
 
@@ -79,7 +79,6 @@ export const runUbisoftStoreAdapter: StoreAdapter = async ({
     sourceUrl: SOURCE_URL,
     sourceUrls: [SOURCE_URL],
     coverage: 'partial',
-    campaigns,
-    explicitlyEndedSourceUids,
+    ...currentCampaignEvidence(campaigns, knownCampaigns, explicitlyEndedSourceUids),
   } satisfies AdapterResult
 }

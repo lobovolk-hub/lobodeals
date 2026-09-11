@@ -8,13 +8,76 @@ import {
 import { decodeHtml, extractAnchors, extractMeta, textFromHtml, uniqueBy } from '../_shared/html.ts'
 import { extractOfficialArtwork } from '../_shared/artwork.ts'
 import { fetchOfficialText } from '../_shared/http.ts'
-import { extractExactEnglishDateTimes } from '../_shared/time.ts'
+import {
+  extractEnglishDateOnlyRange,
+  extractExactEnglishDateTimes,
+} from '../_shared/time.ts'
 import { AdapterError } from '../_shared/types.ts'
-import { verifyKnownCampaigns } from '../_shared/verification.ts'
+import { currentCampaignEvidence, verifyKnownCampaigns } from '../_shared/verification.ts'
 import type { AdapterResult, DetectedCampaign, StoreAdapter } from '../_shared/types.ts'
 
 const DEALS_URL = 'https://www.ea.com/sales/deals'
 const NEWS_URL = 'https://www.ea.com/news'
+
+function publicationYear(
+  html: string
+): number | undefined {
+  const metaTags =
+    [...html.matchAll(/<meta\b[^>]*>/gi)]
+
+  for (const match of metaTags) {
+    const tag = match[0]
+
+    const property =
+      tagAttribute(tag, 'property') ??
+      tagAttribute(tag, 'name')
+
+    if (
+      property?.toLowerCase() !==
+      'article:published_time'
+    ) {
+      continue
+    }
+
+    const content =
+      tagAttribute(tag, 'content')
+
+    const year =
+      /^(20\d{2})-/.exec(
+        content ?? ''
+      )?.[1]
+
+    if (year) {
+      return Number(year)
+    }
+  }
+
+  const structured =
+    /["']datePublished["']\s*:\s*["'](20\d{2})-/i.exec(
+      html
+    )?.[1]
+
+  return structured
+    ? Number(structured)
+    : undefined
+}
+
+function normalizeDateOnlyProse(
+  text: string
+): string {
+  return text.replace(
+    /\b(?:Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday)\s*,?\s+(?=(?:January|February|March|April|May|June|July|August|September|October|November|December)\b)/gi,
+    ''
+  )
+}
+
+function explicitlyReportsLive(
+  text: string
+): boolean {
+  return /\b(?:live now|is now live|is live now|available now|starts today|begins today|kicks off today|now through)\b/i.test(
+    text
+  )
+}
 
 function tagAttribute(tag: string, name: string): string | null {
   const match = new RegExp(
@@ -148,12 +211,15 @@ export const runEaAppAdapter: StoreAdapter = async ({
   assertNewsDiscoveryContract(newsHtml)
 
   const links = uniqueBy(
-    [...campaignLinks(dealsHtml, DEALS_URL), ...campaignLinks(newsHtml, NEWS_URL)],
+    [
+      ...campaignLinks(dealsHtml, DEALS_URL).map((link) => ({ ...link, sourceUrl: DEALS_URL })),
+      ...campaignLinks(newsHtml, NEWS_URL).map((link) => ({ ...link, sourceUrl: NEWS_URL })),
+    ],
     ({ href }) => href
   )
 
   const settled = await Promise.allSettled(
-    links.map(async ({ href, label }): Promise<DetectedCampaign | null> => {
+    links.map(async ({ href, label, sourceUrl }): Promise<DetectedCampaign | null> => {
       const officialUrl = new URL(href)
       officialUrl.search = ''
       officialUrl.hash = ''
@@ -163,7 +229,9 @@ export const runEaAppAdapter: StoreAdapter = async ({
       if (!isSaleCampaignText(`${title} ${text.slice(0, 800)}`)) return null
       if (isExcludedCampaignText(title)) return null
 
-      const exact = extractExactEnglishDateTimes(text)
+      const exact =
+        extractExactEnglishDateTimes(text)
+
       if (exact.length >= 2) {
         const starts = exact[0]
         const ends = exact[exact.length - 1]
@@ -177,22 +245,83 @@ export const runEaAppAdapter: StoreAdapter = async ({
           starts,
           ends,
           officialUrl: officialUrl.toString(),
-          sourceUrl: href.startsWith(NEWS_URL) ? NEWS_URL : DEALS_URL,
+          sourceUrl,
           artworkUrl: extractOfficialArtwork(html, officialUrl.toString()),
         })
       }
 
-      const ends = exact.length === 1 ? exact[0] : undefined
+      if (exact.length === 0) {
+        const dateOnlyRange =
+          extractEnglishDateOnlyRange(
+            normalizeDateOnlyProse(text),
+            publicationYear(html)
+          )
+
+        if (dateOnlyRange) {
+          const currentCalendarDay =
+            now.toISOString().slice(0, 10)
+
+          const state =
+            dateOnlyRange.ends.value <
+            currentCalendarDay
+              ? 'ended'
+              : dateOnlyRange.starts.value > currentCalendarDay
+                ? 'upcoming'
+                : sourceUrl === DEALS_URL ||
+                  explicitlyReportsLive(text)
+                ? 'live'
+                : 'upcoming'
+
+          return campaign({
+            sourceUid:
+              officialUrl.toString(),
+            name: title,
+            storeSlug: 'ea-app',
+            state,
+            lifecycleBasis:
+              'official-source',
+            starts:
+              dateOnlyRange.starts,
+            ends:
+              dateOnlyRange.ends,
+            officialUrl:
+              officialUrl.toString(),
+            sourceUrl,
+            artworkUrl:
+              extractOfficialArtwork(
+                html,
+                officialUrl.toString()
+              ),
+          })
+        }
+      }
+
+      const ends =
+        exact.length === 1
+          ? exact[0]
+          : undefined
+
       return campaign({
         sourceUid: officialUrl.toString(),
         name: title,
         storeSlug: 'ea-app',
-        state: expireAtExactEnd('live', ends, now),
-        lifecycleBasis: 'official-source',
+        state:
+          expireAtExactEnd(
+            'live',
+            ends,
+            now
+          ),
+        lifecycleBasis:
+          'official-source',
         ends,
-        officialUrl: officialUrl.toString(),
-        sourceUrl: href.startsWith(NEWS_URL) ? NEWS_URL : DEALS_URL,
-        artworkUrl: extractOfficialArtwork(html, officialUrl.toString()),
+        officialUrl:
+          officialUrl.toString(),
+        sourceUrl,
+        artworkUrl:
+          extractOfficialArtwork(
+            html,
+            officialUrl.toString()
+          ),
       })
     })
   )
@@ -212,7 +341,6 @@ export const runEaAppAdapter: StoreAdapter = async ({
     sourceUrl: DEALS_URL,
     sourceUrls: [DEALS_URL, NEWS_URL],
     coverage: 'partial',
-    campaigns,
-    explicitlyEndedSourceUids,
+    ...currentCampaignEvidence(campaigns, knownCampaigns, explicitlyEndedSourceUids),
   } satisfies AdapterResult
 }

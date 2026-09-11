@@ -215,6 +215,67 @@ function structuralNodes(root: unknown): readonly JsonObject[] {
   return nodes
 }
 
+function campaignLandingNodes(
+  root: unknown
+): readonly JsonObject[] {
+  const nodes: JsonObject[] = []
+  const queue: unknown[] = [root]
+  const seen = new Set<object>()
+
+  while (queue.length > 0) {
+    const value = queue.shift()
+
+    if (Array.isArray(value)) {
+      queue.push(...value)
+      continue
+    }
+
+    const candidate = object(value)
+
+    if (
+      !candidate ||
+      seen.has(candidate)
+    ) {
+      continue
+    }
+
+    seen.add(candidate)
+
+    if (
+      officialLinks(candidate).some(
+        ({ href }) =>
+          Boolean(
+            campaignLandingUrl(href)
+          )
+      )
+    ) {
+      nodes.push(candidate)
+    }
+
+    for (
+      const [key, child]
+      of Object.entries(candidate)
+    ) {
+      if (
+        BLOCKED_CHILD_KEYS.has(key)
+      ) {
+        continue
+      }
+
+      if (Array.isArray(child)) {
+        queue.push(...child)
+        continue
+      }
+
+      if (object(child)) {
+        queue.push(child)
+      }
+    }
+  }
+
+  return nodes
+}
+
 function nestedStrings(value: unknown, depth = 0): readonly string[] {
   if (depth > 4) return []
   if (typeof value === 'string') return value.trim() ? [value.trim()] : []
@@ -547,35 +608,111 @@ function qualifiesCampaignModule(
 
 function moduleCandidate(node: JsonObject, now: Date): ModuleCandidate | null {
   const type = nodeType(node)
-  if (
-    /PageHeader|StorefrontSubModules|StorefrontCardGroup/i.test(type) ||
-    Array.isArray(node.offers)
-  ) {
+
+  if (/PageHeader/i.test(type)) {
     return null
   }
 
   const links = officialLinks(node)
-  if (individualProductNode(node, links)) return null
-  const landingUrl = links.map(({ href }) => campaignLandingUrl(href)).find(Boolean)
-  const browse = browseUrl(links)
-  const text = publicText(node).join(' ')
-  const dealsOfTheWeek = isDealsOfTheWeek(text, browse)
-  const name = dealsOfTheWeek ? 'Deals of the Week' : publicNameFromModule(node)
-  if (!qualifiesCampaignModule(text, landingUrl ?? null, dealsOfTheWeek)) {
+
+  const landingUrl = links
+    .map(({ href }) =>
+      campaignLandingUrl(href)
+    )
+    .find(Boolean)
+
+  const landingOnlyContainer =
+    Boolean(landingUrl) &&
+    (
+      /StorefrontSubModules|StorefrontCardGroup/i.test(type) ||
+      Array.isArray(node.offers)
+    )
+
+  if (
+    !landingUrl &&
+    (
+      /StorefrontSubModules|StorefrontCardGroup/i.test(type) ||
+      Array.isArray(node.offers)
+    )
+  ) {
     return null
   }
-  if (!landingUrl && !name) return null
-  if (excludedWithoutDigitalSale(name ?? '', text)) return null
 
-  const officialUrl = landingUrl ?? browse ?? SALES_URL
-  const artworkUrl = nodeArtwork(node)
+  if (
+    !landingOnlyContainer &&
+    individualProductNode(node, links)
+  ) {
+    return null
+  }
+
+  const browse = browseUrl(links)
+  const text = publicText(node).join(' ')
+
+  const candidateText =
+    landingOnlyContainer
+      ? ''
+      : text
+
+  const dealsOfTheWeek =
+    isDealsOfTheWeek(
+      candidateText,
+      browse
+    )
+
+  const name =
+    landingOnlyContainer
+      ? undefined
+      : dealsOfTheWeek
+        ? 'Deals of the Week'
+        : publicNameFromModule(node)
+
+  if (
+    !qualifiesCampaignModule(
+      candidateText,
+      landingUrl ?? null,
+      dealsOfTheWeek
+    )
+  ) {
+    return null
+  }
+
+  if (!landingUrl && !name) {
+    return null
+  }
+
+  if (
+    !landingOnlyContainer &&
+    excludedWithoutDigitalSale(
+      name ?? '',
+      candidateText
+    )
+  ) {
+    return null
+  }
+
+  const officialUrl =
+    landingUrl ?? browse ?? SALES_URL
+
+  const artworkUrl =
+    nodeArtwork(node)
+
   return {
-    ...(artworkUrl ? { artworkUrl } : {}),
-    ...(landingUrl ? { landingUrl } : {}),
-    ...(name ? { name } : {}),
+    ...(artworkUrl
+      ? { artworkUrl }
+      : {}),
+    ...(landingUrl
+      ? { landingUrl }
+      : {}),
+    ...(name
+      ? { name }
+      : {}),
     officialUrl,
-    text,
-    timing: timingFromText(text, now, true),
+    text: candidateText,
+    timing: timingFromText(
+      candidateText,
+      now,
+      true
+    ),
   }
 }
 
@@ -688,10 +825,32 @@ export const runEpicGamesStoreAdapter: StoreAdapter = async ({
     return pending
   }
 
-  const candidates = structuralNodes(mainLayout).flatMap((node) => {
-    const candidate = moduleCandidate(node, now)
-    return candidate ? [candidate] : []
+  const seenCandidateNodes =
+    new Set<JsonObject>()
+
+  const candidateNodes = [
+    ...structuralNodes(mainLayout),
+    ...campaignLandingNodes(mainLayout),
+  ].filter((node) => {
+    if (
+      seenCandidateNodes.has(node)
+    ) {
+      return false
+    }
+
+    seenCandidateNodes.add(node)
+    return true
   })
+
+  const candidates =
+    candidateNodes.flatMap((node) => {
+      const candidate =
+        moduleCandidate(node, now)
+
+      return candidate
+        ? [candidate]
+        : []
+    })
   const campaignFromMain = (
     candidate: ModuleCandidate,
     name: string,

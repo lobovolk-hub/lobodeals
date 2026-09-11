@@ -187,27 +187,87 @@ function restHeaders(key: string): HeadersInit {
   return headers
 }
 
+const TRANSIENT_BACKEND_STATUSES =
+  new Set([502, 503, 504])
+
+const BACKEND_RETRY_DELAYS_MS =
+  [250, 750] as const
+
+function wait(
+  milliseconds: number
+): Promise<void> {
+  return new Promise((resolve) => {
+    setTimeout(resolve, milliseconds)
+  })
+}
+
 async function restRequest(
   path: string,
   init: RequestInit
 ): Promise<Response> {
   const baseUrl = Deno.env.get('SUPABASE_URL')
   const key = adminKey()
-  if (!baseUrl || !key) {
-    throw new AdapterError('BACKEND_CONFIGURATION', 'Supabase runtime is unavailable')
-  }
 
-  const response = await fetch(`${baseUrl}/rest/v1/${path}`, {
-    ...init,
-    headers: { ...restHeaders(key), ...init.headers },
-  })
-  if (!response.ok) {
+  if (!baseUrl || !key) {
     throw new AdapterError(
-      'BACKEND_WRITE_FAILED',
-      `Sales backend returned HTTP ${response.status}`
+      'BACKEND_CONFIGURATION',
+      'Supabase runtime is unavailable'
     )
   }
-  return response
+
+  const method =
+    (init.method ?? 'GET').toUpperCase()
+
+  for (
+    let attempt = 0;
+    attempt <= BACKEND_RETRY_DELAYS_MS.length;
+    attempt += 1
+  ) {
+    const response = await fetch(
+      `${baseUrl}/rest/v1/${path}`,
+      {
+        ...init,
+        headers: {
+          ...restHeaders(key),
+          ...init.headers,
+        },
+      }
+    )
+
+    if (response.ok) {
+      return response
+    }
+
+    const canRetry =
+      TRANSIENT_BACKEND_STATUSES.has(
+        response.status
+      ) &&
+      attempt <
+        BACKEND_RETRY_DELAYS_MS.length
+
+    if (canRetry) {
+      await wait(
+        BACKEND_RETRY_DELAYS_MS[attempt]
+      )
+
+      continue
+    }
+
+    const code =
+      method === 'GET'
+        ? 'BACKEND_READ_FAILED'
+        : 'BACKEND_WRITE_FAILED'
+
+    throw new AdapterError(
+      code,
+      `Sales backend ${method} returned HTTP ${response.status}`
+    )
+  }
+
+  throw new AdapterError(
+    'BACKEND_CONFIGURATION',
+    'Sales backend retry loop exited unexpectedly'
+  )
 }
 
 async function monitorTokenVerifier(): Promise<string> {

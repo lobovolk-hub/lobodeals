@@ -256,3 +256,57 @@ test('sales health stays private while the Edge GET selects only status inputs',
   assert.match(monitor, /sales_source_health\?select=store_slug,status/)
   assert.doesNotMatch(monitor, /select=store_slug,status,last_error/)
 })
+
+
+// SALES COVERAGE INTEGRITY PASS - STAGE 1D
+
+test('campaign monitor retries only transient backend gateway failures and reports reads separately from writes', async () => {
+  const monitor = await source(
+    'supabase/functions/campaign-monitoring/index.ts'
+  )
+
+  assert.match(
+    monitor,
+    /TRANSIENT_BACKEND_STATUSES\s*=\s*new Set\(\[502, 503, 504\]\)/
+  )
+
+  assert.match(
+    monitor,
+    /BACKEND_RETRY_DELAYS_MS\s*=\s*\[250, 750\]/
+  )
+
+  assert.match(
+    monitor,
+    /TRANSIENT_BACKEND_STATUSES\.has\(/
+  )
+
+  assert.match(
+    monitor,
+    /attempt\s*<\s*BACKEND_RETRY_DELAYS_MS\.length/
+  )
+
+  assert.match(
+    monitor,
+    /method === 'GET'[\s\S]*?'BACKEND_READ_FAILED'[\s\S]*?'BACKEND_WRITE_FAILED'/
+  )
+
+  assert.match(
+    monitor,
+    /Sales backend \$\{method\} returned HTTP \$\{response\.status\}/
+  )
+
+  assert.doesNotMatch(
+    monitor,
+    /TRANSIENT_BACKEND_STATUSES[\s\S]{0,120}\b(?:400|401|403|404|409|422)\b/
+  )
+
+  assert.match(
+    monitor,
+    /const outcomes = await Promise\.all\(/
+  )
+
+  assert.match(
+    monitor,
+    /runStore\(storeSlug, parsed\.mode, now, parsed\.simulateFailure\)/
+  )
+})

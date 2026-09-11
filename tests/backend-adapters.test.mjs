@@ -9,10 +9,10 @@ import { runMicrosoftStoreAdapter } from '../supabase/functions/campaign-monitor
 import { runNintendoEshopAdapter } from '../supabase/functions/campaign-monitoring/adapters/nintendo-eshop.ts'
 import { runPlayStationStoreAdapter } from '../supabase/functions/campaign-monitoring/adapters/playstation-store.ts'
 import { runRockstarStoreAdapter } from '../supabase/functions/campaign-monitoring/adapters/rockstar-store.ts'
-import { runSteamAdapter } from '../supabase/functions/campaign-monitoring/adapters/steam.ts'
+import { runSteamAdapter, extractSteamCampaignTitle } from '../supabase/functions/campaign-monitoring/adapters/steam.ts'
 import { runUbisoftStoreAdapter } from '../supabase/functions/campaign-monitoring/adapters/ubisoft-store.ts'
 import { campaignKeysToEnd } from '../supabase/functions/campaign-monitoring/_shared/reconcile.ts'
-import { verifyKnownCampaigns } from '../supabase/functions/campaign-monitoring/_shared/verification.ts'
+import { currentCampaignEvidence, verifyKnownCampaigns } from '../supabase/functions/campaign-monitoring/_shared/verification.ts'
 
 const currentCampaign = {
   sourceUid: 'current',
@@ -24,6 +24,21 @@ const currentCampaign = {
   sourceUrl:
     'https://partner.steamgames.com/doc/marketing/upcoming_events?l=english',
 }
+
+test('end evidence never creates history and retires only a known identity', () => {
+  const historical = { ...currentCampaign, sourceUid: 'historical', state: 'ended' }
+  assert.deepEqual(currentCampaignEvidence([historical], []), {
+    campaigns: [], explicitlyEndedSourceUids: [],
+  })
+  const known = [{ ...currentCampaign, sourceUid: 'historical', campaignKey: 'known' }]
+  assert.deepEqual(currentCampaignEvidence([historical], known), {
+    campaigns: [], explicitlyEndedSourceUids: ['historical'],
+  })
+  const live = { ...historical, state: 'live' }
+  assert.deepEqual(currentCampaignEvidence([live], known, ['historical']), {
+    campaigns: [live], explicitlyEndedSourceUids: [],
+  })
+})
 
 const active = (overrides = {}) => ({
   campaign_key: 'steam-known',
@@ -541,9 +556,7 @@ test('Xbox Store preserves a campaign date-only end without inventing an hour an
     </html>
   `
 
-  const result = await runMicrosoftStoreAdapter({
-    now: new Date('2026-09-02T12:00:00Z'),
-    fetch: async (input) => {
+  const fetcher = async (input) => {
       const href =
         typeof input === 'string'
           ? input
@@ -554,16 +567,25 @@ test('Xbox Store preserves a campaign date-only end without inventing an hour an
       return new Response(href === sourceUrl ? sourceHtml : landingHtml, {
         status: 200,
       })
-    },
+    }
+  const current = await runMicrosoftStoreAdapter({
+    now: new Date('2026-08-30T12:00:00Z'), fetch: fetcher,
   })
-
-  assert.equal(result.campaigns.length, 1)
-  assert.deepEqual(result.campaigns[0].ends, {
+  assert.deepEqual(current.campaigns[0].ends, {
     precision: 'date',
     value: '2026-08-31',
   })
-  assert.equal(result.campaigns[0].state, 'ended')
-  assert.equal(result.campaigns[0].lifecycleBasis, 'official-source')
+  assert.equal(current.campaigns[0].lifecycleBasis, 'official-source')
+  const result = await runMicrosoftStoreAdapter({
+    now: new Date('2026-09-02T12:00:00Z'), fetch: fetcher,
+    knownCampaigns: [{ ...current.campaigns[0], campaignKey: 'known' }],
+  })
+  assert.deepEqual(result.campaigns, [])
+  assert.deepEqual(result.explicitlyEndedSourceUids, [campaignKey.toLowerCase()])
+  const fresh = await runMicrosoftStoreAdapter({
+    now: new Date('2026-09-02T12:00:00Z'), fetch: fetcher,
+  })
+  assert.deepEqual(fresh.campaigns, [])
 })
 
 test('Xbox Store preserves an exact official campaign end when the landing publishes a timezone', async () => {
@@ -4510,6 +4532,76 @@ test('Epic accepts a campaign-level games and add-ons sale but excludes free and
   )
 })
 
+test('Steam accepts current official seasonal headings in both English date orders', async () => {
+  for (const dates of [
+    '17 December, 2026 - 4 January, 2027',
+    'December 17, 2026 - January 4, 2027',
+  ]) {
+    const result = await runSteamAdapter({
+      now: new Date('2026-09-11T02:00:00Z'),
+      fetch: async (input) => new Response(input.toString().includes('partner.steamgames.com')
+        ? `<main>Upcoming Steam Events Seasonal Sales Winter Sale 2026 | ${dates}</main>`
+        : ''),
+    })
+    assert.equal(result.campaigns.length, 1)
+    assert.equal(result.campaigns[0].name, 'Steam Winter Sale')
+    assert.equal(result.campaigns[0].state, 'upcoming')
+    assert.deepEqual(result.campaigns[0].starts, { precision: 'date', value: '2026-12-17' })
+    assert.deepEqual(result.campaigns[0].ends, { precision: 'date', value: '2027-01-04' })
+  }
+})
+
+test('Steam retires a known sale from official partner timing after partial discovery loses it', async () => {
+  const url = 'https://store.steampowered.com/sale/ExampleFranchiseSale'
+  const known = { ...currentCampaign, sourceUid: url, officialUrl: url, campaignKey: 'known', state: 'live' }
+  for (const fail of [false, true]) {
+    const result = await runSteamAdapter({
+      now: new Date('2026-09-11T02:00:00Z'), knownCampaigns: [known],
+      fetch: async (input) => {
+        if (input.toString().includes('partner.steamgames.com')) return new Response('<main>Upcoming Steam Events</main>')
+        if (input.toString().startsWith(url)) {
+          if (fail) return new Response('', { status: 503 })
+          return new Response(`<div data-partnereventstore='[{"rtime32_start_time":${Date.parse('2026-08-21T00:43:00Z') / 1000},"rtime32_end_time":${Date.parse('2026-09-01T17:00:00Z') / 1000}}]'></div>`)
+        }
+        return new Response('')
+      },
+    })
+    assert.deepEqual(result.campaigns, [])
+    assert.deepEqual(result.explicitlyEndedSourceUids, fail ? [] : [url])
+  }
+})
+
+test('Steam preserves publisher campaign identity despite discount taglines and anniversary headlines', () => {
+  assert.equal(extractSteamCampaignTitle('<title>Blizzard Publisher Sale – Save up to 75% off</title>'), 'Blizzard Publisher Sale')
+  const anniversary = `<title>20 YEARS OF EXAMPLE GAMES</title>
+    <div data-groupvanityinfo='[{"group_name":"Example Games Official"}]'></div>`
+  assert.equal(extractSteamCampaignTitle(anniversary, 'Publisher Sale'), 'Example Games Publisher Sale')
+  assert.equal(extractSteamCampaignTitle(anniversary, 'Learn more'), null)
+  assert.equal(extractSteamCampaignTitle('<title>Publisher Sale</title>', 'Publisher Sale'), null)
+})
+
+test('Steam News is-here announcement confirms Live without using publication time as start', async () => {
+  const result = await runSteamAdapter({
+    now: new Date('2026-09-11T02:00:00Z'),
+    fetch: async (input) => {
+      const url = input.toString()
+      if (url.includes('partner.steamgames.com')) return new Response('<main>Upcoming Steam Events 2026 Fests Sep 10 Sep 14 Programming Fest Registration details Next Fest</main>')
+      if (url.includes('api.steampowered.com')) return Response.json({ appnews: { newsitems: [{
+        title: 'Steam Programming Fest is here!',
+        contents: 'See you NOW for Steam Programming Fest, on through September 14th at 10 am PT.',
+        feedname: 'steam_community_blog',
+        date: Date.parse('2026-09-10T17:12:58Z') / 1000,
+        url: 'https://steamcommunity.com/ogg/593110/announcements/detail/696523723786682499',
+      }] } })
+      return new Response('')
+    },
+  })
+  assert.equal(result.campaigns.length, 1)
+  assert.equal(result.campaigns[0].state, 'live')
+  assert.deepEqual(result.campaigns[0].starts, { precision: 'date', value: '2026-09-10' })
+  assert.deepEqual(result.campaigns[0].ends, { precision: 'datetime', value: '2026-09-14T10:00:00-07:00' })
+})
+
 test('Steam preserves date-only announcements as upcoming until a live surface confirms them', async () => {
   const html = `
     <main>Upcoming Steam Events
@@ -4659,22 +4751,11 @@ test('Steam News officially confirms a calendar Fest live with an exact Pacific 
         '2026-09-07T17:00:01Z'
       ),
       fetch: fetcher,
+      knownCampaigns: [{ ...live, campaignKey: 'known' }],
     })
 
-  const ended =
-    afterExactEnd.campaigns.find(
-      ({ name }) =>
-        name ===
-        'Steam PvE Survival Crafting Fest'
-    )
-
-  assert.equal(ended?.state, 'ended')
-
-  assert.deepEqual(ended?.ends, {
-    precision: 'datetime',
-    value:
-      '2026-09-07T10:00:00-07:00',
-  })
+  assert.deepEqual(afterExactEnd.campaigns, [])
+  assert.deepEqual(afterExactEnd.explicitlyEndedSourceUids, [live.sourceUid])
 })
 
 test('Ubisoft evaluates every campaign link and does not retain the former ten-item cap', async () => {
@@ -4829,5 +4910,1519 @@ test('Xbox Store reads a date-only end from embedded channel metadata for a know
   assert.deepEqual(
     result.explicitlyEndedSourceUids,
     [sourceUid]
+  )
+})
+
+
+// SALES COVERAGE INTEGRITY PASS - STAGE 1A
+
+test('Nintendo News preserves an announced date-only eShop campaign as upcoming without inventing an hour', async () => {
+  const salesUrl =
+    'https://www.nintendo.com/us/store/sales-and-deals/'
+
+  const newsUrl =
+    'https://www.nintendo.com/us/whatsnew/'
+
+  const articleUrl =
+    'https://www.nintendo.com/us/whatsnew/adventure-awaits-nintendo-of-america-announces-customer-appreciation-sale/'
+
+  const newsIndex = `
+    <script id="__NEXT_DATA__">${JSON.stringify({
+      props: {
+        pageProps: {
+          initialApolloState: {
+            'NewsArticle:customer-appreciation': {
+              __typename: 'NewsArticle',
+              tags: [
+                {
+                  __ref:
+                    'ContentTag:articleCategoryPromotions',
+                },
+              ],
+              title:
+                'Adventure awaits! Nintendo of America announces Customer Appreciation Sale',
+              'url({"relative":true})':
+                '/us/whatsnew/adventure-awaits-nintendo-of-america-announces-customer-appreciation-sale/',
+            },
+          },
+        },
+      },
+    })}</script>
+  `
+
+  const result =
+    await runNintendoEshopAdapter({
+      now: new Date(
+        '2026-09-10T18:00:00Z'
+      ),
+      fetch: async (input) => {
+        const url = input.toString()
+
+        if (url === salesUrl) {
+          return responseAt(
+            '<html><body></body></html>',
+            salesUrl
+          )
+        }
+
+        if (url === newsUrl) {
+          return responseAt(
+            newsIndex,
+            newsUrl
+          )
+        }
+
+        if (url === articleUrl) {
+          return responseAt(
+            `
+              <html>
+                <head>
+                  <meta
+                    property="og:title"
+                    content="Adventure awaits! Nintendo of America announces Customer Appreciation Sale"
+                  >
+                </head>
+                <body>
+                  <p>09/10/26</p>
+
+                  <p>
+                    Nintendo of America is excited
+                    to announce the Customer
+                    Appreciation Sale.
+                  </p>
+
+                  <p>
+                    The sale runs from September 12
+                    through September 26 across
+                    Nintendo eShop, Nintendo Store,
+                    and participating retail
+                    locations.
+                  </p>
+                </body>
+              </html>
+            `,
+            articleUrl
+          )
+        }
+
+        throw new Error(
+          `Unexpected Nintendo URL: ${url}`
+        )
+      },
+    })
+
+  const detected =
+    result.campaigns.find((entry) =>
+      /Customer Appreciation Sale/i.test(
+        entry.name
+      )
+    )
+
+  assert.ok(detected)
+
+  assert.equal(
+    detected.name,
+    'Customer Appreciation Sale'
+  )
+
+  assert.equal(
+    detected.state,
+    'upcoming'
+  )
+
+  assert.equal(
+    detected.lifecycleBasis,
+    'official-source'
+  )
+
+  assert.deepEqual(
+    detected.starts,
+    {
+      precision: 'date',
+      value: '2026-09-12',
+    }
+  )
+
+  assert.deepEqual(
+    detected.ends,
+    {
+      precision: 'date',
+      value: '2026-09-26',
+    }
+  )
+})
+
+test('GOG rejects and retires compact-date and standalone-year historical promo identities', async () => {
+  const homeUrl =
+    'https://www.gog.com/en/'
+
+  const feedUrl =
+    'https://www.gog.com/frontpage/rss'
+
+  const compactDateUrl =
+    'https://www.gog.com/promo/20240105_classic_winter_sale'
+
+  const standaloneYearUrl =
+    'https://www.gog.com/promo/weekly_deals_1_january_2024'
+
+  const result = await runGogAdapter({
+    now: new Date(
+      '2026-09-10T18:00:00Z'
+    ),
+
+    knownCampaigns: [
+      {
+        campaignKey:
+          'gog-classic-winter',
+        sourceUid:
+          compactDateUrl,
+        name:
+          'Classic Winter Sale',
+        state:
+          'live',
+        officialUrl:
+          compactDateUrl,
+        sourceUrl:
+          homeUrl,
+      },
+      {
+        campaignKey:
+          'gog-weekly-2024',
+        sourceUid:
+          standaloneYearUrl,
+        name:
+          'Weekly Sale',
+        state:
+          'live',
+        officialUrl:
+          standaloneYearUrl,
+        sourceUrl:
+          homeUrl,
+      },
+    ],
+
+    fetch: async (input) => {
+      const url = input.toString()
+
+      if (url === homeUrl) {
+        return responseAt(
+          validGogHome(
+            `
+              <a href="${compactDateUrl}">
+                Classic Winter Sale
+              </a>
+
+              <a href="${standaloneYearUrl}">
+                Weekly Sale
+              </a>
+            `
+          ),
+          homeUrl
+        )
+      }
+
+      if (url === feedUrl) {
+        return responseAt(
+          gogFeed(),
+          feedUrl
+        )
+      }
+
+      if (
+        url === compactDateUrl ||
+        url === standaloneYearUrl
+      ) {
+        return responseAt(
+          `
+            <html>
+              <head>
+                <meta
+                  property="og:title"
+                  content="Historical Sale"
+                >
+              </head>
+
+              <body>
+                <h1>Historical Sale</h1>
+                <p>
+                  %hours%h %minutes%m
+                  %seconds%s left
+                </p>
+              </body>
+            </html>
+          `,
+          url
+        )
+      }
+
+      throw new Error(
+        `Unexpected GOG URL: ${url}`
+      )
+    },
+  })
+
+  assert.equal(
+    result.campaigns.length,
+    0
+  )
+
+  assert.deepEqual(
+    result.explicitlyEndedSourceUids,
+    [
+      compactDateUrl,
+      standaloneYearUrl,
+    ]
+  )
+})
+
+test('GOG rejects and retires a campaign whose official landing explicitly says it is over', async () => {
+  const homeUrl =
+    'https://www.gog.com/en/'
+
+  const feedUrl =
+    'https://www.gog.com/frontpage/rss'
+
+  const campaignUrl =
+    'https://www.gog.com/back-to-school-sale'
+
+  const persistedUid =
+    'https://www.gog.com/en/back-to-school-sale'
+
+  const result = await runGogAdapter({
+    now: new Date(
+      '2026-09-10T18:00:00Z'
+    ),
+
+    knownCampaigns: [
+      {
+        campaignKey:
+          'gog-back-to-school',
+        sourceUid:
+          persistedUid,
+        name:
+          'Back To School Sale',
+        state:
+          'live',
+        officialUrl:
+          campaignUrl,
+        sourceUrl:
+          homeUrl,
+      },
+    ],
+
+    fetch: async (input) => {
+      const url = input.toString()
+
+      if (url === homeUrl) {
+        return responseAt(
+          validGogHome(
+            `
+              <a href="${campaignUrl}">
+                Back To School Sale
+              </a>
+            `
+          ),
+          homeUrl
+        )
+      }
+
+      if (url === feedUrl) {
+        return responseAt(
+          gogFeed(),
+          feedUrl
+        )
+      }
+
+      if (url === campaignUrl) {
+        return responseAt(
+          `
+            <html>
+              <head>
+                <meta
+                  property="og:title"
+                  content="Back To School Sale"
+                >
+              </head>
+
+              <body>
+                <h1>
+                  Back To School Sale
+                </h1>
+
+                <p>
+                  Aaaand it\u2019s over!
+                </p>
+              </body>
+            </html>
+          `,
+          campaignUrl
+        )
+      }
+
+      throw new Error(
+        `Unexpected GOG URL: ${url}`
+      )
+    },
+  })
+
+  assert.equal(
+    result.campaigns.length,
+    0
+  )
+
+  assert.deepEqual(
+    result.explicitlyEndedSourceUids,
+    [persistedUid]
+  )
+})
+
+test('GOG current exact official evidence overrides an old year-stamped URL identity', async () => {
+  const homeUrl =
+    'https://www.gog.com/en/'
+
+  const feedUrl =
+    'https://www.gog.com/frontpage/rss'
+
+  const reusedUrl =
+    'https://www.gog.com/promo/20240105_classic_winter_sale'
+
+  const result = await runGogAdapter({
+    now: new Date(
+      '2026-09-10T18:00:00Z'
+    ),
+
+    knownCampaigns: [
+      {
+        campaignKey:
+          'gog-reused-url',
+        sourceUid:
+          reusedUrl,
+        name:
+          'Classic Winter Sale',
+        state:
+          'live',
+        officialUrl:
+          reusedUrl,
+        sourceUrl:
+          homeUrl,
+      },
+    ],
+
+    fetch: async (input) => {
+      const url = input.toString()
+
+      if (url === homeUrl) {
+        return responseAt(
+          validGogHome(
+            `
+              <a href="${reusedUrl}">
+                Classic Winter Sale
+              </a>
+            `
+          ),
+          homeUrl
+        )
+      }
+
+      if (url === feedUrl) {
+        return responseAt(
+          gogFeed(),
+          feedUrl
+        )
+      }
+
+      if (url === reusedUrl) {
+        return responseAt(
+          `
+            <html>
+              <head>
+                <meta
+                  property="og:title"
+                  content="Classic Winter Sale"
+                >
+              </head>
+
+              <body>
+                <h1>
+                  Classic Winter Sale
+                </h1>
+
+                <p>
+                  The sale ends September 20,
+                  2026 at 1:00 PM UTC.
+                </p>
+              </body>
+            </html>
+          `,
+          reusedUrl
+        )
+      }
+
+      throw new Error(
+        `Unexpected GOG URL: ${url}`
+      )
+    },
+  })
+
+  assert.equal(
+    result.campaigns.length,
+    1
+  )
+
+  assert.equal(
+    result.campaigns[0].sourceUid,
+    reusedUrl
+  )
+
+  assert.deepEqual(
+    result.explicitlyEndedSourceUids,
+    []
+  )
+})
+
+
+// SALES COVERAGE INTEGRITY PASS - STAGE 1A FINALIZE
+
+test('Nintendo Store live evidence replaces the matching News upcoming identity without duplicating the campaign', async () => {
+  const salesUrl =
+    'https://www.nintendo.com/us/store/sales-and-deals/'
+
+  const newsUrl =
+    'https://www.nintendo.com/us/whatsnew/'
+
+  const storeUrl =
+    'https://www.nintendo.com/us/store/sales-and-deals/customer-appreciation/'
+
+  const articleUrl =
+    'https://www.nintendo.com/us/whatsnew/adventure-awaits-nintendo-of-america-announces-customer-appreciation-sale/'
+
+  const newsIndex = `
+    <script id="__NEXT_DATA__">${JSON.stringify({
+      props: {
+        pageProps: {
+          initialApolloState: {
+            'NewsArticle:customer-appreciation-transition': {
+              __typename: 'NewsArticle',
+              tags: [
+                {
+                  __ref:
+                    'ContentTag:articleCategoryPromotions',
+                },
+              ],
+              title:
+                'Adventure awaits! Nintendo of America announces Customer Appreciation Sale',
+              'url({"relative":true})':
+                '/us/whatsnew/adventure-awaits-nintendo-of-america-announces-customer-appreciation-sale/',
+            },
+          },
+        },
+      },
+    })}</script>
+  `
+
+  const result =
+    await runNintendoEshopAdapter({
+      now: new Date(
+        '2026-09-13T18:00:00Z'
+      ),
+
+      fetch: async (input) => {
+        const url = input.toString()
+
+        if (url === salesUrl) {
+          return responseAt(
+            `
+              <html>
+                <body>
+                  <a href="/us/store/sales-and-deals/customer-appreciation/">
+                    Customer Appreciation Sale
+                  </a>
+                </body>
+              </html>
+            `,
+            salesUrl
+          )
+        }
+
+        if (url === storeUrl) {
+          return responseAt(
+            `
+              <html>
+                <head>
+                  <meta
+                    property="og:title"
+                    content="Customer Appreciation Sale - Nintendo"
+                  >
+                </head>
+                <body>
+                  <h1>Customer Appreciation Sale</h1>
+                </body>
+              </html>
+            `,
+            storeUrl
+          )
+        }
+
+        if (url === newsUrl) {
+          return responseAt(
+            newsIndex,
+            newsUrl
+          )
+        }
+
+        if (url === articleUrl) {
+          return responseAt(
+            `
+              <html>
+                <head>
+                  <meta
+                    property="og:title"
+                    content="Adventure awaits! Nintendo of America announces Customer Appreciation Sale \u2014 News \u2014 Nintendo Official Site"
+                  >
+                </head>
+                <body>
+                  <p>09/10/26</p>
+                  <p>
+                    The sale runs from September 12
+                    through September 26 across
+                    Nintendo eShop.
+                  </p>
+                </body>
+              </html>
+            `,
+            articleUrl
+          )
+        }
+
+        throw new Error(
+          `Unexpected Nintendo transition URL: ${url}`
+        )
+      },
+    })
+
+  const matching =
+    result.campaigns.filter(
+      (entry) =>
+        entry.name.toLowerCase() ===
+        'customer appreciation sale'
+    )
+
+  assert.equal(
+    matching.length,
+    1
+  )
+
+  assert.equal(
+    matching[0].state,
+    'live'
+  )
+
+  assert.equal(
+    matching[0].officialUrl,
+    storeUrl
+  )
+
+  assert.equal(
+    matching[0].sourceUrl,
+    salesUrl
+  )
+})
+
+
+// SALES COVERAGE INTEGRITY PASS - STAGE 1B
+
+test('Epic discovers an official campaign landing nested inside a spotlight card group without traversing product offers', async () => {
+  const campaignUrl =
+    `${epicSalesUrl}/end-of-summer-sale`
+
+  const calls = []
+
+  const result =
+    await runEpicGamesStoreAdapter({
+      now: new Date(
+        '2026-09-10T20:30:00Z'
+      ),
+
+      fetch: async (input, init) => {
+        const request =
+          epicGraphqlRequest(
+            input,
+            init
+          )
+
+        calls.push(request)
+
+        const url =
+          epicRequestedPublicUrl(
+            input
+          )
+
+        if (url === epicSalesUrl) {
+          return new Response(
+            epicMain([
+              {
+                __typename:
+                  'StorefrontSubModules',
+                type:
+                  'subModules',
+                title:
+                  'Featured Sales',
+                cards: [
+                  {
+                    __typename:
+                      'StorefrontCardGroup',
+                    type:
+                      'cardGroup',
+                    title:
+                      'End of Summer Sale Spotlight',
+                    link: {
+                      src:
+                        campaignUrl,
+                      linkText:
+                        'Save Now',
+                    },
+                    offers: [
+                      {
+                        id:
+                          'individual-product-must-not-be-used',
+                        price: {
+                          discount:
+                            50,
+                        },
+                      },
+                    ],
+                  },
+                  {
+                    __typename:
+                      'StorefrontCard',
+                    title:
+                      'Example Individual Game',
+                    offer: {
+                      namespace:
+                        'example-game',
+                      id:
+                        'example-offer',
+                    },
+                    link: {
+                      src:
+                        '/p/example-individual-game',
+                      linkText:
+                        'Buy Now',
+                    },
+                  },
+                ],
+              },
+            ])
+          )
+        }
+
+        if (url === campaignUrl) {
+          return new Response(
+            epicLanding({
+              title:
+                'End of Summer Sale',
+
+              description:
+                'Enjoy limited-time offers on a wide selection of games with savings up to 75% in the End of Summer Sale. Deals end September 17, 11am ET.',
+            })
+          )
+        }
+
+        throw new Error(
+          `Unexpected Epic URL: ${url}`
+        )
+      },
+    })
+
+  assert.equal(
+    result.campaigns.length,
+    1
+  )
+
+  assert.deepEqual(
+    result.campaigns[0],
+    {
+      sourceUid:
+        'epic-storefront:end%20of%20summer%20sale',
+
+      name:
+        'End of Summer Sale',
+
+      storeSlug:
+        'epic-games-store',
+
+      state:
+        'live',
+
+      lifecycleBasis:
+        'official-source',
+
+      officialUrl:
+        campaignUrl,
+
+      sourceUrl:
+        epicSalesUrl,
+
+      artworkUrl:
+        'https://static-assets-prod.epicgames.com/campaign.jpg',
+    }
+  )
+
+  assert.equal(
+    calls.length,
+    2
+  )
+
+  assert.deepEqual(
+    calls.map(
+      ({ variables }) =>
+        variables.layoutSlug
+    ),
+    [
+      null,
+      'end-of-summer-sale',
+    ]
+  )
+
+  assert.equal(
+    calls.some(
+      ({ url }) =>
+        /\/p\/|catalog|offer|price/i.test(
+          url.toString()
+        )
+    ),
+    false
+  )
+})
+
+
+// SALES COVERAGE INTEGRITY PASS - STAGE 1E
+
+test('Nintendo retains a known announcement identity through Store takeover and later News absence', async () => {
+  const article = 'https://www.nintendo.com/us/whatsnew/autumn-sale/'
+  const store = 'https://www.nintendo.com/us/store/sales-and-deals/autumn-sale/'
+  const news = 'https://www.nintendo.com/us/whatsnew/'
+  const sales = 'https://www.nintendo.com/us/store/sales-and-deals/'
+  let known = { campaignKey: 'known', sourceUid: article, name: 'Autumn Sale', state: 'upcoming', officialUrl: article, sourceUrl: news }
+  for (const hasNews of [true, false]) {
+    const result = await runNintendoEshopAdapter({
+      now: new Date('2026-09-13T18:00:00Z'), knownCampaigns: [known],
+      fetch: async (input) => {
+        const url = input.toString()
+        if (url === sales) return new Response(`<a href="${store}">Autumn Sale</a>`)
+        if (url === store) return new Response('<meta property="og:title" content="Autumn Sale - Nintendo">')
+        if (url === article) return new Response('<meta property="og:title" content="Autumn Sale"><p>09/10/26</p><p>Nintendo eShop sale runs September 12 through September 26.</p>')
+        if (url === news) return new Response(`<script id="__NEXT_DATA__">${JSON.stringify({ props: { pageProps: { initialApolloState: hasNews ? { article: {
+          __typename: 'NewsArticle', title: 'Autumn Sale', tags: [{ __ref: 'ContentTag:articleCategoryPromotions' }], 'url({"relative":true})': '/us/whatsnew/autumn-sale/',
+        } } : {} } } })}</script>`)
+        throw new Error(`Unexpected URL ${url}`)
+      },
+    })
+    assert.equal(result.campaigns.length, 1)
+    assert.equal(result.campaigns[0].sourceUid, article)
+    assert.equal(result.campaigns[0].officialUrl, store)
+    assert.equal(result.campaigns[0].state, 'live')
+    assert.deepEqual(result.explicitlyEndedSourceUids, [])
+    known = { ...result.campaigns[0], campaignKey: 'known' }
+  }
+})
+
+test('EA future dates override live wording and discovery provenance follows the linking surface', async () => {
+  const url = 'https://www.ea.com/news/ea-autumn-sale'
+  const fetcher = async (input) => {
+    if (input.toString() === eaDealsUrl) return new Response(validEaDeals(`<a href="${url}">EA Autumn Sale</a>`))
+    if (input.toString() === eaNewsUrl) return new Response(validEaNews())
+    return new Response(`<meta property="og:title" content="EA Autumn Sale">
+      <p>The EA Autumn Sale is live now, from September 12 through September 26, 2026.</p>`)
+  }
+  const future = await runEaAppAdapter({ now: new Date('2026-09-10T18:00:00Z'), fetch: fetcher })
+  assert.equal(future.campaigns[0].state, 'upcoming')
+  assert.equal(future.campaigns[0].sourceUrl, eaDealsUrl)
+  assert.deepEqual(future.campaigns[0].starts, { precision: 'date', value: '2026-09-12' })
+  const live = await runEaAppAdapter({ now: new Date('2026-09-15T18:00:00Z'), fetch: fetcher })
+  assert.equal(live.campaigns[0].state, 'live')
+  const expired = await runEaAppAdapter({ now: new Date('2026-10-01T18:00:00Z'), fetch: fetcher,
+    knownCampaigns: [{ ...live.campaigns[0], campaignKey: 'known' }],
+  })
+  assert.deepEqual(expired.campaigns, [])
+  assert.deepEqual(expired.explicitlyEndedSourceUids, [url])
+  const fresh = await runEaAppAdapter({ now: new Date('2026-10-01T18:00:00Z'), fetch: fetcher })
+  assert.deepEqual(fresh.campaigns, [])
+  assert.deepEqual(fresh.explicitlyEndedSourceUids, [])
+})
+
+test('EA preserves an official date-only News campaign as upcoming without inventing an hour and accepts live source evidence separately', async () => {
+  const campaignUrl =
+    'https://www.ea.com/news/ea-autumn-sale'
+
+  const article = `
+    <html>
+      <head>
+        <meta
+          property="og:title"
+          content="EA Autumn Sale"
+        >
+        <meta
+          property="article:published_time"
+          content="2026-09-10T08:00:00Z"
+        >
+      </head>
+
+      <body>
+        <h1>EA Autumn Sale</h1>
+
+        <p>
+          The EA Autumn Sale runs from
+          Saturday, September 12th through
+          Saturday, September 26th with
+          savings on multiple EA games
+          in the EA app.
+        </p>
+      </body>
+    </html>
+  `
+
+  const upcoming =
+    await runEaAppAdapter({
+      now: new Date(
+        '2026-09-10T18:00:00Z'
+      ),
+
+      fetch: async (input) => {
+        const url = input.toString()
+
+        if (url === eaDealsUrl) {
+          return new Response(
+            validEaDeals()
+          )
+        }
+
+        if (url === eaNewsUrl) {
+          return new Response(
+            validEaNews(
+              `<a href="${campaignUrl}">
+                EA Autumn Sale
+              </a>`
+            )
+          )
+        }
+
+        if (url === campaignUrl) {
+          return responseAt(
+            article,
+            campaignUrl
+          )
+        }
+
+        throw new Error(
+          `Unexpected EA URL: ${url}`
+        )
+      },
+    })
+
+  assert.equal(
+    upcoming.campaigns.length,
+    1
+  )
+
+  const {
+    artworkUrl:
+      upcomingArtworkUrl,
+    ...upcomingCampaign
+  } = upcoming.campaigns[0]
+
+  assert.equal(
+    upcomingArtworkUrl,
+    undefined
+  )
+
+  assert.deepEqual(
+    upcomingCampaign,
+    {
+      sourceUid:
+        campaignUrl,
+      name:
+        'EA Autumn Sale',
+      storeSlug:
+        'ea-app',
+      state:
+        'upcoming',
+      lifecycleBasis:
+        'official-source',
+      starts: {
+        precision:
+          'date',
+        value:
+          '2026-09-12',
+      },
+      ends: {
+        precision:
+          'date',
+        value:
+          '2026-09-26',
+      },
+      officialUrl:
+        campaignUrl,
+      sourceUrl:
+        eaNewsUrl,
+    }
+  )
+
+  const liveArticle =
+    article.replace(
+      'The EA Autumn Sale runs from',
+      'The EA Autumn Sale is live now and runs from'
+    )
+
+  const live =
+    await runEaAppAdapter({
+      now: new Date(
+        '2026-09-12T18:00:00Z'
+      ),
+
+      fetch: async (input) => {
+        const url = input.toString()
+
+        if (url === eaDealsUrl) {
+          return new Response(
+            validEaDeals()
+          )
+        }
+
+        if (url === eaNewsUrl) {
+          return new Response(
+            validEaNews(
+              `<a href="${campaignUrl}">
+                EA Autumn Sale
+              </a>`
+            )
+          )
+        }
+
+        if (url === campaignUrl) {
+          return responseAt(
+            liveArticle,
+            campaignUrl
+          )
+        }
+
+        throw new Error(
+          `Unexpected EA live URL: ${url}`
+        )
+      },
+    })
+
+  assert.equal(
+    live.campaigns.length,
+    1
+  )
+
+  assert.equal(
+    live.campaigns[0].state,
+    'live'
+  )
+
+  assert.deepEqual(
+    live.campaigns[0].starts,
+    {
+      precision:
+        'date',
+      value:
+        '2026-09-12',
+    }
+  )
+
+  assert.deepEqual(
+    live.campaigns[0].ends,
+    {
+      precision:
+        'date',
+      value:
+        '2026-09-26',
+    }
+  )
+
+  assert.equal(
+    live.campaigns[0].artworkUrl,
+    undefined
+  )
+
+  assert.equal(
+    'startsAt' in live.campaigns[0],
+    false
+  )
+
+  assert.equal(
+    'endsAt' in live.campaigns[0],
+    false
+  )
+})
+
+
+// SALES COVERAGE INTEGRITY PASS - STAGE 1H
+
+test('Battle.net preserves official Upcoming precision and ends known historical campaigns without rediscovering history', async () => {
+  const articleBase =
+    'https://news.blizzard.com/en-us/article/'
+
+  const exactUpcomingUrl =
+    `${articleBase}30000001/battle-net-autumn-sale`
+
+  const dateUpcomingUrl =
+    `${articleBase}30000002/battle-net-fall-sale`
+
+  const currentDateEndUrl =
+    `${articleBase}30000003/battle-net-classics-sale`
+
+  const historicalExactUrl =
+    `${articleBase}30000004/battle-net-summer-sale`
+
+  const historicalDateUrl =
+    `${articleBase}30000005/battle-net-spring-sale`
+
+  const knownCampaigns = [
+    {
+      campaignKey:
+        'battle-summer-known',
+
+      sourceUid:
+        historicalExactUrl,
+
+      name:
+        'Battle.net Summer Sale',
+
+      state:
+        'live',
+
+      officialUrl:
+        historicalExactUrl,
+
+      sourceUrl:
+        'https://news.blizzard.com/en-us/api/feed/blizzard?offset=0',
+    },
+
+    {
+      campaignKey:
+        'battle-spring-known',
+
+      sourceUid:
+        historicalDateUrl,
+
+      name:
+        'Battle.net Spring Sale',
+
+      state:
+        'live',
+
+      officialUrl:
+        historicalDateUrl,
+
+      sourceUrl:
+        'https://news.blizzard.com/en-us/api/feed/blizzard?offset=0',
+    },
+  ]
+
+  const articles =
+    new Map([
+      [
+        exactUpcomingUrl,
+        `
+          <html>
+            <head>
+              <meta
+                property="og:title"
+                content="Battle.net Autumn Sale"
+              >
+            </head>
+
+            <body>
+              <script type="application/ld+json">
+                {
+                  "datePublished":
+                    "2026-09-10T17:00:00Z"
+                }
+              </script>
+
+              <p>
+                The Battle.net Autumn Sale
+                starts September 20, 2026
+                at 10:00 am PDT and ends
+                September 27, 2026
+                at 10:00 am PDT.
+              </p>
+            </body>
+          </html>
+        `,
+      ],
+
+      [
+        dateUpcomingUrl,
+        `
+          <html>
+            <head>
+              <meta
+                property="og:title"
+                content="Battle.net Fall Sale"
+              >
+            </head>
+
+            <body>
+              <script type="application/ld+json">
+                {
+                  "datePublished":
+                    "2026-09-10T17:00:00Z"
+                }
+              </script>
+
+              <p>
+                The Battle.net Fall Sale
+                runs from September 20
+                through September 27.
+              </p>
+            </body>
+          </html>
+        `,
+      ],
+
+      [
+        currentDateEndUrl,
+        `
+          <html>
+            <head>
+              <meta
+                property="og:title"
+                content="Battle.net Classics Sale"
+              >
+            </head>
+
+            <body>
+              <script type="application/ld+json">
+                {
+                  "datePublished":
+                    "2026-09-08T17:00:00Z"
+                }
+              </script>
+
+              <p>
+                Battle.net Classics Sale
+                ends September 18, 2026.
+              </p>
+            </body>
+          </html>
+        `,
+      ],
+
+      [
+        historicalExactUrl,
+        `
+          <html>
+            <head>
+              <meta
+                property="og:title"
+                content="Battle.net Summer Sale"
+              >
+            </head>
+
+            <body>
+              <script type="application/ld+json">
+                {
+                  "datePublished":
+                    "2026-06-18T15:55:00Z"
+                }
+              </script>
+
+              <p>
+                The Summer Sale is live now.
+              </p>
+
+              <p>
+                Sale ends July 8, 2026
+                at 10:00 am PDT.
+              </p>
+            </body>
+          </html>
+        `,
+      ],
+
+      [
+        historicalDateUrl,
+        `
+          <html>
+            <head>
+              <meta
+                property="og:title"
+                content="Battle.net Spring Sale"
+              >
+            </head>
+
+            <body>
+              <script type="application/ld+json">
+                {
+                  "datePublished":
+                    "2026-05-05T22:30:00Z"
+                }
+              </script>
+
+              <p>
+                Battle.net Spring Sale
+                ends May 18, 2026.
+              </p>
+            </body>
+          </html>
+        `,
+      ],
+    ])
+
+  const result =
+    await runBattleNetAdapter({
+      now:
+        new Date(
+          '2026-09-10T18:00:00Z'
+        ),
+
+      knownCampaigns,
+
+      fetch:
+        async (input) => {
+          const url =
+            input.toString()
+
+          if (
+            url.includes(
+              '/api/feed/blizzard'
+            )
+          ) {
+            const offset =
+              Number(
+                new URL(url)
+                  .searchParams
+                  .get('offset')
+              )
+
+            return Response.json({
+              contentItems:
+                offset === 0
+                  ? [
+                      {
+                        properties: {
+                          title:
+                            'Battle.net Autumn Sale',
+                          summary:
+                            'Save on multiple Battle.net games.',
+                          newsUrl:
+                            exactUpcomingUrl,
+                        },
+                      },
+
+                      {
+                        properties: {
+                          title:
+                            'Battle.net Fall Sale',
+                          summary:
+                            'Save on multiple Battle.net games.',
+                          newsUrl:
+                            dateUpcomingUrl,
+                        },
+                      },
+
+                      {
+                        properties: {
+                          title:
+                            'Battle.net Classics Sale',
+                          summary:
+                            'Save on multiple Battle.net games.',
+                          newsUrl:
+                            currentDateEndUrl,
+                        },
+                      },
+
+                      {
+                        properties: {
+                          title:
+                            'Battle.net Summer Sale',
+                          summary:
+                            'Summer savings on Battle.net.',
+                          newsUrl:
+                            historicalExactUrl,
+                        },
+                      },
+
+                      {
+                        properties: {
+                          title:
+                            'Battle.net Spring Sale',
+                          summary:
+                            'Spring savings on Battle.net.',
+                          newsUrl:
+                            historicalDateUrl,
+                        },
+                      },
+                    ]
+                  : [],
+
+              pagination: {
+                offset,
+                limit:
+                  15,
+                hasNextPage:
+                  false,
+              },
+            })
+          }
+
+          const article =
+            articles.get(url)
+
+          if (article) {
+            return new Response(
+              article
+            )
+          }
+
+          throw new Error(
+            `Unexpected Battle.net URL: ${url}`
+          )
+        },
+    })
+
+  assert.equal(
+    result.campaigns.length,
+    3
+  )
+
+  assert.equal(
+    result.campaigns.some(
+      ({ state }) =>
+        state === 'ended'
+    ),
+    false
+  )
+
+  assert.equal(
+    result.campaigns.some(
+      ({ officialUrl }) =>
+        officialUrl ===
+          historicalExactUrl ||
+        officialUrl ===
+          historicalDateUrl
+    ),
+    false
+  )
+
+  const exactUpcoming =
+    result.campaigns.find(
+      ({ officialUrl }) =>
+        officialUrl ===
+        exactUpcomingUrl
+    )
+
+  assert.ok(
+    exactUpcoming
+  )
+
+  assert.equal(
+    exactUpcoming.state,
+    'upcoming'
+  )
+
+  assert.equal(
+    exactUpcoming.lifecycleBasis,
+    'exact-time'
+  )
+
+  assert.deepEqual(
+    exactUpcoming.starts,
+    {
+      precision:
+        'datetime',
+
+      value:
+        '2026-09-20T10:00:00-07:00',
+    }
+  )
+
+  assert.deepEqual(
+    exactUpcoming.ends,
+    {
+      precision:
+        'datetime',
+
+      value:
+        '2026-09-27T10:00:00-07:00',
+    }
+  )
+
+  const dateUpcoming =
+    result.campaigns.find(
+      ({ officialUrl }) =>
+        officialUrl ===
+        dateUpcomingUrl
+    )
+
+  assert.ok(
+    dateUpcoming
+  )
+
+  assert.equal(
+    dateUpcoming.state,
+    'upcoming'
+  )
+
+  assert.deepEqual(
+    dateUpcoming.starts,
+    {
+      precision:
+        'date',
+
+      value:
+        '2026-09-20',
+    }
+  )
+
+  assert.deepEqual(
+    dateUpcoming.ends,
+    {
+      precision:
+        'date',
+
+      value:
+        '2026-09-27',
+    }
+  )
+
+  const currentDateEnd =
+    result.campaigns.find(
+      ({ officialUrl }) =>
+        officialUrl ===
+        currentDateEndUrl
+    )
+
+  assert.ok(
+    currentDateEnd
+  )
+
+  assert.equal(
+    currentDateEnd.state,
+    'live'
+  )
+
+  assert.deepEqual(
+    currentDateEnd.ends,
+    {
+      precision:
+        'date',
+
+      value:
+        '2026-09-18',
+    }
+  )
+
+  assert.deepEqual(
+    [...result.explicitlyEndedSourceUids]
+      .sort(),
+    [
+      historicalDateUrl,
+      historicalExactUrl,
+    ].sort()
   )
 })

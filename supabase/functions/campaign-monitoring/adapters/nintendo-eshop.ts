@@ -13,8 +13,11 @@ import {
 } from '../_shared/html.ts'
 import { extractOfficialArtwork } from '../_shared/artwork.ts'
 import { fetchOfficialPage, fetchOfficialText } from '../_shared/http.ts'
-import { extractExactEnglishDateTimes } from '../_shared/time.ts'
-import { sourceExplicitlyEndsCampaign } from '../_shared/verification.ts'
+import {
+  extractEnglishDateOnlyRange,
+  extractExactEnglishDateTimes,
+} from '../_shared/time.ts'
+import { currentCampaignEvidence, sourceExplicitlyEndsCampaign } from '../_shared/verification.ts'
 import type {
   AdapterResult,
   DetectedCampaign,
@@ -30,6 +33,38 @@ type NintendoArticle = {
   tags?: readonly { __ref?: string }[]
   title?: string
   'url({"relative":true})'?: string
+}
+
+function nintendoArticlePublicationYear(
+  text: string
+): number | undefined {
+  const match =
+    /\b\d{1,2}\/\d{1,2}\/(\d{2}|\d{4})\b/.exec(text)
+
+  if (!match) return undefined
+
+  const parsed = Number(match[1])
+
+  return match[1].length === 2
+    ? 2000 + parsed
+    : parsed
+}
+
+function newsCampaignName(title: string): string {
+  const cleaned = title
+    .replace(
+      /\s+(?:\||-|\u2013|\u2014)\s+News\s+(?:\||-|\u2013|\u2014)\s+Nintendo Official Site.*$/i,
+      ''
+    )
+    .replace(/\s+/g, ' ')
+    .trim()
+
+  const announced =
+    /\bannounc(?:e|es|ed|ing)\s+(?:the\s+)?([^.!?]{1,100}?\b(?:Sale|Sales|Deals))\b/i.exec(
+      cleaned
+    )?.[1]
+
+  return announced?.trim() || cleaned
 }
 
 function comparableNintendoUrl(value: string): string | null {
@@ -196,6 +231,7 @@ async function discoverNewsCampaigns(
       const url = new URL(relativeUrl, NEWS_URL).toString()
       const html = await fetchOfficialText(fetcher, url)
       const title = extractMeta(html, 'og:title') ?? article.title ?? ''
+      const name = newsCampaignName(title)
       const text = textFromHtml(html)
       const exact = extractExactEnglishDateTimes(text)
 
@@ -205,7 +241,7 @@ async function discoverNewsCampaigns(
         if (Date.parse(ends.value) <= Date.parse(starts.value)) return null
         return campaign({
           sourceUid: url,
-          name: title,
+          name,
           storeSlug: 'nintendo-eshop',
           state: exactTimeState(starts, ends, now),
           lifecycleBasis: 'exact-time',
@@ -221,11 +257,39 @@ async function discoverNewsCampaigns(
         const ends = exact[0]
         return campaign({
           sourceUid: url,
-          name: title,
+          name,
           storeSlug: 'nintendo-eshop',
           state: expireAtExactEnd('live', ends, now),
           lifecycleBasis: 'official-source',
           ends,
+          officialUrl: url,
+          sourceUrl: NEWS_URL,
+          artworkUrl: extractOfficialArtwork(html, url),
+        })
+      }
+
+      const dateOnlyRange =
+        extractEnglishDateOnlyRange(
+          text,
+          nintendoArticlePublicationYear(text)
+        )
+
+      const currentCalendarDay =
+        now.toISOString().slice(0, 10)
+
+      if (
+        dateOnlyRange &&
+        dateOnlyRange.ends.value >= currentCalendarDay &&
+        /\bNintendo eShop\b/i.test(text)
+      ) {
+        return campaign({
+          sourceUid: url,
+          name,
+          storeSlug: 'nintendo-eshop',
+          state: 'upcoming',
+          lifecycleBasis: 'official-source',
+          starts: dateOnlyRange.starts,
+          ends: dateOnlyRange.ends,
           officialUrl: url,
           sourceUrl: NEWS_URL,
           artworkUrl: extractOfficialArtwork(html, url),
@@ -257,12 +321,26 @@ export const runNintendoEshopAdapter: StoreAdapter = async ({
     ),
   ])
 
+  const stableTabs = tabs.map((tab) => {
+    const announcement = news.find((entry) => entry.name.toLowerCase() === tab.name.toLowerCase())
+    const existing = knownCampaigns.filter((known) =>
+      comparableNintendoUrl(known.officialUrl) === comparableNintendoUrl(tab.officialUrl) ||
+      (announcement !== undefined && known.sourceUid === announcement.sourceUid)
+    )
+    // Reuse the persisted announcement identity when Store evidence takes over.
+    // The next run can match the saved Store URL even after News leaves the feed.
+    return existing.length === 1 ? campaign({ ...tab, sourceUid: existing[0].sourceUid }) : tab
+  })
+
   return {
     storeSlug: 'nintendo-eshop',
     sourceUrl: SALES_URL,
     sourceUrls: [SALES_URL, NEWS_URL],
     coverage: 'partial',
-    campaigns: uniqueBy([...tabs, ...news], (entry) => entry.name.toLowerCase()),
-    explicitlyEndedSourceUids,
+    ...currentCampaignEvidence(
+      uniqueBy([...stableTabs, ...news], (entry) => entry.name.toLowerCase()),
+      knownCampaigns,
+      explicitlyEndedSourceUids
+    ),
   } satisfies AdapterResult
 }

@@ -17,7 +17,7 @@ import {
 } from '../_shared/artwork.ts'
 import { fetchOfficialPage, fetchOfficialText } from '../_shared/http.ts'
 import { extractExactEnglishDateTimes } from '../_shared/time.ts'
-import { verifyKnownCampaigns } from '../_shared/verification.ts'
+import { currentCampaignEvidence, sourceExplicitlyEndsCampaign } from '../_shared/verification.ts'
 import {
   AdapterError,
   type AdapterResult,
@@ -353,6 +353,46 @@ function exactSaleEnd(
   return undefined
 }
 
+function embeddedGogCampaignYear(
+  value: string
+): number | undefined {
+  const normalized = campaignIdentityUrl(value)
+
+  if (!normalized) return undefined
+
+  const pathname =
+    new URL(normalized).pathname.toLowerCase()
+
+  const compactDate =
+    /(?:^|[\/_-])(20\d{2})(?:0[1-9]|1[0-2])(?:0[1-9]|[12]\d|3[01])(?=[\/_-]|$)/.exec(
+      pathname
+    )
+
+  if (compactDate) {
+    return Number(compactDate[1])
+  }
+
+  const standaloneYear =
+    /(?:^|[\/_-])(20\d{2})(?=[\/_-]|$)/.exec(
+      pathname
+    )
+
+  return standaloneYear
+    ? Number(standaloneYear[1])
+    : undefined
+}
+
+function gogCampaignExplicitlyEnded(
+  html: string
+): boolean {
+  const text = textFromHtml(html)
+
+  return (
+    sourceExplicitlyEndsCampaign(html) ||
+    /\bit(?:['\u2019])s\s+(?:now\s+)?over\b/i.test(text)
+  )
+}
+
 function campaignName(
   pageHtml: string,
   label: string,
@@ -408,6 +448,25 @@ async function verifyCandidates(
         (candidate.articleHtml
           ? exactSaleEnd(candidate.articleHtml)
           : undefined) ?? exactSaleEnd(page.text, publication)
+
+      const identityYear =
+        embeddedGogCampaignYear(identityUrl)
+
+      const clearlyHistoricalIdentity =
+        identityYear !== undefined &&
+        identityYear < now.getUTCFullYear() &&
+        !(
+          ends?.precision === 'datetime' &&
+          Date.parse(ends.value) > now.getTime()
+        )
+
+      if (
+        gogCampaignExplicitlyEnded(page.text) ||
+        clearlyHistoricalIdentity
+      ) {
+        return null
+      }
+
       const artworkUrl =
         extractOfficialArtwork(page.text, identityUrl) ??
         gogCampaignHeroArtwork(page.text) ??
@@ -464,6 +523,95 @@ async function verifyCandidates(
   return [...merged.values()]
 }
 
+async function verifyKnownGogCampaigns(
+  fetcher: typeof fetch,
+  knownCampaigns: readonly KnownCampaign[],
+  now: Date
+): Promise<readonly string[]> {
+  const eligible = knownCampaigns.filter((known) => {
+    try {
+      const hostname =
+        new URL(known.officialUrl).hostname
+
+      return (
+        known.officialUrl !== known.sourceUrl &&
+        (
+          hostname === 'www.gog.com' ||
+          hostname === 'gog.com'
+        )
+      )
+    } catch {
+      return false
+    }
+  })
+
+  const historicalSourceUids: string[] = []
+  const byUrl =
+    new Map<string, KnownCampaign[]>()
+
+  for (const known of eligible) {
+    const embeddedYear =
+      embeddedGogCampaignYear(
+        known.officialUrl
+      ) ??
+      embeddedGogCampaignYear(
+        known.sourceUid
+      )
+
+    if (
+      embeddedYear !== undefined &&
+      embeddedYear < now.getUTCFullYear()
+    ) {
+      historicalSourceUids.push(
+        known.sourceUid
+      )
+
+      continue
+    }
+
+    const group =
+      byUrl.get(known.officialUrl) ?? []
+
+    group.push(known)
+    byUrl.set(
+      known.officialUrl,
+      group
+    )
+  }
+
+  const settled = await Promise.allSettled(
+    [...byUrl.entries()].map(
+      async ([officialUrl, knownAtUrl]) => {
+        const html =
+          await fetchOfficialText(
+            fetcher,
+            officialUrl
+          )
+
+        return gogCampaignExplicitlyEnded(
+          html
+        )
+          ? knownAtUrl.map(
+              ({ sourceUid }) => sourceUid
+            )
+          : []
+      }
+    )
+  )
+
+  return uniqueBy(
+    [
+      ...historicalSourceUids,
+      ...settled.flatMap((result) =>
+        result.status === 'fulfilled'
+          ? result.value
+          : []
+      ),
+    ],
+    (value) => value
+  )
+}
+
 export const runGogAdapter: StoreAdapter = async ({
   now,
   fetch,
@@ -489,18 +637,30 @@ export const runGogAdapter: StoreAdapter = async ({
     [...homeCandidates, ...newsCandidates],
     knownCampaigns
   )
-  const explicitlyEndedSourceUids = await verifyKnownCampaigns(
-    fetch,
-    knownCampaigns,
-    ['www.gog.com', 'gog.com']
-  )
+  const currentSourceUids =
+    new Set(
+      campaigns.map(
+        ({ sourceUid }) => sourceUid
+      )
+    )
+
+  const explicitlyEndedSourceUids =
+    (
+      await verifyKnownGogCampaigns(
+        fetch,
+        knownCampaigns,
+        now
+      )
+    ).filter(
+      (sourceUid) =>
+        !currentSourceUids.has(sourceUid)
+    )
 
   return {
     storeSlug: 'gog',
     sourceUrl: HOME_URL,
     sourceUrls: [HOME_URL, NEWS_FEED_URL],
     coverage: 'partial',
-    campaigns,
-    explicitlyEndedSourceUids,
+    ...currentCampaignEvidence(campaigns, knownCampaigns, explicitlyEndedSourceUids),
   } satisfies AdapterResult
 }

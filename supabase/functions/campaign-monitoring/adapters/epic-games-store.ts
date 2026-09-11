@@ -395,6 +395,9 @@ function rawLinkValues(node: JsonObject): readonly string[] {
   return uniqueBy(
     [
       ...nestedStrings(node.link),
+      ...nestedStrings(node.mainCtaLink),
+      ...nestedStrings(node.secondaryCtaLink),
+      ...nestedStrings(node.titleLink),
       ...nestedStrings(node.cta),
       ...nestedStrings(node.action),
       ...nestedStrings(node.destination),
@@ -624,7 +627,7 @@ function moduleCandidate(node: JsonObject, now: Date): ModuleCandidate | null {
   const landingOnlyContainer =
     Boolean(landingUrl) &&
     (
-      /StorefrontSubModules|StorefrontCardGroup/i.test(type) ||
+      /StorefrontSubModules|StorefrontCardGroup|StorefrontBrandedList/i.test(type) ||
       Array.isArray(node.offers)
     )
 

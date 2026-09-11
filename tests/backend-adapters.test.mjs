@@ -364,6 +364,40 @@ const epicKnown = (overrides = {}) => ({
   ...overrides,
 })
 
+test('Epic discovers real branded-list campaign CTAs without traversing offer data', async () => {
+  const landingUrl = `${epicSalesUrl}/fictional-autumn-sale`
+  for (const cta of ['mainCtaLink', 'titleLink', 'secondaryCtaLink']) {
+    const calls = []
+    const known = epicKnown({ sourceUid: 'saved-autumn-identity', name: 'Fictional Autumn Sale', officialUrl: landingUrl })
+    const result = await runEpicGamesStoreAdapter({
+      now: new Date('2026-09-11T12:00:00Z'), knownCampaigns: [known],
+      fetch: async (input) => {
+        const url = epicRequestedPublicUrl(input)
+        calls.push(url)
+        if (url === epicSalesUrl) return new Response(epicMain([{
+          __typename: 'StorefrontBrandedList', type: 'brandedList',
+          title: 'Fictional Autumn Sale Spotlight',
+          [cta]: { linkText: 'Save Now', src: '/sales-and-specials/fictional-autumn-sale' },
+          offers: [{ title: 'Individual Product Sale', mainCtaLink: { src: '/sales-and-specials/not-a-campaign' }, price: { discount: 80 } }],
+          offer: { title: 'Another Product Sale', titleLink: { src: '/sales-and-specials/not-a-campaign-either' } },
+        }]))
+        if (url === landingUrl) return new Response(epicLanding({
+          title: 'Fictional Autumn Sale', description: 'Sale ends September 17, 2026 at 11:00 AM EDT.',
+        }))
+        throw new Error(`Product traversal or unexpected Epic request: ${url}`)
+      },
+    })
+    assert.deepEqual(calls, [epicSalesUrl, landingUrl])
+    assert.equal(result.coverage, 'partial')
+    assert.equal(result.campaigns.length, 1)
+    assert.equal(result.campaigns[0].name, 'Fictional Autumn Sale')
+    assert.equal(result.campaigns[0].sourceUid, known.sourceUid)
+    assert.equal(result.campaigns[0].officialUrl, landingUrl)
+    assert.deepEqual(result.campaigns[0].ends, { precision: 'datetime', value: '2026-09-17T11:00:00-04:00' })
+    assert.deepEqual(result.explicitlyEndedSourceUids, [])
+  }
+})
+
 test('partial discovery never ends a known campaign merely because it is absent', () => {
   assert.deepEqual(
     campaignKeysToEnd({

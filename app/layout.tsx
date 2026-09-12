@@ -46,7 +46,7 @@ export const metadata: Metadata = {
     url: '/',
     images: [
       {
-        url: '/og/lobodeals-og.png',
+        url: '/og/lobodeals-og-v2.png',
         width: 1200,
         height: 630,
         alt: 'LoboDeals — Official game sales.',
@@ -58,7 +58,7 @@ export const metadata: Metadata = {
     title: 'LoboDeals — Official game sales',
     description:
       'Official digital game stores and their live or announced sale campaigns.',
-    images: ['/og/lobodeals-og.png'],
+    images: ['/og/lobodeals-og-v2.png'],
   },
   robots: {
     index: true,

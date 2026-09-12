@@ -74,6 +74,8 @@ const validGogHome = (content = '') => `
   <promo-banner-section>${content}</promo-banner-section>
 `
 
+const gogCurrentUrl = 'https://www.gog.com/en/now_on_sale?countryCode=US&locale=en-US&currencyCode=USD'
+
 const gogFeed = (items = '') => `
   <rss version="2.0"><channel><title>GOG.com News</title>${items}</channel></rss>
 `
@@ -2370,6 +2372,7 @@ test('GOG News discovers an official Sale campaign page without traversing produ
     now: new Date('2026-08-30T00:00:00Z'),
     fetch: async (input) => {
       const url = input.toString()
+      if (url === gogCurrentUrl) return Response.json({ tabs: [] })
       calls.push(url)
       if (url === 'https://www.gog.com/en/') {
         return new Response(validGogHome())
@@ -2438,6 +2441,7 @@ test('GOG accepts the current locale-less Sale links exposed by its Home', async
     now: new Date('2026-08-30T00:00:00Z'),
     fetch: async (input) => {
       const url = input.toString()
+      if (url === gogCurrentUrl) return Response.json({ tabs: [] })
       if (url === 'https://www.gog.com/en/') {
         return new Response(
           validGogHome(
@@ -2475,6 +2479,7 @@ test('GOG uses official campaign hero artwork when social metadata is absent', a
     now: new Date('2026-08-30T00:00:00Z'),
     fetch: async (input) => {
       const url = input.toString()
+      if (url === gogCurrentUrl) return Response.json({ tabs: [] })
 
       if (url === 'https://www.gog.com/en/') {
         return new Response(
@@ -2532,6 +2537,7 @@ test('GOG reuses a locale-bearing source UID from an equivalent known campaign',
     knownCampaigns: [knownCampaign],
     fetch: async (input) => {
       const url = input.toString()
+      if (url === gogCurrentUrl) return Response.json({ tabs: [] })
       if (url === 'https://www.gog.com/en/') {
         return new Response(
           validGogHome(
@@ -2561,6 +2567,7 @@ test('GOG ignores a giveaway-only News item without fetching product links', asy
     now: new Date('2026-08-30T00:00:00Z'),
     fetch: async (input) => {
       const url = input.toString()
+      if (url === gogCurrentUrl) return Response.json({ tabs: [] })
       calls.push(url)
       if (url === 'https://www.gog.com/en/') {
         return new Response(validGogHome())
@@ -2593,7 +2600,7 @@ test('GOG returns an empty healthy result for recognized surfaces with no campai
   const result = await runGogAdapter({
     now: new Date('2026-08-30T00:00:00Z'),
     fetch: async (input) =>
-      new Response(
+      input.toString() === gogCurrentUrl ? Response.json({ tabs: [] }) : new Response(
         input.toString() === 'https://www.gog.com/en/'
           ? validGogHome()
           : gogFeed()
@@ -2601,7 +2608,7 @@ test('GOG returns an empty healthy result for recognized surfaces with no campai
   })
 
   assert.deepEqual(result.campaigns, [])
-  assert.equal(result.sourceUrls.length, 2)
+  assert.equal(result.sourceUrls.length, 3)
 })
 
 test('GOG rejects an HTTP 200 response whose News discovery contract is unrecognizable', async () => {
@@ -2609,7 +2616,7 @@ test('GOG rejects an HTTP 200 response whose News discovery contract is unrecogn
     runGogAdapter({
       now: new Date('2026-08-30T00:00:00Z'),
       fetch: async (input) =>
-        new Response(
+        input.toString() === gogCurrentUrl ? Response.json({ tabs: [] }) : new Response(
           input.toString() === 'https://www.gog.com/en/'
             ? validGogHome()
             : '<html><main>GOG News is unavailable</main></html>'
@@ -5137,6 +5144,7 @@ test('GOG rejects and retires compact-date and standalone-year historical promo 
 
     fetch: async (input) => {
       const url = input.toString()
+      if (url === gogCurrentUrl) return Response.json({ tabs: [] })
 
       if (url === homeUrl) {
         return responseAt(
@@ -5246,6 +5254,7 @@ test('GOG rejects and retires a campaign whose official landing explicitly says 
 
     fetch: async (input) => {
       const url = input.toString()
+      if (url === gogCurrentUrl) return Response.json({ tabs: [] })
 
       if (url === homeUrl) {
         return responseAt(
@@ -5344,6 +5353,7 @@ test('GOG current exact official evidence overrides an old year-stamped URL iden
 
     fetch: async (input) => {
       const url = input.toString()
+      if (url === gogCurrentUrl) return Response.json({ tabs: [] })
 
       if (url === homeUrl) {
         return responseAt(

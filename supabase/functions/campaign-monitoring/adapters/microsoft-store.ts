@@ -22,6 +22,41 @@ import type {
 const SOURCE_URL =
   'https://www.xbox.com/en-US/promotions/sales/sales-and-specials'
 
+function weeklyPublishedCampaigns(html: string): readonly {
+  key: string; name: string; officialUrl: string
+}[] {
+  for (const script of html.matchAll(/<script\b[^>]*>([\s\S]*?)<\/script>/gi)) {
+    const assignment = /window\.__PRELOADED_STATE__\s*=\s*([\s\S]*?)\s*;\s*(?:window\.|$)/.exec(script[1])
+    if (!assignment) continue
+    try {
+      const state = JSON.parse(assignment[1])
+      // Read published module metadata only, never core2 product collections.
+      const modules = state?.content?.contentPages?.['promotions/sales/sales-and-specials']?.published?.data?.moduleList
+      if (!Array.isArray(modules)) continue
+      return modules.flatMap((module) => {
+        const key = module?.collectionDataSource?.collectionId
+        const name = module?.heading
+        const destination = module?.headingCTA?.url
+        if (module?.campsiteType !== 'ChannelProductPlacement' ||
+            key !== 'DynamicChannel.GameDeals' || typeof name !== 'string' ||
+            !/\bdigital\s+game\s+deals\b/i.test(name) || isExcludedCampaignText(name) ||
+            typeof module?.headingCTA?.label !== 'string' || !module.headingCTA.label.trim() ||
+            typeof destination !== 'string') return []
+        const url = new URL(destination)
+        if (url.protocol !== 'https:' || url.hostname !== 'www.xbox.com' ||
+            url.username || url.password || url.port ||
+            url.pathname.toLowerCase() !== `/games/browse/${key.toLowerCase()}`) return []
+        url.search = ''
+        url.hash = ''
+        return [{ key, name: name.trim(), officialUrl: url.href }]
+      })
+    } catch {
+      // Unrecognized optional module data is not evidence of campaign absence.
+    }
+  }
+  return []
+}
+
 function identityYear(value: string): number | undefined {
   const match = /\b(20\d{2})\b/.exec(value)
   return match ? Number(match[1]) : undefined
@@ -300,7 +335,8 @@ export const runMicrosoftStoreAdapter: StoreAdapter = async ({
   const detected: {
     key: string
     name: string
-  }[] = []
+    officialUrl?: string
+  }[] = [...weeklyPublishedCampaigns(html)]
 
   for (const match of html.matchAll(metadataPattern)) {
     try {
@@ -334,7 +370,12 @@ export const runMicrosoftStoreAdapter: StoreAdapter = async ({
     uniqueBy(
       detected,
       ({ key }) => key.toLowerCase()
-    ).map(async ({ key, name }) => {
+    ).map(async ({ key, name, officialUrl: publishedUrl }) => {
+      if (publishedUrl) return campaign({
+        sourceUid: key.toLowerCase(), name, storeSlug: 'microsoft-store',
+        state: 'live', lifecycleBasis: 'official-source',
+        officialUrl: publishedUrl, sourceUrl: SOURCE_URL,
+      })
       const matchingLink =
         anchors.find(({ href }) =>
           new URL(href)

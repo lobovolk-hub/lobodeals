@@ -29,13 +29,64 @@ import {
 
 const HOME_URL = 'https://www.gog.com/en/'
 const NEWS_FEED_URL = 'https://www.gog.com/frontpage/rss'
+const CURRENT_PROMOTIONS_URL =
+  'https://www.gog.com/en/now_on_sale?countryCode=US&locale=en-US&currencyCode=USD'
 
 type CampaignCandidate = Readonly<{
   officialUrl: string
   label: string
   sourceUrl: string
   articleHtml?: string
+  promotionName?: string
+  artworkUrl?: string
 }>
+
+function isGogPromotionText(value: string): boolean {
+  const words = value.replace(/[_/-]+/g, ' ')
+  return isSaleCampaignText(words) || /\bpromo(?:tion)?\b/i.test(words)
+}
+
+function usefulCampaignName(value: string): boolean {
+  return isGogPromotionText(value) && !isGiveawayOnly(value) &&
+    !/^(?:\d[\d,+.]*\+?\s+)?(?:games?|deals|titles|products)(?:\s+(?:on sale|up to\b.*))?$/i.test(value.trim()) &&
+    !/^(?:all\s+)?(?:sales|deals|promotions|promos)$/i.test(value.trim())
+}
+
+function currentPromotionCandidates(raw: string): readonly CampaignCandidate[] {
+  const unavailable = () => new AdapterError(
+    'OFFICIAL_CAMPAIGN_DISCOVERY_UNAVAILABLE',
+    'GOG current promotions no longer expose recognizable promotion tabs'
+  )
+  let data: { tabs?: unknown }
+  try { data = JSON.parse(raw) } catch { throw unavailable() }
+  if (!data || !Array.isArray(data.tabs)) throw unavailable()
+  return data.tabs.flatMap((tab: unknown): CampaignCandidate[] => {
+    if (!tab || typeof tab !== 'object') throw unavailable()
+    const { title, bigThingy } = tab as {
+      title?: unknown
+      bigThingy?: { url?: unknown; text?: unknown; background?: unknown }
+    }
+    if (typeof title !== 'string' || !title.trim() || !bigThingy ||
+        typeof bigThingy.url !== 'string') throw unavailable()
+    const officialUrl = normalizedGogUrl(bigThingy.url)
+    if (!officialUrl || !/^\/promo\/[^/]+$/i.test(new URL(campaignIdentityUrl(officialUrl)!).pathname)) {
+      throw unavailable()
+    }
+    const name = [title, bigThingy.text].find((value): value is string =>
+      typeof value === 'string' && usefulCampaignName(value)
+    )
+    if (!name || isGiveawayOnly(`${title} ${bigThingy.text ?? ''}`)) return []
+    let artworkUrl: string | undefined
+    if (typeof bigThingy.background === 'string') {
+      try {
+        const url = new URL(bigThingy.background, CURRENT_PROMOTIONS_URL)
+        if (/^images(?:-\d+)?\.gog-statics\.com$/i.test(url.hostname) && isSafeArtworkUrl(url.href)) artworkUrl = url.href
+      } catch { /* Optional banner metadata. */ }
+    }
+    return [{ officialUrl, label: name.trim(), promotionName: name.trim(),
+      sourceUrl: CURRENT_PROMOTIONS_URL, artworkUrl }]
+  })
+}
 
 type PublicationDate = Readonly<{
   year: number
@@ -126,8 +177,9 @@ function campaignLinks(
   return uniqueBy(
     extractAnchors(html, baseUrl).filter(({ href, label }) => {
       if (!isCampaignPageUrl(href)) return false
-      const identity = `${context} ${label} ${new URL(href).pathname}`
-      return isSaleCampaignText(identity) && !isGiveawayOnly(identity)
+      const identity = `${context} ${label} ${new URL(href).pathname}`.replace(/[_/-]+/g, ' ')
+      const promoContract = /^\/promo\//i.test(new URL(campaignIdentityUrl(href)!).pathname)
+      return (promoContract ? isGogPromotionText(identity) : isSaleCampaignText(identity)) && !isGiveawayOnly(identity)
     }),
     ({ href }) => campaignIdentityUrl(href)?.toLowerCase() ?? href.toLowerCase()
   )
@@ -411,7 +463,7 @@ function campaignName(
   ]
   return (
     candidates.find(
-      (value) => isSaleCampaignText(value) && !isGiveawayOnly(value)
+      (value) => usefulCampaignName(value)
     ) ?? null
   )
 }
@@ -429,7 +481,7 @@ async function verifyCandidates(
       const identityUrl = campaignIdentityUrl(page.url || candidate.officialUrl)
       if (!identityUrl || !isCampaignPageUrl(identityUrl)) return null
 
-      const name = campaignName(page.text, candidate.label, candidate.articleHtml)
+      const name = candidate.promotionName ?? campaignName(page.text, candidate.label, candidate.articleHtml)
       const pageRecognized =
         /<h[1-3]\b[^>]*>/i.test(page.text) ||
         /<script\b[^>]*id=["']gogcom-store-state["'][^>]*>/i.test(page.text) ||
@@ -470,6 +522,7 @@ async function verifyCandidates(
       const artworkUrl =
         extractOfficialArtwork(page.text, identityUrl) ??
         gogCampaignHeroArtwork(page.text) ??
+        candidate.artworkUrl ??
         (candidate.articleHtml
           ? extractOfficialArtwork(candidate.articleHtml, candidate.sourceUrl)
           : undefined)
@@ -617,11 +670,13 @@ export const runGogAdapter: StoreAdapter = async ({
   fetch,
   knownCampaigns = [],
 }) => {
-  const [homeHtml, feedXml] = await Promise.all([
+  const [homeHtml, feedXml, currentJson] = await Promise.all([
     fetchOfficialText(fetch, HOME_URL),
     fetchOfficialText(fetch, NEWS_FEED_URL),
+    fetchOfficialText(fetch, CURRENT_PROMOTIONS_URL),
   ])
   assertHomeDiscoveryContract(homeHtml)
+  const currentCandidates = currentPromotionCandidates(currentJson)
 
   const homeCandidates = campaignLinks(homeHtml, HOME_URL).map(
     ({ href, label }): CampaignCandidate => ({
@@ -634,7 +689,7 @@ export const runGogAdapter: StoreAdapter = async ({
   const campaigns = await verifyCandidates(
     now,
     fetch,
-    [...homeCandidates, ...newsCandidates],
+    [...currentCandidates, ...homeCandidates, ...newsCandidates],
     knownCampaigns
   )
   const currentSourceUids =
@@ -659,7 +714,7 @@ export const runGogAdapter: StoreAdapter = async ({
   return {
     storeSlug: 'gog',
     sourceUrl: HOME_URL,
-    sourceUrls: [HOME_URL, NEWS_FEED_URL],
+    sourceUrls: [HOME_URL, NEWS_FEED_URL, CURRENT_PROMOTIONS_URL],
     coverage: 'partial',
     ...currentCampaignEvidence(campaigns, knownCampaigns, explicitlyEndedSourceUids),
   } satisfies AdapterResult

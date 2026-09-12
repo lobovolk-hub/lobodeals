@@ -11,7 +11,7 @@ import {
   textFromHtml,
   uniqueBy,
 } from '../_shared/html.ts'
-import { extractOfficialArtwork } from '../_shared/artwork.ts'
+import { extractOfficialArtwork, isSafeArtworkUrl } from '../_shared/artwork.ts'
 import { fetchOfficialPage, fetchOfficialText } from '../_shared/http.ts'
 import {
   extractEnglishDateOnlyRange,
@@ -27,6 +27,44 @@ import type {
 
 const SALES_URL = 'https://www.nintendo.com/us/store/sales-and-deals/'
 const NEWS_URL = 'https://www.nintendo.com/us/whatsnew/'
+
+function structuredCampaignArtwork(html: string, name: string): string | undefined {
+  try {
+    const raw = /<script\b[^>]*id=["']__NEXT_DATA__["'][^>]*>([\s\S]*?)<\/script>/i.exec(html)?.[1]
+    if (!raw) return undefined
+    const content = JSON.parse(raw)?.props?.pageProps?.page?.content
+    const blocks = [
+      ...(Array.isArray(content?.merchandisedGrid) ? content.merchandisedGrid : []),
+      ...(Array.isArray(content?.pageSections) ? content.pageSections.flatMap(
+        (section: { storyModuleOrCuratedProductList?: unknown }) =>
+          Array.isArray(section?.storyModuleOrCuratedProductList) ? section.storyModuleOrCuratedProductList : []
+      ) : []),
+    ]
+    const identityWords = name.toLowerCase().replace(/[^a-z0-9]+/g, ' ').split(' ')
+      .filter((word) => word && !['sale', 'sales', 'deals', 'franchise', 'the'].includes(word))
+    if (!identityWords.length) return undefined
+    for (const block of blocks) {
+      if (block?.CONTENT_TYPE !== 'promoRichTextCta' || typeof block.heading !== 'string' ||
+          !isSaleCampaignText(block.heading)) continue
+      const headingWords = block.heading.toLowerCase().replace(/[^a-z0-9]+/g, ' ').split(' ')
+      if (!identityWords.every((word) => headingWords.includes(word))) continue
+      const asset = block.asset
+      if (asset?.CONTENT_TYPE !== 'component_image' || asset.primary?.resourceType !== 'image') continue
+      const path = asset.primary.assetPath
+      if (typeof path !== 'string' || !path.startsWith('ncom/en_US/merchandising/') ||
+          /[?#%\\]|(?:^|\/)\.{1,2}(?:\/|$)/.test(path) || /(?:^|\/)products?(?:\/|$)/i.test(path)) continue
+      // Nintendo's official frontend image CDN configuration uses privateCdn,
+      // secureDistribution assets.nintendo.com and forceVersion:false. Its image
+      // asset constructor resolves this public ID under image/upload, without
+      // adding a guessed extension, version or transformation.
+      const url = `https://assets.nintendo.com/image/upload/${path.split('/').map(encodeURIComponent).join('/')}`
+      if (isSafeArtworkUrl(url)) return url
+    }
+  } catch {
+    // Optional CMS enrichment must never invalidate campaign discovery.
+  }
+  return undefined
+}
 
 type NintendoArticle = {
   __typename?: string
@@ -186,7 +224,8 @@ async function discoverCampaignTabs(
         lifecycleBasis: 'official-source',
         officialUrl: officialUrl.toString(),
         sourceUrl: SALES_URL,
-        artworkUrl: extractOfficialArtwork(pageHtml, officialUrl.toString()),
+        artworkUrl: extractOfficialArtwork(pageHtml, officialUrl.toString()) ??
+          structuredCampaignArtwork(pageHtml, name),
       })
     })
   )

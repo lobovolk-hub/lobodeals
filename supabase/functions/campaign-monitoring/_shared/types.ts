@@ -64,6 +64,9 @@ export type KnownCampaign = Readonly<{
   state: Exclude<CampaignState, 'ended'>
   officialUrl: string
   sourceUrl: string
+  startsOn?: string
+  startsAt?: string
+  endsOn?: string
   endsAt?: string
 }>
 

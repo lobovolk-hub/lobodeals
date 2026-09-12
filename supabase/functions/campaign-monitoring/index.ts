@@ -289,7 +289,8 @@ async function monitorTokenVerifier(): Promise<string> {
 
 async function upsertCampaigns(
   campaigns: readonly DetectedCampaign[],
-  confirmedAt: string
+  confirmedAt: string,
+  previous: readonly KnownCampaign[]
 ): Promise<number> {
   if (campaigns.length === 0) return 0
   const keyedCampaigns = await Promise.all(
@@ -299,7 +300,9 @@ async function upsertCampaigns(
     }))
   )
   const rows = keyedCampaigns.map(({ entry, key }) =>
-    campaignBaseRow(entry, key, confirmedAt)
+    campaignBaseRow(entry, key, confirmedAt, previous.find((known) =>
+      known.campaignKey === key && known.sourceUid === entry.sourceUid
+    ))
   )
 
   await restRequest('sales_campaigns?on_conflict=campaign_key', {
@@ -342,7 +345,7 @@ async function activeCampaigns(
   storeSlug: StoreSlug
 ): Promise<readonly (ActiveCampaignIdentity & KnownCampaign)[]> {
   const response = await restRequest(
-    `sales_campaigns?select=campaign_key,source_uid,name,state,official_url,source_url,ends_at&store_slug=eq.${encodeURIComponent(storeSlug)}&state=in.(live,upcoming)`,
+    `sales_campaigns?select=campaign_key,source_uid,name,state,official_url,source_url,starts_on,starts_at,ends_on,ends_at&store_slug=eq.${encodeURIComponent(storeSlug)}&state=in.(live,upcoming)`,
     { method: 'GET' }
   )
   const rows = (await response.json()) as readonly {
@@ -352,6 +355,9 @@ async function activeCampaigns(
     state: 'live' | 'upcoming'
     official_url: string
     source_url: string
+    starts_on: string | null
+    starts_at: string | null
+    ends_on: string | null
     ends_at: string | null
   }[]
   return rows.map((row) => ({
@@ -360,6 +366,9 @@ async function activeCampaigns(
     sourceUid: row.source_uid,
     officialUrl: row.official_url,
     sourceUrl: row.source_url,
+    startsOn: row.starts_on ?? undefined,
+    startsAt: row.starts_at ?? undefined,
+    endsOn: row.ends_on ?? undefined,
     endsAt: row.ends_at ?? undefined,
   }))
 }
@@ -498,7 +507,7 @@ async function runStore(
     let campaignsUpserted = 0
     let campaignsEnded = 0
     if (mode === 'persist') {
-      campaignsUpserted = await upsertCampaigns(result.campaigns, finishedAt)
+      campaignsUpserted = await upsertCampaigns(result.campaigns, finishedAt, activeBeforeRun)
       campaignsEnded = await endCampaigns(
         campaignKeysToEnd({
           sourceSucceeded: true,

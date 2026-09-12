@@ -32,6 +32,7 @@ export function campaignKeysToEnd(input: Readonly<{
 
       const detected = detectedBySourceUid.get(active.source_uid)
       if (detected?.state === 'ended') return true
+      if (detected?.state === 'live' || detected?.state === 'upcoming') return false
 
       if (
         active.ends_at &&

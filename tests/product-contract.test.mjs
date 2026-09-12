@@ -558,7 +558,7 @@ test('repository guidance reflects closed authority and the completed legacy tra
     'utf8'
   )
 
-  assert.match(agents, /25 August 2026/)
+  assert.match(agents, /APPROVED Final Consolidation — 3 September 2026/)
   assert.match(agents, /P1–P11 are CLOSED/)
   assert.doesNotMatch(agents, /temporary protected exception/)
   assert.doesNotMatch(readme, /tracked \`sql\/\` directory/)

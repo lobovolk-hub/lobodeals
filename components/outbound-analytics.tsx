@@ -23,8 +23,13 @@ export function OutboundAnalytics() {
       const outboundType = link.dataset.outboundType
       const storeSlug = link.dataset.storeSlug
       const storeName = link.dataset.storeName
+      const saleCampaignId =
+        outboundType === 'sale' ? link.dataset.saleCampaignId || null : null
+      const saleCampaignName =
+        outboundType === 'sale' ? link.dataset.saleCampaignName || null : null
 
       if (!surface || !outboundType || !storeSlug || !storeName) return
+      if (outboundType === 'sale' && (!saleCampaignId || !saleCampaignName)) return
 
       window.dataLayer = window.dataLayer || []
 
@@ -35,12 +40,8 @@ export function OutboundAnalytics() {
         store_slug: storeSlug,
         store_name: storeName,
         link_mode: link.dataset.linkMode || 'official',
-        ...(link.dataset.saleCampaignId
-          ? { sale_campaign_id: link.dataset.saleCampaignId }
-          : {}),
-        ...(link.dataset.saleCampaignName
-          ? { sale_campaign_name: link.dataset.saleCampaignName }
-          : {}),
+        sale_campaign_id: saleCampaignId,
+        sale_campaign_name: saleCampaignName,
       })
     }
 

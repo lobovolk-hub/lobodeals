@@ -239,6 +239,44 @@ test('one global client listener owns outbound analytics', async () => {
   assert.doesNotMatch(analytics, /dataset\.campaignName/)
 })
 
+test('outbound payload explicitly includes campaign context or null', async () => {
+  const analytics = await source('components/outbound-analytics.tsx')
+  // Static source contract only; GTM sale-to-store behavior needs runtime verification.
+  const pushes = [...analytics.matchAll(/window\.dataLayer\.push\(\{([\s\S]*?)\}\)/g)]
+
+  assert.equal(pushes.length, 1)
+  const payload = pushes[0][1]
+
+  assert.match(payload, /event: 'lobodeals_outbound_click'/)
+  assert.match(payload, /^\s*surface,/m)
+  assert.match(payload, /outbound_type: outboundType/)
+  assert.match(payload, /store_slug: storeSlug/)
+  assert.match(payload, /store_name: storeName/)
+  assert.match(payload, /link_mode: link\.dataset\.linkMode \|\| 'official'/)
+  assert.match(payload, /^\s*sale_campaign_id: saleCampaignId,/m)
+  assert.match(payload, /^\s*sale_campaign_name: saleCampaignName,/m)
+  assert.doesNotMatch(payload, /\.\.\./)
+
+  assert.match(
+    analytics,
+    /const saleCampaignId\s*=\s*outboundType === 'sale' \? link\.dataset\.saleCampaignId \|\| null : null/
+  )
+  assert.match(
+    analytics,
+    /const saleCampaignName\s*=\s*outboundType === 'sale' \? link\.dataset\.saleCampaignName \|\| null : null/
+  )
+})
+
+test('sale outbound requires both campaign fields before dispatch', async () => {
+  const analytics = await source('components/outbound-analytics.tsx')
+  const guard = analytics.match(
+    /if \(outboundType === 'sale' && \(!saleCampaignId \|\| !saleCampaignName\)\) return/
+  )
+
+  assert.ok(guard)
+  assert.ok(guard.index < analytics.indexOf('window.dataLayer.push('))
+})
+
 test('campaign links preserve anchors and expose analytics metadata', async () => {
   const home = await source('app/page.tsx')
   const platform = await source('components/platform-page.tsx')

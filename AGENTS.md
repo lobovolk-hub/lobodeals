@@ -6,7 +6,7 @@ This repository is in the official rebuild of the new LoboDeals.
 
 Apply these Project Sources in order:
 
-1. **LoboDeals — Product Definition & Transition Authority — Consolidated Revision** — APPROVED Final Consolidation — 25 August 2026.
+1. **LoboDeals — Product Definition & Transition Authority — Consolidated Revision** — APPROVED Final Consolidation — 3 September 2026.
 2. **LoboDeals — Technical Transition Audit** — APPROVED — 20 August 2026.
 
 The Product Authority defines what is built. The Technical Audit defines the

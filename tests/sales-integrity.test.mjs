@@ -6,6 +6,8 @@ import { campaignBaseRow } from '../supabase/functions/campaign-monitoring/_shar
 import { runGogAdapter } from '../supabase/functions/campaign-monitoring/adapters/gog.ts'
 import { runMicrosoftStoreAdapter } from '../supabase/functions/campaign-monitoring/adapters/microsoft-store.ts'
 import { runNintendoEshopAdapter } from '../supabase/functions/campaign-monitoring/adapters/nintendo-eshop.ts'
+import { nintendoStoreEnd } from '../supabase/functions/campaign-monitoring/_shared/nintendo-store-timing.ts'
+import { extractExactEnglishDateTimes } from '../supabase/functions/campaign-monitoring/_shared/time.ts'
 
 const now = new Date('2026-09-12T18:00:00Z')
 const fresh = { sourceUid: 'same', storeSlug: 'gog', name: 'Publisher Sale', state: 'live',
@@ -310,4 +312,140 @@ test('Nintendo missing or malformed optional CMS data preserves the campaign', a
     assert.equal(result.campaigns[0].state, 'live')
     assert.equal(result.campaigns[0].artworkUrl, undefined)
   }
+})
+
+test('Nintendo associates article artwork with the campaign section deepLink without changing live discovery', async () => {
+  const title = 'Customer Appreciation Sale'
+  const url = `${nintendoHub}customer-appreciation-sale/`
+  const path = 'ncom/en_US/articles/2026/B5240C6990/Web_merch_1920x1080_feature_banner'
+  const social = 'https://assets.nintendo.com/image/upload/v1643742733/ncom/global/social-share.jpg'
+  for (const [deepLink, assetPath, expected] of [
+    [title, path, `https://assets.nintendo.com/image/upload/${path}`],
+    ['Unrelated Sale', path, undefined],
+    [title, 'ncom/en_US/articles/../image', undefined],
+    [title, 'ncom/en_US/articles/2026/products/cover', undefined],
+    [title, 'ncom/en_US/articles/2026/social-share.jpg', undefined],
+  ]) {
+    const calls = []
+    const content = { pageSections: [{ deepLink, storyModuleOrCuratedProductList: [{
+      CONTENT_TYPE: 'promoRichTextCta',
+      heading: 'Save 30% on select games and more, sale ends 9/26 at 8:59 p.m. PT',
+      asset: { CONTENT_TYPE: 'component_image', primary: { resourceType: 'image', assetPath } },
+    }] }] }
+    const result = await runNintendoEshopAdapter({ now, fetch: async input => {
+      const requested = input.toString()
+      calls.push(requested)
+      if (requested === nintendoHub) return new Response(`<a href="${url}">${title}</a>`)
+      if (requested === url) return new Response(
+        `<meta property="og:title" content="${title} - Nintendo"><meta property="og:image" content="${social}">` +
+        `<script id="__NEXT_DATA__">${JSON.stringify({ props: { pageProps: { page: { content } } } })}</script>`
+      )
+      assert.equal(requested, 'https://www.nintendo.com/us/whatsnew/', 'no product or catalog request')
+      return new Response('<script id="__NEXT_DATA__">{"props":{"pageProps":{"initialApolloState":{}}}}</script>')
+    } })
+    assert.equal(result.campaigns.length, 1)
+    assert.equal(result.campaigns[0].name, title)
+    assert.equal(result.campaigns[0].state, 'live')
+    assert.equal(result.campaigns[0].artworkUrl, expected)
+    assert.notEqual(result.campaigns[0].artworkUrl, social)
+    assert.deepEqual(result.campaigns[0].ends, deepLink === title
+      ? exact('2026-09-27T03:59:00.000Z') : undefined)
+    assert.equal(calls.length, 3)
+  }
+})
+
+const timingPage = (heading) => `<script id="__NEXT_DATA__">${JSON.stringify({ props: { pageProps: { page: { content: {
+  pageSections: [{ deepLink: 'Example Sale', storyModuleOrCuratedProductList: [{ CONTENT_TYPE: 'promoRichTextCta', heading }] }],
+} } } } })}</script>`
+test('Nintendo PT end uses Pacific DST, preserves exact end in persistence and never invents a start', () => {
+  for (const [prose, expected] of [
+    ['sale ends 9/26 at 8:59 p.m. PT', '2026-09-27T03:59:00.000Z'],
+    ['sale ending 1/26/2026 at 8:59 p.m. PT', '2026-01-27T04:59:00.000Z'],
+    ['sale until 7/26/2026 at 12:00 a.m. PT', '2026-07-26T07:00:00.000Z'],
+  ]) {
+    const ends = nintendoStoreEnd(timingPage(prose), 'Example Sale', now)
+    assert.deepEqual(ends, exact(expected))
+    const saved = campaignBaseRow({ ...fresh, ends }, 'key', now.toISOString(), { ...previous, startsAt: undefined, endsAt: undefined, endsOn: '2026-09-26' })
+    assert.equal(saved.ends_at, expected)
+    assert.equal(saved.ends_on, null)
+    assert.equal(saved.starts_at, null)
+    assert.equal(saved.lifecycle_basis, 'official-source')
+  }
+})
+test('Nintendo ambiguous, nonexistent, malformed and unscoped PT times remain best-effort', () => {
+  for (const prose of ['sale ends 11/1/2026 at 1:30 a.m. PT', 'sale ends 3/8/2026 at 2:30 a.m. PT',
+    'sale ends 2/30 at 8:59 p.m. PT', 'sale ends 9/26 at 13:00 p.m. PT', 'sale ends 9/26 at 8:99 p.m. PT',
+    'sale ends 9/26 at 8:59 PT', 'event 9/26 at 8:59 p.m. PT']) {
+    assert.equal(nintendoStoreEnd(timingPage(prose), 'Example Sale', now), undefined)
+  }
+  assert.equal(nintendoStoreEnd(timingPage('sale ends 9/26 at 8:59 p.m. PT'), 'Unrelated Sale', now), undefined)
+  assert.equal(nintendoStoreEnd('<script id="__NEXT_DATA__">broken</script>', 'Example Sale', now), undefined)
+})
+test('Nintendo yearless end honors known matching date and rejects ambiguous rollover or conflicting years', () => {
+  const html = timingPage('sale ends 1/4 at 8:59 p.m. PT')
+  const december = new Date('2026-12-28T12:00:00Z')
+  assert.equal(nintendoStoreEnd(html, 'Example Sale', december), undefined)
+  assert.deepEqual(nintendoStoreEnd(html, 'Example Sale', december, ['2027-01-04']), exact('2027-01-05T04:59:00.000Z'))
+  assert.equal(nintendoStoreEnd(html, 'Example Sale', december, ['2026-01-04', '2027-01-04']), undefined)
+})
+test('Nintendo Store exact end expires the stable known identity at the instant, while invalid prose preserves discovery', async () => {
+  const url = `${nintendoHub}example-sale/`
+  const known = { ...previous, sourceUid: 'announcement-identity', officialUrl: url, name: 'Example Sale', endsOn: '2026-09-26' }
+  for (const [instant, prose, ended] of [
+    ['2026-09-27T03:58:59Z', 'sale ends 9/26 at 8:59 p.m. PT', false],
+    ['2026-09-27T03:59:00Z', 'sale ends 9/26 at 8:59 p.m. PT', true],
+    ['2026-09-27T04:00:00Z', 'sale ends 9/26 at 8:59 p.m. PT', true],
+    ['2026-09-27T04:00:00Z', 'sale ends 9/26 at 99:00 p.m. PT', false],
+  ]) {
+    const result = await runNintendoEshopAdapter({ now: new Date(instant), knownCampaigns: [known], fetch: async input => {
+      if (input.toString() === nintendoHub) return new Response(`<a href="${url}">Example Sale</a>`)
+      if (input.toString() === url) return new Response(`<meta property="og:title" content="Example Sale - Nintendo">${timingPage(prose)}`)
+      assert.equal(input.toString(), 'https://www.nintendo.com/us/whatsnew/')
+      return new Response('<script id="__NEXT_DATA__">{"props":{"pageProps":{"initialApolloState":{}}}}</script>')
+    } })
+    assert.deepEqual(result.explicitlyEndedSourceUids, ended ? [known.sourceUid] : [])
+    assert.equal(result.campaigns.length, ended ? 0 : 1)
+    if (!ended) {
+      assert.equal(result.campaigns[0].sourceUid, known.sourceUid)
+      assert.equal(result.campaigns[0].state, 'live')
+      assert.equal(result.campaigns[0].starts, undefined)
+      assert.equal(result.campaigns[0].lifecycleBasis, 'official-source')
+    }
+  }
+})
+test('existing full English PST and PDT parsing remains unchanged', () => {
+  assert.deepEqual(extractExactEnglishDateTimes('September 26, 2026 at 8:59 PM PDT'), [exact('2026-09-26T20:59:00-07:00')])
+  assert.deepEqual(extractExactEnglishDateTimes('January 26, 2026 at 8:59 PM PST'), [exact('2026-01-26T20:59:00-08:00')])
+})
+
+test('Nintendo yearless end rejects any past Pacific calendar date without guessing a year', () => {
+  const november = new Date('2026-11-15T12:00:00Z')
+  const html = timingPage('sale ends 1/4 at 8:59 p.m. PT')
+  assert.equal(nintendoStoreEnd(html, 'Example Sale', november), undefined)
+  assert.deepEqual(nintendoStoreEnd(html, 'Example Sale', november, ['2027-01-04']), exact('2027-01-05T04:59:00.000Z'))
+  assert.deepEqual(nintendoStoreEnd(html, 'Example Sale', november, [], ['2027-01-05T04:59:00.000Z']), exact('2027-01-05T04:59:00.000Z'))
+  assert.equal(nintendoStoreEnd(html, 'Example Sale', november, ['2026-01-04'], ['2027-01-05T04:59:00.000Z']), undefined)
+  assert.equal(nintendoStoreEnd(timingPage('sale ends 11/14 at 8:59 p.m. PT'), 'Example Sale', november), undefined)
+  assert.equal(nintendoStoreEnd(html, 'Example Sale', november, [], ['invalid', '2027-01-05T04:59:00']), undefined)
+})
+test('Nintendo same-day yearless end resolves after its minute using the Pacific date rather than UTC', () => {
+  const html = timingPage('sale ends 9/26 at 8:59 p.m. PT')
+  assert.deepEqual(nintendoStoreEnd(html, 'Example Sale', new Date('2026-09-27T04:00:00Z')), exact('2026-09-27T03:59:00.000Z'))
+  assert.equal(nintendoStoreEnd(html, 'Example Sale', new Date('2026-09-27T08:00:00Z')), undefined)
+})
+test('Nintendo persisted endsAt preserves end resolution and retirement on the following Pacific day', async () => {
+  const url = `${nintendoHub}example-sale/`
+  const known = { ...previous, sourceUid: 'persisted-exact-identity', name: 'Example Sale', officialUrl: url,
+    endsAt: '2027-01-05T04:59:00.000Z' }
+  const nextDay = new Date('2027-01-05T12:00:00Z')
+  const html = timingPage('sale ends 1/4 at 8:59 p.m. PT')
+  assert.deepEqual(nintendoStoreEnd(html, known.name, nextDay, [], [known.endsAt]), exact(known.endsAt))
+  const result = await runNintendoEshopAdapter({ now: nextDay, knownCampaigns: [known], fetch: async input => {
+    if (input.toString() === nintendoHub) return new Response(`<a href="${url}">Example Sale</a>`)
+    if (input.toString() === url) return new Response(`<meta property="og:title" content="Example Sale - Nintendo">${html}`)
+    assert.equal(input.toString(), 'https://www.nintendo.com/us/whatsnew/')
+    return new Response('<script id="__NEXT_DATA__">{"props":{"pageProps":{"initialApolloState":{}}}}</script>')
+  } })
+  assert.deepEqual(result.campaigns, [])
+  assert.deepEqual(result.explicitlyEndedSourceUids, [known.sourceUid])
 })

@@ -18,6 +18,7 @@ import {
   extractExactEnglishDateTimes,
 } from '../_shared/time.ts'
 import { currentCampaignEvidence, sourceExplicitlyEndsCampaign } from '../_shared/verification.ts'
+import { nintendoStoreEnd } from '../_shared/nintendo-store-timing.ts'
 import type {
   AdapterResult,
   DetectedCampaign,
@@ -34,24 +35,32 @@ function structuredCampaignArtwork(html: string, name: string): string | undefin
     if (!raw) return undefined
     const content = JSON.parse(raw)?.props?.pageProps?.page?.content
     const blocks = [
-      ...(Array.isArray(content?.merchandisedGrid) ? content.merchandisedGrid : []),
+      ...(Array.isArray(content?.merchandisedGrid) ? content.merchandisedGrid : [])
+        .map((block: unknown) => ({ block, sectionIdentity: undefined })),
       ...(Array.isArray(content?.pageSections) ? content.pageSections.flatMap(
-        (section: { storyModuleOrCuratedProductList?: unknown }) =>
-          Array.isArray(section?.storyModuleOrCuratedProductList) ? section.storyModuleOrCuratedProductList : []
+        (section: { deepLink?: unknown; storyModuleOrCuratedProductList?: unknown }) =>
+          Array.isArray(section?.storyModuleOrCuratedProductList)
+            ? section.storyModuleOrCuratedProductList.map(block => ({ block, sectionIdentity: section.deepLink }))
+            : []
       ) : []),
     ]
     const identityWords = name.toLowerCase().replace(/[^a-z0-9]+/g, ' ').split(' ')
       .filter((word) => word && !['sale', 'sales', 'deals', 'franchise', 'the'].includes(word))
     if (!identityWords.length) return undefined
-    for (const block of blocks) {
-      if (block?.CONTENT_TYPE !== 'promoRichTextCta' || typeof block.heading !== 'string' ||
-          !isSaleCampaignText(block.heading)) continue
-      const headingWords = block.heading.toLowerCase().replace(/[^a-z0-9]+/g, ' ').split(' ')
-      if (!identityWords.every((word) => headingWords.includes(word))) continue
+    const matchesIdentity = (value: unknown): boolean => {
+      if (typeof value !== 'string') return false
+      const words = value.toLowerCase().replace(/[^a-z0-9]+/g, ' ').split(' ')
+      return identityWords.every((word) => words.includes(word))
+    }
+    for (const { block, sectionIdentity } of blocks) {
+      if (block?.CONTENT_TYPE !== 'promoRichTextCta') continue
+      const matchingHeading = typeof block.heading === 'string' &&
+        isSaleCampaignText(block.heading) && matchesIdentity(block.heading)
+      if (!matchesIdentity(sectionIdentity) && !matchingHeading) continue
       const asset = block.asset
       if (asset?.CONTENT_TYPE !== 'component_image' || asset.primary?.resourceType !== 'image') continue
       const path = asset.primary.assetPath
-      if (typeof path !== 'string' || !path.startsWith('ncom/en_US/merchandising/') ||
+      if (typeof path !== 'string' || !/^ncom\/en_US\/(?:merchandising|articles)\//.test(path) ||
           /[?#%\\]|(?:^|\/)\.{1,2}(?:\/|$)/.test(path) || /(?:^|\/)products?(?:\/|$)/i.test(path)) continue
       // Nintendo's official frontend image CDN configuration uses privateCdn,
       // secureDistribution assets.nintendo.com and forceVersion:false. Its image
@@ -190,7 +199,9 @@ function tabName(title: string, label: string): string {
 
 async function discoverCampaignTabs(
   fetcher: typeof fetch,
-  html: string
+  html: string,
+  now: Date,
+  knownCampaigns: readonly KnownCampaign[]
 ): Promise<readonly DetectedCampaign[]> {
   const links = uniqueBy(
     extractAnchors(html, SALES_URL).filter(({ href, label }) => {
@@ -216,12 +227,19 @@ async function discoverCampaignTabs(
       const title = extractMeta(pageHtml, 'og:title') ?? label
       const name = tabName(title, label)
       if (isExcludedCampaignText(name)) return null
+      const knownTiming = knownCampaigns.filter(known =>
+        comparableNintendoUrl(known.officialUrl) === comparableNintendoUrl(officialUrl.toString())
+      )
+      const ends = nintendoStoreEnd(pageHtml, name, now,
+        knownTiming.flatMap(known => known.endsOn ? [known.endsOn] : []),
+        knownTiming.flatMap(known => known.endsAt ? [known.endsAt] : []))
       return campaign({
         sourceUid: officialUrl.toString(),
         name,
         storeSlug: 'nintendo-eshop',
-        state: 'live',
+        state: expireAtExactEnd('live', ends, now),
         lifecycleBasis: 'official-source',
+        ...(ends ? { ends } : {}),
         officialUrl: officialUrl.toString(),
         sourceUrl: SALES_URL,
         artworkUrl: extractOfficialArtwork(pageHtml, officialUrl.toString()) ??
@@ -351,7 +369,7 @@ export const runNintendoEshopAdapter: StoreAdapter = async ({
   knownCampaigns = [],
 }) => {
   const salesHtml = await fetchOfficialText(fetch, SALES_URL)
-  const tabsPromise = discoverCampaignTabs(fetch, salesHtml)
+  const tabsPromise = discoverCampaignTabs(fetch, salesHtml, now, knownCampaigns)
   const [tabs, news, explicitlyEndedSourceUids] = await Promise.all([
     tabsPromise,
     discoverNewsCampaigns(now, fetch),

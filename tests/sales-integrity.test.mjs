@@ -159,6 +159,74 @@ test('GOG reuses a known localized identity for a current tab', async () => {
   assert.equal(result.campaigns[0].sourceUid, known.sourceUid)
 })
 
+const gogMobileArt = 'https://images.gog-statics.com/mobile_hero_768x423.webp'
+const gogDesktopArt = 'https://images.gog-statics.com/complete_hero_1024x423.webp'
+const heroPicture = (url, id = 'heroBackgroundImage') =>
+  `<picture><source srcset="${url}" type="image/webp"><img selenium-id="${id}"></picture>`
+const gogHero = (desktop) => `<hero><div class="hero-background hero-background--mobile">${heroPicture(gogMobileArt)}</div><div class="hero-background hero-background--desktop">${desktop}</div></hero>`
+
+test('GOG prefers the complete desktop campaign image over mobile and tab backgrounds', async () => {
+  const { result } = await gog([promo('Example Promo', 'example_promo')], {
+    page: `<h1>Example Promo</h1><meta property="og:image" content="${gogMobileArt}">${gogHero(heroPicture(gogDesktopArt))}`,
+  })
+  assert.equal(result.campaigns[0].artworkUrl, gogDesktopArt)
+})
+test('GOG preserves mobile and tab artwork when no desktop image is available', async () => {
+  const { result } = await gog([promo('Example Promo', 'example_promo')], {
+    page: `<h1>Example Promo</h1>${heroPicture(gogMobileArt)}`,
+  })
+  assert.equal(result.campaigns[0].artworkUrl, gogMobileArt)
+  assert.equal((await gog([promo('Example Promo', 'example_promo')])).result.campaigns[0].artworkUrl,
+    'https://images-1.gog-statics.com/campaign.jpg')
+})
+test('GOG ignores product images and desktop artwork outside the campaign hero', async () => {
+  for (const extra of [gogHero(heroPicture(gogDesktopArt, 'productTileGameCover')),
+    `<aside class="hero-background--desktop">${heroPicture(gogDesktopArt)}</aside>`,
+    gogHero(heroPicture('https://images.gog-statics.com/game_product_tile_432x243.webp'))]) {
+    const { result } = await gog([promo('Example Promo', 'example_promo')], {
+      page: `<h1>Example Promo</h1>${heroPicture(gogMobileArt)}${extra}`,
+    })
+    assert.equal(result.campaigns[0].artworkUrl, gogMobileArt)
+  }
+})
+test('GOG rejects unsafe or non-official desktop artwork without losing its campaign', async () => {
+  for (const url of ['http://images.gog-statics.com/complete_hero_1024x423.webp',
+    'https://evil.example/complete_hero_1024x423.webp',
+    'https://user:password@images.gog-statics.com/complete_hero_1024x423.webp',
+    'https://images.gog-statics.com/logo_hero_1024x423.webp', 'not-a-url']) {
+    const { result } = await gog([promo('Example Promo', 'example_promo')], {
+      page: `<h1>Example Promo</h1>${gogHero(heroPicture(url))}`,
+    })
+    assert.equal(result.campaigns[0].state, 'live')
+    assert.equal(result.campaigns[0].artworkUrl, gogMobileArt)
+  }
+})
+test('GOG malformed optional desktop markup falls back without extra enrichment requests', async () => {
+  const { result, calls } = await gog([promo('Example Promo', 'example_promo')], {
+    page: `<h1>Example Promo</h1>${gogHero('<picture><source srcset="broken">')}`,
+  })
+  assert.equal(result.campaigns.length, 1)
+  assert.equal(result.campaigns[0].artworkUrl, gogMobileArt)
+  assert.equal(calls.length, 4)
+})
+test('GOG seven-campaign discovery is identical apart from artwork, without product traversal', async () => {
+  const tabs = Array.from({ length: 7 }, (_, i) => promo(`Publisher ${i} Promo`, `publisher_${i}_promo`))
+  const before = await gog(tabs)
+  const after = await gog(tabs, { page: `<h1>Publisher Promo</h1>${gogHero(heroPicture(gogDesktopArt))}` })
+  const withoutArtwork = campaigns => campaigns.map(entry => ({ ...entry, artworkUrl: undefined }))
+  assert.deepEqual(withoutArtwork(after.result.campaigns), withoutArtwork(before.result.campaigns))
+  assert.equal(after.result.campaigns.length, 7)
+  assert.equal(after.calls.length, 10)
+  assert.deepEqual(after.calls, before.calls)
+})
+test('GOG already-complete mobile artwork remains valid when the desktop enhancement is absent', async () => {
+  const full = 'https://images.gog-statics.com/post-apocalyptic-key-art_hero_768x423.webp'
+  const { result } = await gog([promo('Wasteland Promo', 'wasteland_promo')], {
+    page: `<h1>Wasteland Promo</h1>${heroPicture(full)}`,
+  })
+  assert.equal(result.campaigns[0].artworkUrl, full)
+})
+
 const xboxUrl = 'https://www.xbox.com/en-US/promotions/sales/sales-and-specials'
 const weekly = { campsiteType: 'ChannelProductPlacement', heading: 'This week’s digital game deals',
   collectionDataSource: { collectionId: 'DynamicChannel.GameDeals' },

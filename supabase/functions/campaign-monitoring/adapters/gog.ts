@@ -283,6 +283,15 @@ async function discoverNewsCandidates(
   )
 }
 
+function gogCampaignDesktopArtwork(html: string): string | undefined {
+  // GOG publishes separate mobile and desktop artwork, not compositing layers.
+  // The desktop asset contains the campaign montage missing from some mobile
+  // backgrounds. Read only the campaign hero, never promotional sidebars.
+  const hero = /<hero\b[^>]*>([\s\S]*?)<\/hero>/i.exec(html)?.[1]
+  const desktop = hero && /<div\b[^>]*class=["'][^"']*\bhero-background--desktop\b[^"']*["'][^>]*>([\s\S]*?)<\/div>/i.exec(hero)?.[1]
+  return desktop ? gogCampaignHeroArtwork(desktop) : undefined
+}
+
 function gogCampaignHeroArtwork(html: string): string | undefined {
   const picture = [...html.matchAll(/<picture\b[^>]*>[\s\S]*?<\/picture>/gi)]
     .map((match) => match[0])
@@ -520,6 +529,7 @@ async function verifyCandidates(
       }
 
       const artworkUrl =
+        gogCampaignDesktopArtwork(page.text) ??
         extractOfficialArtwork(page.text, identityUrl) ??
         gogCampaignHeroArtwork(page.text) ??
         candidate.artworkUrl ??

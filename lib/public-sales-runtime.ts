@@ -8,75 +8,7 @@ import type {
   PublicOfficialCampaign,
 } from './sales'
 
-const DATE_ONLY_PATTERN = /^(\d{4})-(\d{2})-(\d{2})$/
-
-const MONTH_NAMES = [
-  'January',
-  'February',
-  'March',
-  'April',
-  'May',
-  'June',
-  'July',
-  'August',
-  'September',
-  'October',
-  'November',
-  'December',
-] as const
-
-const compactExactDateTimeFormatter =
-  new Intl.DateTimeFormat('en-US', {
-    year: 'numeric',
-    month: 'short',
-    day: 'numeric',
-    hour: 'numeric',
-    minute: '2-digit',
-    hour12: true,
-    timeZone: 'UTC',
-  })
-
-export function formatCompactCampaignBoundary(
-  boundary: CampaignBoundary
-): string {
-  if (boundary.precision === 'date') {
-    const match = DATE_ONLY_PATTERN.exec(boundary.date)
-
-    if (!match) {
-      throw new RangeError(
-        'Cannot format an invalid campaign boundary'
-      )
-    }
-
-    const month = Number(match[2])
-    const day = Number(match[3])
-
-    if (
-      !Number.isInteger(month) ||
-      month < 1 ||
-      month > 12 ||
-      !Number.isInteger(day) ||
-      day < 1 ||
-      day > 31
-    ) {
-      throw new RangeError(
-        'Cannot format an invalid campaign boundary'
-      )
-    }
-
-    return `${MONTH_NAMES[month - 1].slice(0, 3)} ${day}, ${match[1]}`
-  }
-
-  const instant = new Date(boundary.dateTime)
-
-  if (!Number.isFinite(instant.getTime())) {
-    throw new RangeError(
-      'Cannot format an invalid campaign boundary'
-    )
-  }
-
-  return `${compactExactDateTimeFormatter.format(instant)} UTC`
-}
+export { formatBoundary as formatCompactCampaignBoundary } from './date-format'
 
 export function getCampaignState(
   campaign: PublicOfficialCampaign,

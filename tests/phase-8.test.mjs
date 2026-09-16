@@ -31,13 +31,13 @@ test('Epic creator code is discreetly limited to the store profile', async () =>
   const campaignCard = await source('components/campaign-card.tsx')
   const upcoming = await source('components/upcoming-campaign-list.tsx')
   const sales = await source('components/sales-browser.tsx')
-  const home = await source('app/page.tsx')
+  const home = await source('components/home-page.tsx')
 
   assert.match(hero, /getStoreCreatorCode/)
   assert.match(hero, /data-store-creator-code/)
   assert.match(hero, /Creator code:/)
   assert.match(hero, /creatorCode\.code/)
-  assert.match(hero, /creatorCode\.disclosure/)
+  assert.match(hero, /t\(locale, 'LoboDeals may earn from eligible purchases made with this code\.'\)/)
 
   for (const publicSurface of [platform, campaignCard, upcoming, sales, home]) {
     assert.doesNotMatch(publicSurface, /LOBOVOLK|getStoreCreatorCode|data-store-creator-code/)

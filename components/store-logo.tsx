@@ -1,7 +1,11 @@
+
+import type { Locale } from '@/lib/locale'
+import { t } from '@/lib/i18n'
 import Image from 'next/image'
 import type { CampaignStore } from '@/lib/sales'
 
 type StoreLogoProps = {
+  locale?: Locale
   store: CampaignStore
   variant?: 'standard' | 'campaign' | 'platform' | 'mini'
   eager?: boolean
@@ -21,7 +25,7 @@ const sizesByVariant = {
   mini: '48px',
 } as const
 
-export function StoreLogo({
+export function StoreLogo({ locale = 'en',
   store,
   variant = 'standard',
   eager = false,
@@ -34,7 +38,7 @@ export function StoreLogo({
       <div
         data-store-logo-fallback="rockstar-store"
         className={`flex ${dimensions} items-center justify-center px-2 text-center`}
-        aria-label={`${store.name}; no verified local logo is available`}
+        aria-label={t(locale, "{value0}; no verified local logo is available", { value0: store.name })}
       >
         <span
           className={`${
@@ -89,7 +93,7 @@ export function StoreLogo({
     >
       <Image
         src={store.logo.src}
-        alt={`${store.name} logo`}
+        alt={t(locale, "{value0} logo", { value0: store.name })}
         width={store.logo.width}
         height={store.logo.height}
         loading={eager ? 'eager' : undefined}

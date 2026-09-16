@@ -1,5 +1,9 @@
 'use client'
 
+import type { Locale } from '@/lib/locale'
+import { t } from '@/lib/i18n'
+import { localizedHref } from '@/lib/localized-routes'
+
 import Image from 'next/image'
 import Link from 'next/link'
 import {
@@ -80,7 +84,7 @@ function wrapSlide(index: number): number {
   return (index + heroSlides.length) % heroSlides.length
 }
 
-export function HomeHero() {
+export function HomeHero({ locale = 'en' }: { locale?: Locale }) {
   const [activeSlide, setActiveSlide] = useState(0)
   const [reducedMotion, setReducedMotion] = useState(false)
   const [autoplayEnabled, setAutoplayEnabled] = useState(true)
@@ -134,7 +138,7 @@ export function HomeHero() {
     <section
       data-hero-full-bleed
       role="region"
-      aria-label="Gaming platform spotlight"
+      aria-label={t(locale, "Gaming platform spotlight")}
       onKeyDown={handleHeroKeyDown}
       className="home-hero-full-bleed relative isolate min-h-[570px] w-full overflow-hidden border-b border-white/10 bg-[#0b0d10] sm:min-h-[540px] lg:min-h-[470px]"
     >
@@ -168,7 +172,7 @@ export function HomeHero() {
             />
 
             <div
-              className={`absolute inset-x-0 bottom-16 top-[330px] transition-[opacity,transform] duration-500 ease-out sm:top-[300px] lg:inset-y-0 lg:left-[48%] lg:right-0 ${
+              className={`absolute inset-x-0 bottom-16 h-52 transition-[opacity,transform] duration-500 ease-out lg:inset-y-0 lg:left-[48%] lg:right-0 lg:h-auto ${
                 isActive
                   ? 'translate-x-0 opacity-100'
                   : 'translate-x-3 opacity-0'
@@ -199,7 +203,7 @@ export function HomeHero() {
               <div className="absolute bottom-2 left-1/2 flex -translate-x-1/2 items-center gap-3 whitespace-nowrap text-[0.67rem] font-black uppercase tracking-[0.18em] text-white/70 lg:bottom-8">
                 <span>{slide.platform}</span>
                 <span className="h-1 w-1 rounded-full bg-white/45" />
-                <span>{slide.storeCount}</span>
+                <span>{t(locale, slide.storeCount)}</span>
               </div>
             </div>
           </div>
@@ -208,45 +212,44 @@ export function HomeHero() {
 
       <Link
         data-hero-platform-link
-        href={heroSlides[activeSlide].href}
-        aria-label={`View ${activePlatform} platform`}
+        href={localizedHref(heroSlides[activeSlide].href, locale)}
+        aria-label={t(locale, "View {value0} platform", { value0: activePlatform })}
         className="absolute inset-0 z-10 cursor-pointer bg-white/0 transition-colors hover:bg-white/[0.015] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[#f87171]"
       >
-        <span className="sr-only">View {activePlatform} platform</span>
+        <span className="sr-only">{t(locale, 'View {platform} platform', { platform: activePlatform })}</span>
       </Link>
 
-      <div className="pointer-events-none relative z-20 mx-auto flex min-h-[570px] w-full max-w-7xl items-start px-4 pb-56 pt-9 sm:min-h-[540px] sm:px-6 sm:pb-52 sm:pt-11 lg:min-h-[470px] lg:items-center lg:px-8 lg:pb-20 lg:pt-12">
+      <div className="pointer-events-none relative z-20 mx-auto flex min-h-[570px] w-full max-w-7xl items-start px-4 pb-72 pt-9 sm:min-h-[540px] sm:px-6 sm:pt-11 lg:min-h-[470px] lg:items-center lg:px-8 lg:pb-20 lg:pt-12">
         <div className="w-full lg:w-[54%]">
           <p className="flex items-center gap-3 text-xs font-bold uppercase tracking-[0.22em] text-[#ef8a8a]">
             <span className="h-px w-8 bg-[#990303]" aria-hidden="true" />
-            Official game sales
+            {t(locale, "Official game sales")}
           </p>
           <h1 className="mt-4 max-w-3xl text-4xl font-bold leading-[1.02] tracking-[-0.045em] text-white sm:text-5xl lg:text-5xl xl:text-6xl">
-            Know where official game sales are happening
+            {t(locale, "Know where official game sales are happening")}
           </h1>
           <p className="mt-4 max-w-2xl text-base leading-7 text-[#d0cfcc] sm:text-lg sm:leading-8 lg:max-w-xl">
-            Find official digital game stores and see which sale campaigns are
-            live or coming next.
+            {t(locale, "Find official digital game stores and see which sale campaigns are live or coming next.")}
           </p>
           <div className="mt-6 flex flex-wrap gap-3">
             <Link
-              href="/sales"
+              href={localizedHref("/sales", locale)}
               className="pointer-events-auto inline-flex min-h-11 items-center justify-center rounded-md bg-[#990303] px-5 py-2.5 text-sm font-bold text-white transition-colors hover:bg-[#b20a0a]"
             >
-              Browse Sales <span className="ml-2" aria-hidden="true">→</span>
+              {t(locale, "Browse Sales")} <span className="ml-2" aria-hidden="true">→</span>
             </Link>
             <Link
               href="#platforms"
               className="pointer-events-auto inline-flex min-h-11 items-center justify-center rounded-md border border-white/20 bg-black/15 px-5 py-2.5 text-sm font-semibold text-white backdrop-blur-sm transition-colors hover:border-white/40 hover:bg-black/25"
             >
-              Explore platforms
+              {t(locale, "Explore platforms")}
             </Link>
           </div>
         </div>
       </div>
 
       <p className="sr-only" aria-live="polite">
-        {activePlatform} platform visual
+        {t(locale, '{platform} platform visual', { platform: activePlatform })}
       </p>
 
       <div className="absolute inset-x-0 bottom-4 z-30 flex justify-center sm:bottom-5">
@@ -254,21 +257,21 @@ export function HomeHero() {
           <button
             type="button"
             onClick={() => selectSlide(activeSlide - 1)}
-            aria-label="Previous platform visual"
+            aria-label={t(locale, "Previous platform visual")}
             className="inline-flex h-9 w-9 items-center justify-center rounded-full text-sm text-white transition-colors hover:bg-white/10"
           >
             <span aria-hidden="true">←</span>
           </button>
           <div
             className="flex items-center gap-1.5 px-1"
-            aria-label="Platform visual selection"
+            aria-label={t(locale, "Platform visual selection")}
           >
             {heroSlides.map((slide, index) => (
               <button
                 key={slide.platform}
                 type="button"
                 onClick={() => selectSlide(index)}
-                aria-label={`Show ${slide.platform} visual`}
+                aria-label={t(locale, "Show {value0} visual", { value0: slide.platform })}
                 aria-pressed={activeSlide === index}
                 className={`h-2 rounded-full transition-[width,background-color] duration-300 ${
                   activeSlide === index
@@ -281,7 +284,7 @@ export function HomeHero() {
           <button
             type="button"
             onClick={() => setPlayback(!autoplayEnabled)}
-            aria-label={autoplayEnabled ? 'Pause slideshow' : 'Play slideshow'}
+            aria-label={autoplayEnabled ? t(locale, "Pause slideshow") : t(locale, "Play slideshow")}
             aria-pressed={!autoplayEnabled}
             className="inline-flex h-9 w-9 items-center justify-center rounded-full text-white transition-colors hover:bg-white/10"
           >
@@ -311,7 +314,7 @@ export function HomeHero() {
           <button
             type="button"
             onClick={() => selectSlide(activeSlide + 1)}
-            aria-label="Next platform visual"
+            aria-label={t(locale, "Next platform visual")}
             className="inline-flex h-9 w-9 items-center justify-center rounded-full text-sm text-white transition-colors hover:bg-white/10"
           >
             <span aria-hidden="true">→</span>
@@ -325,7 +328,7 @@ export function HomeHero() {
       />
 
       <span className="sr-only">
-        Reduced motion preference is {reducedMotion ? 'enabled' : 'disabled'}.
+        {t(locale, reducedMotion ? 'Reduced motion preference is enabled.' : 'Reduced motion preference is disabled.')}
       </span>
     </section>
   )

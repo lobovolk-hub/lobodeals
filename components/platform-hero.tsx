@@ -1,7 +1,11 @@
+
+import type { Locale } from '@/lib/locale'
+import { t } from '@/lib/i18n'
 import Image from 'next/image'
 import type { Platform } from '@/lib/stores'
 
 type PlatformHeroProps = {
+  locale?: Locale
   platform: Platform
   name: string
   storeCount: number
@@ -50,7 +54,7 @@ const platformHeroTreatments = {
   },
 } as const
 
-export function PlatformHero({
+export function PlatformHero({ locale = 'en',
   platform,
   name,
   storeCount,
@@ -117,7 +121,7 @@ export function PlatformHero({
         <div className="max-w-[68%] sm:max-w-[58%]">
           <p className="flex items-center gap-3 text-xs font-bold uppercase tracking-[0.22em] text-white/70">
             <span className="h-px w-8 bg-[#990303]" aria-hidden="true" />
-            Platform
+            {t(locale, "Platform")}
           </p>
 
           <h1 className="mt-4 text-4xl font-black leading-none tracking-[-0.045em] text-white sm:text-5xl lg:text-6xl">
@@ -125,7 +129,7 @@ export function PlatformHero({
           </h1>
 
           <p className="mt-5 inline-flex rounded-full border border-white/15 bg-black/20 px-3 py-1.5 text-xs font-bold uppercase tracking-[0.14em] text-white/80 backdrop-blur-sm">
-            {storeCount} {storeCount === 1 ? 'official store' : 'official stores'}
+            {storeCount} {storeCount === 1 ? t(locale, "official store") : t(locale, "official stores")}
           </p>
         </div>
       </div>

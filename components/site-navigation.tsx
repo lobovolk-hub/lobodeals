@@ -1,6 +1,11 @@
 'use client'
 
+import type { Locale } from '@/lib/locale'
+import { t } from '@/lib/i18n'
+import { localizedHref, isCurrentRoute } from '@/lib/localized-routes'
+
 import Link from 'next/link'
+import { LanguageSelector } from '@/components/language-selector'
 import { usePathname } from 'next/navigation'
 import { useState, type KeyboardEvent } from 'react'
 
@@ -12,19 +17,15 @@ const navigation = [
   { href: '/sales', label: 'Sales' },
 ] as const
 
-function isCurrentRoute(pathname: string, href: string): boolean {
-  if (pathname === href) return true
-
-  return href === '/pc' && pathname.startsWith('/services/')
-}
 
 type NavigationLinksProps = {
+  locale?: Locale
   pathname: string
   mobile?: boolean
   onNavigate?: () => void
 }
 
-function NavigationLinks({
+function NavigationLinks({ locale = 'en',
   pathname,
   mobile = false,
   onNavigate,
@@ -35,7 +36,7 @@ function NavigationLinks({
     return (
       <Link
         key={item.href}
-        href={item.href}
+        href={localizedHref(item.href, locale)}
         aria-current={active ? 'page' : undefined}
         onClick={onNavigate}
         className={
@@ -52,7 +53,7 @@ function NavigationLinks({
               }`
         }
       >
-        <span>{item.label}</span>
+        <span>{item.label === 'Sales' ? t(locale, 'Sales') : item.label}</span>
 
         {mobile && active ? (
           <span
@@ -72,7 +73,7 @@ function NavigationLinks({
   })
 }
 
-export function SiteNavigation() {
+export function SiteNavigation({ locale = 'en' }: { locale?: Locale }) {
   const pathname = usePathname()
   const [menuState, setMenuState] = useState<{
     pathname: string
@@ -105,10 +106,11 @@ export function SiteNavigation() {
   return (
     <>
       <nav
-        aria-label="Primary navigation"
+        aria-label={t(locale, "Primary navigation")}
         className="hidden items-stretch md:flex"
       >
-        <NavigationLinks pathname={pathname} />
+        <NavigationLinks locale={locale} pathname={pathname} />
+        <LanguageSelector locale={locale} />
       </nav>
 
       <div
@@ -119,7 +121,7 @@ export function SiteNavigation() {
           type="button"
           aria-expanded={menuOpen}
           aria-controls="mobile-primary-navigation"
-          aria-label={menuOpen ? 'Close navigation menu' : 'Open navigation menu'}
+          aria-label={menuOpen ? t(locale, "Close navigation menu") : t(locale, "Open navigation menu")}
           onClick={toggleMenu}
           className="inline-flex min-h-11 min-w-11 items-center justify-center rounded-md border border-white/10 bg-white/[0.025] text-white transition-colors hover:border-white/20 hover:bg-white/[0.055]"
         >
@@ -157,14 +159,15 @@ export function SiteNavigation() {
         {menuOpen ? (
           <nav
             id="mobile-primary-navigation"
-            aria-label="Mobile primary navigation"
+            aria-label={t(locale, "Mobile primary navigation")}
             className="absolute right-0 top-[calc(100%+0.55rem)] z-50 w-56 rounded-lg border border-white/10 bg-[#151515] p-2 shadow-[0_20px_55px_rgba(0,0,0,0.48)]"
           >
-            <NavigationLinks
+            <NavigationLinks locale={locale}
               pathname={pathname}
               mobile
               onNavigate={closeMenu}
             />
+            <LanguageSelector locale={locale} />
           </nav>
         ) : null}
       </div>

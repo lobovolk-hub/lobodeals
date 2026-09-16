@@ -11,17 +11,17 @@ async function source(relativePath) {
 
 test('Home hero keeps stable product copy and four nonessential platform visuals', async () => {
   const hero = await source('components/home-hero.tsx')
-  const home = await source('app/page.tsx')
+  const home = await source('components/home-page.tsx')
 
-  assert.match(hero, /Know where official game sales are happening\s*<\/h1>/)
+  assert.match(hero, /Know where official game sales are happening"\)\}\s*<\/h1>/)
   assert.doesNotMatch(hero, /Know where official game sales are happening\./)
   assert.equal((hero.match(/platform: '/g) || []).length, 4)
   for (const platform of ['PlayStation', 'PC', 'Nintendo', 'Xbox']) {
     assert.match(hero, new RegExp(`platform: '${platform}'`))
   }
-  assert.match(hero, /href="\/sales"/)
+  assert.match(hero, /href=\{localizedHref\("\/sales", locale\)\}/)
   assert.match(hero, /href="#platforms"/)
-  assert.match(home, /<HomeHero \/>[\s\S]*?Explore by Platform/)
+  assert.match(home, /<HomeHero locale=\{locale\} \/>[\s\S]*?Explore by Platform/)
   assert.doesNotMatch(`${home}\n${hero}`, /United States|US market scope/i)
 })
 
@@ -38,13 +38,13 @@ test('hero autoplay is resettable and reduced motion starts paused', async () =>
 test('hero controls expose previous, next, indicators, and keyboard navigation', async () => {
   const hero = await source('components/home-hero.tsx')
 
-  assert.match(hero, /aria-label="Previous platform visual"/)
-  assert.match(hero, /aria-label="Next platform visual"/)
-  assert.match(hero, /aria-label=\{`Show \$\{slide\.platform\} visual`\}/)
+  assert.match(hero, /aria-label=\{t\(locale, "Previous platform visual"\)\}/)
+  assert.match(hero, /aria-label=\{t\(locale, "Next platform visual"\)\}/)
+  assert.match(hero, /aria-label=\{t\(locale, "Show \{value0\} visual", \{ value0: slide\.platform \}\)\}/)
   assert.match(hero, /aria-pressed=\{activeSlide === index\}/)
   assert.match(hero, /event\.key !== 'ArrowLeft'/)
   assert.match(hero, /event\.key !== 'ArrowRight'/)
-  assert.match(hero, /aria-label=\{autoplayEnabled \? 'Pause slideshow' : 'Play slideshow'\}/)
+  assert.match(hero, /aria-label=\{autoplayEnabled \? t\(locale, "Pause slideshow"\) : t\(locale, "Play slideshow"\)\}/)
   assert.equal((hero.match(/<button\b/g) || []).length, 4)
 })
 
@@ -82,7 +82,7 @@ test('fallback artwork turns the existing campaign name into the visual subject'
   assert.match(artwork, /data-campaign-title-art/)
   assert.match(artwork, /\{campaignName\}/)
   assert.match(artwork, /Official sale campaign/)
-  assert.match(artwork, /<StoreLogo store=\{store\} variant="mini"/)
+  assert.match(artwork, /<StoreLogo locale=\{locale\} store=\{store\} variant="mini"/)
   assert.match(card, /state=\{state\}/)
   assert.doesNotMatch(
     artwork,
@@ -96,7 +96,7 @@ test('Live energy and exact counters derive seconds without altering source prec
   const css = await source('app/globals.css')
 
   assert.match(card, /live-indicator-dot/)
-  assert.match(timing, /`\$\{prefix\} \$\{days\}d \$\{hours\}h \$\{minutes\}m \$\{seconds\}s`/)
+  assert.match(timing, /format\(`\$\{days\}d \$\{hours\}h \$\{minutes\}m \$\{seconds\}s`\)/)
   assert.match(timing, /SECOND_MS = 1_000/)
   assert.match(css, /@keyframes live-signal/)
   assert.match(

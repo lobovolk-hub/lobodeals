@@ -1,5 +1,8 @@
 'use client'
 
+import type { Locale } from '@/lib/locale'
+import { t } from '@/lib/i18n'
+
 import {
   useCallback,
   useEffect,
@@ -10,10 +13,11 @@ import {
 } from 'react'
 
 type UpcomingRailProps = {
+  locale?: Locale
   children: ReactNode
 }
 
-export function UpcomingRail({ children }: UpcomingRailProps) {
+export function UpcomingRail({ locale = 'en',  children }: UpcomingRailProps) {
   const railRef = useRef<HTMLDivElement>(null)
   const [canScrollLeft, setCanScrollLeft] = useState(false)
   const [canScrollRight, setCanScrollRight] = useState(false)
@@ -66,7 +70,7 @@ export function UpcomingRail({ children }: UpcomingRailProps) {
       <div className="mb-3 hidden justify-end gap-2 sm:flex">
         <button
           type="button"
-          aria-label="Scroll upcoming sales left"
+          aria-label={t(locale, "Scroll upcoming sales left")}
           disabled={!canScrollLeft}
           onClick={() => scroll(-1)}
           onKeyDown={(event) => handleControlKeyDown(event, -1)}
@@ -76,7 +80,7 @@ export function UpcomingRail({ children }: UpcomingRailProps) {
         </button>
         <button
           type="button"
-          aria-label="Scroll upcoming sales right"
+          aria-label={t(locale, "Scroll upcoming sales right")}
           disabled={!canScrollRight}
           onClick={() => scroll(1)}
           onKeyDown={(event) => handleControlKeyDown(event, 1)}
@@ -88,7 +92,7 @@ export function UpcomingRail({ children }: UpcomingRailProps) {
       <div
         ref={railRef}
         role="region"
-        aria-label="Upcoming official sale campaigns"
+        aria-label={t(locale, "Upcoming official sale campaigns")}
         tabIndex={0}
         onKeyDown={handleKeyDown}
         onScroll={updateControls}

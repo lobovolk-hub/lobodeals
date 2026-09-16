@@ -133,7 +133,7 @@ test('sales selection keeps partial source health separate from aggregate conten
 })
 
 test('/sales copy is compact and does not expose the backend market label', async () => {
-  const page = await source('app/sales/page.tsx')
+  const page = await source('components/sales-page.tsx')
   const browser = await source('components/sales-browser.tsx')
 
   assert.match(browser, /Official campaigns/)
@@ -147,10 +147,10 @@ test('/sales integrates the accessible store filter into its header', async () =
   const header = browser.match(/<header[\s\S]*?<\/header>/)?.[0] ?? ''
 
   assert.match(header, /data-sales-header/)
-  assert.match(header, /<h1[\s\S]*?>\s*Sales\s*<\/h1>/)
-  assert.match(header, /<span className="sr-only">Filter by store<\/span>/)
+  assert.match(header, /<h1[\s\S]*?>\s*\{t\(locale, "Sales"\)\}\s*<\/h1>/)
+  assert.match(header, /<span className="sr-only">\{t\(locale, "Filter by store"\)\}<\/span>/)
   assert.match(header, /data-sales-store-filter/)
-  assert.match(header, /<option value="all">All official stores<\/option>/)
+  assert.match(header, /<option value="all">\{t\(locale, "All official stores"\)\}<\/option>/)
   assert.match(header, /sm:flex-row/)
   assert.match(header, /sm:w-72/)
   assert.match(header, /w-full/)
@@ -174,9 +174,9 @@ test('/sales Upcoming is a chronological compact list while Home keeps its rail'
   const sections = await source('components/campaign-sections.tsx')
   const list = await source('components/upcoming-campaign-list.tsx')
 
-  assert.match(sections, /homePreview \? \([\s\S]*<UpcomingRail>/)
+  assert.match(sections, /homePreview \? \([\s\S]*<UpcomingRail locale=\{locale\}>/)
   assert.match(sections, /<UpcomingCampaignList/)
-  assert.match(list, /StoreLogo store=\{store\} variant="mini"/)
+  assert.match(list, /StoreLogo locale=\{locale\} store=\{store\} variant="mini"/)
   assert.match(list, /campaign\.name/)
   assert.match(list, /CampaignTiming/)
   assert.match(list, /CampaignDateRange/)

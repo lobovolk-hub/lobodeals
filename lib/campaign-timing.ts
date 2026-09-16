@@ -1,4 +1,8 @@
+import { t } from './i18n'
+import type { Locale } from './locale'
 import type { CampaignBoundary, CampaignState } from './sales'
+
+export type TimingPurpose = 'start' | 'started' | 'end'
 
 const DAY_MS = 86_400_000
 const HOUR_MS = 3_600_000
@@ -17,10 +21,11 @@ function dateOnlyEpoch(value: string): number {
 export function getCampaignCounter(
   boundary: CampaignBoundary,
   state: Extract<CampaignState, 'live' | 'upcoming'>,
-  label: 'Starts' | 'Started' | 'Ends',
-  now: Date
+  purpose: TimingPurpose,
+  now: Date,
+  locale: Locale = 'en'
 ): string | null {
-  if (!Number.isFinite(now.getTime()) || label === 'Started') return null
+  if (!Number.isFinite(now.getTime()) || purpose === 'started') return null
 
   if (boundary.precision === 'date') {
     const days = Math.round(
@@ -28,11 +33,11 @@ export function getCampaignCounter(
     )
     if (days < 0) return null
 
-    if (days === 0) return `${label} today`
-    if (days === 1) return `${label} tomorrow`
-    return state === 'live' && label === 'Ends'
-      ? `${days} days left`
-      : `${label} in ${days} days`
+    if (days === 0) return t(locale, purpose === 'end' ? 'Ends today' : 'Starts today')
+    if (days === 1) return t(locale, purpose === 'end' ? 'Ends tomorrow' : 'Starts tomorrow')
+    return state === 'live' && purpose === 'end'
+      ? t(locale, '{days} days left', { days })
+      : t(locale, purpose === 'end' ? 'Ends in {days} days' : 'Starts in {days} days', { days })
   }
 
   const remaining = Date.parse(boundary.dateTime) - now.getTime()
@@ -42,11 +47,12 @@ export function getCampaignCounter(
   const hours = Math.floor((remaining % DAY_MS) / HOUR_MS)
   const minutes = Math.floor((remaining % HOUR_MS) / MINUTE_MS)
   const seconds = Math.floor((remaining % MINUTE_MS) / SECOND_MS)
-  const prefix = label === 'Ends' ? 'Ends in' : 'Starts in'
+  const message = purpose === 'end' ? 'Ends in {duration}' : 'Starts in {duration}'
+  const format = (duration: string) => t(locale, message, { duration })
 
-  if (days > 0) return `${prefix} ${days}d ${hours}h ${minutes}m ${seconds}s`
-  if (hours > 0) return `${prefix} ${hours}h ${minutes}m ${seconds}s`
-  if (minutes > 0) return `${prefix} ${minutes}m ${seconds}s`
-  if (seconds > 0) return `${prefix} ${seconds}s`
-  return `${prefix} <1s`
+  if (days > 0) return format(`${days}d ${hours}h ${minutes}m ${seconds}s`)
+  if (hours > 0) return format(`${hours}h ${minutes}m ${seconds}s`)
+  if (minutes > 0) return format(`${minutes}m ${seconds}s`)
+  if (seconds > 0) return format(`${seconds}s`)
+  return format(`<1s`)
 }

@@ -1,11 +1,5 @@
-import { SalesBrowser } from '@/components/sales-browser'
+import SalesPage from '@/components/sales-page'
 import { createPageMetadata } from '@/lib/seo'
-import {
-  projectCampaignStores,
-  projectPublicCampaigns,
-} from '@/lib/sales'
-import { loadSalesFeed } from '@/lib/sales-source'
-import { stores } from '@/lib/stores'
 
 export const metadata = createPageMetadata({
   title: 'Sales',
@@ -13,19 +7,6 @@ export const metadata = createPageMetadata({
   canonical: '/sales',
 })
 
-export default async function SalesPage() {
-  const salesFeed = await loadSalesFeed()
-  const publicCampaigns = projectPublicCampaigns(salesFeed.campaigns)
-  const campaignStores = projectCampaignStores(stores)
-
-  return (
-    <main>
-      <SalesBrowser
-        campaigns={publicCampaigns}
-        stores={campaignStores}
-        availability={salesFeed.availability}
-        sourceUnavailable={salesFeed.sourceUnavailable}
-      />
-    </main>
-  )
+export default function Page() {
+  return <SalesPage locale="en" />
 }

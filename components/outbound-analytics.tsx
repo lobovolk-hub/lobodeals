@@ -35,6 +35,7 @@ export function OutboundAnalytics() {
 
       window.dataLayer.push({
         event: 'lobodeals_outbound_click',
+        ui_language: document.documentElement.lang === 'es' ? 'es' : 'en',
         surface,
         outbound_type: outboundType,
         store_slug: storeSlug,

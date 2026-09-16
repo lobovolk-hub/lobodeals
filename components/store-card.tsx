@@ -1,3 +1,8 @@
+
+import type { Locale } from '@/lib/locale'
+import { t } from '@/lib/i18n'
+import { localizedStoreDescription } from '@/lib/store-copy'
+import { localizedHref } from '@/lib/localized-routes'
 import Link from 'next/link'
 import { StoreLogo } from '@/components/store-logo'
 import { getStoreVisualTreatment } from '@/lib/store-visuals'
@@ -8,18 +13,19 @@ import {
 } from '@/lib/stores'
 
 type StoreCardProps = {
+  locale?: Locale
   store: Store
   eagerLogo?: boolean
 }
 
-export function StoreCard({ store, eagerLogo = false }: StoreCardProps) {
+export function StoreCard({ locale = 'en',  store, eagerLogo = false }: StoreCardProps) {
   const visual = getStoreVisualTreatment(store.slug)
 
   return (
     <article className="h-full">
       <Link
-        href={getStorePublicHref(store)}
-        aria-label={`View ${store.name}`}
+        href={localizedHref(getStorePublicHref(store), locale)}
+        aria-label={t(locale, "View {value0}", { value0: store.name })}
         className={`group relative flex h-full min-h-80 cursor-pointer flex-col overflow-hidden rounded-xl border bg-gradient-to-br p-4 shadow-[0_16px_40px_rgba(0,0,0,0.16)] transition duration-200 hover:-translate-y-0.5 hover:shadow-[0_22px_48px_rgba(0,0,0,0.28)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-[#f87171] motion-reduce:hover:translate-y-0 ${visual.surface} ${visual.border}`}
       >
         <div
@@ -36,7 +42,7 @@ export function StoreCard({ store, eagerLogo = false }: StoreCardProps) {
           />
 
           <div className="relative w-full transition-transform duration-200 group-hover:scale-[1.025] motion-reduce:group-hover:scale-100">
-            <StoreLogo store={store} eager={eagerLogo} />
+            <StoreLogo locale={locale} store={store} eager={eagerLogo} />
           </div>
         </div>
 
@@ -46,11 +52,11 @@ export function StoreCard({ store, eagerLogo = false }: StoreCardProps) {
           </h3>
 
           <p className="mt-2 flex-1 text-sm leading-6 text-white/65">
-            {store.description}
+            {localizedStoreDescription(locale, store)}
           </p>
 
           <ul
-            aria-label={`${store.name} platforms`}
+            aria-label={t(locale, "{value0} platforms", { value0: store.name })}
             className="mt-4 flex flex-wrap gap-1.5"
           >
             {store.platforms.map((platform) => (
@@ -66,7 +72,7 @@ export function StoreCard({ store, eagerLogo = false }: StoreCardProps) {
           <span
             className={`mt-4 inline-flex min-h-11 items-center border-t border-white/10 pt-3 text-sm font-semibold text-white transition-colors ${visual.cta}`}
           >
-            View store
+            {t(locale, "View store")}
             <span className="ml-2" aria-hidden="true">
               {'\u2192'}
             </span>

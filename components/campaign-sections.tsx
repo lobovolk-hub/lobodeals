@@ -1,5 +1,9 @@
 'use client'
 
+import type { Locale } from '@/lib/locale'
+import { t } from '@/lib/i18n'
+import { localizedHref } from '@/lib/localized-routes'
+
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import { CampaignCard } from '@/components/campaign-card'
@@ -16,6 +20,7 @@ import type {
 } from '@/lib/sales'
 
 type CampaignSectionsProps = {
+  locale?: Locale
   campaigns: readonly PublicOfficialCampaign[]
   stores: readonly CampaignStore[]
   idPrefix: string
@@ -30,7 +35,7 @@ type CampaignSectionsProps = {
 const MAX_TIMEOUT_DELAY = 2_147_000_000
 const BOUNDARY_SETTLE_DELAY = 50
 
-export function CampaignSections({
+export function CampaignSections({ locale = 'en',
   campaigns,
   stores,
   idPrefix,
@@ -38,8 +43,8 @@ export function CampaignSections({
   showStore = true,
   dataUnavailable = false,
   homePreview = false,
-  emptyLiveMessage = 'No live official store campaigns are available in the current Sales feed.',
-  emptyUpcomingMessage = 'No upcoming official store campaigns are available in the current Sales feed.',
+  emptyLiveMessage = t(locale, 'No live official store campaigns are available in the current Sales feed.'),
+  emptyUpcomingMessage = t(locale, 'No upcoming official store campaigns are available in the current Sales feed.'),
 }: CampaignSectionsProps) {
   const [currentTime, setCurrentTime] = useState<number | null>(null)
 
@@ -80,11 +85,11 @@ export function CampaignSections({
     <>
       {dataUnavailable ? (
         <aside
-          aria-label="Sales data availability"
+          aria-label={t(locale, "Sales data availability")}
           className="border-t border-amber-200/15 bg-amber-100/[0.035]"
         >
           <p className="mx-auto w-full max-w-7xl px-4 py-3 text-sm text-[#c8bda7] sm:px-6 lg:px-8">
-            Sales data is temporarily unavailable.
+            {t(locale, "Sales data is temporarily unavailable.")}
           </p>
         </aside>
       ) : null}
@@ -99,13 +104,13 @@ export function CampaignSections({
       >
         <div className="mx-auto w-full max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
           <p className="text-xs font-bold uppercase tracking-[0.2em] text-[#c84b4b]">
-            Active official campaigns
+            {t(locale, "Active official campaigns")}
           </p>
           <h2
             id={`${idPrefix}-live-heading`}
             className="mt-2 text-2xl font-semibold tracking-tight text-white"
           >
-            Live now
+            {t(locale, "Live now")}
           </h2>
           {groups.live.length > 0 ? (
             <div
@@ -116,7 +121,7 @@ export function CampaignSections({
               }`}
             >
               {groups.live.map(({ campaign, store }) => (
-                <CampaignCard
+                <CampaignCard locale={locale}
                   key={campaign.id}
                   campaign={campaign}
                   store={store}
@@ -129,7 +134,7 @@ export function CampaignSections({
           ) : (
             <p className="mt-5 rounded-lg border border-dashed border-white/15 bg-[#171717] px-5 py-5 text-sm leading-6 text-[#9b9a98]">
               {dataUnavailable
-                ? 'Current campaign availability cannot be confirmed right now.'
+                ? t(locale, "Current campaign availability cannot be confirmed right now.")
                 : emptyLiveMessage}
             </p>
           )}
@@ -146,33 +151,33 @@ export function CampaignSections({
           <div className="flex flex-wrap items-end justify-between gap-4">
             <div>
               <p className="text-xs font-bold uppercase tracking-[0.2em] text-[#71706e]">
-                Announced official campaigns
+                {t(locale, "Announced official campaigns")}
               </p>
               <h2
                 id={`${idPrefix}-upcoming-heading`}
                 className="mt-2 text-2xl font-semibold tracking-tight text-white"
               >
-                Upcoming
+                {t(locale, "Upcoming")}
               </h2>
             </div>
             {homePreview && groups.upcoming.length > 0 ? (
               <Link
-                href="/sales"
+                href={localizedHref("/sales", locale)}
                 className="inline-flex min-h-11 items-center text-sm font-bold text-white underline decoration-[#990303] decoration-2 underline-offset-4 transition-colors hover:text-[#ef7777]"
               >
-                View all upcoming sales <span className="ml-2" aria-hidden="true">→</span>
+                {t(locale, "View all upcoming sales")} <span className="ml-2" aria-hidden="true">→</span>
               </Link>
             ) : null}
           </div>
           {groups.upcoming.length > 0 ? (
             homePreview ? (
-              <UpcomingRail>
+              <UpcomingRail locale={locale}>
                 {groups.upcoming.map(({ campaign, store }) => (
                   <div
                     key={campaign.id}
                     className="w-[min(84vw,21rem)] shrink-0 snap-start sm:w-[21rem] lg:w-[22rem]"
                   >
-                    <CampaignCard
+                    <CampaignCard locale={locale}
                       campaign={campaign}
                       store={store}
                       state="upcoming"
@@ -184,7 +189,7 @@ export function CampaignSections({
                 ))}
               </UpcomingRail>
             ) : (
-              <UpcomingCampaignList
+              <UpcomingCampaignList locale={locale}
                 campaigns={groups.upcoming}
                 showStore={showStore}
                 analyticsSurface={analyticsSurface}
@@ -193,7 +198,7 @@ export function CampaignSections({
           ) : (
             <p className="mt-5 rounded-lg border border-dashed border-white/15 bg-[#171717] px-5 py-5 text-sm leading-6 text-[#9b9a98]">
               {dataUnavailable
-                ? 'Upcoming campaign availability cannot be confirmed right now.'
+                ? t(locale, "Upcoming campaign availability cannot be confirmed right now.")
                 : emptyUpcomingMessage}
             </p>
           )}

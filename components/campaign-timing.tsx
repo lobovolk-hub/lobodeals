@@ -1,6 +1,9 @@
 'use client'
 
-import { getCampaignCounter } from '@/lib/campaign-timing'
+import type { Locale } from '@/lib/locale'
+
+import { t } from '@/lib/i18n'
+import { getCampaignCounter, type TimingPurpose } from '@/lib/campaign-timing'
 import {
   formatCompactCampaignBoundary,
 } from '@/lib/public-sales-runtime'
@@ -11,21 +14,23 @@ import type {
 import { useSharedSecondClock } from '@/lib/use-shared-second-clock'
 
 type CampaignTimingProps = {
+  locale?: Locale
   boundary: CampaignBoundary
-  label: 'Starts' | 'Started' | 'Ends'
+  purpose: TimingPurpose
   state: Extract<CampaignState, 'live' | 'upcoming'>
 }
 
-export function CampaignTiming({
+export function CampaignTiming({ locale = 'en',
   boundary,
-  label,
+  purpose,
   state,
 }: CampaignTimingProps) {
+  const label = t(locale, purpose === 'end' ? 'Ends' : purpose === 'started' ? 'Started' : 'Starts')
   const currentTime = useSharedSecondClock()
   const counter = currentTime
-    ? getCampaignCounter(boundary, state, label, new Date(currentTime))
+    ? getCampaignCounter(boundary, state, purpose, new Date(currentTime), locale)
     : null
-  const formatted = formatCompactCampaignBoundary(boundary)
+  const formatted = formatCompactCampaignBoundary(boundary, locale)
 
   return (
     <p className="mt-3 text-sm font-semibold tabular-nums text-[#b7b4ae]">

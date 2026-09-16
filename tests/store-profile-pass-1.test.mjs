@@ -18,7 +18,7 @@ async function source(relativePath) {
 }
 
 test('seven independent profiles use one shared compact LoboDeals-first header while the registry remains ten stores', async () => {
-  const page = await source('app/services/[slug]/page.tsx')
+  const page = await source('components/store-profile-page.tsx')
   const hero = await source('components/store-profile-hero.tsx')
 
   assert.equal(storeStaticParams.length, 10)
@@ -41,9 +41,9 @@ test('seven independent profiles use one shared compact LoboDeals-first header w
   )
   assert.equal(Object.keys(storeVisualTreatments).length, 10)
   assert.match(page, /return storeProfileStaticParams/)
-  assert.match(page, /<StoreProfileHero store=\{store\} \/>/)
+  assert.match(page, /<StoreProfileHero locale=\{locale\} store=\{store\} \/>/)
   assert.match(hero, /data-store-profile-hero=\{store\.slug\}/)
-  assert.match(hero, /<StoreLogo store=\{store\} eager \/>/)
+  assert.match(hero, /<StoreLogo locale=\{locale\} store=\{store\} eager \/>/)
   assert.match(hero, /Official store/)
   assert.match(hero, /bg-\[#121212\]/)
   assert.doesNotMatch(hero, /getStoreVisualTreatment/)
@@ -53,10 +53,10 @@ test('seven independent profiles use one shared compact LoboDeals-first header w
 test('profile header integrates the objective description, accessible platform links, and the official CTA', async () => {
   const hero = await source('components/store-profile-hero.tsx')
 
-  assert.match(hero, /store\.description/)
+  assert.match(hero, /localizedStoreDescription\(locale, store\)/)
   assert.doesNotMatch(hero, /store\.digitalScope|Digital content/)
   assert.match(hero, /store\.platforms\.map/)
-  assert.match(hero, /href=\{`\/\$\{platform\}`\}/)
+  assert.match(hero, /href=\{localizedHref\(`\/\$\{platform\}`, locale\)\}/)
   assert.match(hero, /platformLabels\[platform\]/)
   assert.match(hero, /href=\{store\.officialUrl\}/)
   assert.match(hero, /Visit official store/)
@@ -67,7 +67,7 @@ test('profile header integrates the objective description, accessible platform l
 })
 
 test('profiles keep internal digital and market scope out of the public profile UI', async () => {
-  const page = await source('app/services/[slug]/page.tsx')
+  const page = await source('components/store-profile-page.tsx')
   const hero = await source('components/store-profile-hero.tsx')
   const publicProfile = `${page}\n${hero}`
 
@@ -81,7 +81,7 @@ test('profiles keep internal digital and market scope out of the public profile 
 })
 
 test('store availability state keeps one notice and preserves confirmed campaigns', async () => {
-  const page = await source('app/services/[slug]/page.tsx')
+  const page = await source('components/store-profile-page.tsx')
   const availability = [
     { storeSlug: 'steam', availability: 'available' },
     { storeSlug: 'playstation-store', availability: 'temporarily_unavailable' },
@@ -132,10 +132,10 @@ test('store availability state keeps one notice and preserves confirmed campaign
   assert.match(page, /salesState === 'unavailable'[\s\S]*data-store-sales-state="unavailable"/)
   assert.match(page, /content-with-availability-notice'[\s\S]*Previously confirmed campaigns remain visible/)
   assert.match(page, /<CampaignSections/)
-  assert.match(page, /emptyLiveMessage="No live official store campaigns right now\."/)
+  assert.match(page, /emptyLiveMessage=\{t\(locale, "No live official store campaigns right now\."\)\}/)
   assert.match(
     page,
-    /emptyUpcomingMessage="No upcoming official store campaigns are currently announced\."/
+    /emptyUpcomingMessage=\{t\(locale, "No upcoming official store campaigns are currently announced\."\)\}/
   )
   assert.doesNotMatch(page, /dataUnavailable=/)
   assert.doesNotMatch(page, /Current campaign availability cannot be confirmed|Upcoming campaign availability cannot be confirmed/)
@@ -167,12 +167,12 @@ test('Xbox Store keeps its canonical internal entity and Rockstar uses its verif
 })
 
 test('approved Home, Sales, platform, and campaign contracts remain shared', async () => {
-  const home = await source('app/page.tsx')
+  const home = await source('components/home-page.tsx')
   const sales = await source('components/sales-browser.tsx')
   const platform = await source('components/platform-page.tsx')
   const sections = await source('components/campaign-sections.tsx')
 
-  assert.match(home, /<HomeHero \/>/)
+  assert.match(home, /<HomeHero locale=\{locale\} \/>/)
   assert.match(home, /Explore by Platform/)
   assert.match(sales, /data-sales-store-filter/)
   assert.match(sales, /All official stores/)

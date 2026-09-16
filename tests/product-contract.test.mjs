@@ -214,7 +214,7 @@ test('only approved store logo directories and own-brand assets remain', async (
   assert.deepEqual(assetDirectories, [...approvedAssetDirectories].sort())
 
   for (const protectedPath of [
-    'public/og/lobodeals-og.png',
+    'public/og/lobodeals-og-v2.png',
     'public/platforms/xbox/logo.png',
     'public/services/rockstar-store/logo.svg',
     'app/favicon.ico',
@@ -227,7 +227,7 @@ test('only approved store logo directories and own-brand assets remain', async (
   assert.equal(await exists('public/logo.png'), false)
 
   const socialCard = await readFile(
-    path.join(root, 'public/og/lobodeals-og.png')
+    path.join(root, 'public/og/lobodeals-og-v2.png')
   )
   assert.equal(socialCard.readUInt32BE(16), 1200)
   assert.equal(socialCard.readUInt32BE(20), 630)
@@ -242,6 +242,14 @@ test('public route implementations match the approved surface', async () => {
 
   assert.deepEqual(routeEntries, [
     'app/about/page.tsx',
+    'app/es/about/page.tsx',
+    'app/es/nintendo/page.tsx',
+    'app/es/page.tsx',
+    'app/es/pc/page.tsx',
+    'app/es/playstation/page.tsx',
+    'app/es/sales/page.tsx',
+    'app/es/services/[slug]/page.tsx',
+    'app/es/xbox/page.tsx',
     'app/nintendo/page.tsx',
     'app/page.tsx',
     'app/pc/page.tsx',
@@ -260,7 +268,6 @@ test('public route implementations match the approved surface', async () => {
     'app/profile',
     'app/tracked',
     'app/us',
-    'proxy.ts',
     'scripts',
     'config',
     'data',
@@ -350,7 +357,7 @@ test('robots allows the public site without masking retired routes', async () =>
 test('seven independent store profiles are static, reject unknown slugs, and contain campaign sections', async () => {
   const { storeProfileStaticParams } = await loadStores()
   const routeSource = await readFile(
-    path.join(root, 'app/services/[slug]/page.tsx'),
+    path.join(root, 'components/store-profile-page.tsx'),
     'utf8'
   )
   const heroSource = await readFile(
@@ -364,15 +371,15 @@ test('seven independent store profiles are static, reject unknown slugs, and con
   )
   assert.doesNotMatch(routeSource, /export const dynamicParams = false/)
   assert.match(routeSource, /return storeProfileStaticParams/)
-  assert.match(routeSource, /if \(!store\) notFound\(\)/)
-  assert.match(routeSource, /<StoreProfileHero store=\{store\}/)
-  assert.match(heroSource, /<StoreLogo store=\{store\}/)
+  assert.match(routeSource, /if \(!store \|\| !storeProfileStaticParams\.some\([\s\S]*?entry\.slug === slug\)\) notFound\(\)/)
+  assert.match(routeSource, /<StoreProfileHero locale=\{locale\} store=\{store\}/)
+  assert.match(heroSource, /<StoreLogo locale=\{locale\} store=\{store\}/)
   assert.match(heroSource, /Visit official store/)
   assert.match(routeSource, /<CampaignSections/)
 })
 
 test('Header, Explore by Platform, and Home hero use PC-first platform order', async () => {
-  const home = await readFile(path.join(root, 'app/page.tsx'), 'utf8')
+  const home = await readFile(path.join(root, 'components/home-page.tsx'), 'utf8')
   const navigation = await readFile(
     path.join(root, 'components/site-navigation.tsx'),
     'utf8'
@@ -396,13 +403,13 @@ test('Header, Explore by Platform, and Home hero use PC-first platform order', a
   )
 })
 test('home, platform, Sales, and shell protect the approved structure', async () => {
-  const home = await readFile(path.join(root, 'app/page.tsx'), 'utf8')
+  const home = await readFile(path.join(root, 'components/home-page.tsx'), 'utf8')
   const hero = await readFile(path.join(root, 'components/home-hero.tsx'), 'utf8')
   const platform = await readFile(
     path.join(root, 'components/platform-page.tsx'),
     'utf8'
   )
-  const sales = await readFile(path.join(root, 'app/sales/page.tsx'), 'utf8')
+  const sales = await readFile(path.join(root, 'components/sales-page.tsx'), 'utf8')
   const browser = await readFile(
     path.join(root, 'components/sales-browser.tsx'),
     'utf8'
@@ -421,13 +428,13 @@ test('home, platform, Sales, and shell protect the approved structure', async ()
   )
 
   assert.ok(home.indexOf('Explore by Platform') < home.indexOf('<CampaignSections'))
-  assert.match(home, /<HomeHero \/>/)
+  assert.match(home, /<HomeHero locale=\{locale\} \/>/)
   assert.match(hero, /Know where official game sales are happening/)
   assert.ok(platform.indexOf('Official Stores') < platform.indexOf('<CampaignSections'))
   assert.match(platform, /<SingleStoreSummary[\s\S]*?platform=\{platform\}[\s\S]*?name=\{name\}[\s\S]*?store=\{singleStore\}[\s\S]*?\/>/)
   assert.match(sales, /<SalesBrowser/)
   assert.match(browser, /<header[\s\S]*data-sales-header[\s\S]*<select/)
-  assert.match(browser, /<span className="sr-only">Filter by store<\/span>/)
+  assert.match(browser, /<span className="sr-only">\{t\(locale, "Filter by store"\)\}<\/span>/)
   assert.match(browser, /All official stores/)
   assert.ok(
     sections.indexOf('Live now') < sections.indexOf('Announced official campaigns')
@@ -437,9 +444,9 @@ test('home, platform, Sales, and shell protect the approved structure', async ()
   assert.match(sections, /groups\.upcoming\.map/)
   assert.doesNotMatch(sections, /dataUnavailable\s*\?\s*null\s*:/)
   assert.match(shell, /sticky top-0/)
-  assert.match(shell, /<SiteNavigation \/>/)
-  assert.match(shell, /href="\/"/)
-  assert.match(shell, /href="\/about"/)
+  assert.match(shell, /<SiteNavigation locale=\{locale\} \/>/)
+  assert.match(shell, /href=\{localizedHref\("\/", locale\)\}/)
+  assert.match(shell, /href=\{localizedHref\("\/about", locale\)\}/)
   assert.match(shell, /A LoboVolk brand/)
 
   for (const destination of [
@@ -457,7 +464,7 @@ test('home, platform, Sales, and shell protect the approved structure', async ()
   assert.match(navigation, /usePathname/)
   assert.match(
     navigation,
-    /href === '\/pc' && pathname\.startsWith\('\/services\/'\)/
+    /isCurrentRoute\(pathname, item\.href\)/
   )
   assert.match(navigation, /aria-current=\{active \? 'page' : undefined\}/)
   assert.match(navigation, /aria-expanded=\{menuOpen\}/)
@@ -465,7 +472,7 @@ test('home, platform, Sales, and shell protect the approved structure', async ()
 })
 
 test('visual pass keeps Home public-facing and makes cards fully navigable', async () => {
-  const home = await readFile(path.join(root, 'app/page.tsx'), 'utf8')
+  const home = await readFile(path.join(root, 'components/home-page.tsx'), 'utf8')
   const hero = await readFile(path.join(root, 'components/home-hero.tsx'), 'utf8')
   const platformCard = await readFile(
     path.join(root, 'components/platform-card.tsx'),
@@ -487,11 +494,11 @@ test('visual pass keeps Home public-facing and makes cards fully navigable', asy
   assert.match(hero, /Official game sales/i)
   assert.doesNotMatch(`${home}\n${hero}`, /United States|US market scope/i)
   assert.match(home, /<CampaignSections[\s\S]*?homePreview/)
-  assert.match(sections, /<UpcomingRail>/)
+  assert.match(sections, /<UpcomingRail locale=\{locale\}>/)
   assert.match(upcomingRail, /overflow-x-auto/)
   assert.match(upcomingRail, /snap-mandatory/)
   assert.match(sections, /View all upcoming sales/)
-  assert.match(sections, /href="\/sales"/)
+  assert.match(sections, /href=\{localizedHref\("\/sales", locale\)\}/)
 
   assert.equal((campaignCard.match(/<a\b/g) || []).length, 1)
   assert.ok(campaignCard.indexOf('<a\n') < campaignCard.indexOf('<StoreLogo'))
@@ -503,7 +510,7 @@ test('visual pass keeps Home public-facing and makes cards fully navigable', asy
   assert.match(campaignCard, /focus-visible:outline/)
 
   assert.equal((platformCard.match(/<Link\b/g) || []).length, 1)
-  assert.match(platformCard, /aria-label=\{`Explore/)
+  assert.match(platformCard, /aria-label=\{t\(locale, "Explore/)
   assert.match(platformCard, /cursor-pointer/)
   assert.match(platformCard, /focus-visible:outline/)
 })

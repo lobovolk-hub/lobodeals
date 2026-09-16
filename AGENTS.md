@@ -13,7 +13,10 @@ The Product Authority defines what is built. The Technical Audit defines the
 technical state, dependencies, and gates. Product decisions P1–P11 are CLOSED
 and must not be reopened through implementation preference.
 
-Public product copy is English. Collaboration with Johan is Spanish.
+Public product copy follows the approved Bilingual Public UI & Acquisition
+Addendum (13 September 2026): English at existing unprefixed URLs; neutral
+Latin American Spanish under /es. English remains the primary SEO surface;
+Spanish follows SEO Phase A. Collaboration with Johan is Spanish.
 
 ## Approved product
 
@@ -23,8 +26,7 @@ LoboDeals is a LoboVolk brand with two public functions:
 - **Sales:** when an official store sale campaign is live or officially
   announced.
 
-The tracked market is the United States. The audience is international and
-English-speaking.
+The tracked market is the United States. The audience is international, with English and Spanish public UI.
 
 The ten canonical stores are:
 

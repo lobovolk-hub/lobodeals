@@ -1,7 +1,12 @@
+
+import type { Locale } from '@/lib/locale'
+import { t } from '@/lib/i18n'
+import { localizedStoreDescription } from '@/lib/store-copy'
 import { StoreLogo } from '@/components/store-logo'
 import type { Platform, Store } from '@/lib/stores'
 
 type SingleStoreSummaryProps = {
+  locale?: Locale
   platform: Platform
   name: string
   store: Store
@@ -25,7 +30,7 @@ const singleStoreTreatments = {
   },
 } as const
 
-export function SingleStoreSummary({
+export function SingleStoreSummary({ locale = 'en',
   platform,
   name,
   store,
@@ -61,7 +66,7 @@ export function SingleStoreSummary({
       />
 
       <div
-        className="pointer-events-none absolute inset-y-0 right-0 w-[58%] min-w-64 overflow-hidden"
+        className="pointer-events-none absolute inset-x-0 bottom-0 h-40 overflow-hidden sm:inset-x-auto sm:inset-y-0 sm:right-0 sm:h-auto sm:w-[58%] sm:min-w-64"
         aria-hidden="true"
       >
         <p className="absolute inset-x-0 top-1/2 -translate-y-1/2 whitespace-nowrap text-center text-[clamp(5rem,13vw,11rem)] font-black uppercase tracking-[-0.08em] text-white/[0.065]">
@@ -78,10 +83,10 @@ export function SingleStoreSummary({
 
         <div
           data-single-store-logo
-          className="absolute inset-0 flex items-center justify-center pl-12 sm:pl-16"
+          className="absolute inset-0 flex items-center justify-center sm:pl-16"
         >
           <div className="relative w-36 sm:w-44 lg:w-56">
-            <StoreLogo
+            <StoreLogo locale={locale}
               store={store}
               variant="platform"
               eager
@@ -90,11 +95,11 @@ export function SingleStoreSummary({
         </div>
       </div>
 
-      <div className="relative mx-auto flex min-h-[300px] w-full max-w-7xl items-center px-4 py-8 sm:min-h-[320px] sm:px-6 sm:py-9 lg:min-h-[330px] lg:px-8">
-        <div className="max-w-[72%] sm:max-w-[60%]">
+      <div className="relative mx-auto flex min-h-[300px] w-full max-w-7xl items-center px-4 pb-44 pt-8 sm:min-h-[320px] sm:px-6 sm:py-9 lg:min-h-[330px] lg:px-8">
+        <div className="w-full sm:max-w-[60%]">
           <p className="flex items-center gap-3 text-xs font-bold uppercase tracking-[0.22em] text-white/70">
             <span className="h-px w-8 bg-[#990303]" aria-hidden="true" />
-            Platform
+            {t(locale, "Platform")}
           </p>
 
           <h1
@@ -109,7 +114,7 @@ export function SingleStoreSummary({
           </h2>
 
           <p className="mt-2 max-w-2xl text-sm leading-6 text-white/75 sm:text-base sm:leading-7">
-            {store.description}
+            {localizedStoreDescription(locale, store)}
           </p>
 
           <a
@@ -124,11 +129,11 @@ export function SingleStoreSummary({
             rel="noopener noreferrer"
             className="mt-5 inline-flex min-h-11 items-center justify-center rounded-md bg-[#990303] px-4 py-2.5 text-sm font-bold text-white transition-colors hover:bg-[#b20a0a] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#f87171]"
           >
-            Visit official store
+            {t(locale, "Visit official store")}
             <span className="ml-2" aria-hidden="true">
               {'\u2197'}
             </span>
-            <span className="sr-only"> (opens in a new tab)</span>
+            <span className="sr-only"> {t(locale, "(opens in a new tab)")}</span>
           </a>
         </div>
       </div>

@@ -1,3 +1,4 @@
+import { loadModule } from './helpers/load-module.mjs'
 import assert from 'node:assert/strict'
 import { readFile } from 'node:fs/promises'
 import path from 'node:path'
@@ -24,24 +25,8 @@ function transpileTypeScript(source, fileName) {
   return result.outputText
 }
 
-function toModuleUrl(source) {
-  return 'data:text/javascript;base64,' + Buffer.from(source).toString('base64')
-}
-
 async function loadSalesModel() {
-  const storesSource = await readFile(path.join(root, 'lib/stores.ts'), 'utf8')
-  const storesUrl = toModuleUrl(
-    transpileTypeScript(storesSource, 'lib/stores.ts')
-  )
-  const salesSource = await readFile(path.join(root, 'lib/sales.ts'), 'utf8')
-  const transpiled = transpileTypeScript(salesSource, 'lib/sales.ts')
-  const linked = transpiled.replace(
-    /from ['"]\.\/stores['"]/,
-    "from '" + storesUrl + "'"
-  )
-
-  assert.notEqual(linked, transpiled)
-  return import(toModuleUrl(linked))
+  return loadModule('lib/sales.ts')
 }
 
 const salesModelPromise = loadSalesModel()
@@ -293,9 +278,7 @@ test('public Sales runtime is client-safe and preserves lifecycle grouping', asy
     false
   )
 
-  const runtime = await import(
-    toModuleUrl(runtimeTranspiled)
-  )
+  const runtime = await loadModule('lib/public-sales-runtime.ts')
 
   const publicCampaign = {
     id: 'runtime-live',

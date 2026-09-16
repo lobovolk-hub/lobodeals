@@ -3,7 +3,8 @@ import { readFile } from 'node:fs/promises'
 import path from 'node:path'
 import test from 'node:test'
 
-import { getCampaignCounter } from '../lib/campaign-timing.ts'
+import { loadModule } from './helpers/load-module.mjs'
+const { getCampaignCounter } = await loadModule('lib/campaign-timing.ts')
 
 const root = process.cwd()
 
@@ -41,7 +42,7 @@ test('hero playback has an eight-second timer and persistent pause/play choice',
   assert.match(hero, /ROTATION_INTERVAL_MS = 8_000/)
   assert.match(hero, /playbackChoiceMade\.current = true/)
   assert.match(hero, /setPlayback\(!autoplayEnabled\)/)
-  assert.match(hero, /'Pause slideshow' : 'Play slideshow'/)
+  assert.match(hero, /t\(locale, "Pause slideshow"\) : t\(locale, "Play slideshow"\)/)
   assert.match(hero, /if \(!autoplayEnabled\) return/)
   assert.match(hero, /setTimerReset\(\(current\) => current \+ 1\)/)
 })
@@ -50,10 +51,10 @@ test('hero controls are centered, accessible, and reduced motion starts without 
   const hero = await source('components/home-hero.tsx')
 
   assert.match(hero, /absolute inset-x-0 bottom-4 z-30 flex justify-center/)
-  assert.match(hero, /aria-label="Previous platform visual"/)
-  assert.match(hero, /aria-label="Next platform visual"/)
-  assert.match(hero, /aria-label=\{`Show \$\{slide\.platform\} visual`\}/)
-  assert.match(hero, /aria-label=\{autoplayEnabled \? 'Pause slideshow' : 'Play slideshow'\}/)
+  assert.match(hero, /aria-label=\{t\(locale, "Previous platform visual"\)\}/)
+  assert.match(hero, /aria-label=\{t\(locale, "Next platform visual"\)\}/)
+  assert.match(hero, /aria-label=\{t\(locale, "Show \{value0\} visual", \{ value0: slide\.platform \}\)\}/)
+  assert.match(hero, /aria-label=\{autoplayEnabled \? t\(locale, "Pause slideshow"\) : t\(locale, "Play slideshow"\)\}/)
   assert.match(hero, /event\.key !== 'ArrowLeft'/)
   assert.match(hero, /event\.key !== 'ArrowRight'/)
   assert.match(hero, /matchMedia\('\(prefers-reduced-motion: reduce\)'\)/)
@@ -74,7 +75,7 @@ test('Xbox campaign fallback and Rockstar Store use verified brand treatments', 
   )
   assert.match(
     artwork,
-    /<StoreLogo store=\{store\} variant="campaign" \/>/
+    /<StoreLogo locale=\{locale\} store=\{store\} variant="campaign" \/>/
   )
 
   assert.match(
@@ -87,7 +88,7 @@ test('Xbox campaign fallback and Rockstar Store use verified brand treatments', 
   )
   assert.match(
     storeLogo,
-    />\s*Store\s*</
+    />\s*Store\s*<\/span>/
   )
 })
 
@@ -95,19 +96,19 @@ test('exact datetime countdown covers second, minute, and hour rollovers', () =>
   const boundary = { precision: 'datetime', dateTime: '2026-08-27T13:00:00Z' }
 
   assert.equal(
-    getCampaignCounter(boundary, 'live', 'Ends', new Date('2026-08-27T12:00:00Z')),
+    getCampaignCounter(boundary, 'live', 'end', new Date('2026-08-27T12:00:00Z')),
     'Ends in 1h 0m 0s'
   )
   assert.equal(
-    getCampaignCounter(boundary, 'live', 'Ends', new Date('2026-08-27T12:00:01Z')),
+    getCampaignCounter(boundary, 'live', 'end', new Date('2026-08-27T12:00:01Z')),
     'Ends in 59m 59s'
   )
   assert.equal(
-    getCampaignCounter(boundary, 'live', 'Ends', new Date('2026-08-27T12:59:59Z')),
+    getCampaignCounter(boundary, 'live', 'end', new Date('2026-08-27T12:59:59Z')),
     'Ends in 1s'
   )
   assert.equal(
-    getCampaignCounter(boundary, 'live', 'Ends', new Date('2026-08-27T13:00:00Z')),
+    getCampaignCounter(boundary, 'live', 'end', new Date('2026-08-27T13:00:00Z')),
     null
   )
 })
@@ -130,13 +131,13 @@ test('date-only remains calendar-only while source formatting excludes seconds',
   const counter = getCampaignCounter(
     dateOnly,
     'live',
-    'Ends',
+    'end',
     new Date(2026, 7, 27, 23, 59, 58)
   )
 
   assert.equal(counter, '5 days left')
   assert.doesNotMatch(counter, /\d+[hms]\b|:/)
-  const sales = await source('lib/sales.ts')
+  const sales = await source('lib/date-format.ts')
   assert.match(sales, /minute: '2-digit'/)
   assert.doesNotMatch(sales, /second: '2-digit'/)
 })

@@ -42,7 +42,7 @@ test('Ubisoft and Battle.net reuse their approved local assets', () => {
 
 test('StoreCard and profile hero give the shared StoreLogo contract a real width', async () => {
   const card = await source('components/store-card.tsx')
-  const profile = await source('app/services/[slug]/page.tsx')
+  const profile = await source('components/store-profile-page.tsx')
   const profileHero = await source('components/store-profile-hero.tsx')
 
   assert.match(card, /className="relative w-full[^"]*"/)
@@ -50,10 +50,10 @@ test('StoreCard and profile hero give the shared StoreLogo contract a real width
     card,
     /<StoreLogo[\s\S]*?store=\{store\}[\s\S]*?eager=\{eagerLogo\}[\s\S]*?\/>/
   )
-  assert.match(profile, /<StoreProfileHero store=\{store\} \/>/)
+  assert.match(profile, /<StoreProfileHero locale=\{locale\} store=\{store\} \/>/)
   assert.match(
     profileHero,
-    /className="relative w-full">\s*<StoreLogo store=\{store\} eager \/>/
+    /className="relative w-full">\s*<StoreLogo locale=\{locale\} store=\{store\} eager \/>/
   )
   assert.equal((card.match(/<StoreLogo\b/g) || []).length, 1)
 })
@@ -69,7 +69,7 @@ test('Rockstar uses the verified official local asset and shared Store lockup', 
   })
   assert.match(logo, /data-rockstar-store-lockup/)
   assert.match(logo, /aria-label="Rockstar Store"/)
-  assert.match(logo, />\s*Store\s*</)
+  assert.match(logo, />\s*Store\s*<\/span>/)
 })
 
 test('PC card routes, Xbox identity, and store colors remain unchanged', () => {

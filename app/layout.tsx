@@ -4,6 +4,9 @@ import { OutboundAnalytics } from '@/components/outbound-analytics'
 import { Geist, Geist_Mono } from 'next/font/google'
 import { SiteFooter, SiteHeader } from '@/components/site-shell'
 import './globals.css'
+import { requestLocale } from '@/lib/request-locale'
+import { createHomeMetadata } from '@/lib/seo'
+import { t } from '@/lib/i18n'
 
 const geistSans = Geist({
   variable: '--font-geist-sans',
@@ -25,45 +28,19 @@ const gtmId =
     ? configuredGtmId
     : undefined
 
-export const metadata: Metadata = {
-  metadataBase: new URL(siteUrl),
-  applicationName: 'LoboDeals',
-  title: {
-    default: 'LoboDeals — Official game sales',
-    template: '%s | LoboDeals',
-  },
-  description:
-    'Find official digital game stores and see their live or announced sale campaigns.',
-  authors: [{ name: 'LoboDeals' }],
-  creator: 'LoboDeals',
-  publisher: 'LoboVolk',
-  openGraph: {
-    type: 'website',
-    siteName: 'LoboDeals',
-    title: 'LoboDeals — Official game sales',
-    description:
-      'Official digital game stores and their live or announced sale campaigns.',
-    url: '/',
-    images: [
-      {
-        url: '/og/lobodeals-og-v2.png',
-        width: 1200,
-        height: 630,
-        alt: 'LoboDeals — Official game sales.',
-      },
-    ],
-  },
-  twitter: {
-    card: 'summary_large_image',
-    title: 'LoboDeals — Official game sales',
-    description:
-      'Official digital game stores and their live or announced sale campaigns.',
-    images: ['/og/lobodeals-og-v2.png'],
-  },
-  robots: {
-    index: true,
-    follow: true,
-  },
+export async function generateMetadata(): Promise<Metadata> {
+  const locale = await requestLocale()
+  const home = createHomeMetadata(locale)
+  return {
+    ...home,
+    alternates: { canonical: null },
+    metadataBase: new URL(siteUrl),
+    applicationName: 'LoboDeals',
+    title: { default: t(locale, 'LoboDeals — Official game sales'), template: '%s | LoboDeals' },
+    authors: [{ name: 'LoboDeals' }],
+    creator: 'LoboDeals',
+    publisher: 'LoboVolk',
+  }
 }
 
 export const viewport: Viewport = {
@@ -71,14 +48,15 @@ export const viewport: Viewport = {
   colorScheme: 'dark',
 }
 
-export default function RootLayout({
+export default async function RootLayout({
   children,
 }: Readonly<{
   children: React.ReactNode
 }>) {
+  const locale = await requestLocale()
   return (
     <html
-      lang="en"
+      lang={locale}
       className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
     >
       <body className="min-h-full bg-[#101010] text-[#f4f1eb]">
@@ -107,9 +85,9 @@ export default function RootLayout({
         ) : null}
 
         <div className="flex min-h-screen flex-col">
-          <SiteHeader />
+          <SiteHeader locale={locale} />
           <div className="flex-1">{children}</div>
-          <SiteFooter />
+          <SiteFooter locale={locale} />
         </div>
       </body>
     </html>

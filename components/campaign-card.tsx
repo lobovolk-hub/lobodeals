@@ -1,3 +1,6 @@
+
+import type { Locale } from '@/lib/locale'
+import { t } from '@/lib/i18n'
 import { CampaignArtwork } from '@/components/campaign-artwork'
 import { CampaignTiming } from '@/components/campaign-timing'
 import { StoreLogo } from '@/components/store-logo'
@@ -9,6 +12,7 @@ import {
 } from '@/lib/sales'
 
 type CampaignCardProps = CampaignWithStore & {
+  locale?: Locale
   state: Extract<CampaignState, 'live' | 'upcoming'>
   showStore: boolean
   compact?: boolean
@@ -20,20 +24,20 @@ function getPrimaryTiming(
   state: CampaignCardProps['state']
 ): Readonly<{
   boundary: CampaignBoundary
-  label: 'Starts' | 'Started' | 'Ends'
+  purpose: 'start' | 'started' | 'end'
 }> | null {
   if (state === 'live') {
-    if (campaign.ends) return { boundary: campaign.ends, label: 'Ends' }
-    if (campaign.starts) return { boundary: campaign.starts, label: 'Started' }
+    if (campaign.ends) return { boundary: campaign.ends, purpose: 'end' }
+    if (campaign.starts) return { boundary: campaign.starts, purpose: 'started' }
     return null
   }
 
-  if (campaign.starts) return { boundary: campaign.starts, label: 'Starts' }
-  if (campaign.ends) return { boundary: campaign.ends, label: 'Ends' }
+  if (campaign.starts) return { boundary: campaign.starts, purpose: 'start' }
+  if (campaign.ends) return { boundary: campaign.ends, purpose: 'end' }
   return null
 }
 
-export function CampaignCard({
+export function CampaignCard({ locale = 'en',
   campaign,
   store,
   state,
@@ -57,11 +61,11 @@ export function CampaignCard({
         data-link-mode="official"
         target="_blank"
         rel="noopener noreferrer"
-        aria-label={`View ${campaign.name} on ${store.name} (opens in a new tab)`}
+        aria-label={t(locale, "View {value0} on {value1} (opens in a new tab)", { value0: campaign.name, value1: store.name })}
         className="group flex h-full flex-col overflow-hidden rounded-xl border border-white/10 bg-[#171717] shadow-[0_16px_38px_rgba(0,0,0,0.18)] transition duration-200 hover:-translate-y-0.5 hover:border-white/25 hover:bg-[#1b1b1b] hover:shadow-[0_20px_50px_rgba(0,0,0,0.3)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-[#f87171]"
       >
         <div className="border-b border-white/10">
-          <CampaignArtwork
+          <CampaignArtwork locale={locale}
             artworkUrl={campaign.artworkUrl}
             campaignName={campaign.name}
             compact={compact}
@@ -74,7 +78,7 @@ export function CampaignCard({
           <div className="flex items-center justify-between gap-3">
             {showStore ? (
               <div className="flex min-w-0 items-center gap-2">
-                <StoreLogo store={store} variant="mini" />
+                <StoreLogo locale={locale} store={store} variant="mini" />
                 <p className="min-w-0 truncate text-xs font-bold uppercase tracking-[0.12em] text-[#bdbbb7]">
                   {store.name}
                 </p>
@@ -97,7 +101,7 @@ export function CampaignCard({
                 }`}
                 aria-hidden="true"
               />
-              {state === 'live' ? 'Live' : 'Upcoming'}
+              {state === 'live' ? t(locale, "Live") : t(locale, "Upcoming")}
             </span>
           </div>
 
@@ -110,16 +114,16 @@ export function CampaignCard({
           </h3>
 
           {timing ? (
-            <CampaignTiming
+            <CampaignTiming locale={locale}
               boundary={timing.boundary}
-              label={timing.label}
+              purpose={timing.purpose}
               state={state}
             />
           ) : null}
 
           <span className="mt-auto inline-flex min-h-11 items-end pt-5 text-sm font-bold text-white transition-colors group-hover:text-[#ef7777]">
-            View official sale <span className="ml-2" aria-hidden="true">↗</span>
-            <span className="sr-only"> (opens in a new tab)</span>
+            {t(locale, "View official sale")} <span className="ml-2" aria-hidden="true">↗</span>
+            <span className="sr-only"> {t(locale, "(opens in a new tab)")}</span>
           </span>
         </div>
       </a>

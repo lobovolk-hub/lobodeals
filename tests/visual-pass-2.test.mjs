@@ -12,7 +12,8 @@ import {
   campaignBaseRow,
 } from '../supabase/functions/campaign-monitoring/_shared/persistence.ts'
 import { campaign } from '../supabase/functions/campaign-monitoring/_shared/campaign.ts'
-import { getCampaignCounter } from '../lib/campaign-timing.ts'
+import { loadModule } from './helpers/load-module.mjs'
+const { getCampaignCounter } = await loadModule('lib/campaign-timing.ts')
 
 const root = process.cwd()
 
@@ -120,23 +121,23 @@ test('date-only counters use calendar days and never expose hours', () => {
   const startsToday = { precision: 'date', date: '2026-08-26' }
   const startsTomorrow = { precision: 'date', date: '2026-08-27' }
 
-  assert.equal(getCampaignCounter(ends, 'live', 'Ends', now), '6 days left')
+  assert.equal(getCampaignCounter(ends, 'live', 'end', now), '6 days left')
   assert.equal(
-    getCampaignCounter(startsToday, 'upcoming', 'Starts', now),
+    getCampaignCounter(startsToday, 'upcoming', 'start', now),
     'Starts today'
   )
   assert.equal(
-    getCampaignCounter(startsTomorrow, 'upcoming', 'Starts', now),
+    getCampaignCounter(startsTomorrow, 'upcoming', 'start', now),
     'Starts tomorrow'
   )
-  assert.doesNotMatch(getCampaignCounter(ends, 'live', 'Ends', now), /h|:/)
+  assert.doesNotMatch(getCampaignCounter(ends, 'live', 'end', now), /h|:/)
 })
 
 test('exact datetime counters derive seconds from the official instant', () => {
   const counter = getCampaignCounter(
     { precision: 'datetime', dateTime: '2026-08-31T15:30:00Z' },
     'live',
-    'Ends',
+    'end',
     new Date('2026-08-26T12:00:17Z')
   )
   assert.equal(counter, 'Ends in 5d 3h 29m 43s')
@@ -173,8 +174,8 @@ test('Upcoming rail controls and platform identity polish are explicit', async (
   const platform = await source('components/platform-card.tsx')
   const stores = await source('lib/stores.ts')
 
-  assert.match(rail, /aria-label="Scroll upcoming sales left"/)
-  assert.match(rail, /aria-label="Scroll upcoming sales right"/)
+  assert.match(rail, /aria-label=\{t\(locale, "Scroll upcoming sales left"\)\}/)
+  assert.match(rail, /aria-label=\{t\(locale, "Scroll upcoming sales right"\)\}/)
   assert.match(rail, /disabled=\{!canScrollLeft\}/)
   assert.match(rail, /disabled=\{!canScrollRight\}/)
   assert.match(rail, /ArrowLeft/)

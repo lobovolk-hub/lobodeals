@@ -1,0 +1,78 @@
+
+import type { Locale } from '@/lib/locale'
+import { t } from '@/lib/i18n'
+import { CampaignSections } from '@/components/campaign-sections'
+import { HomeHero } from '@/components/home-hero'
+import { PlatformCard } from '@/components/platform-card'
+import {
+  projectCampaignStores,
+  projectPublicCampaigns,
+} from '@/lib/sales'
+import { isSalesUnavailableForStores } from '@/lib/sales-availability'
+import { loadSalesFeed } from '@/lib/sales-source'
+import { stores, type Platform } from '@/lib/stores'
+
+
+
+const platforms = [
+  'pc',
+  'playstation',
+  'nintendo',
+  'xbox',
+] as const satisfies readonly Platform[]
+
+export default async function HomePage({ locale = 'en' }: { locale?: Locale }) {
+  const salesFeed = await loadSalesFeed()
+  const publicCampaigns = projectPublicCampaigns(salesFeed.campaigns)
+  const campaignStores = projectCampaignStores(stores)
+
+  return (
+    <main>
+      <HomeHero locale={locale} />
+
+      <section
+        id="platforms"
+        aria-labelledby="platforms-heading"
+        className="mx-auto w-full max-w-7xl scroll-mt-24 px-4 py-10 sm:px-6 lg:px-8"
+      >
+        <div className="border-b border-white/10 pb-5">
+          <div>
+            <p className="text-xs font-bold uppercase tracking-[0.2em] text-[#71706e]">
+              {t(locale, "Directory")}
+            </p>
+            <h2
+              id="platforms-heading"
+              className="mt-2 text-2xl font-semibold tracking-tight text-white sm:text-3xl"
+            >
+              {t(locale, "Explore by Platform")}
+            </h2>
+          </div>
+        </div>
+
+        <nav aria-label={t(locale, "Platform directories")} className="mt-5">
+          <ul className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+            {platforms.map((platform) => (
+              <li key={platform}>
+                <PlatformCard locale={locale} platform={platform} />
+              </li>
+            ))}
+          </ul>
+        </nav>
+      </section>
+
+      <CampaignSections locale={locale}
+        campaigns={publicCampaigns}
+        stores={campaignStores}
+        idPrefix="home"
+        analyticsSurface="home"
+        showStore
+        homePreview
+        dataUnavailable={isSalesUnavailableForStores(
+          salesFeed.availability,
+          stores.map((store) => store.slug),
+          salesFeed.sourceUnavailable
+        )}
+      />
+    </main>
+  )
+}

@@ -1,3 +1,5 @@
+import { formatBoundary } from './date-format'
+import type { Locale } from './locale'
 import { getStoreBySlug, type Platform, type Store } from './stores'
 
 export type DateOnlyBoundary = Readonly<{
@@ -53,39 +55,6 @@ const DATE_ONLY_PATTERN = /^(\d{4})-(\d{2})-(\d{2})$/
 const EXACT_DATE_TIME_PATTERN =
   /^(\d{4}-\d{2}-\d{2})T(?:[01]\d|2[0-3]):[0-5]\d(?::[0-5]\d(?:\.\d{1,3})?)?(?:Z|[+-](?:(?:0\d|1[0-3]):[0-5]\d|14:00))$/
 const ID_PATTERN = /^[a-z0-9]+(?:-[a-z0-9]+)*$/
-const MONTH_NAMES = [
-  'January',
-  'February',
-  'March',
-  'April',
-  'May',
-  'June',
-  'July',
-  'August',
-  'September',
-  'October',
-  'November',
-  'December',
-] as const
-const exactDateTimeFormatter = new Intl.DateTimeFormat('en-US', {
-  year: 'numeric',
-  month: 'long',
-  day: 'numeric',
-  hour: 'numeric',
-  minute: '2-digit',
-  hour12: true,
-  timeZone: 'UTC',
-})
-const compactExactDateTimeFormatter = new Intl.DateTimeFormat('en-US', {
-  year: 'numeric',
-  month: 'short',
-  day: 'numeric',
-  hour: 'numeric',
-  minute: '2-digit',
-  hour12: true,
-  timeZone: 'UTC',
-})
-
 function isLeapYear(year: number): boolean {
   return year % 4 === 0 && (year % 100 !== 0 || year % 400 === 0)
 }
@@ -265,50 +234,14 @@ export function projectCampaignStores(
   }))
 }
 
-export function formatCampaignBoundary(boundary: CampaignBoundary): string {
-  if (!isCampaignBoundary(boundary)) {
-    throw new RangeError('Cannot format an invalid campaign boundary')
-  }
-
-  if (boundary.precision === 'date') {
-    const match = DATE_ONLY_PATTERN.exec(boundary.date)
-
-    if (!match) {
-      throw new RangeError('Cannot format an invalid campaign boundary')
-    }
-
-    const month = Number(match[2])
-    const day = Number(match[3])
-
-    return `${MONTH_NAMES[month - 1]} ${day}, ${match[1]}`
-  }
-
-  return `${exactDateTimeFormatter.format(new Date(boundary.dateTime))} UTC`
+export function formatCampaignBoundary(boundary: CampaignBoundary, locale: Locale = 'en'): string {
+  if (!isCampaignBoundary(boundary)) throw new RangeError('Cannot format an invalid campaign boundary')
+  return formatBoundary(boundary, locale, 'long')
 }
 
-export function formatCompactCampaignBoundary(
-  boundary: CampaignBoundary
-): string {
-  if (!isCampaignBoundary(boundary)) {
-    throw new RangeError('Cannot format an invalid campaign boundary')
-  }
-
-  if (boundary.precision === 'date') {
-    const match = DATE_ONLY_PATTERN.exec(boundary.date)
-
-    if (!match) {
-      throw new RangeError('Cannot format an invalid campaign boundary')
-    }
-
-    const month = Number(match[2])
-    const day = Number(match[3])
-
-    return `${MONTH_NAMES[month - 1].slice(0, 3)} ${day}, ${match[1]}`
-  }
-
-  return `${compactExactDateTimeFormatter.format(
-    new Date(boundary.dateTime)
-  )} UTC`
+export function formatCompactCampaignBoundary(boundary: CampaignBoundary, locale: Locale = 'en'): string {
+  if (!isCampaignBoundary(boundary)) throw new RangeError('Cannot format an invalid campaign boundary')
+  return formatBoundary(boundary, locale)
 }
 
 export function getCampaignState(

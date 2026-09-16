@@ -1,5 +1,8 @@
 'use client'
 
+import type { Locale } from '@/lib/locale'
+import { t } from '@/lib/i18n'
+
 import { useState } from 'react'
 import { CampaignSections } from '@/components/campaign-sections'
 import type {
@@ -11,13 +14,14 @@ import {
   type SalesAvailability,
 } from '@/lib/sales-availability'
 type SalesBrowserProps = {
+  locale?: Locale
   campaigns: readonly PublicOfficialCampaign[]
   stores: readonly CampaignStore[]
   availability: readonly SalesAvailability[]
   sourceUnavailable: boolean
 }
 
-export function SalesBrowser({
+export function SalesBrowser({ locale = 'en',
   campaigns,
   stores,
   availability,
@@ -46,21 +50,21 @@ export function SalesBrowser({
           <div>
             <p className="flex items-center gap-3 text-xs font-bold uppercase tracking-[0.22em] text-[#c84b4b]">
               <span className="h-px w-8 bg-[#990303]" aria-hidden="true" />
-              Official campaigns
+              {t(locale, "Official campaigns")}
             </p>
             <h1 className="mt-5 text-4xl font-bold leading-tight tracking-[-0.04em] text-white sm:text-5xl">
-              Sales
+              {t(locale, "Sales")}
             </h1>
           </div>
           <label className="w-full sm:w-72 sm:flex-none">
-            <span className="sr-only">Filter by store</span>
+            <span className="sr-only">{t(locale, "Filter by store")}</span>
             <select
               data-sales-store-filter
               value={storeSlug}
               onChange={(event) => setStoreSlug(event.target.value)}
               className="min-h-11 w-full rounded-md border border-white/15 bg-[#171717] px-3 text-sm font-semibold text-white outline-none focus-visible:border-[#c84b4b] focus-visible:ring-2 focus-visible:ring-[#990303]/50"
             >
-              <option value="all">All official stores</option>
+              <option value="all">{t(locale, "All official stores")}</option>
               {stores.map((store) => (
                 <option key={store.slug} value={store.slug}>
                   {store.name}
@@ -73,12 +77,11 @@ export function SalesBrowser({
 
       {selectionState === 'content-with-availability-notice' ? (
         <aside
-          aria-label="Store sales data availability"
+          aria-label={t(locale, "Store sales data availability")}
           className="border-b border-amber-200/15 bg-amber-100/[0.035]"
         >
           <p className="mx-auto w-full max-w-7xl px-4 py-3 text-sm text-[#c8bda7] sm:px-6 lg:px-8">
-            Current source availability is temporarily unavailable for this
-            store. Previously confirmed campaigns remain visible.
+            {t(locale, "Current source availability is temporarily unavailable for this store. Previously confirmed campaigns remain visible.")}
           </p>
         </aside>
       ) : null}
@@ -92,13 +95,13 @@ export function SalesBrowser({
           <p className="mx-auto my-8 w-[calc(100%-2rem)] max-w-7xl rounded-lg border border-dashed border-white/15 bg-[#171717] px-5 py-5 text-sm leading-6 text-[#9b9a98] sm:w-[calc(100%-3rem)] lg:w-[calc(100%-4rem)]">
             {selectionState === 'unavailable'
               ? selectedStoreSlug === null
-                ? 'Sales data is temporarily unavailable.'
-                : 'Sales data is temporarily unavailable for this store.'
-              : 'No current or upcoming official campaigns detected.'}
+                ? t(locale, "Sales data is temporarily unavailable.")
+                : t(locale, "Sales data is temporarily unavailable for this store.")
+              : t(locale, "No current or upcoming official campaigns detected.")}
           </p>
         </section>
       ) : (
-        <CampaignSections
+        <CampaignSections locale={locale}
           campaigns={visibleCampaigns}
           stores={stores}
           idPrefix="sales"

@@ -12,7 +12,7 @@ async function source(relativePath) {
 test('hero media control uses recognizable inline SVG icons without font glyphs', async () => {
   const hero = await source('components/home-hero.tsx')
 
-  assert.match(hero, /aria-label=\{autoplayEnabled \? 'Pause slideshow' : 'Play slideshow'\}/)
+  assert.match(hero, /aria-label=\{autoplayEnabled \? t\(locale, "Pause slideshow"\) : t\(locale, "Play slideshow"\)\}/)
   assert.equal((hero.match(/<svg\b/g) || []).length, 2)
   assert.equal((hero.match(/viewBox="0 0 24 24"/g) || []).length, 2)
   assert.match(hero, /M7 5h3v14H7zM14 5h3v14h-3z/)
@@ -28,8 +28,8 @@ test('four hero states expose exactly the approved platform destinations', async
   for (const destination of destinations) {
     assert.match(hero, new RegExp(`href: '${destination}'`))
   }
-  assert.match(hero, /href=\{heroSlides\[activeSlide\]\.href\}/)
-  assert.match(hero, /aria-label=\{`View \$\{activePlatform\} platform`\}/)
+  assert.match(hero, /href=\{localizedHref\(heroSlides\[activeSlide\]\.href, locale\)\}/)
+  assert.match(hero, /aria-label=\{t\(locale, "View \{value0\} platform", \{ value0: activePlatform \}\)\}/)
 })
 
 test('platform overlay is a sibling without nested interactive content', async () => {
@@ -52,11 +52,11 @@ test('platform overlay is a sibling without nested interactive content', async (
 test('hero CTAs, slideshow controls, and reduced-motion behavior remain intact', async () => {
   const hero = await source('components/home-hero.tsx')
 
-  assert.match(hero, /href="\/sales"/)
+  assert.match(hero, /href=\{localizedHref\("\/sales", locale\)\}/)
   assert.match(hero, /href="#platforms"/)
-  assert.match(hero, /aria-label="Previous platform visual"/)
-  assert.match(hero, /aria-label="Next platform visual"/)
-  assert.match(hero, /aria-label=\{`Show \$\{slide\.platform\} visual`\}/)
+  assert.match(hero, /aria-label=\{t\(locale, "Previous platform visual"\)\}/)
+  assert.match(hero, /aria-label=\{t\(locale, "Next platform visual"\)\}/)
+  assert.match(hero, /aria-label=\{t\(locale, "Show \{value0\} visual", \{ value0: slide\.platform \}\)\}/)
   assert.equal((hero.match(/<button\b/g) || []).length, 4)
   assert.match(hero, /matchMedia\('\(prefers-reduced-motion: reduce\)'\)/)
   assert.match(hero, /setAutoplayEnabled\(!media\.matches\)/)

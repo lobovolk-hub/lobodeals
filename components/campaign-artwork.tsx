@@ -1,11 +1,15 @@
 'use client'
 
+import type { Locale } from '@/lib/locale'
+import { t } from '@/lib/i18n'
+
 import { useState } from 'react'
 import { StoreLogo } from '@/components/store-logo'
 import { getStoreVisualClassName } from '@/lib/store-visuals'
 import type { CampaignState, CampaignStore } from '@/lib/sales'
 
 type CampaignArtworkProps = {
+  locale?: Locale
   artworkUrl?: string
   campaignName: string
   compact: boolean
@@ -13,7 +17,7 @@ type CampaignArtworkProps = {
   store: CampaignStore
 }
 
-function ArtworkFallback({
+function ArtworkFallback({ locale = 'en',
   campaignName,
   compact,
   state,
@@ -49,14 +53,14 @@ function ArtworkFallback({
           className="pointer-events-none absolute right-3 top-1/2 w-40 -translate-y-1/2 opacity-[0.13] sm:right-5 sm:w-48"
           aria-hidden="true"
         >
-          <StoreLogo store={store} variant="campaign" />
+          <StoreLogo locale={locale} store={store} variant="campaign" />
         </div>
       ) : null}
 
       <div className="relative flex h-full flex-col justify-between p-4 sm:p-5">
         <div className="flex min-w-0 items-center gap-2 text-white/70">
           <div className="rounded-md border border-white/10 bg-black/15 px-1">
-            <StoreLogo store={store} variant="mini" />
+            <StoreLogo locale={locale} store={store} variant="mini" />
           </div>
           <span className="truncate text-[0.62rem] font-black uppercase tracking-[0.14em]">
             {store.name}
@@ -80,14 +84,14 @@ function ArtworkFallback({
             }`}
             aria-hidden="true"
           />
-          Official sale campaign
+          {t(locale, "Official sale campaign")}
         </div>
       </div>
     </div>
   )
 }
 
-export function CampaignArtwork({
+export function CampaignArtwork({ locale = 'en',
   artworkUrl,
   campaignName,
   compact,
@@ -98,7 +102,7 @@ export function CampaignArtwork({
 
   if (!artworkUrl || failed) {
     return (
-      <ArtworkFallback
+      <ArtworkFallback locale={locale}
         campaignName={campaignName}
         compact={compact}
         state={state}
@@ -114,7 +118,7 @@ export function CampaignArtwork({
       {/* eslint-disable-next-line @next/next/no-img-element */}
       <img
         src={artworkUrl}
-        alt={`${campaignName} official campaign artwork`}
+        alt={t(locale, "{value0} official campaign artwork", { value0: campaignName })}
         loading="lazy"
         decoding="async"
         referrerPolicy="no-referrer"

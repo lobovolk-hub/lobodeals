@@ -55,10 +55,10 @@ test('client-facing Sales data uses explicit public projections', async () => {
   const publicRuntime = await source('lib/public-sales-runtime.ts')
   const sections = await source('components/campaign-sections.tsx')
   const browser = await source('components/sales-browser.tsx')
-  const home = await source('app/page.tsx')
+  const home = await source('components/home-page.tsx')
   const platform = await source('components/platform-page.tsx')
-  const profile = await source('app/services/[slug]/page.tsx')
-  const salesPage = await source('app/sales/page.tsx')
+  const profile = await source('components/store-profile-page.tsx')
+  const salesPage = await source('components/sales-page.tsx')
 
   assert.ok(
     salesModel.includes(
@@ -87,7 +87,7 @@ test('client-facing Sales data uses explicit public projections', async () => {
   )
   assert.ok(
     publicRuntime.includes(
-      'export function formatCompactCampaignBoundary'
+      "export { formatBoundary as formatCompactCampaignBoundary }"
     )
   )
   assert.equal(
@@ -182,7 +182,7 @@ test('client-facing Sales data uses explicit public projections', async () => {
 })
 
 test('About explains the approved product boundary', async () => {
-  const about = await source('app/about/page.tsx')
+  const about = await source('components/about-page.tsx')
 
   assert.match(about, /Directory \+ Sales/)
   assert.match(about, /does not sell games/)
@@ -278,10 +278,10 @@ test('sale outbound requires both campaign fields before dispatch', async () => 
 })
 
 test('campaign links preserve anchors and expose analytics metadata', async () => {
-  const home = await source('app/page.tsx')
+  const home = await source('components/home-page.tsx')
   const platform = await source('components/platform-page.tsx')
   const sales = await source('components/sales-browser.tsx')
-  const profile = await source('app/services/[slug]/page.tsx')
+  const profile = await source('components/store-profile-page.tsx')
   const card = await source('components/campaign-card.tsx')
   const list = await source(
     'components/upcoming-campaign-list.tsx'

@@ -22,8 +22,8 @@ test('locale contract accepts only en/es and derives the document language from 
   assert.equal(localeFromPath('/esoteric'), 'en')
 })
 
-test('151 approved message keys have parity, matching variables and no pending or English fallback', () => {
-  assert.equal(Object.keys(dictionaries.en).length, 151)
+test('148 approved message keys have parity, matching variables and no pending or English fallback', () => {
+  assert.equal(Object.keys(dictionaries.en).length, 148)
   assert.deepEqual(Object.keys(dictionaries.en), Object.keys(dictionaries.es))
   for (const key of ['Back', 'Store']) assert.equal(Object.hasOwn(dictionaries.en, key), false)
   for (const key of Object.keys(dictionaries.en)) {

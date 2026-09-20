@@ -4,7 +4,7 @@ import { t } from '@/lib/i18n'
 import { localizedStoreDescription } from '@/lib/store-copy'
 import { localizedHref } from '@/lib/localized-routes'
 import Link from 'next/link'
-import { StoreLogo } from '@/components/store-logo'
+import { StoreIdentity } from '@/components/store-identity'
 import { getStoreVisualTreatment } from '@/lib/store-visuals'
 import {
   getStorePublicHref,
@@ -15,10 +15,9 @@ import {
 type StoreCardProps = {
   locale?: Locale
   store: Store
-  eagerLogo?: boolean
 }
 
-export function StoreCard({ locale = 'en',  store, eagerLogo = false }: StoreCardProps) {
+export function StoreCard({ locale = 'en',  store }: StoreCardProps) {
   const visual = getStoreVisualTreatment(store.slug)
 
   return (
@@ -42,7 +41,7 @@ export function StoreCard({ locale = 'en',  store, eagerLogo = false }: StoreCar
           />
 
           <div className="relative w-full transition-transform duration-200 group-hover:scale-[1.025] motion-reduce:group-hover:scale-100">
-            <StoreLogo locale={locale} store={store} eager={eagerLogo} />
+            <StoreIdentity store={store} />
           </div>
         </div>
 

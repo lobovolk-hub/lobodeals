@@ -37,7 +37,7 @@ export type OfficialCampaign = Readonly<{
 
 export type PublicOfficialCampaign = Omit<OfficialCampaign, 'market'>
 
-export type CampaignStore = Pick<Store, 'slug' | 'name' | 'logo'>
+export type CampaignStore = Pick<Store, 'slug' | 'name'>
 
 export type CampaignState = 'live' | 'upcoming' | 'expired' | 'indeterminate'
 
@@ -230,7 +230,6 @@ export function projectCampaignStores(
   return stores.map((store) => ({
     slug: store.slug,
     name: store.name,
-    logo: store.logo,
   }))
 }
 

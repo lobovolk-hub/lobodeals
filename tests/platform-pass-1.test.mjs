@@ -38,11 +38,8 @@ test('platform hero keeps the approved rich shared visual baseline without assig
   assert.match(hero, /background-image:linear-gradient/)
   assert.match(hero, /rotate-45/)
   assert.match(hero, /text-white\/\[0\.065\]/)
-  assert.match(hero, /playstation-store\/logo\.png/)
   assert.doesNotMatch(hero, /steam\/logo\.png/)
-  assert.match(hero, /nintendo-eshop\/logo\.png/)
-  assert.match(hero, /platforms\/xbox\/logo\.png/)
-  assert.match(hero, />\s*PC\s*</)
+  assert.match(hero, /\{name\}/)
   assert.doesNotMatch(hero, /carousel|autoplay|<button/i)
   assert.doesNotMatch(`${page}\n${routeSources.join('\n')}`, /United States|US market|tracked market|market scope/i)
 })
@@ -93,22 +90,16 @@ test('Xbox Store keeps one canonical internal entity across PC and Xbox', () => 
   assert.ok(microsoft)
   assert.equal(microsoft.name, 'Xbox Store')
   assert.deepEqual(microsoft.platforms, ['pc', 'xbox'])
-  assert.equal(microsoft.logo?.src, '/platforms/xbox/logo.png')
+  assert.equal(microsoft.name, 'Xbox Store')
   assert.match(storeVisualTreatments['microsoft-store'].surface, /155b32/)
 })
 
-test('Rockstar keeps its restrained warm visual token with the verified official lockup', async () => {
-  const logo = await source('components/store-logo.tsx')
+test('Rockstar keeps its restrained warm visual token without an official lockup', async () => {
+  const logo = await source('components/store-identity.tsx')
   const rockstar = stores.find((store) => store.slug === 'rockstar-store')
 
-  assert.deepEqual(rockstar?.logo, {
-    src: '/services/rockstar-store/logo.svg',
-    width: 139,
-    height: 128,
-  })
-  assert.match(logo, /data-rockstar-store-lockup/)
-  assert.match(logo, /aria-label="Rockstar Store"/)
-  assert.match(logo, />\s*Store\s*<\/span>/)
+  assert.equal(rockstar.name, 'Rockstar Store')
+  assert.doesNotMatch(logo, /data-rockstar-store-lockup/)
   assert.match(storeVisualTreatments['rockstar-store'].surface, /72500f/)
 })
 

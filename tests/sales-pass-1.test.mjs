@@ -176,7 +176,7 @@ test('/sales Upcoming is a chronological compact list while Home keeps its rail'
 
   assert.match(sections, /homePreview \? \([\s\S]*<UpcomingRail locale=\{locale\}>/)
   assert.match(sections, /<UpcomingCampaignList/)
-  assert.match(list, /StoreLogo locale=\{locale\} store=\{store\} variant="mini"/)
+  assert.match(list, /StoreIdentity store=\{store\} variant="mini"/)
   assert.match(list, /campaign\.name/)
   assert.match(list, /CampaignTiming/)
   assert.match(list, /CampaignDateRange/)

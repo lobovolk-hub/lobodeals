@@ -4,7 +4,7 @@ import type { Locale } from '@/lib/locale'
 import { t } from '@/lib/i18n'
 
 import { CampaignTiming } from '@/components/campaign-timing'
-import { StoreLogo } from '@/components/store-logo'
+import { StoreIdentity } from '@/components/store-identity'
 import type { AnalyticsSurface } from '@/lib/analytics'
 import {
   formatCompactCampaignBoundary,
@@ -93,7 +93,7 @@ export function UpcomingCampaignList({ locale = 'en',
               <div className="flex min-w-0 items-center gap-3">
                 {showStore ? (
                   <div className="shrink-0 rounded-md border border-white/10 bg-white/[0.035]">
-                    <StoreLogo locale={locale} store={store} variant="mini" />
+                    <StoreIdentity store={store} variant="mini" />
                   </div>
                 ) : null}
                 <div className="min-w-0">

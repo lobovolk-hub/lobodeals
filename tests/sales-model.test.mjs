@@ -225,14 +225,12 @@ test('public client projections omit internal market and store scope fields', as
       digitalScope: 'Internal digital scope',
       marketScope: 'Internal market scope',
       officialUrl: 'https://store.steampowered.com/',
-      logo: null,
     },
   ])
 
   assert.deepEqual(store, {
     slug: 'steam',
     name: 'Steam',
-    logo: null,
   })
   assert.equal('description' in store, false)
   assert.equal('platforms' in store, false)
@@ -302,7 +300,6 @@ test('public Sales runtime is client-safe and preserves lifecycle grouping', asy
   const publicStore = {
     slug: 'steam',
     name: 'Steam',
-    logo: null,
   }
 
   const groups = runtime.groupPublicCampaigns(

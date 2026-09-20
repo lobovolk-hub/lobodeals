@@ -67,11 +67,10 @@ export async function PlatformPage({ locale = 'en',  platform, name }: PlatformP
               {t(locale, "Official Stores")}
             </h2>
             <div className="mt-5 grid auto-rows-fr gap-4 md:grid-cols-2 xl:grid-cols-4">
-              {platformStores.map((store, index) => (
+              {platformStores.map((store) => (
                 <StoreCard locale={locale}
                   key={store.slug}
                   store={store}
-                  eagerLogo={index === 0}
                 />
               ))}
             </div>

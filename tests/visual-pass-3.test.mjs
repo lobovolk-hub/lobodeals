@@ -56,11 +56,11 @@ test('platform cards share one hierarchy and remove the redundant label', async 
   assert.ok(platform.indexOf('<PlatformIdentity') < platform.indexOf('presentation.description'))
   assert.ok(platform.indexOf('presentation.description') < platform.indexOf('View platform'))
   assert.match(platform, /platformStores\.length/)
-  assert.match(platform, /slug === 'steam'/)
-  assert.match(platform, /eight PC stores/)
+  assert.match(platform, /<PCIdentity/)
+  assert.match(platform, /eight PC game stores/)
 })
 
-test('Xbox Store keeps the existing internal store contract and Xbox visual identity', async () => {
+test('Xbox Store keeps its canonical entity and former asset provenance', async () => {
   const stores = await source('lib/stores.ts')
   const docs = await source('docs/service-brand-assets.md')
 
@@ -68,8 +68,7 @@ test('Xbox Store keeps the existing internal store contract and Xbox visual iden
   assert.match(stores, /name: 'Xbox Store'/)
   assert.match(stores, /platforms: \['pc', 'xbox'\]/)
   assert.match(stores, /officialUrl: 'https:\/\/www\.xbox\.com\/en-US\/games'/)
-  assert.match(stores, /slug: 'microsoft-store'[\s\S]*?src: '\/platforms\/xbox\/logo\.png'/)
-  assert.match(docs, /canonical Xbox Store throughout the gaming frontend/)
+  assert.match(docs, /canonical Xbox Store throughout the former gaming frontend/)
   await assert.rejects(
     access(path.join(root, 'public/services/microsoft-store/logo.png'))
   )
@@ -82,7 +81,7 @@ test('fallback artwork turns the existing campaign name into the visual subject'
   assert.match(artwork, /data-campaign-title-art/)
   assert.match(artwork, /\{campaignName\}/)
   assert.match(artwork, /Official sale campaign/)
-  assert.match(artwork, /<StoreLogo locale=\{locale\} store=\{store\} variant="mini"/)
+  assert.match(artwork, /<StoreIdentity store=\{store\} variant="mini"/)
   assert.match(card, /state=\{state\}/)
   assert.doesNotMatch(
     artwork,
@@ -105,12 +104,12 @@ test('Live energy and exact counters derive seconds without altering source prec
   )
 })
 
-test('hero uses only documented local brand assets and no campaign mappings', async () => {
+test('hero uses documented original identities and no campaign mappings', async () => {
   const hero = await source('components/home-hero.tsx')
   const docs = await source('docs/service-brand-assets.md')
 
-  assert.match(docs, /Home platform spotlight reuses the verified/)
-  assert.match(docs, /No campaign, game,[\s\S]*generated artwork is stored for the hero/)
+  assert.match(docs, /original LoboDeals identity panels/)
+  assert.match(docs, /PC is a platform, not a store/)
   assert.doesNotMatch(hero, /https?:\/\//)
   assert.doesNotMatch(hero, /unsplash|pexels|pixabay|imagegen|openai/i)
   assert.doesNotMatch(hero, /campaign.*(?:map|mapping)/i)

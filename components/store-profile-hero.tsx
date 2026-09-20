@@ -4,7 +4,7 @@ import { t } from '@/lib/i18n'
 import { localizedStoreDescription } from '@/lib/store-copy'
 import { localizedHref } from '@/lib/localized-routes'
 import Link from 'next/link'
-import { StoreLogo } from '@/components/store-logo'
+import { StoreIdentity } from '@/components/store-identity'
 import { getStoreCreatorCode } from '@/lib/monetization'
 import { platformLabels, type Store } from '@/lib/stores'
 
@@ -32,7 +32,7 @@ export function StoreProfileHero({ locale = 'en',  store }: StoreProfileHeroProp
           className="flex min-h-28 items-center justify-center overflow-hidden rounded-lg border border-white/10 bg-[#101010] px-4 py-3"
         >
           <div className="relative w-full">
-            <StoreLogo locale={locale} store={store} eager />
+            <StoreIdentity store={store} />
           </div>
         </div>
 

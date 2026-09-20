@@ -61,9 +61,9 @@ test('hero controls are centered, accessible, and reduced motion starts without 
   assert.match(hero, /setAutoplayEnabled\(!media\.matches\)/)
 })
 
-test('Xbox campaign fallback and Rockstar Store use verified brand treatments', async () => {
+test('Xbox campaign fallback and Rockstar Store use original identity panels', async () => {
   const artwork = await source('components/campaign-artwork.tsx')
-  const storeLogo = await source('components/store-logo.tsx')
+  const storeLogo = await source('components/store-identity.tsx')
 
   assert.match(
     artwork,
@@ -75,21 +75,10 @@ test('Xbox campaign fallback and Rockstar Store use verified brand treatments', 
   )
   assert.match(
     artwork,
-    /<StoreLogo locale=\{locale\} store=\{store\} variant="campaign" \/>/
+    /<StoreIdentity store=\{store\} variant="campaign" \/>/
   )
 
-  assert.match(
-    storeLogo,
-    /data-rockstar-store-lockup/
-  )
-  assert.match(
-    storeLogo,
-    /aria-label="Rockstar Store"/
-  )
-  assert.match(
-    storeLogo,
-    />\s*Store\s*<\/span>/
-  )
+  assert.doesNotMatch(storeLogo, /data-rockstar-store-lockup|next\/image/)
 })
 
 test('exact datetime countdown covers second, minute, and hour rollovers', () => {
@@ -148,8 +137,8 @@ test('approved platform cards and Xbox identity remain untouched by the hero pas
   const hero = await source('components/home-hero.tsx')
 
   assert.doesNotMatch(platform, /Official stores/i)
-  assert.match(platform, /slug === 'steam'/)
-  assert.match(platform, /eight PC stores/)
-  assert.match(stores, /slug: 'microsoft-store'[\s\S]*?\/platforms\/xbox\/logo\.png/)
+  assert.match(platform, /<PCIdentity/)
+  assert.match(platform, /eight PC game stores/)
+  assert.match(stores, /name: 'Xbox Store'/)
   assert.doesNotMatch(`${hero}\n${platform}`, /United States|US market scope/i)
 })

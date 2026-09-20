@@ -4,7 +4,8 @@ import type { Locale } from '@/lib/locale'
 import { t } from '@/lib/i18n'
 import { localizedHref } from '@/lib/localized-routes'
 
-import Image from 'next/image'
+import { StoreIdentity, PCIdentity } from '@/components/store-identity'
+import { getStoreBySlug } from '@/lib/stores'
 import Link from 'next/link'
 import {
   useCallback,
@@ -21,13 +22,7 @@ const heroSlides = [
     platform: 'PC',
     href: '/pc',
     storeCount: '8 stores',
-    note: 'Eight official PC stores, with Steam as the visual reference',
-    logo: {
-      src: '/services/steam/logo.png',
-      width: 744,
-      height: 171,
-      className: 'h-auto w-60 sm:w-72 lg:w-80',
-    },
+    storeSlug: null,
     surface: 'from-[#235b78] via-[#182f40] to-[#0b0f14]',
     glow: 'bg-[#4ba3d1]/35',
     line: 'from-[#7cc7ea]/0 via-[#7cc7ea]/55 to-[#7cc7ea]/0',
@@ -36,13 +31,7 @@ const heroSlides = [
     platform: 'PlayStation',
     href: '/playstation',
     storeCount: '1 store',
-    note: 'PlayStation Store sales, live and announced',
-    logo: {
-      src: '/services/playstation-store/logo.png',
-      width: 800,
-      height: 800,
-      className: 'h-32 w-32 sm:h-36 sm:w-36 lg:h-44 lg:w-44',
-    },
+    storeSlug: 'playstation-store',
     surface: 'from-[#0759a5] via-[#082b55] to-[#0b0f15]',
     glow: 'bg-[#168eea]/45',
     line: 'from-[#38a7ff]/0 via-[#38a7ff]/60 to-[#38a7ff]/0',
@@ -51,14 +40,7 @@ const heroSlides = [
     platform: 'Nintendo',
     href: '/nintendo',
     storeCount: '1 store',
-    note: 'Nintendo eShop sales, live and announced',
-    logo: {
-      src: '/services/nintendo-eshop/logo.png',
-      width: 512,
-      height: 512,
-      className:
-        'h-32 w-32 rounded-3xl sm:h-36 sm:w-36 lg:h-44 lg:w-44',
-    },
+    storeSlug: 'nintendo-eshop',
     surface: 'from-[#d30a1c] via-[#70111d] to-[#120d10]',
     glow: 'bg-[#ff3042]/35',
     line: 'from-[#ff8792]/0 via-[#ff8792]/55 to-[#ff8792]/0',
@@ -67,13 +49,7 @@ const heroSlides = [
     platform: 'Xbox',
     href: '/xbox',
     storeCount: '1 store',
-    note: 'One Xbox Store across PC and console',
-    logo: {
-      src: '/platforms/xbox/logo.png',
-      width: 410,
-      height: 124,
-      className: 'h-auto w-60 sm:w-72 lg:w-80',
-    },
+    storeSlug: 'microsoft-store',
     surface: 'from-[#16803d] via-[#17452a] to-[#0b110d]',
     glow: 'bg-[#55c977]/35',
     line: 'from-[#8be6a5]/0 via-[#8be6a5]/55 to-[#8be6a5]/0',
@@ -189,15 +165,11 @@ export function HomeHero({ locale = 'en' }: { locale?: Locale }) {
               />
 
               <div className="absolute inset-0 flex items-center justify-center px-8">
-                <Image
-                  src={slide.logo.src}
-                  alt=""
-                  width={slide.logo.width}
-                  height={slide.logo.height}
-                  sizes="(max-width: 640px) 240px, (max-width: 1024px) 288px, 320px"
-                  className={`${slide.logo.className} relative z-10 object-contain drop-shadow-[0_18px_45px_rgba(0,0,0,0.55)]`}
-                  loading="eager"
-                />
+                <div className="relative z-10 w-60 sm:w-72 lg:w-80">
+                  {slide.storeSlug ? (
+                    <StoreIdentity store={getStoreBySlug(slide.storeSlug)!} variant="hero" />
+                  ) : <PCIdentity variant="hero" />}
+                </div>
               </div>
 
               <div className="absolute bottom-2 left-1/2 flex -translate-x-1/2 items-center gap-3 whitespace-nowrap text-[0.67rem] font-black uppercase tracking-[0.18em] text-white/70 lg:bottom-8">

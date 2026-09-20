@@ -1,7 +1,7 @@
 import type { Metadata, Viewport } from 'next'
 import Script from 'next/script'
 import { OutboundAnalytics } from '@/components/outbound-analytics'
-import { Geist, Geist_Mono } from 'next/font/google'
+import { Geist, Geist_Mono, Roboto } from 'next/font/google'
 import { SiteFooter, SiteHeader } from '@/components/site-shell'
 import './globals.css'
 import { requestLocale } from '@/lib/request-locale'
@@ -16,6 +16,14 @@ const geistSans = Geist({
 const geistMono = Geist_Mono({
   variable: '--font-geist-mono',
   subsets: ['latin'],
+})
+
+const identityRoboto = Roboto({
+  variable: '--font-identity',
+  subsets: ['latin'],
+  weight: '900',
+  style: 'normal',
+  display: 'swap',
 })
 
 const siteUrl = (process.env.NEXT_PUBLIC_SITE_URL || 'https://lobodeals.com').replace(
@@ -57,7 +65,7 @@ export default async function RootLayout({
   return (
     <html
       lang={locale}
-      className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
+      className={`${geistSans.variable} ${geistMono.variable} ${identityRoboto.variable} h-full antialiased`}
     >
       <body className="min-h-full bg-[#101010] text-[#f4f1eb]">
         <OutboundAnalytics />

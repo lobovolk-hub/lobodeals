@@ -2,7 +2,7 @@
 import type { Locale } from '@/lib/locale'
 import { t } from '@/lib/i18n'
 import { localizedStoreDescription } from '@/lib/store-copy'
-import { StoreLogo } from '@/components/store-logo'
+import { StoreIdentity } from '@/components/store-identity'
 import type { Platform, Store } from '@/lib/stores'
 
 type SingleStoreSummaryProps = {
@@ -86,10 +86,8 @@ export function SingleStoreSummary({ locale = 'en',
           className="absolute inset-0 flex items-center justify-center sm:pl-16"
         >
           <div className="relative w-36 sm:w-44 lg:w-56">
-            <StoreLogo locale={locale}
-              store={store}
+            <StoreIdentity store={store}
               variant="platform"
-              eager
             />
           </div>
         </div>

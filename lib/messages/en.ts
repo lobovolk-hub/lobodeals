@@ -119,7 +119,6 @@ export const en = {
   "Starts in {duration}": "Starts in {duration}",
   "Starts today": "Starts today",
   "Starts tomorrow": "Starts tomorrow",
-  "Steam, visual reference for eight PC stores": "Steam, visual reference for eight PC stores",
   "Store sales data availability": "Store sales data availability",
   "This page couldn’t load": "This page couldn’t load",
   "This page is not part of LoboDeals.": "This page is not part of LoboDeals.",
@@ -147,9 +146,7 @@ export const en = {
   "stores": "stores",
   "{days} days left": "{days} days left",
   "{platform} platform visual": "{platform} platform visual",
-  "{value0} logo": "{value0} logo",
   "{value0} official campaign artwork": "{value0} official campaign artwork",
   "{value0} platforms": "{value0} platforms",
-  "{value0}; no verified local logo is available": "{value0}; no verified local logo is available"
 } as const
 export type MessageKey = keyof typeof en

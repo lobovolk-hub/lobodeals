@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { access, readFile, stat } from 'node:fs/promises'
+import { readFile } from 'node:fs/promises'
 import path from 'node:path'
 import test from 'node:test'
 
@@ -12,35 +12,7 @@ async function source(relativePath) {
   return readFile(path.join(root, relativePath), 'utf8')
 }
 
-test('every configured store logo resolves to a non-empty local asset', async () => {
-  const configuredStores = stores.filter((store) => store.logo)
-
-  await Promise.all(
-    configuredStores.map(async (store) => {
-      const assetPath = path.join(root, 'public', store.logo.src)
-      await access(assetPath)
-      assert.ok((await stat(assetPath)).size > 0, `${store.slug} logo is empty`)
-    })
-  )
-})
-
-test('Ubisoft and Battle.net reuse their approved local assets', () => {
-  const ubisoft = stores.find((store) => store.slug === 'ubisoft-store')
-  const battleNet = stores.find((store) => store.slug === 'battle-net')
-
-  assert.equal(ubisoft?.logo?.src, '/services/ubisoft-store/logo.svg')
-  assert.deepEqual(
-    [ubisoft?.logo?.width, ubisoft?.logo?.height],
-    [722, 316]
-  )
-  assert.equal(battleNet?.logo?.src, '/services/battle-net/logo.svg')
-  assert.deepEqual(
-    [battleNet?.logo?.width, battleNet?.logo?.height],
-    [1200, 717]
-  )
-})
-
-test('StoreCard and profile hero give the shared StoreLogo contract a real width', async () => {
+test('StoreCard and profile hero give the shared StoreIdentity contract a real width', async () => {
   const card = await source('components/store-card.tsx')
   const profile = await source('components/store-profile-page.tsx')
   const profileHero = await source('components/store-profile-hero.tsx')
@@ -48,28 +20,22 @@ test('StoreCard and profile hero give the shared StoreLogo contract a real width
   assert.match(card, /className="relative w-full[^"]*"/)
   assert.match(
     card,
-    /<StoreLogo[\s\S]*?store=\{store\}[\s\S]*?eager=\{eagerLogo\}[\s\S]*?\/>/
+    /<StoreIdentity[\s\S]*?store=\{store\}[\s\S]*?\/>/
   )
   assert.match(profile, /<StoreProfileHero locale=\{locale\} store=\{store\} \/>/)
   assert.match(
     profileHero,
-    /className="relative w-full">\s*<StoreLogo locale=\{locale\} store=\{store\} eager \/>/
+    /className="relative w-full">\s*<StoreIdentity store=\{store\} \/>/
   )
-  assert.equal((card.match(/<StoreLogo\b/g) || []).length, 1)
+  assert.equal((card.match(/<StoreIdentity\b/g) || []).length, 1)
 })
 
-test('Rockstar uses the verified official local asset and shared Store lockup', async () => {
-  const logo = await source('components/store-logo.tsx')
+test('Rockstar uses the shared original identity system', async () => {
+  const logo = await source('components/store-identity.tsx')
   const rockstar = stores.find((store) => store.slug === 'rockstar-store')
 
-  assert.deepEqual(rockstar?.logo, {
-    src: '/services/rockstar-store/logo.svg',
-    width: 139,
-    height: 128,
-  })
-  assert.match(logo, /data-rockstar-store-lockup/)
-  assert.match(logo, /aria-label="Rockstar Store"/)
-  assert.match(logo, />\s*Store\s*<\/span>/)
+  assert.equal(rockstar.name, 'Rockstar Store')
+  assert.doesNotMatch(logo, /data-rockstar-store-lockup/)
 })
 
 test('PC card routes, Xbox identity, and store colors remain unchanged', () => {
@@ -79,7 +45,7 @@ test('PC card routes, Xbox identity, and store colors remain unchanged', () => {
   assert.equal(pcStores.length, 8)
   assert.equal(new Set(pcStores.map((store) => store.slug)).size, 8)
   assert.equal(microsoft?.name, 'Xbox Store')
-  assert.equal(microsoft?.logo?.src, '/platforms/xbox/logo.png')
+  assert.equal(microsoft.name, 'Xbox Store')
   assert.equal(Object.keys(storeVisualTreatments).length, 10)
   assert.match(storeVisualTreatments['microsoft-store'].surface, /155b32/)
   assert.match(storeVisualTreatments['ubisoft-store'].surface, /264d79/)

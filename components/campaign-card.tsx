@@ -3,7 +3,7 @@ import type { Locale } from '@/lib/locale'
 import { t } from '@/lib/i18n'
 import { CampaignArtwork } from '@/components/campaign-artwork'
 import { CampaignTiming } from '@/components/campaign-timing'
-import { StoreLogo } from '@/components/store-logo'
+import { StoreIdentity } from '@/components/store-identity'
 import type { AnalyticsSurface } from '@/lib/analytics'
 import {
   type CampaignBoundary,
@@ -78,7 +78,7 @@ export function CampaignCard({ locale = 'en',
           <div className="flex items-center justify-between gap-3">
             {showStore ? (
               <div className="flex min-w-0 items-center gap-2">
-                <StoreLogo locale={locale} store={store} variant="mini" />
+                <StoreIdentity store={store} variant="mini" />
                 <p className="min-w-0 truncate text-xs font-bold uppercase tracking-[0.12em] text-[#bdbbb7]">
                   {store.name}
                 </p>

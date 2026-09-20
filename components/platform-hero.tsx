@@ -1,7 +1,6 @@
 
 import type { Locale } from '@/lib/locale'
 import { t } from '@/lib/i18n'
-import Image from 'next/image'
 import type { Platform } from '@/lib/stores'
 
 type PlatformHeroProps = {
@@ -16,41 +15,21 @@ const platformHeroTreatments = {
     surface: 'from-[#0759a5] via-[#082b55] to-[#0b0f15]',
     glow: 'bg-[#168eea]/35',
     line: 'from-[#38a7ff]/0 via-[#38a7ff]/55 to-[#38a7ff]/0',
-    logo: {
-      src: '/services/playstation-store/logo.png',
-      width: 800,
-      height: 800,
-      className: 'h-28 w-28 sm:h-40 sm:w-40 lg:h-48 lg:w-48',
-    },
   },
   pc: {
     surface: 'from-[#235b78] via-[#182f40] to-[#0b0f14]',
     glow: 'bg-[#4ba3d1]/25',
     line: 'from-[#7cc7ea]/0 via-[#7cc7ea]/45 to-[#7cc7ea]/0',
-    logo: null,
   },
   nintendo: {
     surface: 'from-[#b10718] via-[#65111b] to-[#140d10]',
     glow: 'bg-[#ff3042]/25',
     line: 'from-[#ff8792]/0 via-[#ff8792]/50 to-[#ff8792]/0',
-    logo: {
-      src: '/services/nintendo-eshop/logo.png',
-      width: 512,
-      height: 512,
-      className:
-        'h-32 w-32 rounded-3xl sm:h-40 sm:w-40 lg:h-48 lg:w-48',
-    },
   },
   xbox: {
     surface: 'from-[#16803d] via-[#17452a] to-[#0b110d]',
     glow: 'bg-[#55c977]/25',
     line: 'from-[#8be6a5]/0 via-[#8be6a5]/50 to-[#8be6a5]/0',
-    logo: {
-      src: '/platforms/xbox/logo.png',
-      width: 410,
-      height: 124,
-      className: 'h-auto w-36 sm:w-64 lg:w-72',
-    },
   },
 } as const
 
@@ -98,22 +77,9 @@ export function PlatformHero({ locale = 'en',
         />
 
         <div className="absolute inset-0 flex items-center justify-center pl-12 sm:pl-16">
-          {treatment.logo ? (
-            <Image
-              src={treatment.logo.src}
-              alt=""
-              width={treatment.logo.width}
-              height={treatment.logo.height}
-              sizes="(max-width: 640px) 160px, (max-width: 1024px) 224px, 288px"
-              className={`${treatment.logo.className} object-contain drop-shadow-[0_18px_45px_rgba(0,0,0,0.5)]`}
-              loading="eager"
-              unoptimized
-            />
-          ) : (
-            <span className="text-7xl font-black tracking-[-0.07em] text-white/90 drop-shadow-[0_18px_45px_rgba(0,0,0,0.5)] sm:text-8xl lg:text-9xl">
-              PC
-            </span>
-          )}
+          <span className="text-7xl font-black tracking-[-0.07em] text-white/90 drop-shadow-[0_18px_45px_rgba(0,0,0,0.5)] sm:text-8xl lg:text-9xl">
+            {name}
+          </span>
         </div>
       </div>
 

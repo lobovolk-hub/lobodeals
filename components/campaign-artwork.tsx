@@ -4,7 +4,7 @@ import type { Locale } from '@/lib/locale'
 import { t } from '@/lib/i18n'
 
 import { useState } from 'react'
-import { StoreLogo } from '@/components/store-logo'
+import { StoreIdentity } from '@/components/store-identity'
 import { getStoreVisualClassName } from '@/lib/store-visuals'
 import type { CampaignState, CampaignStore } from '@/lib/sales'
 
@@ -53,14 +53,14 @@ function ArtworkFallback({ locale = 'en',
           className="pointer-events-none absolute right-3 top-1/2 w-40 -translate-y-1/2 opacity-[0.13] sm:right-5 sm:w-48"
           aria-hidden="true"
         >
-          <StoreLogo locale={locale} store={store} variant="campaign" />
+          <StoreIdentity store={store} variant="campaign" />
         </div>
       ) : null}
 
       <div className="relative flex h-full flex-col justify-between p-4 sm:p-5">
         <div className="flex min-w-0 items-center gap-2 text-white/70">
           <div className="rounded-md border border-white/10 bg-black/15 px-1">
-            <StoreLogo locale={locale} store={store} variant="mini" />
+            <StoreIdentity store={store} variant="mini" />
           </div>
           <span className="truncate text-[0.62rem] font-black uppercase tracking-[0.14em]">
             {store.name}

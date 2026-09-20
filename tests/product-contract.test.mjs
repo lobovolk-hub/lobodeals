@@ -43,10 +43,6 @@ const excludedStoreNames = [
   'XBXPrices',
 ]
 
-const approvedAssetDirectories = approvedSlugs.filter(
-  (slug) => slug !== 'microsoft-store'
-)
-
 async function exists(relativePath) {
   try {
     await access(path.join(root, relativePath))
@@ -195,28 +191,13 @@ test('Xbox Store is one canonical store across PC and Xbox and Rockstar is prese
 
   assert.equal(rockstar.name, 'Rockstar Store')
   assert.deepEqual(rockstar.platforms, ['pc'])
-  assert.deepEqual(rockstar.logo, {
-    src: '/services/rockstar-store/logo.svg',
-    width: 139,
-    height: 128,
-  })
+  assert.equal(rockstar.name, 'Rockstar Store')
 })
 
-test('only approved store logo directories and own-brand assets remain', async () => {
-  const assetEntries = await readdir(path.join(root, 'public/services'), {
-    withFileTypes: true,
-  })
-  const assetDirectories = assetEntries
-    .filter((entry) => entry.isDirectory())
-    .map((entry) => entry.name)
-    .sort()
-
-  assert.deepEqual(assetDirectories, [...approvedAssetDirectories].sort())
+test('own-brand assets remain available', async () => {
 
   for (const protectedPath of [
     'public/og/lobodeals-og-v2.png',
-    'public/platforms/xbox/logo.png',
-    'public/services/rockstar-store/logo.svg',
     'app/favicon.ico',
     'app/icon.png',
     'app/apple-icon.png',
@@ -373,7 +354,7 @@ test('seven independent store profiles are static, reject unknown slugs, and con
   assert.match(routeSource, /return storeProfileStaticParams/)
   assert.match(routeSource, /if \(!store \|\| !storeProfileStaticParams\.some\([\s\S]*?entry\.slug === slug\)\) notFound\(\)/)
   assert.match(routeSource, /<StoreProfileHero locale=\{locale\} store=\{store\}/)
-  assert.match(heroSource, /<StoreLogo locale=\{locale\} store=\{store\}/)
+  assert.match(heroSource, /<StoreIdentity store=\{store\}/)
   assert.match(heroSource, /Visit official store/)
   assert.match(routeSource, /<CampaignSections/)
 })
@@ -501,7 +482,7 @@ test('visual pass keeps Home public-facing and makes cards fully navigable', asy
   assert.match(sections, /href=\{localizedHref\("\/sales", locale\)\}/)
 
   assert.equal((campaignCard.match(/<a\b/g) || []).length, 1)
-  assert.ok(campaignCard.indexOf('<a\n') < campaignCard.indexOf('<StoreLogo'))
+  assert.ok(campaignCard.indexOf('<a\n') < campaignCard.indexOf('<StoreIdentity'))
   assert.ok(
     campaignCard.indexOf('</a>') > campaignCard.indexOf('View official sale')
   )
@@ -575,5 +556,5 @@ test('repository guidance reflects closed authority and the completed legacy tra
   for (const name of (await loadStores()).stores.map((store) => store.name)) {
     assert.match(assetDoc, new RegExp(name.replace(/[.*+?^$()|[\]\\]/g, '\\$&')))
   }
-  assert.equal((assetDoc.match(/\| (?:VERIFIED|UNRESOLVED) \|/g) || []).length, 10)
+  assert.equal((assetDoc.match(/\| HISTORICAL — INACTIVE \|/g) || []).length, 10)
 })

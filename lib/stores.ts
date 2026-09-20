@@ -2,12 +2,6 @@ export const PLATFORMS = ['playstation', 'pc', 'nintendo', 'xbox'] as const
 
 export type Platform = (typeof PLATFORMS)[number]
 
-export type StoreLogo = Readonly<{
-  src: string
-  width: number
-  height: number
-}>
-
 export type Store = Readonly<{
   slug: string
   name: string
@@ -16,7 +10,6 @@ export type Store = Readonly<{
   digitalScope: string
   marketScope: string
   officialUrl: string
-  logo: StoreLogo | null
 }>
 
 export const platformLabels = {
@@ -38,11 +31,6 @@ export const stores = [
     marketScope:
       'LoboDeals follows the United States storefront and its official digital sale campaigns.',
     officialUrl: 'https://store.playstation.com/en-us/',
-    logo: {
-      src: '/services/playstation-store/logo.png',
-      width: 800,
-      height: 800,
-    },
   },
   {
     slug: 'nintendo-eshop',
@@ -55,11 +43,6 @@ export const stores = [
     marketScope:
       'LoboDeals follows the United States storefront and its official digital sale campaigns.',
     officialUrl: 'https://www.nintendo.com/us/store/games/',
-    logo: {
-      src: '/services/nintendo-eshop/logo.png',
-      width: 512,
-      height: 512,
-    },
   },
   {
     slug: 'microsoft-store',
@@ -72,11 +55,6 @@ export const stores = [
     marketScope:
       'LoboDeals follows the United States storefront and its official digital sale campaigns.',
     officialUrl: 'https://www.xbox.com/en-US/games',
-    logo: {
-      src: '/platforms/xbox/logo.png',
-      width: 410,
-      height: 124,
-    },
   },
   {
     slug: 'steam',
@@ -89,11 +67,6 @@ export const stores = [
     marketScope:
       'LoboDeals follows United States availability and official Steam sale campaigns.',
     officialUrl: 'https://store.steampowered.com/',
-    logo: {
-      src: '/services/steam/logo.png',
-      width: 744,
-      height: 171,
-    },
   },
   {
     slug: 'epic-games-store',
@@ -106,11 +79,6 @@ export const stores = [
     marketScope:
       'LoboDeals follows United States availability and official Epic Games Store sale campaigns.',
     officialUrl: 'https://store.epicgames.com/en-US/',
-    logo: {
-      src: '/services/epic-games-store/logo.png',
-      width: 1360,
-      height: 1360,
-    },
   },
   {
     slug: 'gog',
@@ -123,11 +91,6 @@ export const stores = [
     marketScope:
       'LoboDeals follows United States availability and official GOG sale campaigns.',
     officialUrl: 'https://www.gog.com/en/',
-    logo: {
-      src: '/services/gog/logo.png',
-      width: 1920,
-      height: 1819,
-    },
   },
   {
     slug: 'ea-app',
@@ -140,11 +103,6 @@ export const stores = [
     marketScope:
       'LoboDeals follows United States availability and official EA sale campaigns.',
     officialUrl: 'https://www.ea.com/games',
-    logo: {
-      src: '/services/ea-app/logo.png',
-      width: 60,
-      height: 60,
-    },
   },
   {
     slug: 'ubisoft-store',
@@ -157,11 +115,6 @@ export const stores = [
     marketScope:
       'LoboDeals follows the United States storefront and its official sale campaigns.',
     officialUrl: 'https://store.ubisoft.com/us/home',
-    logo: {
-      src: '/services/ubisoft-store/logo.svg',
-      width: 722,
-      height: 316,
-    },
   },
   {
     slug: 'battle-net',
@@ -174,11 +127,6 @@ export const stores = [
     marketScope:
       'LoboDeals follows the United States storefront and its official sale campaigns.',
     officialUrl: 'https://us.shop.battle.net/en-us',
-    logo: {
-      src: '/services/battle-net/logo.svg',
-      width: 1200,
-      height: 717,
-    },
   },
   {
     slug: 'rockstar-store',
@@ -191,11 +139,6 @@ export const stores = [
     marketScope:
       'LoboDeals follows the United States storefront and its official digital sale campaigns.',
     officialUrl: 'https://store.rockstargames.com/',
-    logo: {
-      src: '/services/rockstar-store/logo.svg',
-      width: 139,
-      height: 128,
-    },
   },
 ] as const satisfies readonly Store[]
 

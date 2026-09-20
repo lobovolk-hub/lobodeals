@@ -121,7 +121,6 @@ export const es = {
   "Starts in {duration}": "Inicia en {duration}",
   "Starts today": "Inicia hoy",
   "Starts tomorrow": "Inicia mañana",
-  "Steam, visual reference for eight PC stores": "Steam, referencia visual para ocho tiendas de PC",
   "Store sales data availability": "Disponibilidad de los datos de ofertas de la tienda",
   "This page couldn’t load": "Esta página no pudo cargarse",
   "This page is not part of LoboDeals.": "Esta página no forma parte de LoboDeals.",
@@ -149,8 +148,6 @@ export const es = {
   "stores": "tiendas",
   "{days} days left": "Quedan {days} días",
   "{platform} platform visual": "Imagen de la plataforma {platform}",
-  "{value0} logo": "Logo de {value0}",
   "{value0} official campaign artwork": "Imagen oficial de la campaña {value0}",
   "{value0} platforms": "Plataformas de {value0}",
-  "{value0}; no verified local logo is available": "{value0}; no hay un logo local verificado disponible"
 } as const satisfies Record<MessageKey, string>

@@ -3,7 +3,7 @@ import type { Locale } from '@/lib/locale'
 import { t } from '@/lib/i18n'
 import { localizedHref } from '@/lib/localized-routes'
 import Link from 'next/link'
-import { StoreLogo } from '@/components/store-logo'
+import { StoreIdentity, PCIdentity } from '@/components/store-identity'
 import {
   getStoresByPlatform,
   type Platform,
@@ -50,33 +50,20 @@ const platformPresentation = {
   }>
 >
 
-function PlatformIdentity({ locale = 'en',
+function PlatformIdentity({
   platform,
   stores,
 }: {
-  locale?: Locale
   platform: Platform
   stores: readonly Store[]
 }) {
   if (platform === 'pc') {
-    const steam = stores.find((store) => store.slug === 'steam')
-
-    return steam ? (
-      <div
-        role="img"
-        aria-label={t(locale, "Steam, visual reference for eight PC stores")}
-        className="rounded-lg bg-black/15 px-3 shadow-[0_14px_36px_rgba(0,0,0,0.2)]"
-      >
-        <StoreLogo locale={locale} store={steam} variant="platform" />
-      </div>
-    ) : null
+    return <PCIdentity />
   }
 
   return stores[0] ? (
-    <StoreLogo locale={locale}
-      store={stores[0]}
+    <StoreIdentity store={stores[0]}
       variant="platform"
-      eager={platform === 'playstation'}
     />
   ) : null
 }
@@ -110,8 +97,8 @@ export function PlatformCard({ locale = 'en',  platform }: PlatformCardProps) {
       </div>
 
       <div className="relative mt-4 flex min-h-28 flex-1 items-center justify-center rounded-lg border border-white/[0.06] bg-black/10 px-4 py-3">
-        <div className="shrink-0 transition-transform duration-200 group-hover:scale-[1.03]">
-          <PlatformIdentity locale={locale} platform={platform} stores={platformStores} />
+        <div className="w-full transition-transform duration-200 group-hover:scale-[1.03]">
+          <PlatformIdentity platform={platform} stores={platformStores} />
         </div>
       </div>
 

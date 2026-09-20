@@ -184,9 +184,9 @@ test('Upcoming rail controls and platform identity polish are explicit', async (
   assert.match(rail, /event\.key !== 'Enter'/)
   assert.match(rail, /hidden justify-end gap-2 sm:flex/)
 
-  assert.match(platform, /slug === 'steam'/)
-  assert.match(platform, /eight PC stores/)
-  assert.match(stores, /slug: 'microsoft-store'[\s\S]*?\/platforms\/xbox\/logo\.png/)
+  assert.match(platform, /<PCIdentity/)
+  assert.doesNotMatch(platform, /slug === 'steam'/)
+  assert.match(stores, /name: 'Xbox Store'/)
   assert.match(platform, /min-h-28 flex-1 items-center justify-center/)
 })
 

@@ -43,7 +43,7 @@ test('seven independent profiles use one shared compact LoboDeals-first header w
   assert.match(page, /return storeProfileStaticParams/)
   assert.match(page, /<StoreProfileHero locale=\{locale\} store=\{store\} \/>/)
   assert.match(hero, /data-store-profile-hero=\{store\.slug\}/)
-  assert.match(hero, /<StoreLogo locale=\{locale\} store=\{store\} eager \/>/)
+  assert.match(hero, /<StoreIdentity store=\{store\} \/>/)
   assert.match(hero, /Official store/)
   assert.match(hero, /bg-\[#121212\]/)
   assert.doesNotMatch(hero, /getStoreVisualTreatment/)
@@ -141,14 +141,14 @@ test('store availability state keeps one notice and preserves confirmed campaign
   assert.doesNotMatch(page, /Current campaign availability cannot be confirmed|Upcoming campaign availability cannot be confirmed/)
 })
 
-test('Xbox Store keeps its canonical internal entity and Rockstar uses its verified official lockup', async () => {
+test('Xbox Store keeps its canonical internal entity and Rockstar uses the shared original identity', async () => {
   const microsoft = stores.find(({ slug }) => slug === 'microsoft-store')
   const rockstar = stores.find(({ slug }) => slug === 'rockstar-store')
-  const logo = await source('components/store-logo.tsx')
+  const logo = await source('components/store-identity.tsx')
 
   assert.equal(microsoft?.name, 'Xbox Store')
   assert.deepEqual(microsoft?.platforms, ['pc', 'xbox'])
-  assert.equal(microsoft?.logo?.src, '/platforms/xbox/logo.png')
+  assert.equal(microsoft.name, 'Xbox Store')
   assert.equal(storeStaticParams.filter(({ slug }) => slug === 'microsoft-store').length, 1)
   assert.equal(
     storeProfileStaticParams.some(({ slug }) => slug === 'microsoft-store'),
@@ -156,13 +156,8 @@ test('Xbox Store keeps its canonical internal entity and Rockstar uses its verif
   )
   assert.equal(storeStaticParams.some(({ slug }) => slug === 'xbox-store'), false)
 
-  assert.deepEqual(rockstar?.logo, {
-    src: '/services/rockstar-store/logo.svg',
-    width: 139,
-    height: 128,
-  })
-  assert.match(logo, /data-rockstar-store-lockup/)
-  assert.match(logo, /aria-label="Rockstar Store"/)
+  assert.equal(rockstar.name, 'Rockstar Store')
+  assert.doesNotMatch(logo, /data-rockstar-store-lockup/)
   assert.match(storeVisualTreatments['rockstar-store'].surface, /72500f/)
 })
 

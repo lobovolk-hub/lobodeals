@@ -201,7 +201,7 @@ export function HomeHero({ locale = 'en' }: { locale?: Locale }) {
             {t(locale, "Know where official game sales are happening")}
           </h1>
           <p className="mt-4 max-w-2xl text-base leading-7 text-[#d0cfcc] sm:text-lg sm:leading-8 lg:max-w-xl">
-            {t(locale, "Find official digital game stores and see which sale campaigns are live or coming next.")}
+            {t(locale, "LoboDeals helps you find official digital game stores and see which sale campaigns are live or coming next.")}
           </p>
           <div className="mt-6 flex flex-wrap gap-3">
             <Link

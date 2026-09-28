@@ -36,7 +36,7 @@ export const en = {
   "Explore {value0} sales and store directory": "Explore {value0} sales and store directory",
   "Filter by store": "Filter by store",
   "Find official digital game stores and see their live or announced sale campaigns.": "Find official digital game stores and see their live or announced sale campaigns.",
-  "Find official digital game stores and see which sale campaigns are live or coming next.": "Find official digital game stores and see which sale campaigns are live or coming next.",
+  "LoboDeals helps you find official digital game stores and see which sale campaigns are live or coming next.": "LoboDeals helps you find official digital game stores and see which sale campaigns are live or coming next.",
   "Find the ten official stores LoboDeals follows and the platforms where each store operates.": "Find the ten official stores LoboDeals follows and the platforms where each store operates.",
   "GOG’s digital PC store, with a focus on DRM-free games.": "GOG’s digital PC store, with a focus on DRM-free games.",
   "Gaming platform spotlight": "Gaming platform spotlight",

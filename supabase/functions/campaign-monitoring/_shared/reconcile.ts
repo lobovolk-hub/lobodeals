@@ -2,11 +2,13 @@ import type {
   DetectedCampaign,
   SourceCoverage,
 } from './types.ts'
+import { calendarDateIsPast } from './calendar-date.ts'
 
 export type ActiveCampaignIdentity = Readonly<{
   campaign_key: string
   source_uid: string
   ends_at: string | null
+  ends_on: string | null
 }>
 
 export function campaignKeysToEnd(input: Readonly<{
@@ -39,6 +41,10 @@ export function campaignKeysToEnd(input: Readonly<{
         Number.isFinite(Date.parse(active.ends_at)) &&
         input.now.getTime() >= Date.parse(active.ends_at)
       ) {
+        return true
+      }
+
+      if (!active.ends_at && active.ends_on && calendarDateIsPast(active.ends_on, input.now)) {
         return true
       }
 

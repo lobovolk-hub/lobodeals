@@ -332,7 +332,7 @@ test('public Sales runtime is client-safe and preserves lifecycle grouping', asy
   )
 })
 
-test('source-reported status is not derived from date-only boundaries', async () => {
+test('date-only boundaries never guess activation but safely expire past campaigns', async () => {
   const { getCampaignState } = await salesModelPromise
   const upcoming = reportedCampaign()
   const live = reportedCampaign({
@@ -340,8 +340,9 @@ test('source-reported status is not derived from date-only boundaries', async ()
   })
   const distantFuture = new Date('2099-01-01T00:00:00Z')
 
-  assert.equal(getCampaignState(upcoming, distantFuture), 'upcoming')
-  assert.equal(getCampaignState(live, distantFuture), 'live')
+  assert.equal(getCampaignState(upcoming, new Date('2030-06-05T00:00:00Z')), 'upcoming')
+  assert.equal(getCampaignState(upcoming, distantFuture), 'expired')
+  assert.equal(getCampaignState(live, distantFuture), 'expired')
 })
 
 test('source-reported state changes only at official exact instants', async () => {

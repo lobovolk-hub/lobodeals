@@ -15,7 +15,7 @@ import {
   extractOfficialArtwork,
   isSafeArtworkUrl,
 } from '../_shared/artwork.ts'
-import { fetchOfficialPage, fetchOfficialText } from '../_shared/http.ts'
+import { fetchOfficialPage, fetchOfficialText, type OfficialPage } from '../_shared/http.ts'
 import { extractExactEnglishDateTimes } from '../_shared/time.ts'
 import { currentCampaignEvidence, sourceExplicitlyEndsCampaign } from '../_shared/verification.ts'
 import {
@@ -454,6 +454,47 @@ function gogCampaignExplicitlyEnded(
   )
 }
 
+// A generic title alone is also used by active promos. Require the observed
+// SSR soft-404 contract and no campaign content, not merely missing headings.
+export function gogPromoPageEvidence(
+  page: OfficialPage,
+  officialUrl: string,
+  name: string
+): Readonly<{ kind: 'present' | 'generic' | 'unknown'; country?: string }> {
+  const identity = campaignIdentityUrl(officialUrl)
+  if (!identity || !/^\/promo\/[^/]+$/i.test(new URL(identity).pathname) ||
+      campaignIdentityUrl(page.url) !== identity) return { kind: 'unknown' }
+
+  const normalize = (value: string) => value.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, ' ').trim()
+  const normalizedName = normalize(name)
+  const identityText = `${textFromHtml(page.text)} ${extractMeta(page.text, 'og:title') ?? ''}`
+  if (normalizedName && normalize(identityText).includes(normalizedName)) {
+    return { kind: 'present' }
+  }
+  const raw = /<script\b[^>]*id=["']gogcom-store-state["'][^>]*>([\s\S]*?)<\/script>/i.exec(page.text)?.[1]
+  if (!raw) return { kind: 'unknown' }
+  let state: Record<string, unknown>
+  try { state = JSON.parse(raw) } catch { return { kind: 'unknown' } }
+  if (!state || typeof state !== 'object' || Array.isArray(state)) return { kind: 'unknown' }
+  // Any retained page/section state is reason to preserve. Do not inspect or
+  // traverse the embedded catalog, products, prices, or individual offers.
+  if (Object.keys(state).some(key => key.startsWith('sections.gog/v1/pages/')) ||
+      /<app-page\b|<hero\b/i.test(page.text)) return { kind: 'present' }
+
+  const metadata = state.pageMetadata as Record<string, unknown> | undefined
+  const config = state.consulConfig
+  if (!metadata || typeof metadata !== 'object' || Array.isArray(metadata) ||
+      typeof metadata.country !== 'string' || typeof metadata.locale !== 'string' ||
+      typeof metadata.currency !== 'string' || !config || typeof config !== 'object' ||
+      Array.isArray(config) || Object.keys(state).some(key => !['consulConfig', 'pageMetadata'].includes(key))) {
+    return { kind: 'unknown' }
+  }
+  const root = /<app-root\b[^>]*ng-server-context=["']ssr["'][^>]*>([\s\S]*?)<\/app-root>/i.exec(page.text)?.[1]
+  if (!root || !/<page-not-found\b[^>]*>\s*<\/page-not-found>/i.test(root) ||
+      !/<title>\s*GOG\.COM\s*<\/title>/i.test(page.text)) return { kind: 'unknown' }
+  return { kind: 'generic', country: metadata.country }
+}
+
 function campaignName(
   pageHtml: string,
   label: string,
@@ -489,6 +530,8 @@ async function verifyCandidates(
       const page = await fetchOfficialPage(fetcher, candidate.officialUrl)
       const identityUrl = campaignIdentityUrl(page.url || candidate.officialUrl)
       if (!identityUrl || !isCampaignPageUrl(identityUrl)) return null
+
+      if (gogPromoPageEvidence(page, candidate.officialUrl, candidate.promotionName ?? candidate.label).kind === 'generic') return null
 
       const name = candidate.promotionName ?? campaignName(page.text, candidate.label, candidate.articleHtml)
       const pageRecognized =
@@ -645,19 +688,18 @@ async function verifyKnownGogCampaigns(
   const settled = await Promise.allSettled(
     [...byUrl.entries()].map(
       async ([officialUrl, knownAtUrl]) => {
-        const html =
-          await fetchOfficialText(
+        const page =
+          await fetchOfficialPage(
             fetcher,
             officialUrl
           )
-
-        return gogCampaignExplicitlyEnded(
-          html
-        )
-          ? knownAtUrl.map(
-              ({ sourceUid }) => sourceUid
-            )
-          : []
+        if (campaignIdentityUrl(page.url) !== campaignIdentityUrl(officialUrl)) return []
+        return knownAtUrl.flatMap((known) => {
+          const evidence = gogPromoPageEvidence(page, officialUrl, known.name)
+          return gogCampaignExplicitlyEnded(page.text) ||
+            (evidence.kind === 'generic' && evidence.country === 'US')
+            ? [known.sourceUid] : []
+        })
       }
     )
   )
@@ -713,7 +755,12 @@ export const runGogAdapter: StoreAdapter = async ({
     (
       await verifyKnownGogCampaigns(
         fetch,
-        knownCampaigns,
+        knownCampaigns.filter((known) =>
+          !currentSourceUids.has(known.sourceUid) &&
+          !currentCandidates.some(candidate =>
+            campaignIdentityUrl(candidate.officialUrl) === campaignIdentityUrl(known.officialUrl)
+          )
+        ),
         now
       )
     ).filter(

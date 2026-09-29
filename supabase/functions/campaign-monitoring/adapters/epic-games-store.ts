@@ -6,6 +6,7 @@ import {
   monthNumber,
 } from '../_shared/campaign.ts'
 import { isSafeArtworkUrl } from '../_shared/artwork.ts'
+import { calendarDateIsPast } from '../_shared/calendar-date.ts'
 import { uniqueBy } from '../_shared/html.ts'
 import { fetchOfficialJson } from '../_shared/http.ts'
 import {
@@ -931,7 +932,11 @@ export const runEpicGamesStoreAdapter: StoreAdapter = async ({
         campaignLandingUrl(known.sourceUid)
       if (!officialUrl) return null
       const landing = await loadLanding(officialUrl)
-      return landing.ended &&
+      const ends = landing.timing.ends
+      const endPassed = ends?.precision === 'datetime'
+        ? now.getTime() >= Date.parse(ends.value)
+        : ends?.precision === 'date' && calendarDateIsPast(ends.value, now)
+      return (landing.ended || endPassed) &&
         normalizeIdentity(landing.name) === normalizeIdentity(known.name)
         ? known.sourceUid
         : null

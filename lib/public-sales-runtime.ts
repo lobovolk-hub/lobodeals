@@ -7,6 +7,7 @@ import type {
   ExactDateTimeBoundary,
   PublicOfficialCampaign,
 } from './sales'
+import { calendarDateIsPast } from '../supabase/functions/campaign-monitoring/_shared/calendar-date'
 
 export { formatBoundary as formatCompactCampaignBoundary } from './date-format'
 
@@ -22,6 +23,13 @@ export function getCampaignState(
         throw new RangeError(
           'Campaign state requires a valid reference time'
         )
+      }
+
+      if (
+        campaign.ends?.precision === 'date' &&
+        calendarDateIsPast(campaign.ends.date, referenceTime)
+      ) {
+        return 'expired'
       }
 
       if (

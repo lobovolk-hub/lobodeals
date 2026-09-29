@@ -1,4 +1,5 @@
 import type { DetectedCampaign, KnownCampaign, SourceBoundary } from './types.ts'
+import { calendarDateIsPast, calendarDateIsFuture } from './calendar-date.ts'
 
 function priorBoundary(date?: string, instant?: string): SourceBoundary | undefined {
   if (date && !instant) return { precision: 'date', value: date }
@@ -23,8 +24,8 @@ function compatibleBoundary(
   } else {
     // Compare calendar dates only. A boundary is contradictory only when
     // past/future across all timezone offsets; never invent a source instant.
-    past = boundary.value < new Date(now.getTime() - 12 * 3_600_000).toISOString().slice(0, 10)
-    future = boundary.value > new Date(now.getTime() + 14 * 3_600_000).toISOString().slice(0, 10)
+    past = calendarDateIsPast(boundary.value, now)
+    future = calendarDateIsFuture(boundary.value, now)
   }
   if (kind === 'ends' && past) return undefined
   if (kind === 'starts' && (state === 'upcoming' ? past : future)) return undefined

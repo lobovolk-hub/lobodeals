@@ -717,6 +717,69 @@ async function verifyKnownGogCampaigns(
   )
 }
 
+async function enrichKnownGogCampaigns(
+  fetcher: typeof fetch,
+  knownCampaigns: readonly KnownCampaign[],
+  detected: readonly DetectedCampaign[],
+  now: Date
+): Promise<readonly DetectedCampaign[]> {
+  const normalize = (value: string) => value.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, ' ').trim()
+  const containsName = (text: string, name: string) =>
+    normalize(name).length >= 6 && ` ${normalize(text)} `.includes(` ${normalize(name)} `)
+  const settled = await Promise.allSettled(knownCampaigns.filter(known =>
+    known.state === 'live' && !known.endsAt && isNewsArticleUrl(known.sourceUrl) &&
+    isCampaignPageUrl(known.officialUrl) &&
+    !detected.find(entry => entry.sourceUid === known.sourceUid)?.ends
+  ).map(async (known): Promise<DetectedCampaign | null> => {
+    const article = await fetchOfficialPage(fetcher, known.sourceUrl)
+    if (campaignIdentityUrl(article.url) !== campaignIdentityUrl(known.sourceUrl)) return null
+    // Scope timing to the saved announcement, never page navigation or related news.
+    const body = /<article\b[^>]*>([\s\S]*?)<\/article>/i.exec(article.text)?.[1]
+    if (!body) return null
+    const title = textFromHtml(/<h1\b[^>]*>([\s\S]*?)<\/h1>/i.exec(body)?.[1] ?? '')
+    if (!containsName(title, known.name)) return null
+    const links = campaignLinks(body, known.sourceUrl, title)
+    const identities = new Set(links.map(link => campaignIdentityUrl(link.href)))
+    if (identities.size !== 1 || !identities.has(campaignIdentityUrl(known.officialUrl))) return null
+    const publication = articlePublicationDate(body)
+    // A retained article from another edition cannot refresh a recurring landing.
+    if (!publication || publication.year !== now.getUTCFullYear()) return null
+    const paragraphs = [...body.matchAll(/<p\b[^>]*>([\s\S]*?)<\/p>/gi)]
+      .map(match => textFromHtml(match[1]))
+      .filter(text => containsName(text, known.name) || /^The (?:sale|promotion|campaign|event)\s+(?:ends?|lasts|runs)\b/i.test(text))
+    const boundaries = paragraphs.flatMap(text => {
+      const end = exactSaleEnd(text, publication)
+      return end ? [end] : []
+    })
+    const uniqueEnds = uniqueBy(boundaries, end => end.value)
+    if (uniqueEnds.length !== 1) return null
+    const ends = uniqueEnds[0]
+    const page = await fetchOfficialPage(fetcher, known.officialUrl)
+    if (campaignIdentityUrl(page.url) !== campaignIdentityUrl(known.officialUrl) ||
+        gogCampaignExplicitlyEnded(page.text)) return null
+    const headings = [...page.text.matchAll(/<h[1-3]\b[^>]*>([\s\S]*?)<\/h[1-3]>/gi)]
+      .map(match => textFromHtml(match[1]))
+    if (![...headings, extractMeta(page.text, 'og:title') ?? ''].some(text => containsName(text, known.name))) return null
+    const current = detected.find(entry => entry.sourceUid === known.sourceUid)
+    return campaign({
+      sourceUid: known.sourceUid,
+      name: current?.name ?? known.name,
+      storeSlug: 'gog',
+      state: expireAtExactEnd('live', ends, now),
+      lifecycleBasis: 'official-source',
+      starts: current?.starts ?? (known.startsAt ? { precision: 'datetime', value: known.startsAt } :
+        known.startsOn ? { precision: 'date', value: known.startsOn } : undefined),
+      ends,
+      officialUrl: known.officialUrl,
+      sourceUrl: known.sourceUrl,
+      artworkUrl: current?.artworkUrl,
+    })
+  }))
+  // Auxiliary source failures preserve the existing row and current discovery.
+  const enriched = settled.flatMap(result => result.status === 'fulfilled' && result.value ? [result.value] : [])
+  return uniqueBy([...enriched, ...detected], entry => entry.sourceUid)
+}
+
 export const runGogAdapter: StoreAdapter = async ({
   now,
   fetch,
@@ -738,12 +801,13 @@ export const runGogAdapter: StoreAdapter = async ({
     })
   )
   const newsCandidates = await discoverNewsCandidates(fetch, feedXml)
-  const campaigns = await verifyCandidates(
+  const detected = await verifyCandidates(
     now,
     fetch,
     [...currentCandidates, ...homeCandidates, ...newsCandidates],
     knownCampaigns
   )
+  const campaigns = await enrichKnownGogCampaigns(fetch, knownCampaigns, detected, now)
   const currentSourceUids =
     new Set(
       campaigns.map(

@@ -619,7 +619,8 @@ async function discoverLiveCampaigns(
   now: Date,
   fetcher: typeof fetch,
   homeHtml: string,
-  upcoming: readonly DetectedCampaign[]
+  upcoming: readonly DetectedCampaign[],
+  inspectedPages: Map<string, string>
 ): Promise<readonly DetectedCampaign[]> {
   const links = uniqueBy(
     extractAnchors(homeHtml, STORE_HOME_URL).filter(({ href }) => {
@@ -641,6 +642,7 @@ async function discoverLiveCampaigns(
         fetcher,
         `${officialUrl.toString()}?cc=us&l=english`
       )
+      inspectedPages.set(officialUrl.toString(), html)
       const title = extractSteamCampaignTitle(html, label)
       const description =
         extractMeta(html, 'og:description') ?? extractMeta(html, 'description') ?? ''
@@ -695,6 +697,63 @@ async function discoverLiveCampaigns(
   )
 }
 
+function seasonalSubsectionUids(
+  homeHtml: string,
+  live: readonly DetectedCampaign[],
+  inspectedPages: ReadonlyMap<string, string>
+): ReadonlySet<string> {
+  const children = new Set<string>()
+  if (!/\bbIsSeasonalSale\s*:\s*1\b/.test(homeHtml)) return children
+  const description = extractMeta(homeHtml, 'og:description') ?? ''
+  const parentName = /^The (.+?\bSale) is on now\b/i.exec(description)?.[1]
+  if (!parentName) return children
+  const parents = live.filter(entry => entry.state === 'live' && comparableName(entry.name) === comparableName(parentName))
+  if (parents.length !== 1) return children
+  const parent = parents[0]
+  if (parent.ends?.precision !== 'datetime' || !parent.starts) return children
+
+  // Read only section headings and their "See All" links, never the product rows.
+  for (const start of homeHtml.matchAll(/<div\b[^>]*class=["'][^"']*\btitle_grid\b[^"']*["'][^>]*>/gi)) {
+    let depth = 1
+    let block = ''
+    const offset = start.index! + start[0].length
+    for (const tag of homeHtml.slice(offset).matchAll(/<\/?div\b[^>]*>/gi)) {
+      depth += /^<\//.test(tag[0]) ? -1 : 1
+      if (depth === 0) { block = homeHtml.slice(offset, offset + tag.index); break }
+    }
+    const heading = /<div\b[^>]*class=["'][^"']*\bhome_section_title\b[^"']*["'][^>]*>([\s\S]*?)<\/div>/i.exec(block)?.[1]
+    if (!heading || !/\bsee_more_link\b/.test(block)) continue
+    const sectionName = textFromHtml(heading)
+    for (const link of extractAnchors(block, STORE_HOME_URL).filter(link => /^see all$/i.test(link.label.trim()))) {
+      const url = new URL(link.href)
+      if (url.hostname !== 'store.steampowered.com' || !/^\/sale\/[^/]+\/?$/.test(url.pathname)) continue
+      url.search = ''; url.hash = ''
+      const child = live.find(entry => entry.officialUrl === url.toString() && entry.sourceUid !== parent.sourceUid)
+      if (!child || child.state !== 'live' || child.starts?.value.slice(0, 10) !== parent.starts.value.slice(0, 10) ||
+          child.ends?.precision !== 'datetime' || Date.parse(child.ends.value) !== Date.parse(parent.ends.value) ||
+          comparableName(child.name) !== `${comparableName(parentName)} ${comparableName(sectionName)}`) continue
+      const event = partnerEvent(inspectedPages.get(child.officialUrl) ?? '')
+      if (typeof event?.jsondata !== 'string') continue
+      try {
+        const data = JSON.parse(event.jsondata)
+        // The child event itself links back to the seasonal Store home.
+        const returnsToParent = Array.isArray(data.sale_sections) && data.sale_sections.some(
+          (section: { section_type?: unknown; links?: unknown }) => section?.section_type === 'links' &&
+            Array.isArray(section.links) && section.links.some(link => {
+              if (typeof link?.url !== 'string') return false
+              try {
+                const target = new URL(link.url)
+                return target.protocol === 'https:' && target.hostname === 'store.steampowered.com' && target.pathname === '/'
+              } catch { return false }
+            })
+        )
+        if (returnsToParent) children.add(child.sourceUid)
+      } catch { /* Ambiguous event data is not deduplication evidence. */ }
+    }
+  }
+  return children
+}
+
 async function verifyKnownSteamCampaigns(
   fetcher: typeof fetch,
   knownCampaigns: readonly KnownCampaign[],
@@ -739,13 +798,15 @@ export const runSteamAdapter: StoreAdapter = async ({
     fetchOfficialText(fetch, STORE_HOME_URL),
   ])
   const upcoming = parseUpcomingCalendar(calendarHtml)
+  const inspectedPages = new Map<string, string>()
   const [storeLive, newsConfirmed, explicitlyEndedSourceUids] =
     await Promise.all([
       discoverLiveCampaigns(
         now,
         fetch,
         homeHtml,
-        upcoming
+        upcoming,
+        inspectedPages
       ),
       discoverSteamNewsCampaigns(
         now,
@@ -759,10 +820,18 @@ export const runSteamAdapter: StoreAdapter = async ({
       ),
     ])
 
-  const live = uniqueBy(
+  const detectedLive = uniqueBy(
     [...storeLive, ...newsConfirmed],
     (entry) => entry.sourceUid
   )
+  const subsectionUids = seasonalSubsectionUids(homeHtml, detectedLive, inspectedPages)
+  const live = detectedLive.filter(entry => !subsectionUids.has(entry.sourceUid))
+  const duplicateUids = knownCampaigns.flatMap(known => {
+    const child = detectedLive.find(entry => subsectionUids.has(entry.sourceUid) && entry.sourceUid === known.sourceUid)
+    return child && child.officialUrl === known.officialUrl && child.name === known.name &&
+      (!known.startsAt || Date.parse(known.startsAt) === Date.parse(child.starts!.value)) &&
+      (!known.endsAt || Date.parse(known.endsAt) === Date.parse(child.ends!.value)) ? [known.sourceUid] : []
+  })
 
   const liveUids = new Set(
     live.map((entry) => entry.sourceUid)
@@ -782,6 +851,6 @@ export const runSteamAdapter: StoreAdapter = async ({
       ...upcoming.filter(
         (entry) => !liveUids.has(entry.sourceUid)
       ),
-    ], knownCampaigns, explicitlyEndedSourceUids),
+    ], knownCampaigns, [...explicitlyEndedSourceUids, ...duplicateUids]),
   } satisfies AdapterResult
 }

@@ -13,6 +13,7 @@ import { runSteamAdapter, extractSteamCampaignTitle } from '../supabase/function
 import { runUbisoftStoreAdapter } from '../supabase/functions/campaign-monitoring/adapters/ubisoft-store.ts'
 import { campaignKeysToEnd } from '../supabase/functions/campaign-monitoring/_shared/reconcile.ts'
 import { currentCampaignEvidence, verifyKnownCampaigns } from '../supabase/functions/campaign-monitoring/_shared/verification.ts'
+import { extractExactEnglishDateTimes, extractEnglishDateOnlyRange } from '../supabase/functions/campaign-monitoring/_shared/time.ts'
 
 const currentCampaign = {
   sourceUid: 'current',
@@ -24,6 +25,49 @@ const currentCampaign = {
   sourceUrl:
     'https://partner.steamgames.com/doc/marketing/upcoming_events?l=english',
 }
+
+test('Steam relates seasonal sections through current official structure, preserving independent sales and retiring only the known duplicate', async () => {
+  const childUrl = 'https://store.steampowered.com/sale/special_deals'
+  const childName = 'Autumn Sale 2026 Featured Deep Discounts'
+  const start = '2026-10-01T17:00:00Z', end = '2026-10-08T17:00:00Z'
+  const known = { campaignKey: 'child', sourceUid: childUrl, officialUrl: childUrl, sourceUrl: 'https://store.steampowered.com/?cc=us&l=english', name: childName, state: 'live', startsAt: start, endsAt: end }
+  for (const mode of ['related', 'same-parent-twice', 'no-parent', 'not-seasonal', 'no-section', 'no-backlink', 'different-end', 'different-start', 'similar-name', 'ambiguous-parent', 'malformed-event']) {
+    const calls = []
+    const result = await runSteamAdapter({
+      now: new Date('2026-10-02T04:30:00Z'), knownCampaigns: [known],
+      fetch: async input => {
+        const url = String(input); calls.push(url)
+        if (url.includes('partner.steamgames.com')) return new Response('<main>Upcoming Steam Events Seasonal Sales Autumn Sale 2026 | October 1 - 8, 2026 Winter Sale 2026 | December 17, 2026 - January 4, 2027</main>')
+        if (url.includes('api.steampowered.com')) return Response.json({ appnews: { newsitems: mode === 'no-parent' ? [] : [{ title: 'Steam Autumn Sale is here!', contents: 'Steam Autumn Sale is on now through October 8th at 10 a.m. Pacific.', feedname: 'steam_community_blog', date: Date.parse(start) / 1000, url: 'https://steamcommunity.com/ogg/593110/announcements/detail/12345' }] } })
+        if (url === 'https://store.steampowered.com/?cc=us&l=english') return new Response(`
+          <meta property="og:description" content="The Steam Autumn Sale is on now — find great deals!">
+          <script>bIsSeasonalSale: ${mode === 'not-seasonal' ? 0 : 1}</script>
+          ${mode === 'no-section' ? `<a href="${childUrl}">Featured Deep Discounts</a>` : `<div class="title_grid"><div class="home_section_title">Featured Deep Discounts</div><div class="home_section_subtitle">Especially great deals</div><div class="see_more_link home_section_button"><a href="${childUrl}"><span>See All</span></a></div></div>`}
+          <a href="https://store.steampowered.com/sale/CastlevaniaFranchiseSale2026">Castlevania Franchise Sale</a>
+          <a href="https://store.steampowered.com/sale/nier_2026">NieR Franchise Sale 2026</a>
+          ${mode === 'same-parent-twice' ? '<a href="https://store.steampowered.com/sale/seasonal">Steam Autumn Sale</a>' : ''}
+          ${mode === 'ambiguous-parent' ? '<a href="https://store.steampowered.com/sale/other">Steam Autumn Sale Featured Sale</a>' : ''}`)
+        if (url.includes('/sale/')) {
+          const isChild = url.startsWith(childUrl)
+          const name = isChild ? (mode === 'similar-name' ? 'Autumn Sale 2026 Featured Sale' : childName) : url.includes('Castlevania') ? 'Castlevania Franchise Sale' : url.includes('nier_') ? 'NieR Franchise Sale 2026' : 'Steam Autumn Sale'
+          const data = { sale_sections: [{ section_type: 'links', links: mode === 'no-backlink' ? [] : [{ url: 'https://store.steampowered.com/' }] }] }
+          const event = { event_name: name, rtime32_start_time: Date.parse(isChild && mode === 'different-start' ? '2026-09-30T17:00:00Z' : start) / 1000, rtime32_end_time: Date.parse(isChild && mode === 'different-end' ? '2026-10-09T17:00:00Z' : end) / 1000, jsondata: mode === 'malformed-event' ? '{' : JSON.stringify(data) }
+          return new Response(`<title>${name}</title><div data-partnereventstore='${JSON.stringify([event])}'></div>`)
+        }
+        throw new Error(`Unexpected Steam URL ${url}`)
+      },
+    })
+    const shouldMerge = ['related', 'same-parent-twice', 'ambiguous-parent'].includes(mode)
+    // An additional Store representation of the same calendar UID still denotes one parent.
+    assert.equal(result.campaigns.some(c => c.sourceUid === childUrl), !shouldMerge, mode)
+    assert.deepEqual(result.explicitlyEndedSourceUids, shouldMerge ? [childUrl] : [], mode)
+    for (const name of ['Castlevania Franchise Sale', 'NieR Franchise Sale 2026']) assert.equal(result.campaigns.filter(c => c.name === name).length, 1, mode)
+    assert.equal(result.campaigns.filter(c => c.sourceUid === 'steamworks-autumn-sale-2026').length, 1, mode)
+    assert.equal(result.campaigns.find(c => c.name === 'Steam Winter Sale').state, 'upcoming')
+    assert.equal(calls.some(url => /\/app\/|\/search\//.test(url)), false)
+    assert.equal(result.coverage, 'partial')
+  }
+})
 
 test('end evidence never creates history and retires only a known identity', () => {
   const historical = { ...currentCampaign, sourceUid: 'historical', state: 'ended' }
@@ -67,6 +111,47 @@ const nintendoKnown = (overrides = {}) => ({
 const emptyNintendoNews =
   '<script id="__NEXT_DATA__">{"props":{"pageProps":{"initialApolloState":{}}}}</script>'
 
+test('Nintendo exact active tab headings update stable identities without historical CMS names', async () => {
+  const sales = 'https://www.nintendo.com/us/store/sales-and-deals/'
+  const cases = [
+    ['capcom', 'Capcom', 'CAPCOM TGS Sale'],
+    ['crunching-koalas', 'Crunching Koalas', 'Crunching Koalas Publisher Sale'],
+    ['ubisoft', 'Ubisoft', 'Ubisoft 40th Anniversary'],
+  ]
+  for (const [slug, title, heading] of cases) {
+    for (const mode of ['active', 'absent', 'hidden', 'ambiguous', 'malformed']) {
+      const url = `${sales}${slug}/`
+      const promo = { CONTENT_TYPE: 'promoRichTextCta', heading, modifiers: mode === 'hidden' ? ['hidden'] : [] }
+      const content = {
+        merchandisedGrid: mode === 'absent' ? [] : mode === 'ambiguous' ? [promo, { ...promo, heading: `${title} Other Sale` }] : [promo],
+        pageSections: [{ storyModuleOrCuratedProductList: [{ ...promo, heading: 'Historical Winter Sale' }] }],
+      }
+      const known = nintendoKnown({ sourceUid: url, officialUrl: url, name: `${title} Sale` })
+      const result = await runNintendoEshopAdapter({
+        now: new Date('2026-10-01T20:00:00Z'), knownCampaigns: [known],
+        fetch: async input => {
+          const requested = String(input)
+          if (requested === sales) return new Response(`<a href="${url}">${title}</a>`)
+          if (requested === url) return responseAt(`<meta property="og:title" content="${title} - Nintendo">
+            <meta property="og:image" content="https://assets.nintendo.com/campaign.jpg">
+            <p>${title} Sale ends 10/7/2026 at 11:59 p.m. PT</p>
+            <script id="__NEXT_DATA__">${mode === 'malformed' ? '{' : JSON.stringify({ props: { pageProps: { page: { content } } } })}</script>`, url)
+          if (requested === 'https://www.nintendo.com/us/whatsnew/') return new Response(emptyNintendoNews)
+          throw new Error(`Unexpected Nintendo request: ${requested}`)
+        },
+      })
+      assert.equal(result.campaigns.length, 1)
+      assert.equal(result.campaigns[0].name, mode === 'active' ? heading : `${title} Sale`)
+      assert.equal(result.campaigns[0].sourceUid, known.sourceUid)
+      assert.equal(result.campaigns[0].officialUrl, url)
+      assert.equal(result.campaigns[0].artworkUrl, 'https://assets.nintendo.com/campaign.jpg')
+      if (mode === 'malformed') assert.equal(result.campaigns[0].ends, undefined)
+      else assert.equal(Date.parse(result.campaigns[0].ends.value), Date.parse('2026-10-08T06:59:00Z'))
+      assert.deepEqual(result.explicitlyEndedSourceUids, [])
+    }
+  }
+})
+
 const validGogHome = (content = '') => `
   <script id="gogcom-store-state" type="application/json">
     {"sections":["PROMO_BANNER_SECTION"]}
@@ -79,6 +164,60 @@ const gogCurrentUrl = 'https://www.gog.com/en/now_on_sale?countryCode=US&locale=
 const gogFeed = (items = '') => `
   <rss version="2.0"><channel><title>GOG.com News</title>${items}</channel></rss>
 `
+
+test('exact English times accept a comma after the year without inventing date-only time or timezone', () => {
+  for (const zone of ['UTC', 'GMT', 'BST', 'CET', 'CEST', 'EST', 'EDT', 'CST', 'CDT', 'MST', 'MDT', 'PST', 'PDT']) {
+    const original = extractExactEnglishDateTimes(`October 7th, 2026 at 7 AM ${zone}`)
+    assert.equal(original.length, 1)
+    assert.deepEqual(extractExactEnglishDateTimes(`October 7th, 2026, at 7 AM ${zone}`), original)
+  }
+  assert.equal(Date.parse(extractExactEnglishDateTimes('October 7th, 2026, at 7 AM UTC')[0].value), Date.parse('2026-10-07T07:00:00Z'))
+  for (const text of ['October 7th, 2026', 'October 7th, 2026, at 7 AM', 'October 7th, 2026, at 7 AM XYZ']) {
+    assert.deepEqual(extractExactEnglishDateTimes(text), [])
+  }
+  assert.deepEqual(extractEnglishDateOnlyRange('October 1 through 7, 2026'), {
+    starts: { precision: 'date', value: '2026-10-01' }, ends: { precision: 'date', value: '2026-10-07' },
+  })
+})
+
+test('GOG retained campaign recovers timing only from its own verified authoritative announcement', async () => {
+  const url = 'https://www.gog.com/autumn-sale'
+  const article = 'https://www.gog.com/news/autumn_announcement'
+  const known = { campaignKey: 'known-autumn', sourceUid: url, officialUrl: url, sourceUrl: article, name: 'Autumn Sale', state: 'live' }
+  for (const mode of ['retained', 'rediscovered', 'wrong-title', 'wrong-link', 'multiple-sales', 'redirect', 'failure', 'wrong-landing', 'unrelated-end', 'conflict', 'old-edition']) {
+    const calls = []
+    const result = await runGogAdapter({
+      now: new Date('2026-10-01T20:00:00Z'), knownCampaigns: [known],
+      fetch: async input => {
+        const request = String(input); calls.push(request)
+        if (request === 'https://www.gog.com/en/') return new Response(validGogHome(mode === 'rediscovered' ? `<a href="${url}">Autumn Sale</a>` : ''))
+        if (request === gogCurrentUrl) return Response.json({ tabs: [] })
+        if (request === 'https://www.gog.com/frontpage/rss') return new Response(gogFeed())
+        if (request === article) {
+          if (mode === 'failure') return new Response('', { status: 503 })
+          return responseAt(`<article><h1>${mode === 'wrong-title' ? 'Winter Sale' : 'GOG Autumn Sale'} is here!</h1>
+            <time class="article__date" datetime="${mode === 'old-edition' ? '2025' : '2026'}-09-25T11:00:00Z"></time>
+            <a href="${mode === 'wrong-link' ? 'https://www.gog.com/winter-sale' : url}">Autumn Sale</a>
+            ${mode === 'multiple-sales' ? '<a href="https://www.gog.com/other-sale">Other Sale</a>' : ''}
+            <p>${mode === 'unrelated-end' ? 'The Other Sale' : 'The sale'} ends on October 7th, 2026, at 7 AM UTC.</p>
+            ${mode === 'conflict' ? '<p>The sale ends on October 8th, 2026, at 7 AM UTC.</p>' : ''}
+            </article>`, mode === 'redirect' ? 'https://www.gog.com/news/other' : article)
+        }
+        if (request === url) return responseAt(`<h1>${mode === 'wrong-landing' ? 'Winter Sale' : 'Autumn Sale'}</h1>`, url)
+        throw new Error(`Unexpected GOG request ${request}`)
+      },
+    })
+    if (['retained', 'rediscovered'].includes(mode)) {
+      assert.equal(result.campaigns.length, 1)
+      assert.equal(result.campaigns[0].sourceUid, known.sourceUid)
+      assert.equal(result.campaigns[0].sourceUrl, article)
+      assert.equal(Date.parse(result.campaigns[0].ends.value), Date.parse('2026-10-07T07:00:00Z'))
+    } else assert.deepEqual(result.campaigns, [], mode)
+    assert.deepEqual(result.explicitlyEndedSourceUids, [], mode)
+    assert.equal(result.coverage, 'partial')
+    assert.equal(calls.some(request => request.includes('/game/')), false)
+  }
+})
 
 const eaDealsUrl = 'https://www.ea.com/sales/deals'
 const eaNewsUrl = 'https://www.ea.com/news'

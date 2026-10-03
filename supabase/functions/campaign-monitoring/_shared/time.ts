@@ -18,7 +18,7 @@ const ZONE_OFFSETS: Readonly<Record<string, string>> = {
 }
 
 const EXACT_ENGLISH_DATE =
-  /\b(January|February|March|April|May|June|July|August|September|October|November|December)\s+(\d{1,2})(?:st|nd|rd|th)?,?\s+(?:(\d{4})\s+)?(?:at\s+)?(\d{1,2})(?::(\d{2}))?\s*(a\.?m\.?|p\.?m\.?)?\s*(UTC|GMT|BST|CET|CEST|EST|EDT|CST|CDT|MST|MDT|PST|PDT)\b/gi
+  /\b(January|February|March|April|May|June|July|August|September|October|November|December)\s+(\d{1,2})(?:st|nd|rd|th)?,?\s+(?:(\d{4}),?\s+)?(?:at\s+)?(\d{1,2})(?::(\d{2}))?\s*(a\.?m\.?|p\.?m\.?)?\s*(UTC|GMT|BST|CET|CEST|EST|EDT|CST|CDT|MST|MDT|PST|PDT)\b/gi
 
 export function extractExactEnglishDateTimes(
   text: string,

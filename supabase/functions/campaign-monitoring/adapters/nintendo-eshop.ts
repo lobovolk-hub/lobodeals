@@ -197,6 +197,31 @@ function tabName(title: string, label: string): string {
     : `${identity} Sale`
 }
 
+function activeTabHeading(html: string, tabIdentity: string): string | undefined {
+  try {
+    const raw = /<script\b[^>]*id=["']__NEXT_DATA__["'][^>]*>([\s\S]*?)<\/script>/i.exec(html)?.[1]
+    const grid = raw ? JSON.parse(raw)?.props?.pageProps?.page?.content?.merchandisedGrid : undefined
+    if (!Array.isArray(grid)) return undefined
+    const words = (value: string) => value.toLowerCase().replace(/[^a-z0-9]+/g, ' ').split(' ')
+    const identity = words(tabIdentity).filter(word => word && !['sale', 'sales', 'deals', 'the'].includes(word))
+    if (!identity.length) return undefined
+    // Only the selected tab's rendered merchandising grid is authoritative.
+    // pageSections also contains other/historical tabs and must not supply a name.
+    const headings = grid.flatMap((block) => {
+      if (block?.CONTENT_TYPE !== 'promoRichTextCta' || typeof block.heading !== 'string' ||
+          !Array.isArray(block.modifiers) || block.modifiers.length !== 0) return []
+      const heading = block.heading.trim()
+      return heading && identity.every(word => words(heading).includes(word)) &&
+        !/<[^>]+>/.test(heading) && !isExcludedCampaignText(heading) &&
+        !/^(?:all\s+)?(?:sales?|deals|sales\s*(?:&|and)\s*deals)$/i.test(heading)
+        ? [heading] : []
+    })
+    return headings.length === 1 ? headings[0] : undefined
+  } catch {
+    return undefined
+  }
+}
+
 async function discoverCampaignTabs(
   fetcher: typeof fetch,
   html: string,
@@ -225,12 +250,13 @@ async function discoverCampaignTabs(
       officialUrl.hash = ''
       const pageHtml = await fetchOfficialText(fetcher, officialUrl.toString())
       const title = extractMeta(pageHtml, 'og:title') ?? label
-      const name = tabName(title, label)
+      const fallbackName = tabName(title, label)
+      const name = activeTabHeading(pageHtml, fallbackName) ?? fallbackName
       if (isExcludedCampaignText(name)) return null
       const knownTiming = knownCampaigns.filter(known =>
         comparableNintendoUrl(known.officialUrl) === comparableNintendoUrl(officialUrl.toString())
       )
-      const ends = nintendoStoreEnd(pageHtml, name, now,
+      const ends = nintendoStoreEnd(pageHtml, fallbackName, now,
         knownTiming.flatMap(known => known.endsOn ? [known.endsOn] : []),
         knownTiming.flatMap(known => known.endsAt ? [known.endsAt] : []))
       return campaign({
@@ -243,7 +269,7 @@ async function discoverCampaignTabs(
         officialUrl: officialUrl.toString(),
         sourceUrl: SALES_URL,
         artworkUrl: extractOfficialArtwork(pageHtml, officialUrl.toString()) ??
-          structuredCampaignArtwork(pageHtml, name),
+          structuredCampaignArtwork(pageHtml, fallbackName),
       })
     })
   )

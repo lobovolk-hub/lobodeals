@@ -7,7 +7,7 @@ import { runEpicGamesStoreAdapter } from '../supabase/functions/campaign-monitor
 import { runGogAdapter } from '../supabase/functions/campaign-monitoring/adapters/gog.ts'
 import { runMicrosoftStoreAdapter } from '../supabase/functions/campaign-monitoring/adapters/microsoft-store.ts'
 import { runNintendoEshopAdapter } from '../supabase/functions/campaign-monitoring/adapters/nintendo-eshop.ts'
-import { runPlayStationStoreAdapter } from '../supabase/functions/campaign-monitoring/adapters/playstation-store.ts'
+import { runPlayStationStoreAdapter, isCurrentlyDiscounted, verifyPlayStationCommercialState } from '../supabase/functions/campaign-monitoring/adapters/playstation-store.ts'
 import { runRockstarStoreAdapter } from '../supabase/functions/campaign-monitoring/adapters/rockstar-store.ts'
 import { runSteamAdapter, extractSteamCampaignTitle } from '../supabase/functions/campaign-monitoring/adapters/steam.ts'
 import { runUbisoftStoreAdapter } from '../supabase/functions/campaign-monitoring/adapters/ubisoft-store.ts'
@@ -1044,6 +1044,194 @@ function psFixtureFetch({
   }
   return { calls, fetch }
 }
+
+const psTokyo = 'aee204c4-193c-42d2-bb15-125e3d3f1f3d'
+const psIndies = 'cf1645a7-a2e6-4151-8638-050cff3b1728'
+const psUnder15 = '5931f998-d583-4643-85e0-e890480fcff9'
+const psPrice = (overrides = {}) => ({ __typename: 'SkuPrice', basePrice: '$19.99', discountedPrice: '$19.99',
+  discountText: null, isFree: false, isExclusive: false, isTiedToSubscription: false,
+  includesBundleOffer: false, serviceBranding: ['NONE'], upsellServiceBranding: ['NONE'], upsellText: null, ...overrides })
+const psReduced = () => psPrice({ discountedPrice: '$9.99', discountText: '-50%' })
+const psUnavailable = () => psPrice({ basePrice: 'Unavailable', discountedPrice: 'Unavailable',
+  includesBundleOffer: null, isTiedToSubscription: null, serviceBranding: null, upsellServiceBranding: [] })
+const psTrial = () => psPrice({ basePrice: 'Game Trial', discountedPrice: 'Game Trial', isFree: true,
+  isExclusive: true, isTiedToSubscription: true, serviceBranding: ['PS_PLUS'], upsellServiceBranding: ['PS_PLUS'], upsellText: 'Premium' })
+const psIncluded = () => ({ ...psTrial(), basePrice: '$14.99', discountedPrice: 'Included', discountText: '-100%', upsellText: 'Extra' })
+function psGrid(id, offset, total = 30) {
+  return { data: { categoryGridRetrieve: { __typename: 'CategoryGrid', id,
+    pageInfo: { offset, size: 24, totalCount: total, isLast: offset + 24 >= total },
+    sortedBy: { name: 'default', isAscending: true }, concepts: null,
+    products: Array.from({ length: Math.min(24, total - offset) }, (_, i) => ({ id: `product-${offset + i}`, price: psPrice() })),
+  } } }
+}
+test('PlayStation commercial prices distinguish reductions from free, subscription and ambiguous states', () => {
+  assert.equal(isCurrentlyDiscounted(psReduced()), true)
+  assert.equal(isCurrentlyDiscounted(psPrice()), false)
+  assert.equal(isCurrentlyDiscounted(psPrice({ basePrice: 'Free', discountedPrice: 'Free', isFree: true })), false)
+  assert.equal(isCurrentlyDiscounted(psPrice({ discountedPrice: 'Free', discountText: '-100%', isFree: true })), true)
+  assert.equal(isCurrentlyDiscounted(psPrice({ serviceBranding: ['PS_PLUS'], isTiedToSubscription: true })), false)
+  for (const overrides of [{ discountedPrice: 'Purchased' }, { discountedPrice: '$9.99' }, { basePrice: '€19.99' },
+    { discountText: '-50%' }, { discountedPrice: '$25.00' }, { isFree: true }, { basePrice: null },
+    { includesBundleOffer: true }, { discountedPrice: '$9.99', discountText: '-150%' }]) {
+    assert.equal(isCurrentlyDiscounted(psPrice(overrides)), null)
+  }
+  assert.equal(isCurrentlyDiscounted(undefined), null)
+})
+
+test('PlayStation observed unavailable and subscription access states are not sale reductions', () => {
+  for (const price of [psUnavailable(), psTrial(), psIncluded()]) assert.equal(isCurrentlyDiscounted(price), false)
+  for (const overrides of [{ discountText: '-50%' }, { discountedPrice: '$9.99' }, { basePrice: null },
+    { isFree: true }, { isExclusive: true }, { includesBundleOffer: true }, { isTiedToSubscription: true },
+    { serviceBranding: ['PS_PLUS'] }, { upsellServiceBranding: ['PS_PLUS'] }, { upsellText: 'Extra' },
+    { includesBundleOffer: undefined }, { serviceBranding: undefined }]) {
+    assert.equal(isCurrentlyDiscounted({ ...psUnavailable(), ...overrides }), null)
+  }
+  for (const price of [psTrial(), psIncluded()]) {
+    for (const overrides of [{ isFree: false }, { isExclusive: false }, { isTiedToSubscription: false },
+      { serviceBranding: ['NONE'] }, { includesBundleOffer: true }, { discountText: '-50%' }, { basePrice: null }]) {
+      assert.equal(isCurrentlyDiscounted({ ...price, ...overrides }), null)
+    }
+  }
+  assert.equal(isCurrentlyDiscounted(psPrice({ discountedPrice: null })), null)
+  assert.equal(isCurrentlyDiscounted(psPrice({ discountedPrice: '$9,99' })), null)
+  assert.equal(isCurrentlyDiscounted(null), null, 'a concept without a price is not proof of unavailability')
+})
+
+test('PlayStation complete pagination ends only verified zero and short-circuits a real discount', async () => {
+  for (const discountedAt of [null, 0, 27]) {
+    const offsets = []
+    const result = await verifyPlayStationCommercialState(async (input, init) => {
+      const url = new URL(input), vars = JSON.parse(url.searchParams.get('variables'))
+      assert.equal(url.origin + url.pathname, psGraphqlUrl)
+      assert.equal(url.searchParams.get('operationName'), 'categoryGridRetrieve')
+      assert.deepEqual(JSON.parse(url.searchParams.get('extensions')), { persistedQuery: { version: 1,
+        sha256Hash: '88c0b9a1273c6d320c51cd73e390924e21ae28bf09f01cde8b84b1034b16cd03' } })
+      assert.equal(init.headers['x-psn-store-locale-override'], 'en-us')
+      assert.equal(vars.pageArgs.size, 24)
+      assert.equal(vars.sortBy, null)
+      assert.deepEqual(vars.filterBy, [])
+      assert.deepEqual(vars.facetOptions, [])
+      offsets.push(vars.pageArgs.offset)
+      const data = psGrid(psTokyo, vars.pageArgs.offset)
+      if (discountedAt !== null && discountedAt >= vars.pageArgs.offset && discountedAt < vars.pageArgs.offset + 24)
+        data.data.categoryGridRetrieve.products[discountedAt - vars.pageArgs.offset].price = psReduced()
+      return Response.json(data)
+    }, psTokyo)
+    assert.equal(result.status, discountedAt === null ? 'VERIFIED_ZERO_DISCOUNTS' : 'ACTIVE_DISCOUNT_FOUND')
+    assert.deepEqual(offsets, discountedAt === 0 ? [0] : [0, 24])
+    assert.equal(result.inspected, discountedAt === null ? 30 : discountedAt + 1)
+  }
+})
+
+test('PlayStation incomplete, failed, redirected or ambiguous commercial evidence always preserves', async () => {
+  const modes = ['400','401','403','429','500','503','network','timeout','json','missing','errors','schema','price',
+    'count-change','offset','size','last','truncated','duplicate','region','bound','deadline','wrong-id','wrong-sort','both-lists']
+  for (const mode of modes) {
+    const result = await verifyPlayStationCommercialState(async (input) => {
+      const offset = JSON.parse(new URL(input).searchParams.get('variables')).pageArgs.offset
+      if (/^\d+$/.test(mode)) return new Response('', { status: Number(mode) })
+      if (mode === 'network') throw new Error('network')
+      if (mode === 'timeout') throw new DOMException('timeout', 'AbortError')
+      if (mode === 'json') return new Response('{')
+      if (mode === 'missing') return Response.json({ data: {} })
+      const data = psGrid(psTokyo, offset), grid = data.data.categoryGridRetrieve
+      if (mode === 'errors') data.errors = [{ message: 'whitelist mismatch' }]
+      if (mode === 'schema') grid.__typename = 'Other'
+      if (mode === 'price') delete grid.products[0].price
+      if (mode === 'count-change' && offset) grid.pageInfo.totalCount++
+      if (mode === 'offset') grid.pageInfo.offset++
+      if (mode === 'size') grid.pageInfo.size++
+      if (mode === 'last') grid.pageInfo.isLast = !grid.pageInfo.isLast
+      if (mode === 'truncated') grid.products.pop()
+      if (mode === 'duplicate' && offset) grid.products[0].id = 'product-0'
+      if (mode === 'bound') grid.pageInfo.totalCount = 10001
+      if (mode === 'wrong-id') grid.id = psIndies
+      if (mode === 'wrong-sort') grid.sortedBy.name = 'sales30'
+      if (mode === 'both-lists') grid.concepts = []
+      if (mode === 'region') return responseAt(JSON.stringify(data), 'https://web.np.playstation.com/api/graphql/v1/op?locale=es-pe')
+      return Response.json(data)
+    }, psTokyo, mode === 'deadline' ? 0 : undefined)
+    assert.equal(result.status, 'UNKNOWN', mode)
+  }
+})
+
+test('PlayStation bounded batches cover empty, concept and maximum collections without skipping pages', async () => {
+  for (const total of [0, 80, 10000]) {
+    const offsets = [], sizes = []
+    const result = await verifyPlayStationCommercialState(async input => {
+      const { pageArgs } = JSON.parse(new URL(input).searchParams.get('variables'))
+      offsets.push(pageArgs.offset); sizes.push(pageArgs.size)
+      const data = psGrid(psTokyo, pageArgs.offset, total), grid = data.data.categoryGridRetrieve
+      grid.pageInfo.size = pageArgs.size
+      grid.concepts = grid.products; grid.products = null
+      return Response.json(data)
+    }, psTokyo)
+    assert.equal(result.status, 'VERIFIED_ZERO_DISCOUNTS')
+    assert.equal(result.inspected, total)
+    assert.deepEqual(offsets, Array.from({ length: Math.max(1, Math.ceil(total / 24)) }, (_, i) => i * 24))
+    if (total === 10000) assert.equal(sizes.at(-1), 16)
+  }
+  let calls = 0
+  const failure = await verifyPlayStationCommercialState(async input => {
+    const { pageArgs } = JSON.parse(new URL(input).searchParams.get('variables'))
+    calls++
+    return pageArgs.offset === 48 ? new Response('', { status: 429 }) : Response.json(psGrid(psTokyo, pageArgs.offset, 100))
+  }, psTokyo)
+  assert.equal(failure.status, 'UNKNOWN')
+  assert.equal(calls, 4, 'no further batch after a failed page')
+})
+
+test('PlayStation known-only lifecycle retires Tokyo zero-discount fixtures and never scans rediscovered Indies', async () => {
+  for (const mode of ['zero','ambiguous','discount','failure','rediscovered','upcoming','foreign','no-known']) {
+    let gridCalls = 0
+    const id = mode === 'rediscovered' ? psIndies : psTokyo
+    const known = { campaignKey: 'known', sourceUid: psCategoryUrl(id), officialUrl: psCategoryUrl(id),
+      sourceUrl: 'https://store.playstation.com/en-us/pages/deals', name: id === psIndies ? 'PlayStation Indies' : 'Tokyo Game Show 2026', state: mode === 'upcoming' ? 'upcoming' : 'live' }
+    if (mode === 'foreign') known.officialUrl = known.officialUrl.replace('/en-us/', '/en-gb/')
+    const fixture = psFixtureFetch({ dealsViews: mode === 'rediscovered' ? [psDealsCampaign({ categoryId: id, label: 'PlayStation Indies', artwork: 'https://image.api.playstation.com/ends-5-28.png' })] : undefined,
+      intercept: async href => {
+        const url = new URL(href)
+        if (url.searchParams.get('operationName') !== 'categoryGridRetrieve') return
+        gridCalls++
+        if (mode === 'failure') return new Response('', { status: 403 })
+        const offset = JSON.parse(url.searchParams.get('variables')).pageArgs.offset
+        const data = psGrid(id, offset, mode === 'zero' ? 4331 : 30)
+        for (const [index, item] of data.data.categoryGridRetrieve.products.entries()) {
+          const position = offset + index
+          if (position < 54) item.price = psUnavailable()
+          else if (position < 58) item.price = psTrial()
+          else if (position === 58) item.price = psIncluded()
+        }
+        if (mode === 'ambiguous' && offset === 24) data.data.categoryGridRetrieve.products[0].price = psPrice({ basePrice: null })
+        if (mode === 'discount') data.data.categoryGridRetrieve.products[0].price = psReduced()
+        return Response.json(data)
+      } })
+    const result = await runPlayStationStoreAdapter({ now: new Date('2026-10-04T00:00:00Z'), fetch: fixture.fetch,
+      knownCampaigns: mode === 'no-known' ? [] : [known] })
+    assert.deepEqual(result.explicitlyEndedSourceUids, mode === 'zero' ? [known.sourceUid] : [], mode)
+    assert.equal(result.campaigns.length, mode === 'rediscovered' ? 1 : 0, 'products never become campaigns')
+    if (mode === 'zero') assert.equal(gridCalls, 181, 'complete Tokyo-shaped collection with 59 non-sale commercial states')
+    if (['rediscovered','upcoming','foreign','no-known'].includes(mode)) assert.equal(gridCalls, 0)
+    if (mode === 'rediscovered') assert.equal(result.campaigns[0].state, 'live')
+  }
+})
+
+test('PlayStation approved artwork name is guarded, subordinate to structured names and never discovers', async () => {
+  for (const mode of ['approved','structured','mismatch','unrelated','absent','duplicate']) {
+    const id = mode === 'unrelated' ? psTokyo : psUnder15
+    const view = psDefaultView(mode === 'structured' ? 'New Autumn Sale' : 'Deals')
+    view.data.emsDefaultViewRetrieve.reportingName = mode === 'mismatch' ? 'AM_OTHER_SALE' : 'AM_GAMES_UNDER_15'
+    const candidate = psDealsCampaign({ categoryId: id, label: 'Deals', action: 'GAMES_UNDER_15_PROMO' })
+    const fixture = psFixtureFetch({ dealsViews: mode === 'absent' ? undefined : mode === 'duplicate' ? [candidate,candidate] : [candidate], defaultViews: { [id]: view } })
+    const result = await runPlayStationStoreAdapter({ now: new Date('2026-10-04T00:00:00Z'), fetch: fixture.fetch })
+    const publish = ['approved','structured','duplicate'].includes(mode)
+    assert.equal(result.campaigns.length, publish ? 1 : 0, mode)
+    if (publish) {
+      assert.equal(result.campaigns[0].name, mode === 'structured' ? 'New Autumn Sale' : 'Games Under $15')
+      assert.equal(result.campaigns[0].sourceUid, psCategoryUrl(psUnder15))
+    }
+  }
+})
 
 test('PlayStation uses the exact official persisted GET contract, correlates Deals with Latest, and prefers Deals artwork', async () => {
   const dealsArtwork = 'https://image.api.playstation.com/deals-gamescom.jpg'

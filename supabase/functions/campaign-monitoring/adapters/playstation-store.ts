@@ -6,7 +6,7 @@ import {
 } from '../_shared/campaign.ts'
 import { extractOfficialArtwork, isSafeArtworkUrl } from '../_shared/artwork.ts'
 import { extractAnchors, extractMeta, textFromHtml, uniqueBy } from '../_shared/html.ts'
-import { fetchOfficialJson, fetchOfficialText } from '../_shared/http.ts'
+import { fetchOfficialJson, fetchOfficialPage, fetchOfficialText } from '../_shared/http.ts'
 import {
   extractEnglishDateOnlyRange,
   extractExactEnglishDateTimes,
@@ -29,6 +29,17 @@ const GET_EXPERIENCE_HASH =
   'b5078800ed1bdebee9800979f9306abeadc5169030263f7095fe573b12e52270'
 const GET_DEFAULT_VIEW_HASH =
   'fc2998417fe7297a559b7f3798bf1c5e1650d88e926269bf6d8bd2cce3fddc76'
+const CATEGORY_GRID_HASH =
+  '88c0b9a1273c6d320c51cd73e390924e21ae28bf09f01cde8b84b1034b16cd03'
+
+// Johan approved this exact official artwork name on 2026-10-03/04.
+// Source: https://image.api.playstation.com/pr/bam-art/234/264/4b969a64-2296-4df5-8df3-8d659e609c25.png
+// Names only: never discover a candidate or assign lifecycle from this registry.
+const APPROVED_ARTWORK_NAMES: Readonly<Record<string, { name: string; reportingName: string }>> = {
+  '5931f998-d583-4643-85e0-e890480fcff9': {
+    name: 'Games Under $15', reportingName: 'AM_GAMES_UNDER_15',
+  },
+}
 
 type JsonObject = Readonly<Record<string, unknown>>
 
@@ -78,6 +89,7 @@ type NameCandidate = Readonly<{
 }>
 
 type StoreCandidate = {
+  defaultReportingName?: string
   categoryId: string
   current: boolean
   experienceId: string
@@ -203,7 +215,7 @@ function contractUnavailable(message: string): AdapterError {
 }
 
 function persistedUrl(
-  operationName: 'getExperience' | 'getDefaultView',
+  operationName: 'getExperience' | 'getDefaultView' | 'categoryGridRetrieve',
   hash: string,
   variables: JsonObject
 ): string {
@@ -826,20 +838,23 @@ async function getDefaultView(
   candidate: StoreCandidate
 ): Promise<readonly string[]> {
   if (!candidate.localizedKeyId) return []
-  return parseDefaultViewEnvelope(
-    await persistedGet(fetcher, 'getDefaultView', GET_DEFAULT_VIEW_HASH, {
-      categoryId: candidate.categoryId,
-      experienceId: candidate.experienceId,
-      localizedKeyId: candidate.localizedKeyId,
-    })
-  )
+  const envelope = await persistedGet(fetcher, 'getDefaultView', GET_DEFAULT_VIEW_HASH, {
+    categoryId: candidate.categoryId,
+    experienceId: candidate.experienceId,
+    localizedKeyId: candidate.localizedKeyId,
+  })
+  const texts = parseDefaultViewEnvelope(envelope)
+  candidate.defaultReportingName = string(object(object(envelope.data)?.emsDefaultViewRetrieve)?.reportingName) ?? undefined
+  return texts
 }
 
 function detectedStoreCampaign(
   candidate: StoreCandidate,
   now: Date
 ): Readonly<{ campaign: DetectedCampaign | null; endedIdentity?: string }> {
-  const name = bestName(candidate.names)
+  const approved = APPROVED_ARTWORK_NAMES[candidate.categoryId]
+  const name = bestName(candidate.names) ?? (candidate.current && approved &&
+    candidate.defaultReportingName === approved.reportingName ? approved.name : null)
   const officialUrl = canonicalCategoryUrl(candidate.categoryId)
   const timing = campaignTiming(
     candidate.publicText.join(' '),
@@ -1343,6 +1358,147 @@ function knownExplicitEnds(
   })
 }
 
+// Public US prices are formatted strings in this persisted operation, not cents.
+// null means ambiguous: it must never contribute to a zero-discount verdict.
+export function isCurrentlyDiscounted(value: unknown): boolean | null {
+  const price = object(value)
+  if (!price || price.__typename !== 'SkuPrice') return null
+  // The US grid explicitly renders this unavailable offer without a price or
+  // discount. Nullable commercial flags are expected for this observed state;
+  // missing prices alone (including a concept with no price) remain unknown.
+  if (price.basePrice === 'Unavailable' && price.discountedPrice === 'Unavailable' &&
+      price.discountText === null && price.isFree === false && price.isExclusive === false &&
+      [null, false].includes(price.isTiedToSubscription as null | boolean) &&
+      [null, false].includes(price.includesBundleOffer as null | boolean) &&
+      [price.serviceBranding, price.upsellServiceBranding].every(value => value === null ||
+        (Array.isArray(value) && value.every(brand => brand === 'NONE'))) &&
+      price.upsellText === null) return false
+  if (!['isFree', 'isExclusive', 'isTiedToSubscription', 'includesBundleOffer'].every(key => typeof price[key] === 'boolean') ||
+      !['serviceBranding', 'upsellServiceBranding'].every(key => Array.isArray(price[key]) &&
+        (price[key] as unknown[]).every(value => typeof value === 'string'))) return null
+  const cents = (value: unknown): number | null => {
+    if (value === 'Free' || value === 'FREE') return price.isFree ? 0 : null
+    if (typeof value !== 'string' || !/^\$(?:0|[1-9]\d*|[1-9]\d{0,2}(?:,\d{3})+)\.\d{2}$/.test(value)) return null
+    const result = Number(value.slice(1).replaceAll(',', '').replace('.', ''))
+    return Number.isSafeInteger(result) ? result : null
+  }
+  const base = cents(price.basePrice), current = cents(price.discountedPrice)
+  // Official PS Plus trial/catalog upsells are subscription access, not sale
+  // reductions. The public client suppresses their original-price strikeout.
+  // Require the observed structured state, never branding alone.
+  if (price.isFree && price.isExclusive && price.isTiedToSubscription && !price.includesBundleOffer &&
+      (price.serviceBranding as string[]).length === 1 && (price.serviceBranding as string[])[0] === 'PS_PLUS') {
+    if (price.basePrice === 'Game Trial' && price.discountedPrice === 'Game Trial' &&
+        price.discountText === null) return false
+    if (base !== null && base > 0 && price.discountedPrice === 'Included' &&
+        price.discountText === '-100%') return false
+  }
+  if (base === null || current === null || current > base || (price.isFree && current !== 0)) return null
+  const badge = typeof price.discountText === 'string' && /^-\d+(?:\.\d+)?%$/.test(price.discountText)
+    ? Number(price.discountText.slice(1, -1)) : null
+  if (current < base && badge !== null && badge > 0 && badge <= 100) return true
+  if (current === base && price.discountText === null && !price.includesBundleOffer) return false
+  return null
+}
+
+type CommercialResult = Readonly<{
+  status: 'ACTIVE_DISCOUNT_FOUND' | 'VERIFIED_ZERO_DISCOUNTS' | 'UNKNOWN'
+  pages: number
+  inspected: number
+}>
+
+// Approved 2026-10-03/04: complete known-collection zero discounts can retire
+// an absent campaign. Never use this operation to discover public campaigns.
+export async function verifyPlayStationCommercialState(
+  fetcher: typeof fetch,
+  categoryId: string,
+  deadline = Date.now() + 60_000
+): Promise<CommercialResult> {
+  let pages = 0, inspected = 0, offset = 0, total: number | undefined
+  let ambiguous = false
+  const seen = new Set<string>()
+  const result = (status: CommercialResult['status']): CommercialResult => ({ status, pages, inspected })
+  if (!/^[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}$/i.test(categoryId)) return result('UNKNOWN')
+  try {
+    while (offset < 10_000 && Date.now() < deadline) {
+      // First establish the count, then fetch at most three demonstrated pages
+      // concurrently. Await the whole batch; failures never leave background work.
+      const count = total === undefined ? 1 : Math.min(3, Math.ceil((total - offset) / 24))
+      const batch = await Promise.allSettled(Array.from({ length: count }, async (_, index) => {
+        const pageOffset = offset + index * 24
+        const size = Math.min(24, 10_000 - pageOffset)
+        const url = persistedUrl('categoryGridRetrieve', CATEGORY_GRID_HASH, {
+          id: categoryId, pageArgs: { size, offset: pageOffset }, sortBy: null, filterBy: [], facetOptions: [],
+        })
+        const page = await fetchOfficialPage(fetcher, url, {
+          method: 'GET', headers: {
+            Accept: 'application/json', 'x-psn-store-locale-override': 'en-us',
+            'x-apollo-operation-name': 'categoryGridRetrieve', 'apollo-require-preflight': 'true',
+          },
+        })
+        return { pageOffset, size, url, page }
+      }))
+      if (batch.some(entry => entry.status === 'rejected')) return result('UNKNOWN')
+      for (const entry of batch) {
+        if (entry.status !== 'fulfilled') return result('UNKNOWN')
+        const { pageOffset, size, url, page } = entry.value
+        // Redirects may discard the region or query. Never use them as negative evidence.
+        if (page.url !== url || Date.now() >= deadline) return result('UNKNOWN')
+        const envelope = object(JSON.parse(page.text))
+        if (!envelope || (envelope.errors !== undefined &&
+            (!Array.isArray(envelope.errors) || envelope.errors.length > 0))) return result('UNKNOWN')
+        const grid = object(object(envelope.data)?.categoryGridRetrieve)
+        const info = object(grid?.pageInfo), order = object(grid?.sortedBy)
+        if (!grid || grid.__typename !== 'CategoryGrid' || grid.id !== categoryId || !info ||
+            order?.name !== 'default' || order?.isAscending !== true ||
+            typeof info.totalCount !== 'number' || !Number.isSafeInteger(info.totalCount) ||
+            info.totalCount < 0 || info.totalCount > 10_000 ||
+            info.offset !== pageOffset || info.size !== size || typeof info.isLast !== 'boolean') return result('UNKNOWN')
+        if (total !== undefined && total !== info.totalCount) return result('UNKNOWN')
+        total = info.totalCount
+        const items = Array.isArray(grid.products) && grid.concepts === null ? grid.products :
+          Array.isArray(grid.concepts) && grid.products === null ? grid.concepts : null
+        if (!items || items.length !== Math.min(size, total - pageOffset) ||
+            info.isLast !== (pageOffset + items.length === total)) return result('UNKNOWN')
+        pages++
+        for (const raw of items) {
+          const item = object(raw)
+          if (!item || typeof item.id !== 'string' || !item.id || seen.has(item.id)) return result('UNKNOWN')
+          seen.add(item.id)
+          inspected++
+          const discounted = isCurrentlyDiscounted(item.price)
+          if (discounted === true) return result('ACTIVE_DISCOUNT_FOUND')
+          if (discounted === null) ambiguous = true
+        }
+        if (info.isLast) return result(ambiguous ? 'UNKNOWN' : 'VERIFIED_ZERO_DISCOUNTS')
+        offset = pageOffset + items.length
+      }
+    }
+  } catch {
+    // HTTP, timeout, JSON, GraphQL and contract failures preserve the known row.
+  }
+  return result('UNKNOWN')
+}
+
+async function knownCommercialEnds(
+  fetcher: typeof fetch, known: readonly KnownCampaign[], current: ReadonlySet<string>
+): Promise<readonly string[]> {
+  const ended: string[] = []
+  const checked = new Map<string, CommercialResult>()
+  const deadline = Date.now() + 60_000
+  for (const entry of known) {
+    if (entry.state !== 'live' || current.has(comparableIdentity(entry.sourceUid)) ||
+        current.has(comparableIdentity(entry.officialUrl))) continue
+    const match = /^https:\/\/store\.playstation\.com\/en-us\/category\/([a-f0-9-]+)\/1$/i.exec(entry.officialUrl)
+    if (!match || comparableIdentity(entry.sourceUid) !== comparableIdentity(entry.officialUrl)) continue
+    const categoryId = match[1]
+    const evidence = checked.get(categoryId) ?? await verifyPlayStationCommercialState(fetcher, categoryId, deadline)
+    checked.set(categoryId, evidence)
+    if (evidence.status === 'VERIFIED_ZERO_DISCOUNTS') ended.push(entry.sourceUid)
+  }
+  return ended
+}
+
 export const runPlayStationStoreAdapter: StoreAdapter = async ({
   now,
   fetch,
@@ -1402,11 +1558,17 @@ export const runPlayStationStoreAdapter: StoreAdapter = async ({
   const currentSourceUids = new Set(
     campaigns.map(({ sourceUid }) => comparableIdentity(sourceUid))
   )
+  // Current official promotion protects even a candidate whose name is unresolved.
+  for (const candidate of candidates.values()) {
+    if (candidate.current) currentSourceUids.add(comparableIdentity(canonicalCategoryUrl(candidate.categoryId)))
+  }
   const verifiedBlogEnds = await verifyKnownBlogCampaigns(fetch, knownCampaigns)
+  const commercialEnds = await knownCommercialEnds(fetch, knownCampaigns, currentSourceUids)
   const explicitlyEndedSourceUids = uniqueBy(
     [
       ...knownExplicitEnds(knownCampaigns, endedIdentities, now),
       ...verifiedBlogEnds,
+      ...commercialEnds,
     ],
     (value) => value
   ).filter((sourceUid) => !currentSourceUids.has(comparableIdentity(sourceUid)))

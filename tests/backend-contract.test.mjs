@@ -205,8 +205,17 @@ test('adapters do not reconstruct campaigns from product catalogs', async () => 
 
   assert.doesNotMatch(
     adapters,
-    /categoryGridRetrieve|searchStore|productPrice|discountPrice|catalog_public_cache/i
+    /searchStore|productPrice|discountPrice|catalog_public_cache/i
   )
+  // Johan's 2026-10-03/04 refine permits category grids only for known lifecycle.
+  const playstation = await source('supabase/functions/campaign-monitoring/adapters/playstation-store.ts')
+  assert.doesNotMatch(adapters.replace(playstation, ''), /categoryGridRetrieve/)
+  const commercial = playstation.slice(playstation.indexOf('export async function verifyPlayStationCommercialState'),
+    playstation.indexOf('export const runPlayStationStoreAdapter'))
+  assert.doesNotMatch(commercial, /campaign\(\{|\.push\(campaign|storeCandidates\(/)
+  assert.match(commercial, /entry\.state !== 'live'/)
+  assert.match(commercial, /current\.has/)
+  assert.match(commercial, /VERIFIED_ZERO_DISCOUNTS/)
   assert.match(adapters, /OFFICIAL_CAMPAIGN_DISCOVERY_UNAVAILABLE/)
 })
 

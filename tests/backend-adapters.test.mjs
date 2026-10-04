@@ -117,13 +117,15 @@ test('Nintendo exact active tab headings update stable identities without histor
     ['capcom', 'Capcom', 'CAPCOM TGS Sale'],
     ['crunching-koalas', 'Crunching Koalas', 'Crunching Koalas Publisher Sale'],
     ['ubisoft', 'Ubisoft', 'Ubisoft 40th Anniversary'],
+    ['untold-tales', 'Untold Tales', 'Golden Leaf Sale'],
+    ['publisher', 'Publisher', 'Unexpected Autumn Celebration'],
   ]
   for (const [slug, title, heading] of cases) {
-    for (const mode of ['active', 'absent', 'hidden', 'ambiguous', 'malformed']) {
+    for (const mode of ['active', 'absent', 'hidden', 'secondary', 'ambiguous', 'wrong-tab', 'missing-tab', 'malformed']) {
       const url = `${sales}${slug}/`
-      const promo = { CONTENT_TYPE: 'promoRichTextCta', heading, modifiers: mode === 'hidden' ? ['hidden'] : [] }
+      const promo = { CONTENT_TYPE: 'promoRichTextCta', heading, modifiers: mode === 'hidden' ? ['hidden'] : mode === 'secondary' ? ['secondary'] : [] }
       const content = {
-        merchandisedGrid: mode === 'absent' ? [] : mode === 'ambiguous' ? [promo, { ...promo, heading: `${title} Other Sale` }] : [promo],
+        merchandisedGrid: mode === 'absent' ? [] : mode === 'ambiguous' ? [promo, { ...promo, heading: 'Unrelated Competing Sale' }] : [promo],
         pageSections: [{ storyModuleOrCuratedProductList: [{ ...promo, heading: 'Historical Winter Sale' }] }],
       }
       const known = nintendoKnown({ sourceUid: url, officialUrl: url, name: `${title} Sale` })
@@ -135,7 +137,7 @@ test('Nintendo exact active tab headings update stable identities without histor
           if (requested === url) return responseAt(`<meta property="og:title" content="${title} - Nintendo">
             <meta property="og:image" content="https://assets.nintendo.com/campaign.jpg">
             <p>${title} Sale ends 10/7/2026 at 11:59 p.m. PT</p>
-            <script id="__NEXT_DATA__">${mode === 'malformed' ? '{' : JSON.stringify({ props: { pageProps: { page: { content } } } })}</script>`, url)
+            <script id="__NEXT_DATA__">${mode === 'malformed' ? '{' : JSON.stringify({ query: mode === 'missing-tab' ? {} : { slug: mode === 'wrong-tab' ? 'other' : slug }, props: { pageProps: { page: { content } } } })}</script>`, url)
           if (requested === 'https://www.nintendo.com/us/whatsnew/') return new Response(emptyNintendoNews)
           throw new Error(`Unexpected Nintendo request: ${requested}`)
         },

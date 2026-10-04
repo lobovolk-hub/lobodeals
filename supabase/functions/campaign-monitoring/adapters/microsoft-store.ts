@@ -45,7 +45,9 @@ function weeklyPublishedCampaigns(html: string): readonly {
         const url = new URL(destination)
         if (url.protocol !== 'https:' || url.hostname !== 'www.xbox.com' ||
             url.username || url.password || url.port ||
-            url.pathname.toLowerCase() !== `/games/browse/${key.toLowerCase()}`) return []
+            ![`/games/browse/${key.toLowerCase()}`, `/en-us/games/browse/${key.toLowerCase()}`].includes(url.pathname.toLowerCase())) return []
+        // The locale-less official CTA geolocates; preserve the audited US channel.
+        url.pathname = `/en-US/games/browse/${key}`
         url.search = ''
         url.hash = ''
         return [{ key, name: name.trim(), officialUrl: url.href }]

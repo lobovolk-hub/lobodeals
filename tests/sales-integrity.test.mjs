@@ -248,11 +248,24 @@ test('Xbox published weekly module creates one stable current collection identit
   assert.equal(first.campaigns.length, 1)
   assert.equal(first.campaigns[0].sourceUid, 'dynamicchannel.gamedeals')
   assert.equal(second.campaigns[0].sourceUid, first.campaigns[0].sourceUid)
-  assert.equal(first.campaigns[0].officialUrl, weekly.headingCTA.url)
+  assert.equal(first.campaigns[0].officialUrl, 'https://www.xbox.com/en-US/games/browse/DynamicChannel.GameDeals')
   assert.equal(first.campaigns[0].starts, undefined)
   assert.equal(first.campaigns[0].ends, undefined)
   assert.equal(first.coverage, 'partial')
 })
+test('Xbox weekly destination keeps the US market and stable identity for both official route forms', async () => {
+  for (const path of ['/games/browse/DynamicChannel.GameDeals', '/en-US/games/browse/DynamicChannel.GameDeals']) {
+    const result = await xbox(xboxHtml([{ ...weekly, headingCTA: { label: 'SHOP MORE', url: `https://www.xbox.com${path}?tracking=1#games` } }]))
+    assert.equal(result.campaigns.length, 1)
+    assert.equal(result.campaigns[0].sourceUid, 'dynamicchannel.gamedeals')
+    assert.equal(result.campaigns[0].officialUrl, 'https://www.xbox.com/en-US/games/browse/DynamicChannel.GameDeals')
+    assert.deepEqual(result.explicitlyEndedSourceUids, [])
+  }
+  for (const path of ['/es-PE/games/browse/DynamicChannel.GameDeals', '/en-US/games/browse/DynamicChannel.Other']) {
+    assert.deepEqual((await xbox(xboxHtml([{ ...weekly, headingCTA: { label: 'SHOP MORE', url: `https://www.xbox.com${path}` } }]))).campaigns, [])
+  }
+})
+
 test('Xbox generic page and unpublished module are not campaigns', async () => {
   for (const html of ['<h1>Sales and specials</h1>', xboxHtml([weekly], false), xboxHtml([])]) {
     const result = await xbox(html)

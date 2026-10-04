@@ -197,21 +197,21 @@ function tabName(title: string, label: string): string {
     : `${identity} Sale`
 }
 
-function activeTabHeading(html: string, tabIdentity: string): string | undefined {
+function activeTabHeading(html: string, officialUrl: string): string | undefined {
   try {
     const raw = /<script\b[^>]*id=["']__NEXT_DATA__["'][^>]*>([\s\S]*?)<\/script>/i.exec(html)?.[1]
-    const grid = raw ? JSON.parse(raw)?.props?.pageProps?.page?.content?.merchandisedGrid : undefined
+    const data = raw ? JSON.parse(raw) : undefined
+    const selectedSlug = new URL(officialUrl).pathname.split('/').filter(Boolean).at(-1)
+    if (!selectedSlug || data?.query?.slug !== selectedSlug) return undefined
+    const grid = data?.props?.pageProps?.page?.content?.merchandisedGrid
     if (!Array.isArray(grid)) return undefined
-    const words = (value: string) => value.toLowerCase().replace(/[^a-z0-9]+/g, ' ').split(' ')
-    const identity = words(tabIdentity).filter(word => word && !['sale', 'sales', 'deals', 'the'].includes(word))
-    if (!identity.length) return undefined
     // Only the selected tab's rendered merchandising grid is authoritative.
     // pageSections also contains other/historical tabs and must not supply a name.
     const headings = grid.flatMap((block) => {
       if (block?.CONTENT_TYPE !== 'promoRichTextCta' || typeof block.heading !== 'string' ||
           !Array.isArray(block.modifiers) || block.modifiers.length !== 0) return []
       const heading = block.heading.trim()
-      return heading && identity.every(word => words(heading).includes(word)) &&
+      return heading &&
         !/<[^>]+>/.test(heading) && !isExcludedCampaignText(heading) &&
         !/^(?:all\s+)?(?:sales?|deals|sales\s*(?:&|and)\s*deals)$/i.test(heading)
         ? [heading] : []
@@ -251,7 +251,7 @@ async function discoverCampaignTabs(
       const pageHtml = await fetchOfficialText(fetcher, officialUrl.toString())
       const title = extractMeta(pageHtml, 'og:title') ?? label
       const fallbackName = tabName(title, label)
-      const name = activeTabHeading(pageHtml, fallbackName) ?? fallbackName
+      const name = activeTabHeading(pageHtml, officialUrl.toString()) ?? fallbackName
       if (isExcludedCampaignText(name)) return null
       const knownTiming = knownCampaigns.filter(known =>
         comparableNintendoUrl(known.officialUrl) === comparableNintendoUrl(officialUrl.toString())

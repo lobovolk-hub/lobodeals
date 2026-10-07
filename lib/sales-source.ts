@@ -5,6 +5,10 @@ import {
 } from './sales'
 import type { SalesAvailability } from './sales-availability'
 import { getStoreBySlug, type StoreSlug } from './stores'
+import {
+  isEpicSnapshotMember,
+  nullableScanGeneration,
+} from '../supabase/functions/campaign-monitoring/_shared/epic-snapshot'
 
 export type { SalesAvailability } from './sales-availability'
 
@@ -20,6 +24,9 @@ export type SalesFeed = Readonly<{
 type SalesCampaignRow = Readonly<{
   campaign_key: string
   store_slug: string
+  source_uid: string
+  source_url: string
+  epic_public_scan_generation: string | null
   name: string
   market: string
   state: 'live' | 'upcoming'
@@ -69,7 +76,7 @@ function toOfficialCampaign(row: SalesCampaignRow): OfficialCampaign {
 
 /**
  * Replaceable server-side boundary for the approved Sales persistence.
- * It uses the public read policy directly and keeps the browser free of a
+ * It uses a consistent public snapshot and keeps the browser free of a
  * Supabase SDK. A missing or failed backend produces no synthetic campaign.
  */
 async function loadCampaigns(): Promise<Readonly<{
@@ -82,24 +89,9 @@ async function loadCampaigns(): Promise<Readonly<{
     return { campaigns: EMPTY_CAMPAIGN_FEED, unavailable: true }
   }
 
-  const columns = [
-    'campaign_key',
-    'store_slug',
-    'name',
-    'market',
-    'state',
-    'lifecycle_basis',
-    'starts_on',
-    'starts_at',
-    'ends_on',
-    'ends_at',
-    'official_url',
-    'artwork_url',
-  ].join(',')
-
   try {
     const response = await fetch(
-      `${baseUrl}/rest/v1/sales_campaigns?select=${columns}&state=in.(live,upcoming)`,
+      `${baseUrl}/rest/v1/rpc/read_sales_public_snapshot`,
       {
         headers: { apikey: publishableKey },
         next: { revalidate: 300 },
@@ -110,9 +102,24 @@ async function loadCampaigns(): Promise<Readonly<{
       return { campaigns: EMPTY_CAMPAIGN_FEED, unavailable: true }
     }
 
-    const rows = (await response.json()) as readonly SalesCampaignRow[]
+    const payload: unknown = await response.json()
+    if (!payload || typeof payload !== 'object' || Array.isArray(payload)) {
+      throw new TypeError('Invalid Sales snapshot')
+    }
+    const snapshot = payload as Record<string, unknown>
+    // Missing metadata is a failed read, not the explicit NULL bootstrap state.
+    const pointer = nullableScanGeneration(snapshot.epic_public_scan_generation)
+    if (!Array.isArray(snapshot.campaigns)) throw new TypeError('Invalid Sales snapshot campaigns')
+    const rows = snapshot.campaigns as readonly SalesCampaignRow[]
+    const members = rows.filter((row) => {
+      if (!row || ['store_slug', 'source_uid', 'source_url', 'official_url', 'market']
+        .some((field) => typeof row[field as keyof SalesCampaignRow] !== 'string')) {
+        throw new TypeError('Invalid Sales snapshot identity')
+      }
+      return isEpicSnapshotMember(row, pointer)
+    })
     return {
-      campaigns: validateOfficialCampaigns(rows.map(toOfficialCampaign)),
+      campaigns: validateOfficialCampaigns(members.map(toOfficialCampaign)),
       unavailable: false,
     }
   } catch (error) {

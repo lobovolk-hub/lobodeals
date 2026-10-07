@@ -527,7 +527,9 @@ test('Sales source boundary reads only the new public feed and has no manual reg
   const source = await readFile(path.join(root, 'lib/sales-source.ts'), 'utf8')
 
   assert.match(source, /EMPTY_CAMPAIGN_FEED/)
-  assert.match(source, /\/rest\/v1\/sales_campaigns/)
+  assert.match(source, /\/rest\/v1\/rpc\/read_sales_public_snapshot/)
+  assert.match(source, /isEpicSnapshotMember/)
+  assert.doesNotMatch(source, /\/rest\/v1\/sales_source_health/)
   assert.match(source, /NEXT_PUBLIC_SUPABASE_URL/)
   assert.match(source, /NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY/)
   assert.match(source, /validateOfficialCampaigns/)

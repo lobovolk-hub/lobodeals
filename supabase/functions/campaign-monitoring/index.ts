@@ -23,9 +23,17 @@ import {
   campaignBaseRow,
   type ArtworkPatch,
 } from './_shared/persistence.ts'
+import {
+  knownCampaignFromRow,
+  parseEpicReservation,
+  prepareEpicPublication,
+  parseEpicPublicationStatus,
+  type KnownCampaignRow,
+  type EpicPublicationStatus,
+} from './_shared/epic-snapshot-persistence.ts'
 
 const JSON_HEADERS = { 'Content-Type': 'application/json; charset=utf-8' }
-const ADAPTER_VERSION = '15'
+const ADAPTER_VERSION = '16'
 
 type MonitorRequest = Readonly<{
   mode?: 'probe' | 'persist'
@@ -54,6 +62,7 @@ type StoreOutcome = Readonly<{
   }>[]
   errorCode?: string
   errorMessage?: string
+  snapshotPublication?: EpicPublicationStatus
 }>
 
 function jsonResponse(body: unknown, status = 200): Response {
@@ -203,7 +212,8 @@ function wait(
 
 async function restRequest(
   path: string,
-  init: RequestInit
+  init: RequestInit,
+  retryUncertainCommit = false
 ): Promise<Response> {
   const baseUrl = Deno.env.get('SUPABASE_URL')
   const key = adminKey()
@@ -232,7 +242,16 @@ async function restRequest(
           ...init.headers,
         },
       }
-    )
+    ).catch((error: unknown) => {
+      // Only the generation-idempotent finalize operation opts into this retry.
+      if (retryUncertainCommit && attempt < BACKEND_RETRY_DELAYS_MS.length) return null
+      throw error
+    })
+
+    if (response === null) {
+      await wait(BACKEND_RETRY_DELAYS_MS[attempt])
+      continue
+    }
 
     if (response.ok) {
       return response
@@ -348,29 +367,8 @@ async function activeCampaigns(
     `sales_campaigns?select=campaign_key,source_uid,name,state,official_url,source_url,starts_on,starts_at,ends_on,ends_at&store_slug=eq.${encodeURIComponent(storeSlug)}&state=in.(live,upcoming)`,
     { method: 'GET' }
   )
-  const rows = (await response.json()) as readonly {
-    campaign_key: string
-    source_uid: string
-    name: string
-    state: 'live' | 'upcoming'
-    official_url: string
-    source_url: string
-    starts_on: string | null
-    starts_at: string | null
-    ends_on: string | null
-    ends_at: string | null
-  }[]
-  return rows.map((row) => ({
-    ...row,
-    campaignKey: row.campaign_key,
-    sourceUid: row.source_uid,
-    officialUrl: row.official_url,
-    sourceUrl: row.source_url,
-    startsOn: row.starts_on ?? undefined,
-    startsAt: row.starts_at ?? undefined,
-    endsOn: row.ends_on ?? undefined,
-    endsAt: row.ends_at ?? undefined,
-  }))
+  const rows = (await response.json()) as readonly KnownCampaignRow[]
+  return rows.map(knownCampaignFromRow)
 }
 
 async function endCampaigns(
@@ -442,7 +440,7 @@ function safeError(error: unknown): {
   }
 }
 
-async function runStore(
+export async function runStore(
   storeSlug: StoreSlug,
   mode: 'probe' | 'persist',
   now: Date,
@@ -454,7 +452,12 @@ async function runStore(
     if (simulateFailure === storeSlug) {
       throw new AdapterError('SIMULATED_FAILURE', 'Controlled isolation probe')
     }
-    const activeBeforeRun = await activeCampaigns(storeSlug)
+    const reservation = storeSlug === 'epic-games-store' && mode === 'persist'
+      ? parseEpicReservation(await (await restRequest('rpc/reserve_epic_public_scan', {
+          method: 'POST', body: '{}',
+        })).json())
+      : null
+    const activeBeforeRun = reservation?.known ?? await activeCampaigns(storeSlug)
     const result = await adapters[storeSlug]({
       now,
       fetch,
@@ -506,22 +509,54 @@ async function runStore(
     const finishedAt = new Date().toISOString()
     let campaignsUpserted = 0
     let campaignsEnded = 0
+    let snapshotPublication: EpicPublicationStatus | undefined
     if (mode === 'persist') {
-      campaignsUpserted = await upsertCampaigns(result.campaigns, finishedAt, activeBeforeRun)
-      campaignsEnded = await endCampaigns(
-        campaignKeysToEnd({
+      const endKeys = campaignKeysToEnd({
           sourceSucceeded: true,
           coverage: result.coverage,
           activeCampaigns: activeBeforeRun,
           detectedCampaigns: result.campaigns,
           explicitlyEndedSourceUids: result.explicitlyEndedSourceUids,
           now,
-        }),
-        finishedAt
-      )
+        })
+      if (reservation) {
+        const keyed = await Promise.all(result.campaigns.map(async (entry) =>
+          ({ entry, key: await campaignKey(entry) })))
+        const prepared = prepareEpicPublication(keyed, reservation.generation, finishedAt, activeBeforeRun)
+        snapshotPublication = parseEpicPublicationStatus(await (await restRequest('rpc/finalize_epic_public_scan', {
+          method: 'POST',
+          body: JSON.stringify({
+            p_generation: reservation.generation,
+            p_base_pointer: reservation.basePointer,
+            p_campaigns: prepared.campaigns,
+            p_end_keys: endKeys,
+            p_confirmed_at: finishedAt,
+          }),
+        }, true)).json())
+        if (snapshotPublication === 'published' || snapshotPublication === 'already-published') {
+          // An idempotent retry reports no additional writes.
+          if (snapshotPublication === 'published') {
+            campaignsUpserted = prepared.campaigns.length
+            campaignsEnded = endKeys.length
+          }
+          if (prepared.artwork.length > 0) {
+            await restRequest('rpc/apply_epic_scan_artwork', {
+              method: 'POST', body: JSON.stringify({
+                p_generation: reservation.generation, p_patches: prepared.artwork,
+              }),
+            }).catch(() => console.error(JSON.stringify({
+              event: 'campaign-monitoring.artwork-write-failed', storeSlug,
+            })))
+          }
+        }
+      } else {
+        campaignsUpserted = await upsertCampaigns(result.campaigns, finishedAt, activeBeforeRun)
+        campaignsEnded = await endCampaigns(endKeys, finishedAt)
+      }
     }
-    if (mode === 'persist') {
-      await updateHealth({
+    const snapshotConflict = snapshotPublication === 'obsolete' || snapshotPublication === 'baseline-conflict'
+    if (mode === 'persist' && !snapshotConflict) {
+      const healthWrite = updateHealth({
         store_slug: storeSlug,
         source_url: result.sourceUrl,
         adapter_version: ADAPTER_VERSION,
@@ -536,15 +571,26 @@ async function runStore(
         last_error_message: null,
         updated_at: finishedAt,
       })
+      if (reservation) {
+        // Diagnostic failure cannot turn a committed snapshot into a failed scan.
+        await healthWrite.catch(() => console.error(JSON.stringify({
+          event: 'campaign-monitoring.health-write-failed', storeSlug,
+        })))
+      } else {
+        await healthWrite
+      }
     }
 
     return {
       storeSlug,
-      ok: true,
+      ok: !snapshotConflict,
       blocked: false,
       campaignsDetected: result.campaigns.length,
       campaignsUpserted,
       campaignsEnded,
+      ...(snapshotPublication ? { snapshotPublication } : {}),
+      ...(snapshotConflict ? { errorCode: 'EPIC_SNAPSHOT_CONFLICT',
+        errorMessage: 'Epic snapshot was not published; a new scan requires a new reservation and source fetch' } : {}),
       coverage: result.coverage,
       sourceUrls: result.sourceUrls,
       campaigns: result.campaigns.map((entry) => ({

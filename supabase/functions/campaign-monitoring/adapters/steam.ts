@@ -16,7 +16,7 @@ import {
   uniqueBy,
 } from '../_shared/html.ts'
 import { extractOfficialArtwork } from '../_shared/artwork.ts'
-import { fetchOfficialText } from '../_shared/http.ts'
+import { fetchOfficialPage, fetchOfficialText } from '../_shared/http.ts'
 import { extractExactEnglishDateTimes } from '../_shared/time.ts'
 import { currentCampaignEvidence, sourceExplicitlyEndsCampaign, verifyKnownCampaigns } from '../_shared/verification.ts'
 import type {
@@ -540,7 +540,8 @@ function steamNewsMatchesUpcoming(
 async function discoverSteamNewsCampaigns(
   now: Date,
   fetcher: typeof fetch,
-  upcoming: readonly DetectedCampaign[]
+  upcoming: readonly DetectedCampaign[],
+  matchedNews: Map<string, SteamNewsItem>
 ): Promise<readonly DetectedCampaign[]> {
   let response: Response
 
@@ -579,6 +580,7 @@ async function discoverSteamNewsCampaigns(
       steamCommunityAnnouncementUrl(item.url)
 
     if (!officialUrl) continue
+    matchedNews.set(entry.sourceUid, item)
 
     const text = normalizeSteamNewsText(
       `${typeof item.title === 'string'
@@ -613,6 +615,154 @@ async function discoverSteamNewsCampaigns(
   }
 
   return campaigns
+}
+
+function seasonalYear(entry: DetectedCampaign): string | undefined {
+  return /^steamworks-(?:spring|summer|autumn|winter)-sale-(20\d{2})$/.exec(entry.sourceUid)?.[1]
+}
+
+function matchesSeasonalEdition(text: string, year: string): boolean {
+  return [...text.matchAll(/\b(20\d{2})\b/g)].every(match => match[1] === year)
+}
+
+function steamCalendarDay(boundary: SourceBoundary): string {
+  if (boundary.precision === 'date') return boundary.value
+  // Steam's seasonal calendar and commercial announcements use Pacific time.
+  return new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'America/Los_Angeles', year: 'numeric', month: '2-digit', day: '2-digit',
+  }).format(new Date(boundary.value))
+}
+
+function compatibleSteamBoundary(left?: SourceBoundary, right?: SourceBoundary): boolean {
+  if (!left || !right) return false
+  if (left.precision === 'datetime' && right.precision === 'datetime') {
+    return Date.parse(left.value) === Date.parse(right.value)
+  }
+  return steamCalendarDay(left) === steamCalendarDay(right)
+}
+
+function isSteamRoot(value: string): boolean {
+  try {
+    const url = new URL(value)
+    return url.protocol === 'https:' && url.hostname === 'store.steampowered.com' &&
+      !url.username && !url.password && url.pathname === '/'
+  } catch { return false }
+}
+
+function newsLinksParentDestination(item: SteamNewsItem, parent: DetectedCampaign, destination: string): boolean {
+  if (typeof item.contents !== 'string') return false
+  const links = [
+    ...extractAnchors(item.contents, NEWS_API_URL),
+    ...[...item.contents.matchAll(/\[url=(?:"([^"]+)"|([^\]]+))\]([\s\S]*?)\[\/url\]/gi)]
+      .map(match => ({ href: decodeHtml(match[1] ?? match[2]), label: normalizeSteamNewsText(match[3]) })),
+  ]
+  return links.some(link => {
+    try {
+      const url = new URL(link.href)
+      const target = new URL(destination)
+      return url.protocol === 'https:' && url.hostname === 'store.steampowered.com' &&
+        !url.username && !url.password && url.pathname === target.pathname &&
+        comparableName(link.label) === comparableName(parent.name) &&
+        matchesSeasonalEdition(link.label, seasonalYear(parent)!)
+    } catch { return false }
+  })
+}
+
+async function seasonalPresentation(
+  store: readonly DetectedCampaign[],
+  news: readonly DetectedCampaign[],
+  calendar: readonly DetectedCampaign[],
+  matchedNews: ReadonlyMap<string, SteamNewsItem>,
+  homeHtml: string,
+  homeUrl: string,
+  now: Date,
+  fetcher: typeof fetch
+): Promise<readonly DetectedCampaign[]> {
+  const detected = uniqueBy([...store, ...news], entry => entry.sourceUid)
+  const homeName = /\bbIsSeasonalSale\s*:\s*1\b/.test(homeHtml)
+    ? /^The (.+?\bSale(?:\s+20\d{2})?) is on now\b/i.exec(extractMeta(homeHtml, 'og:description') ?? '')?.[1]
+    : undefined
+  const homeParents = calendar.filter(entry => seasonalYear(entry) && homeName &&
+    comparableName(entry.name) === comparableName(homeName))
+
+  return Promise.all(detected.map(async entry => {
+    const year = seasonalYear(entry)
+    const canonical = calendar.find(candidate => candidate.sourceUid === entry.sourceUid)
+    if (!year || !canonical) return entry
+
+    const announcement = news.find(candidate => candidate.sourceUid === entry.sourceUid)
+    const candidates = [...store, ...news].filter(candidate => candidate.sourceUid === entry.sourceUid)
+    const item = matchedNews.get(entry.sourceUid)
+    // Establish parent scope before comparing precision. A subsection has its
+    // own UID/name; a different edition or calendar range must not be merged.
+    const sameParent = (!item || matchesSeasonalEdition(normalizeSteamNewsText(item.title), year)) && candidates.every(candidate =>
+      comparableName(candidate.name) === comparableName(canonical.name) &&
+      matchesSeasonalEdition(candidate.name, year) &&
+      compatibleSteamBoundary(candidate.starts, canonical.starts) &&
+      compatibleSteamBoundary(candidate.ends, canonical.ends))
+    if (!sameParent) return entry
+
+    // Field-specific commercial authority, only within this proven parent:
+    // exact beats date-only; conflicting exact facts retain discovery's Store
+    // precedence (then source order). News event metadata is never read here.
+    const boundary = (field: 'starts' | 'ends') =>
+      candidates.find(candidate => candidate[field]?.precision === 'datetime')?.[field] ?? entry[field]
+    const starts = boundary('starts')
+    const ends = boundary('ends')
+    const exactInterval = starts?.precision === 'datetime' && ends?.precision === 'datetime'
+    const parent: DetectedCampaign = {
+      ...entry,
+      name: canonical.name,
+      starts,
+      ends,
+      state: exactInterval ? exactTimeState(starts, ends, now)
+        : expireAtExactEnd(entry.state === 'upcoming' ? 'upcoming' : 'live', ends, now),
+      lifecycleBasis: exactInterval ? 'exact-time' : entry.lifecycleBasis,
+    }
+
+    // A shared UID/name is not enough to promote an arbitrary Store subsection.
+    // When News is present, it must link the full parent by name to that landing.
+    const storeParents = candidates.filter(candidate => candidate.sourceUrl === STORE_HOME_URL &&
+      (!announcement || (item && newsLinksParentDestination(item, canonical, candidate.officialUrl))))
+    const storeParent = storeParents[0]
+    let enriched: DetectedCampaign = {
+      ...parent,
+      name: canonical.name,
+      officialUrl: storeParent?.officialUrl ?? announcement?.officialUrl ?? parent.officialUrl,
+      artworkUrl: storeParents.find(candidate => candidate.artworkUrl)?.artworkUrl ?? announcement?.artworkUrl,
+    }
+    const today = steamCalendarDay({ precision: 'datetime', value: now.toISOString() })
+    const published = Number(item?.date)
+    const publishedDay = Number.isFinite(published) && published > 0
+      ? steamCalendarDay({ precision: 'datetime', value: new Date(published * 1_000).toISOString() })
+      : ''
+    // The reusable root is a destination only for this currently corroborated
+    // edition. The dated parent announcement must explicitly link it by name.
+    const rootMatches = !(!announcement || !item || !homeName || !isSteamRoot(homeUrl) ||
+        homeParents.length !== 1 || homeParents[0].sourceUid !== entry.sourceUid ||
+        !matchesSeasonalEdition(homeName, year) ||
+        !matchesSeasonalEdition(normalizeSteamNewsText(item.title), year) ||
+        !newsLinksParentDestination(item, canonical, STORE_HOME_URL) || parent.state !== 'live' ||
+        canonical.starts?.precision !== 'date' || canonical.ends?.precision !== 'date' ||
+        parent.ends?.precision !== 'datetime' || Date.parse(parent.ends.value) <= now.getTime() ||
+        today < canonical.starts.value || today > canonical.ends.value ||
+        publishedDay < canonical.starts.value || publishedDay > today)
+
+    if (rootMatches) enriched = { ...enriched, officialUrl: STORE_HOME_URL,
+      artworkUrl: extractOfficialArtwork(homeHtml, STORE_HOME_URL) ?? enriched.artworkUrl }
+    if (!enriched.artworkUrl && announcement && item) {
+      // Optional parent metadata only. No child image is inherited on similarity.
+      try {
+        const page = await fetchOfficialPage(fetcher, announcement.officialUrl)
+        const title = extractMeta(page.text, 'og:title') ?? ''
+        if (steamCommunityAnnouncementUrl(page.url) === announcement.officialUrl &&
+            typeof item.title === 'string' && normalizeTitle(title).endsWith(normalizeTitle(item.title))) {
+          enriched = { ...enriched, artworkUrl: extractOfficialArtwork(page.text, page.url) }
+        }
+      } catch { /* Missing artwork must not fail successful campaign discovery. */ }
+    }
+    return enriched
+  }))
 }
 
 async function discoverLiveCampaigns(
@@ -764,6 +914,9 @@ async function verifyKnownSteamCampaigns(
   for (const known of knownCampaigns) {
     try {
       const url = new URL(known.officialUrl)
+      // A later sale (or unrelated END text) on the reusable Store root is not
+      // campaign-specific end evidence. Exact commercial ends still reconcile.
+      if (isSteamRoot(known.officialUrl)) continue
       if (url.hostname === 'store.steampowered.com' && /^\/sale\/[^/]+\/?$/i.test(url.pathname)) {
         url.search = '?cc=us&l=english'
         url.hash = ''
@@ -793,12 +946,14 @@ export const runSteamAdapter: StoreAdapter = async ({
   fetch,
   knownCampaigns = [],
 }) => {
-  const [calendarHtml, homeHtml] = await Promise.all([
+  const [calendarHtml, homePage] = await Promise.all([
     fetchOfficialText(fetch, CALENDAR_URL),
-    fetchOfficialText(fetch, STORE_HOME_URL),
+    fetchOfficialPage(fetch, STORE_HOME_URL),
   ])
+  const homeHtml = homePage.text
   const upcoming = parseUpcomingCalendar(calendarHtml)
   const inspectedPages = new Map<string, string>()
+  const matchedNews = new Map<string, SteamNewsItem>()
   const [storeLive, newsConfirmed, explicitlyEndedSourceUids] =
     await Promise.all([
       discoverLiveCampaigns(
@@ -811,7 +966,8 @@ export const runSteamAdapter: StoreAdapter = async ({
       discoverSteamNewsCampaigns(
         now,
         fetch,
-        upcoming
+        upcoming,
+        matchedNews
       ),
       verifyKnownSteamCampaigns(
         fetch,
@@ -820,9 +976,8 @@ export const runSteamAdapter: StoreAdapter = async ({
       ),
     ])
 
-  const detectedLive = uniqueBy(
-    [...storeLive, ...newsConfirmed],
-    (entry) => entry.sourceUid
+  const detectedLive = await seasonalPresentation(
+    storeLive, newsConfirmed, upcoming, matchedNews, homeHtml, homePage.url, now, fetch
   )
   const subsectionUids = seasonalSubsectionUids(homeHtml, detectedLive, inspectedPages)
   const live = detectedLive.filter(entry => !subsectionUids.has(entry.sourceUid))

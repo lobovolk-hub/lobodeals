@@ -12,6 +12,7 @@ import { runRockstarStoreAdapter } from '../supabase/functions/campaign-monitori
 import { runSteamAdapter, extractSteamCampaignTitle } from '../supabase/functions/campaign-monitoring/adapters/steam.ts'
 import { runUbisoftStoreAdapter } from '../supabase/functions/campaign-monitoring/adapters/ubisoft-store.ts'
 import { campaignKeysToEnd } from '../supabase/functions/campaign-monitoring/_shared/reconcile.ts'
+import { campaignBaseRow, artworkPatch } from '../supabase/functions/campaign-monitoring/_shared/persistence.ts'
 import { currentCampaignEvidence, verifyKnownCampaigns } from '../supabase/functions/campaign-monitoring/_shared/verification.ts'
 import { extractExactEnglishDateTimes, extractEnglishDateOnlyRange } from '../supabase/functions/campaign-monitoring/_shared/time.ts'
 
@@ -67,6 +68,293 @@ test('Steam relates seasonal sections through current official structure, preser
     assert.equal(calls.some(url => /\/app\/|\/search\//.test(url)), false)
     assert.equal(result.coverage, 'partial')
   }
+})
+
+const steamSeasonalHome = 'https://store.steampowered.com/?cc=us&l=english'
+const steamSeasonalNews = 'https://steamcommunity.com/ogg/593110/announcements/detail/12345'
+const steamParentArt = 'https://cdn.steamstatic.com/seasonal/parent.jpg'
+const steamChildArt = 'https://cdn.steamstatic.com/seasonal/featured-products.jpg'
+
+function steamSeasonalFixture(options = {}) {
+  const year = options.year ?? 2026, season = options.season ?? 'Autumn'
+  const month = season === 'Winter' ? 'December' : 'October'
+  const monthNumber = season === 'Winter' ? '12' : '10'
+  const start = `${year}-${monthNumber}-01`, end = `${year}-${monthNumber}-08`
+  const hour = season === 'Winter' ? '18' : '17'
+  const startsAt = `${start}T${hour}:00:00Z`, endsAt = `${end}T${hour}:00:00Z`
+  const now = new Date(options.now ?? `${year}-${monthNumber}-02T12:00:00Z`)
+  const name = `Steam ${season} Sale`, sourceUid = `steamworks-${season.toLowerCase()}-sale-${year}`
+  const childUrl = 'https://store.steampowered.com/sale/special_deals'
+  const childName = `${season} Sale ${year} Featured Deep Discounts`
+  const child = { campaignKey: 'child', sourceUid: childUrl, name: childName, state: 'live',
+    officialUrl: childUrl, sourceUrl: steamSeasonalHome, startsAt, endsAt }
+  const calls = []
+  const eventHtml = (title, starts, ends, artwork, backlink = true) => {
+    const event = { event_name: title, rtime32_start_time: Date.parse(starts) / 1000,
+      rtime32_end_time: Date.parse(ends) / 1000,
+      jsondata: JSON.stringify({ sale_sections: [{ section_type: 'links', links: backlink ? [{ url: 'https://store.steampowered.com/' }] : [] }] }) }
+    return `<title>${title}</title>${artwork ? `<meta property="og:image" content="${artwork}">` : ''}<div data-partnereventstore='${JSON.stringify([event])}'></div>`
+  }
+  const fetcher = async input => {
+    const url = String(input); calls.push(url)
+    if (url.includes('partner.steamgames.com')) {
+      if (options.sourceFailure) return new Response('', { status: 503 })
+      return new Response(`<main>Upcoming Steam Events Seasonal Sales ${season} Sale ${year} | ${month} 1 - 8, ${year}
+        ${options.ambiguous ? `${season} Sale ${year + 1} | ${month} 1 - 8, ${year + 1}` : ''}</main>`)
+    }
+    if (url.includes('api.steampowered.com')) return Response.json({ appnews: { newsitems: options.noNews ? [] : [{
+      title: options.newsTitle ?? `${name} is here!`,
+      contents: `${options.link === false ? name : `[url="${options.link ?? 'https://store.steampowered.com/'}"]${name}[/url]`} is on now through ${month} ${options.newsEndDay ?? 8}${options.newsDateOnly ? '.' : ` at ${options.newsEndHour ?? 10} a.m. Pacific.`}
+        ${options.linkStoreParents ? `[url="https://store.steampowered.com/sale/seasonal"]${name}[/url] [url="https://store.steampowered.com/sale/seasonal-extra"]${name}[/url]` : ''}`,
+      feedname: 'steam_community_blog', date: Date.parse(options.publishedAt ?? startsAt) / 1000,
+      url: steamSeasonalNews,
+    }] } })
+    if (url === steamSeasonalHome || url === 'https://store.steampowered.com/') {
+      const home = `<script>bIsSeasonalSale: ${options.notSeasonal ? 0 : 1}</script>
+        <meta property="og:description" content="The ${options.homeName ?? name} is on now — find great deals!">
+        ${options.homeArt === false ? '' : `<meta property="og:image" content="${steamParentArt}">`}
+        ${options.noChild ? '' : `<div class="title_grid"><div class="home_section_title">Featured Deep Discounts</div><div class="see_more_link"><a href="${childUrl}">See All</a></div></div>`}
+        ${options.storeParent ? '<a href="https://store.steampowered.com/sale/seasonal">Seasonal Sale</a>' : ''}
+        ${options.secondStoreParent ? '<a href="https://store.steampowered.com/sale/seasonal-extra">Seasonal Sale</a>' : ''}
+        ${options.unrelated ? '<a href="https://store.steampowered.com/sale/franchise">Example Franchise Sale</a>' : ''}
+        ${options.endText ? '<p>Another sale has ended</p>' : ''}`
+      const response = new Response(home)
+      if (options.redirectHome) Object.defineProperty(response, 'url', { value: options.redirectHome })
+      return response
+    }
+    if (url === steamSeasonalNews) {
+      if (options.newsArtworkFailure) return new Response('', { status: 503 })
+      return new Response(`<meta property="og:title" content="Steam :: Steam News :: ${options.articleTitle ?? name + ' is here!'}">
+        ${options.newsArt ? `<meta property="og:image" content="${options.newsArt}">` : ''}
+        ${eventHtml(`${name} is here!`, `${start}T${hour}:11:00Z`, `${start}T${Number(hour) + 1}:11:00Z`)}`)
+    }
+    if (url.startsWith(childUrl)) return new Response(eventHtml(childName,
+      options.childStart ?? startsAt, options.childEnd ?? endsAt, steamChildArt))
+    if (url.includes('/sale/seasonal')) return new Response(eventHtml(options.storeTitle ?? name,
+      (url.includes('seasonal-extra') ? options.secondStoreStart : options.storeStart) ?? startsAt, options.storeEnd ?? endsAt,
+      url.includes('seasonal-extra') ? steamParentArt : options.storeArt))
+    if (url.includes('/sale/franchise')) return new Response(eventHtml('Example Franchise Sale', startsAt, endsAt, steamChildArt))
+    throw new Error(`Unexpected Steam fixture URL: ${url}`)
+  }
+  return { name, sourceUid, start, end, startsAt, endsAt, now, child, calls,
+    run: () => runSteamAdapter({ now, fetch: fetcher, knownCampaigns: options.known ?? (options.noChild ? [] : [child]) }) }
+}
+
+test('Steam seasonal parent keeps identity and commercial timing while receiving full Store presentation', async () => {
+  const fixture = steamSeasonalFixture()
+  const result = await fixture.run()
+  assert.equal(result.campaigns.length, 1)
+  const parent = result.campaigns[0]
+  assert.equal(parent.sourceUid, fixture.sourceUid)
+  assert.equal(parent.name, fixture.name)
+  assert.equal(parent.officialUrl, steamSeasonalHome)
+  assert.equal(parent.artworkUrl, steamParentArt)
+  assert.equal(parent.lifecycleBasis, 'official-source')
+  assert.deepEqual(parent.starts, { precision: 'date', value: fixture.start })
+  assert.equal(Date.parse(parent.ends.value), Date.parse(fixture.endsAt))
+  assert.deepEqual(result.explicitlyEndedSourceUids, [fixture.child.sourceUid])
+  assert.equal(fixture.calls.some(url => /\/app\/|\/search\//.test(url)), false)
+})
+
+test('Steam lifecycle regression: exact ended Store parent cannot be revived by date-only Live News', async () => {
+  const known = { campaignKey: 'parent', sourceUid: 'steamworks-autumn-sale-2026',
+    name: 'Steam Autumn Sale', state: 'live',
+    officialUrl: 'https://store.steampowered.com/sale/seasonal', sourceUrl: steamSeasonalHome,
+    startsAt: '2026-10-01T17:00:00Z', endsAt: '2026-10-08T17:00:00Z' }
+  const fixture = steamSeasonalFixture({ now: '2026-10-08T17:30:00Z', noChild: true,
+    storeParent: true, newsDateOnly: true, known: [known] })
+  const result = await fixture.run()
+  assert.equal(result.campaigns.some(c => c.sourceUid === known.sourceUid), false)
+  assert.deepEqual(result.explicitlyEndedSourceUids, [known.sourceUid])
+  assert.deepEqual(campaignKeysToEnd({ sourceSucceeded: true, coverage: result.coverage,
+    detectedCampaigns: result.campaigns, explicitlyEndedSourceUids: result.explicitlyEndedSourceUids,
+    activeCampaigns: [{ campaign_key: 'parent', source_uid: known.sourceUid,
+      ends_at: known.endsAt, ends_on: null }], now: fixture.now }), ['parent'])
+})
+
+test('Steam seasonal parent does not inherit child-only artwork', async () => {
+  const result = await steamSeasonalFixture({ homeArt: false }).run()
+  assert.equal(result.campaigns.length, 1)
+  assert.equal(result.campaigns[0].artworkUrl, undefined)
+  assert.equal(result.campaigns[0].officialUrl, steamSeasonalHome)
+})
+
+test('Steam seasonal parent may use independently published parent announcement artwork, ignoring event duration', async () => {
+  const fixture = steamSeasonalFixture({ homeArt: false, newsArt: steamParentArt })
+  const parent = (await fixture.run()).campaigns[0]
+  assert.equal(parent.artworkUrl, steamParentArt)
+  assert.equal(parent.starts.precision, 'date')
+  assert.equal(Date.parse(parent.ends.value), Date.parse(fixture.endsAt))
+  assert.equal(parent.lifecycleBasis, 'official-source')
+})
+
+test('Steam seasonal optional artwork failures and wrong announcement metadata preserve valid discovery', async () => {
+  for (const options of [{ newsArtworkFailure: true }, { articleTitle: 'Featured Products', newsArt: steamChildArt }]) {
+    const parent = (await steamSeasonalFixture({ homeArt: false, ...options }).run()).campaigns[0]
+    assert.equal(parent.artworkUrl, undefined)
+    assert.equal(parent.state, 'live')
+    assert.equal(parent.officialUrl, steamSeasonalHome)
+  }
+})
+
+test('Steam seasonal root requires current unambiguous identity, edition, timing and a named parent link', async () => {
+  for (const options of [
+    { notSeasonal: true }, { homeName: 'Steam Winter Sale' }, { homeName: 'Steam Autumn Sale 2025' },
+    { ambiguous: true }, { publishedAt: '2026-09-01T17:00:00Z' }, { publishedAt: '2026-10-03T17:00:00Z' },
+    { newsTitle: 'Steam Autumn Sale 2025 is here!' }, { newsEndDay: 9 }, { link: false },
+    { link: 'https://store.steampowered.com/sale/special_deals' },
+    { redirectHome: 'https://store.steampowered.com/sale/unrelated' },
+  ]) {
+    const fixture = steamSeasonalFixture(options)
+    const parent = (await fixture.run()).campaigns.find(c => c.sourceUid === fixture.sourceUid)
+    assert.equal(parent.officialUrl, steamSeasonalNews, JSON.stringify(options))
+    assert.equal(parent.artworkUrl, undefined, JSON.stringify(options))
+    assert.equal(parent.starts.precision, 'date')
+  }
+})
+
+test('Steam seasonal child timing conflicts never upgrade parent timing', async () => {
+  for (const options of [{ childStart: '2026-09-30T17:00:00Z' }, { childEnd: '2026-10-09T17:00:00Z' }]) {
+    const fixture = steamSeasonalFixture(options)
+    const result = await fixture.run()
+    const parent = result.campaigns.find(c => c.sourceUid === fixture.sourceUid)
+    assert.deepEqual(parent.starts, { precision: 'date', value: fixture.start })
+    assert.equal(Date.parse(parent.ends.value), Date.parse(fixture.endsAt))
+    assert.deepEqual(result.explicitlyEndedSourceUids, [])
+  }
+})
+
+test('Steam seasonal same-UID candidates combine Store presentation and exact parent commercial timing', async () => {
+  const fixture = steamSeasonalFixture({ notSeasonal: true, noChild: true, storeParent: true,
+    secondStoreParent: true, linkStoreParents: true, storeTitle: 'Autumn Sale 2026' })
+  const result = await fixture.run()
+  assert.equal(result.campaigns.length, 1)
+  const parent = result.campaigns[0]
+  assert.equal(parent.name, fixture.name)
+  assert.equal(parent.sourceUid, fixture.sourceUid)
+  assert.equal(parent.officialUrl, 'https://store.steampowered.com/sale/seasonal')
+  assert.equal(parent.artworkUrl, steamParentArt)
+  assert.equal(parent.starts.precision, 'datetime')
+  assert.equal(Date.parse(parent.starts.value), Date.parse(fixture.startsAt))
+  assert.equal(parent.lifecycleBasis, 'exact-time')
+})
+
+test('Steam seasonal ambiguous edition or calendar scope retains unmerged Store evidence', async () => {
+  for (const options of [
+    { storeEnd: '2026-10-09T17:00:00Z' },
+    { storeStart: '2026-09-30T17:00:00Z' }, { storeTitle: 'Autumn Sale 2025' },
+  ]) {
+    const config = { noChild: true, storeParent: true, linkStoreParents: true, ...options }
+    const fixture = steamSeasonalFixture(config)
+    const parent = (await fixture.run()).campaigns.find(c => c.sourceUid === fixture.sourceUid)
+    const withoutNews = (await steamSeasonalFixture({ ...config, noNews: true }).run()).campaigns[0]
+    assert.deepEqual(parent, withoutNews, JSON.stringify(options))
+  }
+})
+
+test('Steam lifecycle regression: exact future parent boundaries survive date-only News and persistence', async () => {
+  const fixture = steamSeasonalFixture({ noChild: true, storeParent: true,
+    newsDateOnly: true, notSeasonal: true, newsArt: steamParentArt })
+  const parent = (await fixture.run()).campaigns[0]
+  const row = campaignBaseRow(parent, 'parent', fixture.now.toISOString())
+  assert.equal(row.state, 'live')
+  assert.equal(row.starts_on, null)
+  assert.equal(Date.parse(row.starts_at), Date.parse(fixture.startsAt))
+  assert.equal(row.ends_on, null)
+  assert.equal(Date.parse(row.ends_at), Date.parse(fixture.endsAt))
+  assert.equal(parent.officialUrl, steamSeasonalNews)
+  assert.equal(parent.artworkUrl, steamParentArt)
+  assert.equal(fixture.calls.includes(steamSeasonalNews), true)
+})
+
+test('Steam lifecycle regression: exact conflicts retain Store precedence while safe presentation still enriches', async () => {
+  const fixture = steamSeasonalFixture({ noChild: true, storeParent: true,
+    secondStoreParent: true, secondStoreStart: '2026-10-01T18:00:00Z',
+    linkStoreParents: true, newsEndHour: 11, notSeasonal: true })
+  const parent = (await fixture.run()).campaigns[0]
+  assert.equal(Date.parse(parent.starts.value), Date.parse(fixture.startsAt))
+  assert.equal(Date.parse(parent.ends.value), Date.parse(fixture.endsAt))
+  assert.equal(parent.officialUrl, 'https://store.steampowered.com/sale/seasonal')
+  assert.equal(parent.artworkUrl, steamParentArt)
+  const ended = await steamSeasonalFixture({ noChild: true, storeParent: true,
+    newsEndHour: 11, now: '2026-10-08T17:30:00Z' }).run()
+  assert.deepEqual(ended.campaigns, [])
+})
+
+test('Steam lifecycle regression: ended parent discovery never recreates an already retired row', async () => {
+  const result = await steamSeasonalFixture({ noChild: true, storeParent: true,
+    newsDateOnly: true, now: '2026-10-08T17:30:00Z', known: [] }).run()
+  assert.deepEqual(result.campaigns, [])
+  assert.deepEqual(result.explicitlyEndedSourceUids, [])
+})
+
+test('Steam seasonal same-UID Store surface without full-parent linkage cannot displace News', async () => {
+  const parent = (await steamSeasonalFixture({ notSeasonal: true, noChild: true,
+    storeParent: true, storeArt: steamChildArt }).run()).campaigns[0]
+  assert.equal(parent.officialUrl, steamSeasonalNews)
+  assert.equal(parent.artworkUrl, undefined)
+})
+
+test('Steam seasonal future Winter edition without a featured child receives the same generic enrichment', async () => {
+  const fixture = steamSeasonalFixture({ season: 'Winter', year: 2028, noChild: true })
+  const result = await fixture.run()
+  assert.equal(result.campaigns.length, 1)
+  assert.equal(result.campaigns[0].sourceUid, 'steamworks-winter-sale-2028')
+  assert.equal(result.campaigns[0].officialUrl, steamSeasonalHome)
+  assert.equal(result.campaigns[0].artworkUrl, steamParentArt)
+  assert.equal(Date.parse(result.campaigns[0].ends.value), Date.parse(fixture.endsAt))
+})
+
+test('Steam seasonal reusable root never ends a known parent from unrelated homepage text', async () => {
+  for (const officialUrl of ['https://store.steampowered.com/', steamSeasonalHome]) {
+    const known = { campaignKey: 'old-parent', sourceUid: 'steamworks-summer-sale-2026',
+      name: 'Steam Summer Sale', state: 'live', officialUrl, sourceUrl: steamSeasonalNews }
+    const result = await steamSeasonalFixture({ known: [known], endText: true }).run()
+    assert.equal(result.explicitlyEndedSourceUids.includes(known.sourceUid), false)
+    assert.deepEqual(campaignKeysToEnd({ sourceSucceeded: true, coverage: result.coverage,
+      detectedCampaigns: result.campaigns, explicitlyEndedSourceUids: result.explicitlyEndedSourceUids,
+      activeCampaigns: [{ campaign_key: known.campaignKey, source_uid: known.sourceUid, ends_at: null, ends_on: null }],
+      now: new Date('2026-10-02T12:00:00Z') }), [])
+    assert.deepEqual(campaignKeysToEnd({ sourceSucceeded: true, coverage: result.coverage,
+      detectedCampaigns: result.campaigns, explicitlyEndedSourceUids: result.explicitlyEndedSourceUids,
+      activeCampaigns: [{ campaign_key: known.campaignKey, source_uid: known.sourceUid, ends_at: '2026-07-08T17:00:00Z', ends_on: null }],
+      now: new Date('2026-10-02T12:00:00Z') }), ['old-parent'])
+  }
+})
+
+test('Steam seasonal previously selected root falls back to announcement after homepage reuse', async () => {
+  const fixture = steamSeasonalFixture()
+  const parent = (await fixture.run()).campaigns[0]
+  const changed = await steamSeasonalFixture({ homeName: 'Steam Winter Sale', endText: true,
+    known: [{ ...parent, campaignKey: 'parent' }] }).run()
+  const current = changed.campaigns.find(c => c.sourceUid === parent.sourceUid)
+  assert.equal(current.officialUrl, steamSeasonalNews)
+  assert.equal(current.state, 'live')
+  assert.equal(changed.explicitlyEndedSourceUids.includes(parent.sourceUid), false)
+})
+
+test('Steam seasonal missing artwork leaves previously persisted artwork untouched', async () => {
+  const fixture = steamSeasonalFixture({ homeArt: false, newsArtworkFailure: true })
+  const parent = (await fixture.run()).campaigns[0]
+  const row = campaignBaseRow(parent, 'parent', fixture.now.toISOString())
+  assert.equal(Object.hasOwn(row, 'artwork_url'), false)
+  assert.equal(artworkPatch(parent, 'parent'), null)
+  assert.equal({ artwork_url: steamParentArt, ...row }.artwork_url, steamParentArt)
+})
+
+test('Steam seasonal presentation leaves independent Store campaigns unchanged', async () => {
+  const normal = await steamSeasonalFixture({ unrelated: true }).run()
+  const noSeason = await steamSeasonalFixture({ unrelated: true, notSeasonal: true }).run()
+  const independent = result => result.campaigns.find(c => c.name === 'Example Franchise Sale')
+  assert.deepEqual(independent(normal), independent(noSeason))
+  assert.equal(independent(normal).artworkUrl, steamChildArt)
+})
+
+test('Steam seasonal required source failure remains a failure and cannot retire saved campaigns', async () => {
+  await assert.rejects(steamSeasonalFixture({ sourceFailure: true }).run(), /HTTP 503/)
+  assert.deepEqual(campaignKeysToEnd({ sourceSucceeded: false, coverage: 'partial',
+    detectedCampaigns: [], explicitlyEndedSourceUids: ['known'], now: new Date('2026-10-02T12:00:00Z'),
+    activeCampaigns: [{ campaign_key: 'known', source_uid: 'known', ends_at: '2026-10-01T00:00:00Z', ends_on: null }] }), [])
 })
 
 test('end evidence never creates history and retires only a known identity', () => {

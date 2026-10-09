@@ -168,7 +168,7 @@ test('Epic health failure after commit cannot retroactively fail publication', a
   for (const call of calls.filter(c => c.path.endsWith('/sales_source_health'))) {
     assert.equal(Object.hasOwn(call.body, 'epic_public_scan_generation'), false)
     assert.equal(Object.hasOwn(call.body, 'epic_scan_generation_counter'), false)
-    assert.equal(call.body.adapter_version, '16')
+    assert.equal(call.body.adapter_version, '17')
   }
 })
 

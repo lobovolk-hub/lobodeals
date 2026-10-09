@@ -33,7 +33,7 @@ import {
 } from './_shared/epic-snapshot-persistence.ts'
 
 const JSON_HEADERS = { 'Content-Type': 'application/json; charset=utf-8' }
-const ADAPTER_VERSION = '16'
+const ADAPTER_VERSION = '17'
 
 type MonitorRequest = Readonly<{
   mode?: 'probe' | 'persist'

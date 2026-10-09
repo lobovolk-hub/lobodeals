@@ -11,60 +11,115 @@ documentation, not a replacement for the Product Authority.
   artwork discovered from metadata on a campaign-specific official page.
 - `public.sales_source_health` has one internal row for each canonical store.
 - `public.campaign_monitor_token_verifier()` exposes only the one-way invocation
-  verifier to `service_role`; it is the sole custom public function.
+  verifier to `service_role`.
+- Epic snapshot RPCs `reserve_epic_public_scan()`, `finalize_epic_public_scan(...)`
+  and `apply_epic_scan_artwork(...)` are restricted to `service_role` and write
+  only the same two Sales tables. `read_sales_public_snapshot()` is the public
+  read RPC, executable by `anon`, `authenticated` and `service_role`.
 - `campaign-monitoring` is the only monitoring Edge Function. Its ten adapters
   run independently and can write only the two tables above.
-- The frontend reads only live/upcoming `sales_campaigns` rows through the
-  public RLS policy and has no Supabase SDK. Its public availability request is
+- The frontend uses `read_sales_public_snapshot()` to read US live/upcoming
+  rows and the Epic generation pointer consistently, then applies Epic public
+  membership filtering in `lib/sales-source.ts`. It has no Supabase SDK.
+  Existing table RLS remains in place. Its public availability request is
   a `GET` to the same Edge Function and returns only `store_slug` plus
   `availability` (`available` or `temporarily_unavailable`).
 - `sales_source_health` remains private. Its RLS has no public read policy, and
   the public availability response never includes error codes, messages,
-  timestamps, counters, or source URLs.
+  timestamps, counters, or source URLs. The snapshot RPC exposes only the Epic
+  membership pointer from health, not the health row or reservation counter.
 
 The function defaults to `probe`, which reads current Sales rows for
 verification but performs no writes. `persist` upserts campaigns confirmed by
 successful adapters and records health. A failed adapter can update only its
-health row; it never changes a campaign.
+health row; it never changes a campaign. Epic persist reserves a generation
+before discovery; a failed scan may consume that counter without changing the
+published pointer. Successful Epic publication is atomic and rejects stale
+reservations; artwork writes are guarded by the published generation.
 
 ## Lifecycle and coverage contract
 
 Discovery and verification are separate. Every current adapter declares
-`partial` coverage. Therefore a campaign disappearing from a hub, homepage,
-news window, or other partial surface remains unchanged.
+`partial` coverage. Disappearance from a partial discovery surface is not END
+evidence. Epic tag-only public membership is separately governed by its last
+successfully published snapshot: absence can hide a card without ending its
+commercial lifecycle. Failed Epic scans preserve the published membership.
 
 A campaign can become `ended` only when one of these facts exists:
 
 1. its official exact `ends_at` instant has passed during a successful source
    run;
-2. its campaign-specific official page (not a shared discovery page) explicitly
+2. it has no exact end, its `ends_on` calendar date has passed in every civil
+   timezone (UTC-12 through UTC+14), and successful reconciliation has no fresh
+   Live/Upcoming evidence for that identity;
+3. its campaign-specific official page (not a shared discovery page) explicitly
    states that the campaign ended; or
-3. an adapter explicitly declares `authoritative-complete-current-set` and the
+4. an adapter explicitly declares `authoritative-complete-current-set` and the
    campaign is absent from that successful complete snapshot.
 
-No current adapter uses the third option. Date-only facts never trigger a
-state transition. Failed discovery or failed verification preserves prior
-campaigns. Adapter version 5 implements this policy and optional official
-artwork discovery without changing lifecycle behavior.
+No current adapter uses the fourth option. Reconciliation checks explicit END
+first, preserves fresh Live/Upcoming evidence next, then applies stored end
+boundaries. Date-only comparison never invents an instant or converts a calendar
+date into `ends_at`; adapters may use conservative calendar comparisons without
+claiming exact-time lifecycle. Failed source runs do not retire campaigns;
+failed verification supplies no new END evidence.
 
 ## Official source map
 
 | Store | Official surfaces | Current contract |
 | --- | --- | --- |
-| PlayStation Store | US Store `store.playstation.com/en-us/pages/latest`, its public EMS module service, and US PlayStation Blog as a complement | Campaign modules are primary; product/category grids are never traversed. The EMS service currently returns HTTP 403 to Edge, so the adapter is blocked rather than treating Blog as complete. |
+| PlayStation Store | US Store Deals/Latest, official EMS GraphQL surfaces, and US PlayStation Blog | Recognized Store campaign structures are required; Blog complements campaign evidence. Source failures remain explicit. |
 | Nintendo eShop | US `nintendo.com/us/store/sales-and-deals/` plus `nintendo.com/us/whatsnew/` | Campaign tabs/pages are discovered without reading embedded product data. Promotion news is complementary. |
 | Xbox Store | US `xbox.com/en-US/promotions/sales/sales-and-specials` | Only embedded `CampsiteChannel.Games.Sale` campaign metadata is accepted. The hub is partial; product, hardware, and Game Pass sections are ignored. |
-| Steam | Steamworks upcoming-events calendar plus US `store.steampowered.com` homepage campaign links | Steamworks provides date-only Upcoming campaigns. A campaign becomes Live only when an official Store sale surface confirms it. Product specials are not traversed. |
-| Epic Games Store | US Sales & Specials HTML, official News HTML, and the official public news service | The adapter can parse campaign-level HTML when available. Edge currently receives HTTP 403, HTTP 403, and HTTP 400 respectively, so it is blocked. |
+| Steam | Steamworks upcoming-events calendar, US `store.steampowered.com` campaign surfaces, and official Steam News for app 593110 | Steamworks provides seasonal identity and date-only Upcoming campaigns. Store sale pages or matching official News confirm Live. A validated seasonal Store landing may supply the canonical parent's CTA and artwork. Product specials are not traversed. |
+| Epic Games Store | US Sales & Specials and official Store GraphQL | Campaign-level official evidence supplies identity/presentation. Tag-only campaigns use atomic public snapshot membership, distinct from commercial END. Production snapshot membership is implemented; health is read from current diagnostics rather than assumed blocked. |
 | GOG | `gog.com/en/` and linked official campaign pages | Campaign links include both `/en/promo/...` and campaign-specific `...sale` paths. The homepage is partial. |
-| EA app | `ea.com/sales/deals` plus official EA News | The general deals page currently exposes discounted products but no campaign discovery contract; News exposes no current EA app campaign link. The adapter is blocked and does not hardcode an event landing. |
+| EA app | `ea.com/sales/deals` plus official EA News | Qualifying official campaign links and their commercial evidence are evaluated; individual product discounts are not campaigns. |
 | Ubisoft Store | US `store.ubisoft.com/us/deals` and linked campaign pages | All qualifying campaign links are evaluated; there is no item-count slice. The hub is partial. |
 | Battle.net | US Blizzard `contentItems` feed with pagination and official articles | Discovery follows up to 20 feed pages, never truncates qualifying candidates, and verifies known campaign pages separately. Only Battle.net Shop campaign articles with an official exact end instant are published from this historical feed. |
-| Rockstar Store | `rockstargames.com/newswire?tag_id=43` | Honest standard HTTP requests expose no server-rendered Store campaign links. No private GraphQL contract, bypass, proxy, or third party is used; the adapter is blocked. |
+| Rockstar Store | Newswire Sales tag 661 and official Newswire GraphQL | Recognizable Sales history and tag identity are required. Only qualifying Store campaigns are published; source-contract loss remains an explicit failure. |
 
 No adapter uses a comparator, aggregator, price tracker, silent third party,
 product catalog crawl, or manual campaign registry. Product counts are not
 stored.
+
+Health is transient. The 8 October 2026 read-only review recorded Steam and Epic
+healthy on adapter v16 (Edge revision 35); this is dated evidence, not a promise
+that a source will remain available.
+
+### Steam seasonal presentation
+
+A seasonal sale keeps one canonical Steamworks identity and official parent
+name. Featured subsections are suppressed only when the current official
+structure, backlink and compatible campaign boundaries establish the parent
+relationship. Their commercial timestamps and artwork are not automatically
+inherited by the parent.
+
+The reusable Store homepage becomes a parent CTA only while its seasonal
+metadata matches one unambiguous calendar identity, its edition and current
+commercial dates agree, and a dated official parent announcement links that
+destination by campaign name. Otherwise the announcement or existing valid
+campaign destination remains the fallback. A seasonal merge first requires
+matching parent UID, name, edition and Steamworks calendar days. Ambiguous scope
+keeps the original discovery candidate without merging. Within that proven
+parent, each commercial boundary keeps exact evidence ahead of date-only
+evidence. Conflicting exact values retain Store-before-News discovery precedence,
+then source order. Existing exact-time/expiry helpers determine lifecycle from
+those boundaries: stale Live wording cannot override a passed exact parent end.
+News confirms the campaign and provides fallback presentation; it is not the
+universal timing authority. Parent-compatible CTA/artwork may still enrich when
+exact times disagree within the same confirmed calendar scope.
+
+Store landings must be linked as the full parent by the announcement when News
+is present. Child/subsection timestamps never enter the same-parent boundary
+selection; a shared end time does not make a child's exact start authoritative.
+
+Artwork comes first from the validated seasonal homepage, then a compatible
+parent Store landing, or matching parent announcement metadata. Arbitrary
+subsection artwork is never promoted by name similarity. Optional metadata
+failures preserve campaign discovery and the existing artwork persistence
+contract. Announcement event-window timestamps are never sale timing, and
+later reuse of the Store root is never campaign-specific END evidence.
 
 ## Optional campaign artwork
 
@@ -101,7 +156,7 @@ single `campaign-monitoring` function with `{ "mode": "persist" }`. Omitting a
 store list makes the orchestrator use its canonical ten-store registry. Blocked
 stores are therefore retried on every cycle; blocked never means disabled.
 
-## Current operational snapshot
+## Historical operational snapshot — 29 August 2026
 
 A read-only revalidation on 29 August 2026 confirmed Edge Function version 14
 ACTIVE, adapter version 5, and one active
@@ -133,9 +188,10 @@ cycle rather than replaced with third-party or manual data.
 
 ## Post-transition repository boundary
 
-The database's current application-facing public schema contains only
-`sales_campaigns`, `sales_source_health`, and the invocation verifier described
-above. Applied transition migrations remain immutable history under
+The application-facing public boundary contains the two Sales tables, invocation
+verifier, three restricted Epic snapshot write RPCs and public snapshot read RPC
+described above. Epic generation fields live in the existing Sales tables.
+Applied transition migrations remain immutable history under
 `supabase/migrations/`; there is no separate operational legacy SQL directory,
 catalog/pricing pipeline, user-account backend, or ingestion worker in the
 current architecture.

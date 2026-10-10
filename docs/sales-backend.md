@@ -73,7 +73,7 @@ failed verification supplies no new END evidence.
 | Xbox Store | US `xbox.com/en-US/promotions/sales/sales-and-specials` | Only embedded `CampsiteChannel.Games.Sale` campaign metadata is accepted. The hub is partial; product, hardware, and Game Pass sections are ignored. |
 | Steam | Steamworks upcoming-events calendar, US `store.steampowered.com` campaign surfaces, and official Steam News for app 593110 | Steamworks provides seasonal identity and date-only Upcoming campaigns. Store sale pages or matching official News confirm Live. A validated seasonal Store landing may supply the canonical parent's CTA and artwork. Product specials are not traversed. |
 | Epic Games Store | US Sales & Specials and official Store GraphQL | Campaign-level official evidence supplies identity/presentation. Tag-only campaigns use atomic public snapshot membership, distinct from commercial END. Production snapshot membership is implemented; health is read from current diagnostics rather than assumed blocked. |
-| GOG | `gog.com/en/` and linked official campaign pages | Campaign links include both `/en/promo/...` and campaign-specific `...sale` paths. The homepage is partial. |
+| GOG | US `gog.com/en/now_on_sale` promotion tabs, Home, News RSS and linked official campaign pages | Structured tabs supply campaign identity; Home/News add partial discovery. The `/promo/` routing segment alone is not Sale evidence. |
 | EA app | `ea.com/sales/deals` plus official EA News | Qualifying official campaign links and their commercial evidence are evaluated; individual product discounts are not campaigns. |
 | Ubisoft Store | US `store.ubisoft.com/us/deals` and linked campaign pages | All qualifying campaign links are evaluated; there is no item-count slice. The hub is partial. |
 | Battle.net | US Blizzard `contentItems` feed with pagination and official articles | Discovery follows up to 20 feed pages, never truncates qualifying candidates, and verifies known campaign pages separately. Only Battle.net Shop campaign articles with an official exact end instant are published from this historical feed. |
@@ -86,6 +86,54 @@ stored.
 Health is transient. The 8 October 2026 read-only review recorded Steam and Epic
 healthy on adapter v16 (Edge revision 35); this is dated evidence, not a promise
 that a source will remain available.
+
+### GOG candidate isolation
+
+Local diagnostic runtime v18 refines GOG candidate admission and isolation;
+publication requires its separate deployment gate. Promotion tabs retain their
+structured identity authority. Home and News links require commercial vocabulary
+in the label, related article context, or campaign slug independently of the
+`/promo/` routing segment. Individual launch discounts do not manufacture a Sale.
+
+An auxiliary candidate with insufficient identity or an incompatible redirect is
+omitted without discarding independently verified campaigns. Expected HTTP,
+timeout and network failures are isolated only at individual News article and
+campaign-landing fetch boundaries, including structured-tab landings. A failed
+landing does not manufacture a campaign from its tab: only successfully verified
+peers survive, with the existing `partial` coverage. Failed landing identities
+and known campaigns tied to failed News articles are excluded from secondary
+enrichment/retirement in that scan. Failure/rejection is not END evidence.
+Locale redirects must preserve normalized official identity.
+
+News evidence uses the final resolved article URL. An external destination or
+an incompatible GOG article/path is rejected before reading identity, timing or
+artwork from its body; the original RSS URL cannot legitimize that content.
+Equivalent GOG host and locale redirects remain valid. Rejected articles use
+the same unresolved-coverage and secondary-verification protections as failed
+articles.
+
+The shared HTTP wrapper retains its original exception as a non-enumerable
+`cause`, without changing existing codes/messages or other adapters' handling.
+This metadata is necessary because `SOURCE_FETCH_FAILED` alone cannot distinguish
+a network failure from an application exception. GOG isolates only recognized
+native fetch network TypeError signatures, HTTP statuses and timeouts. Other
+causes are rethrown, including programming TypeErrors and ReferenceErrors in
+fetch/body resolution. Unrecognized network signatures also fail conservatively.
+GOG secondary enrichment/retirement propagates unexpected errors too; it does
+not discard rejected promises indiscriminately. Parsing remains outside the
+transport catch. Coverage stays `partial` even when every request succeeds:
+these sources do not establish an exhaustive current campaign inventory.
+
+Home, News RSS and US promotion tabs remain required discovery roots: their
+HTTP/contract failures are explicit adapter failures. Unexpected errors outside
+the bounded transport failures are not swallowed. Successful but unrecognizable
+structured landing authority still fails explicitly. Unresolved articles or
+candidates without an independently verified Live/Upcoming campaign fail closed;
+ended-only evidence cannot turn unknown current coverage into healthy empty.
+Recognized empty sources retain their existing healthy-empty behavior. Existing
+specific US SSR soft-404 handling, exact timing and shared reconciliation are unchanged.
+A generic title, redirect, missing name or ambiguous disappearance is not new
+commercial END authority. No shared persistence or public projection changes.
 
 ### Steam seasonal presentation
 

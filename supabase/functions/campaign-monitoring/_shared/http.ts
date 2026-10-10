@@ -48,10 +48,14 @@ export async function fetchOfficialPage(
       throw new AdapterError('SOURCE_TIMEOUT', 'Official source timed out')
     }
 
-    throw new AdapterError(
+    const failure = new AdapterError(
       'SOURCE_FETCH_FAILED',
       error instanceof Error ? error.message : 'Official source fetch failed'
     )
+    // Keep existing diagnostics for all adapters, but retain the original type
+    // so callers isolating transport failures need not trust this broad code.
+    Object.defineProperty(failure, 'cause', { value: error })
+    throw failure
   } finally {
     clearTimeout(timeout)
   }

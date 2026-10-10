@@ -15,6 +15,37 @@ import { campaignKeysToEnd } from '../supabase/functions/campaign-monitoring/_sh
 import { campaignBaseRow, artworkPatch } from '../supabase/functions/campaign-monitoring/_shared/persistence.ts'
 import { currentCampaignEvidence, verifyKnownCampaigns } from '../supabase/functions/campaign-monitoring/_shared/verification.ts'
 import { extractExactEnglishDateTimes, extractEnglishDateOnlyRange } from '../supabase/functions/campaign-monitoring/_shared/time.ts'
+import { adapters } from '../supabase/functions/campaign-monitoring/adapters/index.ts'
+import { fetchOfficialPage, fetchOfficialJson } from '../supabase/functions/campaign-monitoring/_shared/http.ts'
+import { AdapterError } from '../supabase/functions/campaign-monitoring/_shared/types.ts'
+
+for (const [slug, adapter] of Object.entries(adapters)) {
+  test(`Shared HTTP compatibility preserves ${slug} required-source failures`, async () => {
+    for (const [code, fetcher] of [
+      ['HTTP_503', async () => new Response('', { status: 503 })],
+      ['SOURCE_TIMEOUT', async () => { throw new DOMException('Timed out', 'AbortError') }],
+      ['SOURCE_FETCH_FAILED', async () => { throw new TypeError('fetch failed') }],
+      ['SOURCE_FETCH_FAILED', async () => { throw new ReferenceError('wrapper defect') }],
+    ]) {
+      await assert.rejects(adapter({ now: new Date('2026-10-10T00:00:00Z'), fetch: fetcher }),
+        error => error instanceof AdapterError && error.code === code)
+    }
+  })
+}
+
+test('Shared HTTP compatibility preserves original failure causes without changing diagnostics', async () => {
+  for (const cause of [new TypeError('fetch failed'), new ReferenceError('wrapper defect'), new TypeError('bad application value')]) {
+    await assert.rejects(fetchOfficialPage(async () => { throw cause }, 'https://www.gog.com/en/'),
+      error => error instanceof AdapterError && error.code === 'SOURCE_FETCH_FAILED' &&
+        error.message === cause.message && error.blocked === false && error.cause === cause)
+  }
+  const typed = new AdapterError('INVALID_ADAPTER_OUTPUT', 'invariant')
+  await assert.rejects(fetchOfficialPage(async () => { throw typed }, 'https://www.gog.com/en/'), error => error === typed)
+  await assert.rejects(fetchOfficialPage(async () => new Response('', { status: 403 }), 'https://www.gog.com/en/'),
+    error => error.code === 'HTTP_403' && error.blocked)
+  await assert.rejects(fetchOfficialJson(async () => new Response('{'), 'https://www.gog.com/en/'),
+    error => error.code === 'INVALID_OFFICIAL_RESPONSE')
+})
 
 const currentCampaign = {
   sourceUid: 'current',
@@ -3027,7 +3058,7 @@ test('GOG News discovers an official Sale campaign page without traversing produ
             <meta property="og:image" content="https://images.gog.com/back-to-school-art.jpg">
             <h1>Back to School Sale</h1>
           `,
-          'https://www.gog.com/es/back-to-school-sale?source=news'
+          'https://www.gog.com/es/promo/2026_back_to_school_sale?source=news'
         )
       }
       throw new Error(`Unexpected URL: ${url}`)
@@ -3036,7 +3067,7 @@ test('GOG News discovers an official Sale campaign page without traversing produ
 
   assert.equal(result.campaigns.length, 1)
   assert.deepEqual(result.campaigns[0], {
-    sourceUid: 'https://www.gog.com/back-to-school-sale',
+    sourceUid: campaignUrl,
     name: 'Back to School Sale',
     storeSlug: 'gog',
     state: 'live',
@@ -3045,7 +3076,7 @@ test('GOG News discovers an official Sale campaign page without traversing produ
       precision: 'datetime',
       value: '2026-09-10T13:00:00+00:00',
     },
-    officialUrl: 'https://www.gog.com/back-to-school-sale',
+    officialUrl: campaignUrl,
     sourceUrl: articleUrl,
     artworkUrl: 'https://images.gog.com/back-to-school-art.jpg',
   })

@@ -177,7 +177,10 @@ function campaignLinks(
   return uniqueBy(
     extractAnchors(html, baseUrl).filter(({ href, label }) => {
       if (!isCampaignPageUrl(href)) return false
-      const identity = `${context} ${label} ${new URL(href).pathname}`.replace(/[_/-]+/g, ' ')
+      // The routing segment /promo/ is not commercial evidence. Retain named
+      // campaign vocabulary in the slug, label, or related official article.
+      const path = new URL(campaignIdentityUrl(href)!).pathname.replace(/^\/promo\//i, '/')
+      const identity = `${context} ${label} ${path}`.replace(/[_/-]+/g, ' ')
       const promoContract = /^\/promo\//i.test(new URL(campaignIdentityUrl(href)!).pathname)
       return (promoContract ? isGogPromotionText(identity) : isSaleCampaignText(identity)) && !isGiveawayOnly(identity)
     }),
@@ -239,10 +242,38 @@ function feedItems(
   return parsedItems
 }
 
+// Use only at individual article/landing boundaries, never required roots.
+// Parsing and identity validation remain outside this transport-only catch.
+async function fetchCandidatePage(
+  fetcher: typeof fetch,
+  url: string
+): Promise<OfficialPage | null> {
+  try {
+    return await fetchOfficialPage(fetcher, url)
+  } catch (error) {
+    if (error instanceof AdapterError &&
+        (/^HTTP_\d{3}$/.test(error.code) ||
+          error.code === 'SOURCE_TIMEOUT')) return null
+    if (error instanceof AdapterError && error.code === 'SOURCE_FETCH_FAILED') {
+      // The shared code also wraps application errors. Only recognized native
+      // fetch network signatures permit omission; preserve all other causes.
+      const cause = error.cause
+      if (cause instanceof TypeError &&
+          /^(?:fetch failed|Failed to fetch|NetworkError when attempting to fetch resource\.)$|^(?:Fetch failed: |error sending request for url \()/.test(cause.message)) return null
+      throw cause ?? error
+    }
+    throw error
+  }
+}
+
 async function discoverNewsCandidates(
   fetcher: typeof fetch,
   feedXml: string
-): Promise<readonly CampaignCandidate[]> {
+): Promise<Readonly<{
+  candidates: readonly CampaignCandidate[]
+  failedArticleIdentities: ReadonlySet<string>
+}>> {
+  const failedArticleIdentities = new Set<string>()
   const candidates = feedItems(feedXml).filter((item) => {
     const describedCampaign = campaignLinks(
       item.description,
@@ -257,13 +288,17 @@ async function discoverNewsCandidates(
 
   const settled = await Promise.allSettled(
     candidates.map(async (item): Promise<readonly CampaignCandidate[]> => {
-      const article = await fetchOfficialPage(fetcher, item.link)
-      const articleUrl = normalizedGogUrl(article.url) ?? item.link
-      if (!isNewsArticleUrl(articleUrl)) {
-        throw new AdapterError(
-          'OFFICIAL_CAMPAIGN_DISCOVERY_UNAVAILABLE',
-          'A GOG News campaign article no longer resolves to GOG News'
-        )
+      const article = await fetchCandidatePage(fetcher, item.link)
+      if (!article) {
+        failedArticleIdentities.add(campaignIdentityUrl(item.link)!.toLowerCase())
+        return []
+      }
+      const articleUrl = normalizedGogUrl(article.url)
+      if (!articleUrl || !isNewsArticleUrl(articleUrl) ||
+          campaignIdentityUrl(articleUrl) !== campaignIdentityUrl(item.link)) {
+        // The final destination controls authority, never the pre-redirect URL.
+        failedArticleIdentities.add(campaignIdentityUrl(item.link)!.toLowerCase())
+        return []
       }
 
       const articleTitle = extractMeta(article.text, 'og:title') ?? item.title
@@ -278,9 +313,12 @@ async function discoverNewsCandidates(
   )
   const rejected = settled.find((result) => result.status === 'rejected')
   if (rejected?.status === 'rejected') throw rejected.reason
-  return settled.flatMap((result) =>
-    result.status === 'fulfilled' ? result.value : []
-  )
+  return {
+    candidates: settled.flatMap((result) =>
+      result.status === 'fulfilled' ? result.value : []
+    ),
+    failedArticleIdentities,
+  }
 }
 
 function gogCampaignDesktopArtwork(html: string): string | undefined {
@@ -522,14 +560,36 @@ async function verifyCandidates(
   now: Date,
   fetcher: typeof fetch,
   candidates: readonly CampaignCandidate[],
-  knownCampaigns: readonly KnownCampaign[]
-): Promise<readonly DetectedCampaign[]> {
+  knownCampaigns: readonly KnownCampaign[],
+  hasUnresolvedArticles: boolean
+): Promise<Readonly<{
+  campaigns: readonly DetectedCampaign[]
+  rejectedIdentities: ReadonlySet<string>
+}>> {
   const knownSourceUids = knownSourceUidsByIdentity(knownCampaigns)
+  const rejectedIdentities = new Set<string>()
   const settled = await Promise.allSettled(
     candidates.map(async (candidate): Promise<DetectedCampaign | null> => {
-      const page = await fetchOfficialPage(fetcher, candidate.officialUrl)
+      const rejectIdentity = (): null => {
+        // Structured promotion identity is required evidence, not an auxiliary
+        // Home/News guess. Its broken landing must remain an explicit failure.
+        if (candidate.promotionName) {
+          throw new AdapterError('OFFICIAL_CAMPAIGN_DISCOVERY_UNAVAILABLE',
+            'A structured GOG promotion no longer exposes compatible campaign identity')
+        }
+        rejectedIdentities.add(campaignIdentityUrl(candidate.officialUrl)!.toLowerCase())
+        return null
+      }
+      const page = await fetchCandidatePage(fetcher, candidate.officialUrl)
+      if (!page) {
+        // Even a structured tab still needs its own successful landing under
+        // the current contract. Omit it, never fabricate it from the tab alone.
+        rejectedIdentities.add(campaignIdentityUrl(candidate.officialUrl)!.toLowerCase())
+        return null
+      }
       const identityUrl = campaignIdentityUrl(page.url || candidate.officialUrl)
-      if (!identityUrl || !isCampaignPageUrl(identityUrl)) return null
+      if (!identityUrl || !isCampaignPageUrl(identityUrl) ||
+          identityUrl.toLowerCase() !== campaignIdentityUrl(candidate.officialUrl)!.toLowerCase()) return rejectIdentity()
 
       if (gogPromoPageEvidence(page, candidate.officialUrl, candidate.promotionName ?? candidate.label).kind === 'generic') return null
 
@@ -539,10 +599,7 @@ async function verifyCandidates(
         /<script\b[^>]*id=["']gogcom-store-state["'][^>]*>/i.test(page.text) ||
         extractMeta(page.text, 'og:title') !== null
       if (!name || !pageRecognized) {
-        throw new AdapterError(
-          'OFFICIAL_CAMPAIGN_DISCOVERY_UNAVAILABLE',
-          'A linked GOG campaign page no longer exposes recognizable campaign identity'
-        )
+        return rejectIdentity()
       }
 
       const publication = candidate.articleHtml
@@ -626,7 +683,12 @@ async function verifyCandidates(
     )
   }
 
-  return [...merged.values()]
+  if (![...merged.values()].some(entry => entry.state !== 'ended') &&
+      (rejectedIdentities.size > 0 || hasUnresolvedArticles)) {
+    throw new AdapterError('OFFICIAL_CAMPAIGN_DISCOVERY_UNAVAILABLE',
+      'GOG discovery contains unresolved campaign candidates without independently verified campaigns')
+  }
+  return { campaigns: [...merged.values()], rejectedIdentities }
 }
 
 async function verifyKnownGogCampaigns(
@@ -689,11 +751,11 @@ async function verifyKnownGogCampaigns(
     [...byUrl.entries()].map(
       async ([officialUrl, knownAtUrl]) => {
         const page =
-          await fetchOfficialPage(
+          await fetchCandidatePage(
             fetcher,
             officialUrl
           )
-        if (campaignIdentityUrl(page.url) !== campaignIdentityUrl(officialUrl)) return []
+        if (!page || campaignIdentityUrl(page.url) !== campaignIdentityUrl(officialUrl)) return []
         return knownAtUrl.flatMap((known) => {
           const evidence = gogPromoPageEvidence(page, officialUrl, known.name)
           return gogCampaignExplicitlyEnded(page.text) ||
@@ -704,6 +766,8 @@ async function verifyKnownGogCampaigns(
     )
   )
 
+  const rejected = settled.find(result => result.status === 'rejected')
+  if (rejected?.status === 'rejected') throw rejected.reason
   return uniqueBy(
     [
       ...historicalSourceUids,
@@ -731,8 +795,8 @@ async function enrichKnownGogCampaigns(
     isCampaignPageUrl(known.officialUrl) &&
     !detected.find(entry => entry.sourceUid === known.sourceUid)?.ends
   ).map(async (known): Promise<DetectedCampaign | null> => {
-    const article = await fetchOfficialPage(fetcher, known.sourceUrl)
-    if (campaignIdentityUrl(article.url) !== campaignIdentityUrl(known.sourceUrl)) return null
+    const article = await fetchCandidatePage(fetcher, known.sourceUrl)
+    if (!article || campaignIdentityUrl(article.url) !== campaignIdentityUrl(known.sourceUrl)) return null
     // Scope timing to the saved announcement, never page navigation or related news.
     const body = /<article\b[^>]*>([\s\S]*?)<\/article>/i.exec(article.text)?.[1]
     if (!body) return null
@@ -754,8 +818,8 @@ async function enrichKnownGogCampaigns(
     const uniqueEnds = uniqueBy(boundaries, end => end.value)
     if (uniqueEnds.length !== 1) return null
     const ends = uniqueEnds[0]
-    const page = await fetchOfficialPage(fetcher, known.officialUrl)
-    if (campaignIdentityUrl(page.url) !== campaignIdentityUrl(known.officialUrl) ||
+    const page = await fetchCandidatePage(fetcher, known.officialUrl)
+    if (!page || campaignIdentityUrl(page.url) !== campaignIdentityUrl(known.officialUrl) ||
         gogCampaignExplicitlyEnded(page.text)) return null
     const headings = [...page.text.matchAll(/<h[1-3]\b[^>]*>([\s\S]*?)<\/h[1-3]>/gi)]
       .map(match => textFromHtml(match[1]))
@@ -775,7 +839,9 @@ async function enrichKnownGogCampaigns(
       artworkUrl: current?.artworkUrl,
     })
   }))
-  // Auxiliary source failures preserve the existing row and current discovery.
+  const rejected = settled.find(result => result.status === 'rejected')
+  if (rejected?.status === 'rejected') throw rejected.reason
+  // Expected transport failures preserve the row; unexpected errors propagate.
   const enriched = settled.flatMap(result => result.status === 'fulfilled' && result.value ? [result.value] : [])
   return uniqueBy([...enriched, ...detected], entry => entry.sourceUid)
 }
@@ -800,14 +866,24 @@ export const runGogAdapter: StoreAdapter = async ({
       sourceUrl: HOME_URL,
     })
   )
-  const newsCandidates = await discoverNewsCandidates(fetch, feedXml)
-  const detected = await verifyCandidates(
+  const { candidates: newsCandidates, failedArticleIdentities } = await discoverNewsCandidates(fetch, feedXml)
+  const { campaigns: detected, rejectedIdentities } = await verifyCandidates(
     now,
     fetch,
     [...currentCandidates, ...homeCandidates, ...newsCandidates],
-    knownCampaigns
+    knownCampaigns,
+    failedArticleIdentities.size > 0
   )
-  const campaigns = await enrichKnownGogCampaigns(fetch, knownCampaigns, detected, now)
+  // Rejection is not END evidence. Do not reinterpret the same unresolved
+  // landing through auxiliary enrichment or known-campaign retirement.
+  const verifiableKnown = knownCampaigns.filter(known =>
+    !failedArticleIdentities.has(campaignIdentityUrl(known.sourceUrl)?.toLowerCase() ?? '') &&
+    ![known.sourceUid, known.officialUrl].some(value => {
+      const identity = campaignIdentityUrl(value)
+      return identity !== null && rejectedIdentities.has(identity.toLowerCase())
+    })
+  )
+  const campaigns = await enrichKnownGogCampaigns(fetch, verifiableKnown, detected, now)
   const currentSourceUids =
     new Set(
       campaigns.map(
@@ -819,7 +895,7 @@ export const runGogAdapter: StoreAdapter = async ({
     (
       await verifyKnownGogCampaigns(
         fetch,
-        knownCampaigns.filter((known) =>
+        verifiableKnown.filter((known) =>
           !currentSourceUids.has(known.sourceUid) &&
           !currentCandidates.some(candidate =>
             campaignIdentityUrl(candidate.officialUrl) === campaignIdentityUrl(known.officialUrl)

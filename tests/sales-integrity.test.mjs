@@ -1,9 +1,11 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import { readFile } from 'node:fs/promises'
+import { createServer } from 'node:net'
 import { campaignKeysToEnd } from '../supabase/functions/campaign-monitoring/_shared/reconcile.ts'
 import { campaignBaseRow } from '../supabase/functions/campaign-monitoring/_shared/persistence.ts'
 import { runGogAdapter } from '../supabase/functions/campaign-monitoring/adapters/gog.ts'
+import { AdapterError } from '../supabase/functions/campaign-monitoring/_shared/types.ts'
 import { runMicrosoftStoreAdapter } from '../supabase/functions/campaign-monitoring/adapters/microsoft-store.ts'
 import { runNintendoEshopAdapter } from '../supabase/functions/campaign-monitoring/adapters/nintendo-eshop.ts'
 import { nintendoStoreEnd } from '../supabase/functions/campaign-monitoring/_shared/nintendo-store-timing.ts'
@@ -100,6 +102,382 @@ test('persist path supplies the same known identity and all temporal columns to 
 const gogCurrent = 'https://www.gog.com/en/now_on_sale?countryCode=US&locale=en-US&currencyCode=USD'
 const gogHome = '<script id="gogcom-store-state">{}</script><promo-banner-section></promo-banner-section>'
 const gogFeed = '<rss><channel><title>GOG.com News</title></channel></rss>'
+
+const isolationUrl = 'https://www.gog.com/promo/independent_sale'
+const auxiliaryUrl = 'https://www.gog.com/promo/mystery_sale'
+async function gogIsolation(options = {}) {
+  const calls = []
+  const result = await runGogAdapter({ now: options.now ?? now, knownCampaigns: options.knownCampaigns ?? [], fetch: async input => {
+    const url = String(input); calls.push(url)
+    if (url === gogCurrent) return options.current ?? Response.json({ tabs: options.tabs ?? [
+      { title: 'Independent Sale', bigThingy: { url: isolationUrl, text: 'Independent Sale' } },
+    ] })
+    if (url === 'https://www.gog.com/en/') return options.home ?? new Response(gogHome +
+      `<a href="${options.auxiliaryUrl ?? auxiliaryUrl}">Discover these adventures</a>`)
+    if (url.endsWith('/frontpage/rss')) return options.feed ?? new Response(gogFeed)
+    if (url === isolationUrl) return new Response(options.validPage ?? '<h1>Independent Sale</h1><p>The sale ends September 20, 2026 at 10:00 UTC.</p>', { status: options.validStatus ?? 200 })
+    if (options.tabs?.some(tab => tab.bigThingy.url === url)) return new Response('<title>GOG.COM</title><h1>Campaign selection</h1>')
+    assert.equal(url, options.auxiliaryUrl ?? auxiliaryUrl)
+    if (options.auxError) throw options.auxError
+    const response = new Response(options.page ?? '<title>GOG.COM</title><meta property="og:title" content="GOG.COM"><h1>New adventures have arrived</h1><p>Special launch discounts on individual games.</p>', { status: options.status ?? 200 })
+    Object.defineProperty(response, 'url', { value: options.finalUrl ?? url })
+    return response
+  } })
+  return { result, calls }
+}
+
+test('GOG candidate isolation retains a valid tab beside an ambiguous auxiliary landing', async () => {
+  const { result } = await gogIsolation()
+  assert.deepEqual(result.campaigns.map(c => c.name), ['Independent Sale'])
+  assert.deepEqual(result.explicitlyEndedSourceUids, [])
+})
+
+test('GOG candidate isolation excludes promo-path-only launch discounts without fetching products', async () => {
+  const launch = 'https://www.gog.com/promo/launch_new_adventures'
+  const { result, calls } = await gogIsolation({ auxiliaryUrl: launch, tabs: [] })
+  assert.deepEqual(result.campaigns, [])
+  assert.equal(calls.includes(launch), false)
+  assert.equal(calls.some(url => url.includes('/game/')), false)
+})
+
+test('GOG candidate isolation preserves multiple structured campaigns and exact timing', async () => {
+  const tabs = [promo('Independent Sale', 'independent_sale'), promo('Arcade Promo', 'arcade_promo')]
+  const { result } = await gogIsolation({ tabs })
+  assert.deepEqual(result.campaigns.map(c => c.name), ['Independent Sale', 'Arcade Promo'])
+  assert.deepEqual(result.campaigns[0].ends, exact('2026-09-20T10:00:00+00:00'))
+})
+
+test('GOG candidate isolation cannot turn unresolved discovery into healthy zero', async () => {
+  await assert.rejects(gogIsolation({ tabs: [] }), error =>
+    error.code === 'OFFICIAL_CAMPAIGN_DISCOVERY_UNAVAILABLE' && /unresolved/.test(error.message))
+})
+
+test('GOG candidate isolation preserves required source HTTP failures', async () => {
+  for (const key of ['current', 'home', 'feed']) {
+    await assert.rejects(gogIsolation({ [key]: new Response('Unavailable', { status: 503 }) }),
+      error => error.code === 'HTTP_503')
+  }
+  await assert.rejects(gogIsolation({ current: Response.json({ tabs: [{}] }) }),
+    error => error.code === 'OFFICIAL_CAMPAIGN_DISCOVERY_UNAVAILABLE')
+})
+
+test('GOG HTTP isolation retains a valid campaign beside an auxiliary 503', async () => {
+  const { result } = await gogIsolation({ status: 503 })
+  assert.deepEqual(result.campaigns.map(c => c.name), ['Independent Sale'])
+  assert.equal(result.coverage, 'partial')
+  assert.deepEqual(result.explicitlyEndedSourceUids, [])
+})
+
+for (const [label, options] of [
+  ['404', { status: 404 }],
+  ['timeout', { auxError: new DOMException('Timed out', 'AbortError') }],
+  ['network', { auxError: new TypeError('fetch failed') }],
+]) {
+  test(`GOG HTTP isolation retains independent campaigns after auxiliary ${label}`, async () => {
+    const { result, calls } = await gogIsolation({ ...options, tabs: [
+      promo('Independent Sale', 'independent_sale'), promo('Arcade Promo', 'arcade_promo'),
+    ], knownCampaigns: [{ campaignKey: 'aux', sourceUid: auxiliaryUrl, officialUrl: auxiliaryUrl,
+      sourceUrl: 'https://www.gog.com/en/', name: 'Mystery Sale', state: 'live' }] })
+    assert.deepEqual(result.campaigns.map(c => c.name), ['Independent Sale', 'Arcade Promo'])
+    assert.equal(result.coverage, 'partial')
+    assert.deepEqual(result.explicitlyEndedSourceUids, [])
+    assert.equal(calls.filter(url => url === auxiliaryUrl).length, 1)
+  })
+}
+
+test('GOG HTTP isolation omits a failed structured landing without erasing a verified peer', async () => {
+  const { result } = await gogIsolation({ validStatus: 503, tabs: [
+    promo('Independent Sale', 'independent_sale'), promo('Arcade Promo', 'arcade_promo'),
+  ] })
+  assert.deepEqual(result.campaigns.map(c => c.name), ['Arcade Promo'])
+  assert.equal(result.coverage, 'partial')
+  assert.deepEqual(result.explicitlyEndedSourceUids, [])
+})
+
+test('GOG HTTP isolation never reports empty success when all usable candidates fail', async () => {
+  for (const options of [{ tabs: [], status: 404 }, { validStatus: 503, status: 503 },
+    { validPage: '<h1>Independent Sale</h1><p>The sale ends September 1, 2026 at 10:00 UTC.</p>', status: 503 }]) {
+    await assert.rejects(gogIsolation(options), error =>
+      error.code === 'OFFICIAL_CAMPAIGN_DISCOVERY_UNAVAILABLE' && /unresolved/.test(error.message))
+  }
+})
+
+test('GOG HTTP isolation does not hide unexpected resolution errors', async () => {
+  const brokenClock = new Date(now)
+  brokenClock.getTime = () => { throw new Error('unexpected lifecycle defect') }
+  await assert.rejects(gogIsolation({ now: brokenClock, status: 503 }), /unexpected lifecycle defect/)
+  await assert.rejects(gogIsolation({ auxError: new AdapterError('INVALID_ADAPTER_OUTPUT', 'unexpected contract defect') }),
+    error => error.code === 'INVALID_ADAPTER_OUTPUT')
+})
+
+test('GOG HTTP isolation still rejects required root failures and malformed root contracts', async () => {
+  for (const key of ['home', 'feed', 'current']) {
+    await assert.rejects(gogIsolation({ [key]: new Response('unavailable', { status: 503 }) }),
+      error => error.code === 'HTTP_503')
+    await assert.rejects(gogIsolation({ [key]: new Response('unrecognized root') }),
+      error => error.code === 'OFFICIAL_CAMPAIGN_DISCOVERY_UNAVAILABLE')
+  }
+})
+
+const goodArticle = 'https://www.gog.com/en/news/independent_sale'
+const failedArticle = 'https://www.gog.com/en/news/another_sale'
+async function gogNewsFailure({ tabs = [], includeGood = true, articleError, articleStatus = 503,
+  articleLanding = isolationUrl, landingError, knownCampaigns = [] } = {}) {
+  const calls = []
+  const result = await runGogAdapter({ now, knownCampaigns, fetch: async input => {
+    const url = String(input); calls.push(url)
+    if (url === gogCurrent) return Response.json({ tabs })
+    if (url === 'https://www.gog.com/en/') return new Response(`${gogHome}<a href="${auxiliaryUrl}">Mystery Sale</a>`)
+    if (url.endsWith('/frontpage/rss')) return new Response(gogFeed.replace('</channel>',
+      [...(includeGood ? [goodArticle] : []), failedArticle].map(link =>
+        `<item><title>Publisher Sale</title><link>${link}</link><description></description></item>`).join('') + '</channel>'))
+    if (url === goodArticle) return new Response(`<h1>Independent Sale</h1><a href="${articleLanding}">Independent Sale</a>`)
+    if (url === failedArticle) {
+      if (articleError) throw articleError
+      return new Response('Unavailable', { status: articleStatus })
+    }
+    if (url === isolationUrl) return new Response('<h1>Independent Sale</h1>')
+    assert.equal(url, auxiliaryUrl)
+    if (landingError) throw landingError
+    return new Response('Unavailable', { status: 404 })
+  } })
+  return { result, calls }
+}
+
+for (const [label, options] of [
+  ['404', { articleStatus: 404 }], ['503', {}],
+  ['timeout', { articleError: new DOMException('Timed out', 'AbortError') }],
+  ['network', { articleError: new TypeError('fetch failed') }],
+]) {
+  test(`GOG HTTP isolation keeps independent News evidence after article ${label} and Home failure`, async () => {
+    const { result } = await gogNewsFailure(options)
+    assert.deepEqual(result.campaigns.map(c => c.name), ['Independent Sale'])
+    assert.equal(result.campaigns[0].sourceUrl, goodArticle)
+    assert.equal(result.coverage, 'partial')
+    assert.deepEqual(result.explicitlyEndedSourceUids, [])
+  })
+}
+
+test('GOG HTTP isolation keeps tabs after a News article failure and protects its saved identity', async () => {
+  const { result, calls } = await gogNewsFailure({ includeGood: false,
+    tabs: [promo('Independent Sale', 'independent_sale')],
+    knownCampaigns: [{ campaignKey: 'old', sourceUid: 'https://www.gog.com/promo/old_sale',
+      officialUrl: 'https://www.gog.com/promo/old_sale', sourceUrl: failedArticle,
+      name: 'Old Sale', state: 'live' }],
+  })
+  assert.deepEqual(result.campaigns.map(c => c.name), ['Independent Sale'])
+  assert.deepEqual(result.explicitlyEndedSourceUids, [])
+  assert.equal(calls.includes('https://www.gog.com/promo/old_sale'), false)
+  assert.equal(calls.filter(url => url === failedArticle).length, 1)
+})
+
+test('GOG HTTP isolation fails closed when News articles fail without independent coverage', async () => {
+  await assert.rejects(gogNewsFailure({ includeGood: false }),
+    error => error.code === 'OFFICIAL_CAMPAIGN_DISCOVERY_UNAVAILABLE')
+})
+
+test('GOG HTTP isolation preserves tabs when a News-linked landing times out', async () => {
+  const { result } = await gogNewsFailure({ tabs: [promo('Independent Sale', 'independent_sale')],
+    articleLanding: auxiliaryUrl, landingError: new DOMException('Timed out', 'AbortError') })
+  assert.deepEqual(result.campaigns.map(c => c.sourceUid), [isolationUrl])
+  assert.equal(result.coverage, 'partial')
+  assert.deepEqual(result.explicitlyEndedSourceUids, [])
+})
+
+test('GOG HTTP isolation propagates unexpected News contract errors', async () => {
+  await assert.rejects(gogNewsFailure({ articleError: new AdapterError('INVALID_ADAPTER_OUTPUT', 'unexpected article defect') }),
+    error => error.code === 'INVALID_ADAPTER_OUTPUT')
+})
+
+async function gogArticleProvenance({ finalUrl = 'https://example.com/untrusted-article', independent = true,
+  articleError, bodyError, rootError, rootUrl = gogCurrent } = {}) {
+  const calls = []
+  const known = { campaignKey: 'aux', sourceUid: auxiliaryUrl, officialUrl: auxiliaryUrl,
+    sourceUrl: goodArticle, name: 'Mystery Sale', state: 'live' }
+  const result = await runGogAdapter({ now, knownCampaigns: [known], fetch: async input => {
+    const url = String(input); calls.push(url)
+    if (url === rootUrl && rootError) throw rootError
+    if (url === gogCurrent) return Response.json({ tabs: independent ? [promo('Independent Sale', 'independent_sale')] : [] })
+    if (url === 'https://www.gog.com/en/') return new Response(gogHome)
+    if (url.endsWith('/frontpage/rss')) return new Response(gogFeed.replace('</channel>',
+      `<item><title>Mystery Sale</title><link>${goodArticle}</link><description></description></item></channel>`))
+    if (url === isolationUrl) return new Response('<h1>Independent Sale</h1>')
+    if (url === goodArticle) {
+      if (articleError) throw articleError
+      const response = new Response(`<meta property="og:title" content="Mystery Sale">
+        <meta property="og:image" content="https://images.gog.com/untrusted.jpg">
+        <a href="${auxiliaryUrl}">Mystery Sale</a><p>The sale ends September 20, 2026 at 10:00 UTC.</p>`)
+      Object.defineProperty(response, 'url', { value: finalUrl })
+      if (bodyError) response.text = async () => { throw bodyError }
+      return response
+    }
+    assert.equal(url, auxiliaryUrl)
+    return new Response('<h1>Mystery Sale</h1>')
+  } })
+  return { result, calls }
+}
+
+test('GOG provenance rejects external News content before identity, timing, artwork or END', async () => {
+  const { result, calls } = await gogArticleProvenance()
+  assert.deepEqual(result.campaigns.map(c => c.sourceUid), [isolationUrl])
+  assert.equal(result.campaigns[0].ends, undefined)
+  assert.equal(result.campaigns[0].artworkUrl, 'https://images-1.gog-statics.com/campaign.jpg')
+  assert.deepEqual(result.explicitlyEndedSourceUids, [])
+  assert.equal(calls.includes(auxiliaryUrl), false)
+  assert.equal(calls.filter(url => url === goodArticle).length, 1)
+})
+
+test('GOG unexpected errors propagate an auxiliary ReferenceError unchanged', async () => {
+  const error = new ReferenceError('unexpected fetch wrapper defect')
+  await assert.rejects(gogIsolation({ auxError: error }), caught => caught === error)
+})
+
+for (const finalUrl of [goodArticle, 'https://gog.com/es/news/independent_sale?source=test',
+  'https://www.gog.com/news/independent_sale', 'https://www.gog.com/de/news/independent_sale/']) {
+  test(`GOG provenance accepts equivalent official article ${finalUrl}`, async () => {
+    const { result } = await gogArticleProvenance({ finalUrl })
+    const articleCampaign = result.campaigns.find(c => c.sourceUid === auxiliaryUrl)
+    assert.deepEqual(articleCampaign.ends, exact('2026-09-20T10:00:00+00:00'))
+    assert.equal(new URL(articleCampaign.sourceUrl).hostname, 'www.gog.com')
+    assert.deepEqual(result.explicitlyEndedSourceUids, [])
+  })
+}
+
+for (const finalUrl of ['https://www.gog.com/promo/unrelated_sale', 'https://www.gog.com/en/news/unrelated_sale']) {
+  test(`GOG provenance isolates incompatible article ${finalUrl}`, async () => {
+    const { result, calls } = await gogArticleProvenance({ finalUrl })
+    assert.deepEqual(result.campaigns.map(c => c.sourceUid), [isolationUrl])
+    assert.deepEqual(result.explicitlyEndedSourceUids, [])
+    assert.equal(calls.includes(auxiliaryUrl), false)
+  })
+}
+
+test('GOG provenance fails closed after external News redirect without independent coverage', async () => {
+  await assert.rejects(gogArticleProvenance({ independent: false }),
+    error => error.code === 'OFFICIAL_CAMPAIGN_DISCOVERY_UNAVAILABLE')
+})
+
+for (const error of [new ReferenceError('wrapper bug'), new TypeError('invalid adapter value'),
+  new SyntaxError('parser bug'), new Error('invariant violation')]) {
+  for (const field of ['articleError', 'bodyError']) {
+    test(`GOG unexpected errors propagate ${error.name} from News ${field}`, async () => {
+      await assert.rejects(gogArticleProvenance({ [field]: error }), caught => caught === error)
+    })
+  }
+  test(`GOG unexpected errors propagate landing ${error.name}`, async () => {
+    await assert.rejects(gogIsolation({ auxError: error }), caught => caught === error)
+  })
+}
+
+for (const rootUrl of [gogCurrent, 'https://www.gog.com/en/', 'https://www.gog.com/frontpage/rss']) {
+  test(`GOG unexpected errors and network errors never make required root healthy: ${rootUrl}`, async () => {
+    for (const rootError of [new ReferenceError('root defect'), new TypeError('fetch failed')]) {
+      await assert.rejects(gogArticleProvenance({ rootUrl, rootError }),
+        error => error.code === 'SOURCE_FETCH_FAILED' && error.cause === rootError)
+    }
+  })
+}
+
+test('GOG transport control isolates an actual native fetch socket failure', async () => {
+  const server = createServer(socket => socket.destroy())
+  await new Promise(resolve => server.listen(0, '127.0.0.1', resolve))
+  try {
+    let networkError
+    try { await fetch(`http://127.0.0.1:${server.address().port}/`) } catch (error) { networkError = error }
+    assert.equal(networkError instanceof TypeError, true)
+    assert.equal(networkError.message, 'fetch failed')
+    assert.equal(['UND_ERR_SOCKET', 'ECONNRESET'].includes(networkError.cause.code), true)
+    const { result } = await gogIsolation({ auxError: networkError })
+    assert.deepEqual(result.campaigns.map(c => c.sourceUid), [isolationUrl])
+    assert.equal(result.coverage, 'partial')
+    assert.deepEqual(result.explicitlyEndedSourceUids, [])
+  } finally { await new Promise(resolve => server.close(resolve)) }
+})
+
+test('GOG transport control accepts recognized Deno network signatures', async () => {
+  for (const message of ['Fetch failed: connection reset', 'error sending request for url (https://www.gog.com/): connection reset']) {
+    const { result } = await gogIsolation({ auxError: new TypeError(message) })
+    assert.deepEqual(result.campaigns.map(c => c.sourceUid), [isolationUrl])
+    assert.deepEqual(result.explicitlyEndedSourceUids, [])
+  }
+})
+
+test('GOG unexpected errors in secondary enrichment and retirement propagate', async () => {
+  for (const sourceUrl of ['https://www.gog.com/en/news/saved_sale', 'https://www.gog.com/en/']) {
+    const defect = new ReferenceError('secondary verification defect')
+    await assert.rejects(runGogAdapter({ now,
+      knownCampaigns: [{ campaignKey: 'saved', sourceUid: auxiliaryUrl, officialUrl: auxiliaryUrl,
+        sourceUrl, name: 'Mystery Sale', state: 'live' }], fetch: async input => {
+        const url = String(input)
+        if (url === gogCurrent) return Response.json({ tabs: [] })
+        if (url === 'https://www.gog.com/en/') return new Response(gogHome)
+        if (url.endsWith('/frontpage/rss')) return new Response(gogFeed)
+        throw defect
+      } }), error => error === defect)
+  }
+})
+
+test('GOG candidate isolation does not hide broken structured landing authority', async () => {
+  await assert.rejects(gogIsolation({ validPage: '<main>Unavailable</main>' }),
+    error => error.code === 'OFFICIAL_CAMPAIGN_DISCOVERY_UNAVAILABLE' && /structured/.test(error.message))
+})
+
+for (const finalUrl of ['https://example.com/promo/mystery_sale', 'https://www.gog.com/promo/unrelated_sale', 'https://www.gog.com/en/']) {
+  test(`GOG candidate isolation rejects incompatible redirect ${finalUrl}`, async () => {
+    const { result } = await gogIsolation({ finalUrl, page: '<h1>Unrelated Sale</h1>' })
+    assert.deepEqual(result.campaigns.map(c => c.name), ['Independent Sale'])
+    assert.deepEqual(result.explicitlyEndedSourceUids, [])
+  })
+}
+
+test('GOG candidate isolation preserves compatible locale identity and metadata recognition', async () => {
+  const known = { campaignKey: 'aux', sourceUid: auxiliaryUrl.replace('/promo/', '/en/promo/'),
+    officialUrl: auxiliaryUrl, sourceUrl: 'https://www.gog.com/en/', name: 'Mystery Sale', state: 'live' }
+  const { result } = await gogIsolation({ knownCampaigns: [known], finalUrl: auxiliaryUrl.replace('/promo/', '/es/promo/'),
+    page: '<title>GOG.COM</title><meta property="og:title" content="Mystery Sale">' })
+  assert.equal(result.campaigns[1].sourceUid, known.sourceUid)
+  assert.equal(result.campaigns[1].name, 'Mystery Sale')
+})
+
+test('GOG candidate isolation never turns rejected known identity into END or invented timing', async () => {
+  const known = { campaignKey: 'aux', sourceUid: auxiliaryUrl, officialUrl: auxiliaryUrl,
+    sourceUrl: 'https://www.gog.com/en/', name: 'Mystery Sale', state: 'live',
+    startsOn: '2026-09-01', endsOn: '2026-09-20' }
+  const { result, calls } = await gogIsolation({ knownCampaigns: [known] })
+  assert.deepEqual(result.explicitlyEndedSourceUids, [])
+  assert.equal(calls.filter(url => url === auxiliaryUrl).length, 1)
+  assert.deepEqual(campaignKeysToEnd({ sourceSucceeded: true, coverage: result.coverage,
+    activeCampaigns: [{ campaign_key: known.campaignKey, source_uid: known.sourceUid, ends_at: null, ends_on: known.endsOn }],
+    detectedCampaigns: result.campaigns, explicitlyEndedSourceUids: result.explicitlyEndedSourceUids, now }), [])
+  assert.deepEqual([known.startsOn, known.endsOn, known.startsAt, known.endsAt],
+    ['2026-09-01', '2026-09-20', undefined, undefined])
+})
+
+test('GOG candidate isolation retains an independent News campaign without structured tabs', async () => {
+  const article = 'https://www.gog.com/en/news/independent_sale'
+  const result = await runGogAdapter({ now, fetch: async input => {
+    const url = String(input)
+    if (url === gogCurrent) return Response.json({ tabs: [] })
+    if (url === 'https://www.gog.com/en/') return new Response(`${gogHome}<a href="${auxiliaryUrl}">Browse</a>`)
+    if (url.endsWith('/frontpage/rss')) return new Response(gogFeed.replace('</channel>',
+      `<item><title>Independent Sale</title><link>${article}</link><description></description></item></channel>`))
+    if (url === article) return new Response(`<h1>Independent Sale</h1><a href="${isolationUrl}">Independent Sale</a>`)
+    if (url === isolationUrl) return new Response('<h1>Independent Sale</h1>')
+    assert.equal(url, auxiliaryUrl)
+    return new Response('<meta property="og:title" content="GOG.COM"><h1>New adventures</h1>')
+  } })
+  assert.deepEqual(result.campaigns.map(c => c.name), ['Independent Sale'])
+  assert.equal(result.campaigns[0].sourceUrl, article)
+})
+
+test('GOG candidate isolation preserves saved calendar timing through persistence without inventing hours', async () => {
+  const known = { campaignKey: 'valid', sourceUid: isolationUrl, officialUrl: isolationUrl,
+    sourceUrl: gogCurrent, name: 'Independent Sale', state: 'live', startsOn: '2026-09-01', endsOn: '2026-09-20' }
+  const { result } = await gogIsolation({ knownCampaigns: [known], validPage: '<h1>Independent Sale</h1>' })
+  const saved = campaignBaseRow(result.campaigns[0], known.campaignKey, now.toISOString(), known)
+  assert.deepEqual([saved.starts_on, saved.ends_on, saved.starts_at, saved.ends_at],
+    ['2026-09-01', '2026-09-20', null, null])
+})
 const promo = (title, slug) => ({ title, bigThingy: { text: title,
   url: `https://www.gog.com/promo/${slug}`, background: '//images-1.gog-statics.com/campaign.jpg', countdownDate: 1 } })
 async function gog(tabs, { page = '<h1>42 games</h1><h2>games on sale</h2>', current, knownCampaigns = [] } = {}) {

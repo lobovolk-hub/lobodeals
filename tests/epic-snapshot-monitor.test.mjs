@@ -168,7 +168,7 @@ test('Epic health failure after commit cannot retroactively fail publication', a
   for (const call of calls.filter(c => c.path.endsWith('/sales_source_health'))) {
     assert.equal(Object.hasOwn(call.body, 'epic_public_scan_generation'), false)
     assert.equal(Object.hasOwn(call.body, 'epic_scan_generation_counter'), false)
-    assert.equal(call.body.adapter_version, '18')
+    assert.equal(call.body.adapter_version, '19')
   }
 })
 
@@ -180,7 +180,7 @@ test('Epic optional artwork uses a generation-guarded RPC and cannot fail core p
     assert.equal(artwork.body.p_generation, finalizations(calls)[0].body.p_generation)
     assert.ok(calls.indexOf(artwork) > calls.indexOf(finalizations(calls)[0]))
   }
-  const sql = await readFile('supabase/migrations/20261007185448_epic_public_snapshot.sql', 'utf8')
+  const sql = await readFile('supabase/migrations/20261007223743_epic_public_snapshot.sql', 'utf8')
   const artwork = sql.slice(sql.indexOf('create function public.apply_epic_scan_artwork'), sql.indexOf('create function public.read_sales_public_snapshot'))
   assert.match(artwork, /for update/)
   assert.ok(artwork.indexOf('pointer is distinct from p_generation::bigint') < artwork.indexOf('update public.sales_campaigns'))

@@ -172,7 +172,7 @@ test('EN/ES Home, Sales, platforms and profiles retain the single loader and ana
   assert.doesNotMatch(loader, /dataLayer|lobodeals_outbound_click|ui_language/)
 })
 
-const migrationPath = 'supabase/migrations/20261007185448_epic_public_snapshot.sql'
+const migrationPath = 'supabase/migrations/20261007223743_epic_public_snapshot.sql'
 test('Epic migration statically preserves additive NULL bootstrap and private writer permissions', async () => {
   const sql = await readFile(migrationPath, 'utf8')
   assert.equal((sql.match(/add column/g) || []).length, 3)

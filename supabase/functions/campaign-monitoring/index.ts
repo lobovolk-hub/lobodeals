@@ -4,6 +4,8 @@ import {
   SOURCE_URLS,
   STORE_SLUGS,
   type DetectedCampaign,
+  type AdapterDiagnostic,
+  type AdapterResult,
   type KnownCampaign,
   type SourceCoverage,
   type StoreSlug,
@@ -13,6 +15,7 @@ import {
   type ActiveCampaignIdentity,
 } from './_shared/reconcile.ts'
 import { verifyMonitorToken } from './_shared/auth.ts'
+import { ABSENCE_CONTRACTS, verifiedAbsentSourceUids, parseVisibilityPublication } from './_shared/operational-visibility.ts'
 import {
   toPublicAvailability,
   type HealthStatus,
@@ -33,7 +36,7 @@ import {
 } from './_shared/epic-snapshot-persistence.ts'
 
 const JSON_HEADERS = { 'Content-Type': 'application/json; charset=utf-8' }
-const ADAPTER_VERSION = '18'
+const ADAPTER_VERSION = '19'
 
 type MonitorRequest = Readonly<{
   mode?: 'probe' | 'persist'
@@ -50,6 +53,8 @@ type StoreOutcome = Readonly<{
   campaignsEnded: number
   coverage?: SourceCoverage
   sourceUrls?: readonly string[]
+  diagnostics?: readonly AdapterDiagnostic[]
+  absenceChecks?: AdapterResult['absenceChecks']
   campaigns: readonly Readonly<{
     sourceUid: string
     name: string
@@ -63,6 +68,9 @@ type StoreOutcome = Readonly<{
   errorCode?: string
   errorMessage?: string
   snapshotPublication?: EpicPublicationStatus
+  visibilityPublication?: EpicPublicationStatus
+  campaignsHidden?: number
+  campaignsOperationallyClosed?: number
 }>
 
 function jsonResponse(body: unknown, status = 200): Response {
@@ -457,7 +465,12 @@ export async function runStore(
           method: 'POST', body: '{}',
         })).json())
       : null
-    const activeBeforeRun = reservation?.known ?? await activeCampaigns(storeSlug)
+    const visibilityReservation = ABSENCE_CONTRACTS[storeSlug].length > 0 && mode === 'persist'
+      ? parseEpicReservation(await (await restRequest('rpc/reserve_sales_visibility_scan', {
+          method: 'POST', body: JSON.stringify({ p_store_slug: storeSlug }),
+        })).json())
+      : null
+    const activeBeforeRun = reservation?.known ?? visibilityReservation?.known ?? await activeCampaigns(storeSlug)
     const result = await adapters[storeSlug]({
       now,
       fetch,
@@ -506,10 +519,12 @@ export async function runStore(
       )
     }
 
+    const absentSourceUids = verifiedAbsentSourceUids(result, activeBeforeRun)
     const finishedAt = new Date().toISOString()
     let campaignsUpserted = 0
     let campaignsEnded = 0
     let snapshotPublication: EpicPublicationStatus | undefined
+    let visibilityPublication: ReturnType<typeof parseVisibilityPublication> | undefined
     if (mode === 'persist') {
       const endKeys = campaignKeysToEnd({
           sourceSucceeded: true,
@@ -549,12 +564,28 @@ export async function runStore(
             })))
           }
         }
+      } else if (visibilityReservation) {
+        const prepared = await Promise.all(result.campaigns.map(async entry => {
+          const key = await campaignKey(entry)
+          return { ...campaignBaseRow(entry, key, finishedAt, activeBeforeRun.find(c => c.campaignKey === key)),
+            ...(entry.artworkUrl ? { artwork_url: entry.artworkUrl } : {}) }
+        }))
+        visibilityPublication = parseVisibilityPublication(await (await restRequest('rpc/finalize_sales_visibility_scan', {
+          method: 'POST', body: JSON.stringify({ p_store_slug: storeSlug,
+            p_generation: visibilityReservation.generation, p_base_pointer: visibilityReservation.basePointer,
+            p_campaigns: prepared, p_end_keys: endKeys, p_absent_source_uids: absentSourceUids,
+            p_confirmed_at: finishedAt,
+          }),
+        }, true)).json())
+        campaignsUpserted = visibilityPublication.upserted
+        campaignsEnded = visibilityPublication.ended
       } else {
         campaignsUpserted = await upsertCampaigns(result.campaigns, finishedAt, activeBeforeRun)
         campaignsEnded = await endCampaigns(endKeys, finishedAt)
       }
     }
-    const snapshotConflict = snapshotPublication === 'obsolete' || snapshotPublication === 'baseline-conflict'
+    const snapshotConflict = [snapshotPublication, visibilityPublication?.status]
+      .some(status => status === 'obsolete' || status === 'baseline-conflict')
     if (mode === 'persist' && !snapshotConflict) {
       const healthWrite = updateHealth({
         store_slug: storeSlug,
@@ -571,7 +602,7 @@ export async function runStore(
         last_error_message: null,
         updated_at: finishedAt,
       })
-      if (reservation) {
+      if (reservation || visibilityReservation) {
         // Diagnostic failure cannot turn a committed snapshot into a failed scan.
         await healthWrite.catch(() => console.error(JSON.stringify({
           event: 'campaign-monitoring.health-write-failed', storeSlug,
@@ -589,10 +620,14 @@ export async function runStore(
       campaignsUpserted,
       campaignsEnded,
       ...(snapshotPublication ? { snapshotPublication } : {}),
-      ...(snapshotConflict ? { errorCode: 'EPIC_SNAPSHOT_CONFLICT',
-        errorMessage: 'Epic snapshot was not published; a new scan requires a new reservation and source fetch' } : {}),
+      ...(visibilityPublication ? { visibilityPublication: visibilityPublication.status,
+        campaignsHidden: visibilityPublication.hidden, campaignsOperationallyClosed: visibilityPublication.operationallyClosed } : {}),
+      ...(snapshotConflict ? { errorCode: visibilityPublication ? 'SALES_VISIBILITY_CONFLICT' : 'EPIC_SNAPSHOT_CONFLICT',
+        errorMessage: 'Snapshot was not published; a new scan requires a new reservation and source fetch' } : {}),
       coverage: result.coverage,
       sourceUrls: result.sourceUrls,
+      ...(result.diagnostics?.length ? { diagnostics: result.diagnostics } : {}),
+      ...(result.absenceChecks ? { absenceChecks: result.absenceChecks } : {}),
       campaigns: result.campaigns.map((entry) => ({
         sourceUid: entry.sourceUid,
         name: entry.name,

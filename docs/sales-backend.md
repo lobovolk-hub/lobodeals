@@ -37,6 +37,281 @@ before discovery; a failed scan may consume that counter without changing the
 published pointer. Successful Epic publication is atomic and rejects stale
 reservations; artwork writes are guarded by the published generation.
 
+## Visibility and operational closure — Johan decision, 12 October 2026 (local proposal)
+
+This later Product decision refines the incident findings below. A missing
+campaign still has no proven official END. A verified absence on its relevant
+official surface now authorizes immediate public hiding and, after 72 hours plus
+a fresh valid absence check, operational closure. No official date is inferred.
+Upcoming and campaigns with official end boundaries keep their existing rules.
+
+Resumed baseline: HEAD `0d42b39130b14e653ba976eef83999bf0c0a012a`, empty staging,
+12 modified tracked files and three untracked files. Seven tracked edits belong
+to Johan's protected prior work (About, EN/ES messages, monetization, next-env,
+bilingual-interactions and phase-8 tests); their SHA-256 hashes match the incident
+baseline. The prior PlayStation name correction, diagnostics, tests and incident
+documentation remain. The interrupted visibility work comprised changes to
+types, PlayStation, the monitor, and two new files (shared contract and migration).
+No unrelated code or production change was found during recovery.
+
+### Shared state and atomic publication
+
+The additive migration `20261012185056_sales_operational_visibility.sql` proposes
+two nullable campaign fields: `absence_started_at` and `operational_closed_at`.
+The existing `state` remains the last official lifecycle state; a non-null
+operational closure is a separate internal state, never an official end.
+Both fields default to NULL. There is no backfill from `last_confirmed_at`.
+First verified absence starts the clock and hides the row; later inconclusive
+or failed checks neither reset it nor close the campaign. Only another verified
+absence at least 72 hours later sets `operational_closed_at`. Fresh presence
+upserts the same campaign key, clears both fields, and preserves `first_seen_at`.
+Official END clears operational metadata and uses the existing lifecycle state.
+
+Two nullable source-health generation fields and two service-role-only RPCs
+reserve a scan and atomically publish campaign rows, official ENDs, visibility
+observations and the generation pointer. They reuse the existing two tables and
+the Epic reservation/publication pattern; there is no new table, scheduler,
+queue or service. Locks are held only within short database transactions, never
+during source HTTP. Same-generation retry is a no-op; stale generations and
+changed baselines cannot overwrite a newer result. A conflict requires a fresh
+reservation and source fetch, not retrying old evidence against a new baseline.
+Currently only PlayStation uses this publication path; other stores retain
+their existing writers until an absence contract is approved and tested.
+
+The adapter's explicit `absenceChecks` contain identity, verified source URL,
+contract identifier and `absent` / `inconclusive`. The shared validator rejects
+unknown identities, duplicate checks, mismatched store/surface contracts and
+contradictory presence. No subtraction of a `partial` result enables absence.
+Authenticated monitor results include checks and separate hidden/operationally
+closed counters. Public availability remains coarse health only.
+
+The existing public snapshot function and table RLS exclude both observation
+and operationally closed rows. This covers the shared EN/ES feed without UI,
+language, SEO or analytics changes. The clock is not calculated in the browser.
+Bootstrap rows remain visible until a demonstrable new absence observation.
+
+### Adapter enablement and blockers
+
+| Store | New 72-hour rule | Relevant finding / prerequisite |
+| --- | --- | --- |
+| PlayStation Store | Enabled locally for known US category identities sourced from Deals/Latest | Requires intact typed EMS trees, DEALSTOP and Latest HERO surfaces, and no category link or confirmed presence in either. Unknown nodes, missing links and missing surfaces are inconclusive. Names unresolved on a linked category never prove absence. Blog-only identities are excluded. |
+| Nintendo eShop | Blocked | Tabs, News and known landing checks are separate partial sources; settled failures/identity reconciliation do not establish a complete relevant absence check. |
+| Xbox Store | Blocked | Embedded Campsite metadata extraction can skip malformed entries; the existing successful array does not certify a complete surface. |
+| Steam | Blocked | Partner schedule, Home, News and known sale pages have different scopes; no per-campaign negative-check contract. Official boundaries remain in force. |
+| Epic Games Store | Blocked for new operational closure | Successful-snapshot public membership stays intact. Candidate/landing fallbacks and omitted unresolved modules are not a new valid absence contract. Existing Epic generations, atomic finalizer and frontend membership filter are unchanged. |
+| GOG | Blocked | Home, current tabs, RSS and campaign landing failures are isolated; rejected/unresolved identities must be surfaced before a safe per-campaign negative contract can be added. |
+| EA app | Blocked | Positive filtered links and campaign-page END checks do not certify exhaustive current confirmation on the relevant surface. |
+| Ubisoft Store | Blocked | Positive anchor filtering lacks a verified complete-surface contract, despite explicit fetch failures. |
+| Battle.net | Blocked | The discovery feed and article checks are partial; absence from a feed window cannot establish campaign absence. |
+| Rockstar Store | Blocked | Tagged Newswire discovery and article parsing are partial; no complete relevant-surface absence attestation. |
+
+Blocked means **no new hiding or 72-hour closure**, not disabled monitoring. All
+ten adapters remain scheduled and may confirm campaigns or establish official
+lifecycle facts under their prior rules. Enabling another store requires its
+explicit contract and tests plus coordinated allowlist changes in TS and SQL.
+Epic's already-approved public membership remains independent of this rule.
+
+For PlayStation, residual discounts in an old collection do not override a
+verified absence from campaign promotion surfaces. The commercial verifier and
+its diagnostics are preserved as a separate END check. Unknown commercial
+evidence is never reinterpreted as absence; the EMS check must independently
+satisfy its stricter contract. The $20 guarded name correction is unchanged.
+
+### Local verification and publication gate
+
+The standalone local-only runner `tests/operational-visibility-postgres.mjs`
+uses synthetic data on loopback PostgreSQL, independent of application secrets.
+It tests the actual migration, RLS, public snapshot, service-role permissions,
+72-hour transitions, no retroactive closure, reactivation, atomic rollback,
+idempotency, concurrency with two connections, isolation and Epic compatibility.
+Run it with `LOBO_QA_PG_MODULE` pointing to an external `pg` installation and
+a disposable PostgreSQL instance on `127.0.0.1:55439`; it creates a unique QA
+database and never targets the application database. Standard unit/regression
+tests remain runnable through `npm test` without PostgreSQL dependencies.
+
+Completed local validation on 12 October: `npm test` 517/517 PASS; real local
+PostgreSQL migration/RLS/concurrency tests 15/15 PASS; lint, full Edge import-graph
+TypeScript check and `git diff --check` PASS. A separate source copy completed
+the Next.js production build and its TypeScript check (35/35 static pages),
+without editing the protected repository `next-env.d.ts`.
+
+A read-only local adapter run against official sources at
+`2026-10-12T20:46:35.711Z` confirmed Player's Choice and Games Under $20, and
+independently verified promotional-surface absence for Autumn Adventures and
+Games Under $15. Both old collections still returned active product discounts;
+there was no official END and no official end date was synthesized. This check
+did not persist anything and must not backdate a future absence observation.
+
+No migration or new function has been applied remotely. The 13 October final
+gate compared production's recorded `20261007223743` (`epic_public_snapshot`)
+SQL with the local file: identical except an extra final line ending remotely.
+The local file is now `20261007223743_epic_public_snapshot.sql`, with its bytes
+unchanged; all test references use the aligned identifier. Normalized SQL SHA-256:
+`cb0eb4cc7a661bcff4d92a841c0f37a737b4144c3aa5e183c99330e9983ebeb2`.
+Do not rerun Epic or repair remote history. Review and publish only the new
+visibility migration; do not blindly push all migrations.
+After separate approval: apply only the reviewed additive migration, publish
+the Edge Function with its new adapter version and preserved settings, perform
+an authorized read-only probe, then observe normal scheduled persistence. Verify
+that the first qualifying absence starts then (not October 7), current $20 and
+Player's Choice remain public, historical identities remain stored, and only
+a later valid check at/after 72 hours can close operationally. Validate both
+public languages, other-store isolation and Epic membership. No scheduler or
+manual data cleanup is included. A rollback must account for already-hidden
+rows; redeploying old code alone is not a complete visibility rollback plan.
+
+### Final gate and tested recovery — 13 October 2026
+
+Read-only inspection found published Edge revision 37, adapter version 18,
+`verify_jwt=false`. All 27 published files match commit
+`0d42b39130b14e653ba976eef83999bf0c0a012a` after line-ending normalization.
+That immutable commit is the verified recovery source. The local monitor now
+uses `ADAPTER_VERSION = '19'` for the visibility protocol; internal health
+version assertions are updated, without changing unrelated public contracts.
+
+Recovery is a separately authorized operation, never an automatic migration:
+
+1. Inventory campaign absence/closure fields, official states/dates, Epic rows,
+   pointer/counter, function definitions, grants and RLS before acting. Decide
+   whether restoring all prior public visibility is warranted; it can expose
+   stale campaigns. Obtain explicit approval for the chosen recovery steps.
+2. Establish a quiet window between scheduled cycles, verify no monitor request
+   remains in flight and enough time remains before the next cycle. If this
+   cannot be guaranteed, stop; do not race publication or change the scheduler
+   implicitly. Prepare the verified 27-file adapter-18 artifact in a separate
+   directory from the immutable commit, without resetting the working tree.
+3. Execute `docs/sales-visibility-rollback-compatibility.sql` in that window.
+   It atomically fences the two version-19 RPCs and removes only the absence
+   scope CHECK that would reject version-18 official END/Upcoming/date updates.
+   It preserves all columns, values, history, closure-order constraint, RLS,
+   public hiding, Epic functions and generation state. Lock/statement timeouts
+   fail the transaction instead of allowing a partial change.
+4. Restore the verified adapter-18 Edge artifact with `verify_jwt=false`, the
+   same entrypoint and all 27 files. Verify source equivalence/settings. A new
+   deployment revision number is expected; its internal adapter version is 18.
+   Only after separate authorization, probe and observe normal persistence.
+5. If the approved recovery requires prior visibility, execute
+   `docs/sales-visibility-rollback-projection.sql`. It atomically restores the
+   prior public RPC projection and RLS predicate for ALL US Live/Upcoming rows.
+   Official Ended rows remain excluded; no stored state, dates or operational
+   history is cleared. Epic pointer and row membership metadata are returned
+   unchanged, so the existing frontend membership filter remains authoritative.
+   Without this optional step, hidden rows stay hidden; adapter 18 cannot reset
+   visibility metadata, so that is a temporary containment state, not completed
+   visibility recovery.
+6. Verify anon/authenticated reads through both table and RPC, denied campaign
+   writes/health reads/new visibility RPCs, service-role legacy writes, active
+   RLS and Epic reserve/finalize permissions. Compare historical fields and Epic
+   membership with the inventory; validate EN/ES feeds and the next normal cycle.
+
+Both SQL artifacts are outside the migration directory and perform no campaign
+or health DML. The local integration test executes each twice, verifies no data
+changes, exercises legacy END/date writes with retained metadata, checks public
+visibility and permissions, and confirms Epic can still publish. Never replay
+the additive migration to roll forward after this recovery: first review any
+legacy state/metadata combinations, agree reconciliation without losing history,
+then prepare a separately reviewed compatibility change and re-enable version 19.
+
+Final-gate validation: 517/517 regression tests, 16/16 real local PostgreSQL
+tests (including recovery), lint, full Edge TypeScript check and repository
+`git diff --check` passed. The seven protected files retain their pre-gate
+SHA-256 hashes. No remote migration, repair, deployment or data write occurred.
+
+## PlayStation incident review — 12 October 2026 (historical local diagnosis)
+
+Authority: the approved Product/Technical/Bilingual authorities and Johan's
+12 October incident instruction. The October 3/4 known-collection verifier and
+artwork-name exception are retained from commit `700572a`; they are not new
+discovery or product-tracking authorities. Baseline HEAD is
+`0d42b39130b14e653ba976eef83999bf0c0a012a`. Seven pre-existing local edits,
+including `next-env.d.ts`, are protected separately from this patch.
+
+Read-only production evidence: request 337 at 16:00 UTC returned one
+PlayStation detection, zero ENDs and `ok=true`; health finished at
+`2026-10-12T16:00:52.841Z`, adapter 18. Request 336 at 12:00 UTC also detected
+only Player's Choice. Neither response retained raw EMS candidates or secondary
+commercial results, so they cannot establish when Games Under $20 first appeared
+or which commercial-verifier outcome production obtained. Request 337 also
+reported an independent GOG discovery failure; this patch does not repair GOG.
+
+All four identities below use the official US category URL
+`https://store.playstation.com/en-us/category/{categoryId}/1`:
+
+| Campaign | categoryId | Evidence and lifecycle decision |
+| --- | --- | --- |
+| Player's Choice | `52e149ff-ec0d-4492-8fd9-a7df289f0ec9` | Current Deals banner and Latest hero; structured public name. Keep Live from current official source. |
+| Games Under $20 | `3e5a4aeb-33af-442a-ab10-61d946d3b33c` | Current Deals campaign banner linked to this category; default view reports `AM_GAMES_UNDER_20`, but public text is only `Deals`. Confirmed omission reproduced locally. |
+| Autumn Adventures | `56f636cb-c476-40b8-9ffd-b17f3f5cf5ad` | Not in current campaign navigation; last persisted confirmation October 7. Local existing verifier returned `ACTIVE_DISCOUNT_FOUND` after 111 pages / 2656 inspected entries. END remains PENDING. |
+| Games Under $15 | `5931f998-d583-4643-85e0-e890480fcff9` | Distinct from $20, not in current campaign navigation; last persisted confirmation October 7. Local existing verifier returned `ACTIVE_DISCOUNT_FOUND` after 92 pages / 2199 inspected entries. END remains PENDING. |
+
+These counts are bounded verifier work, not public campaign product counts.
+An active discount in an old collection vetoes the approved zero-discount END
+test; it does not establish that the original campaign is still running. Neither
+old row has stored end boundaries. Partial reconciliation therefore preserves
+both, and the public snapshot projects their stored Live state without a TTL.
+Do not label them authoritatively ended or currently reconfirmed.
+
+Official visual evidence inspected directly:
+
+- [Games Under $20 banner](https://image.api.playstation.com/pr/bam-art/234/820/b9eb2ddd-0fda-42b0-accf-f74fb1d9d4f9.png).
+- [Player's Choice banner](https://image.api.playstation.com/pr/bam-art/235/182/c7989de6-7cee-4605-b017-d1849f986c23.png).
+
+Both say `ENDS 10/21`; neither supplies a year or exact instant. EMS public text
+and the examined category HTML do not supply that boundary. No OCR service,
+current-year inference or fixed date override is added. Full date persistence
+remains PENDING additional edition-specific evidence. The Blog article
+`/2025/10/07/players-choice-promotion-comes-to-playstation-store-oct-8/` belongs
+to 2025 and cannot date the 2026 edition. Official Blog searches for Autumn
+Adventures and Games Under yielded no matching current edition in the examined
+results. Absence of search results is not END evidence.
+
+Local refinements:
+
+- Games Under $20 name transcription requires a current independently discovered
+  category, its exact default-view reporting name and the exact inspected banner
+  URL. Structured public names take precedence. A changed banner fails closed
+  with an unresolved-identity diagnostic; this is not general OCR or a generated
+  campaign registry. The existing $15 exception is unchanged.
+- Optional internal run `diagnostics` expose unresolved current identities,
+  complementary Blog failures and known-collection outcomes. UNKNOWN includes
+  bounded reason codes (HTTP/timeout, redirect, malformed contract, changing or
+  incomplete collection, ambiguous price, deadline). No raw source exception,
+  individual product, price, token or new persistence field is emitted.
+- `healthy` still measures required-source/run success, not total campaign
+  integrity. Diagnostics are returned by the authenticated run response only;
+  the public availability GET and health schema stay unchanged. The existing
+  shared 60-second verification budget remains bounded and may leave later
+  collections UNKNOWN; no deadline result is END evidence.
+
+Integrated local source verification completed at `2026-10-12T18:11:17.307Z`
+in 58.376 seconds: Player's Choice and Games Under $20 detected, no ENDs, both
+old collections reported `ACTIVE_DISCOUNT_FOUND` with the counts above. This
+executed only local adapter code and official-source GETs, not the deployed
+Edge Function. It is current evidence, not a reconstruction of request 337.
+
+Validation: 30 focused PlayStation tests, one monitor diagnostics integration
+test and the complete 512-test suite passed. ESLint and the standalone adapter
+TypeScript check passed; `git diff --check` was clean. The standard Turbopack
+production build passed in an isolated same-drive QA copy with only its
+`turbopack.root` adjusted to include the linked dependencies. Initial cross-drive
+temporary-copy builds failed dependency resolution (Turbopack and Webpack), not
+application compilation. Main-repository `next-env.d.ts` and the six other
+protected files retained their exact baseline SHA-256 hashes; staging is empty.
+
+KEEP US-first discovery, partial coverage, reconciliation and temporal precision.
+REFINE guarded name recognition and internal observability. REPLACE neither the
+backend nor the public projection. The old campaigns' commercial END and the
+pixel-only dates remain unresolved; no remote repair is authorized here.
+
+Publication requires separate approval: review only this patch, assign its next
+adapter version, publish the Edge Function with existing settings preserved,
+then validate two current discoveries and explicit secondary outcomes against
+fresh official evidence. Observe the normal all-ten-store scheduled persist;
+confirm no false END, no $15/$20 identity merger, other-store isolation and EN/ES
+public projection. If all four rows remain public, record the unresolved old
+campaigns rather than inventing cleanup authority. No manual persisted run,
+scheduler change, migration, remote write or publication occurred in this audit.
+
 ## Lifecycle and coverage contract
 
 Discovery and verification are separate. Every current adapter declares

@@ -76,6 +76,15 @@ export type AdapterContext = Readonly<{
   knownCampaigns?: readonly KnownCampaign[]
 }>
 
+// Internal run evidence, separate from source availability and campaign lifecycle.
+export type AdapterDiagnostic = Readonly<{
+  code: string
+  sourceUrl: string
+  reason?: string
+  pages?: number
+  inspected?: number
+}>
+
 export type AdapterResult = Readonly<{
   storeSlug: StoreSlug
   sourceUrl: string
@@ -83,6 +92,14 @@ export type AdapterResult = Readonly<{
   coverage: SourceCoverage
   campaigns: readonly DetectedCampaign[]
   explicitlyEndedSourceUids: readonly string[]
+  diagnostics?: readonly AdapterDiagnostic[]
+  // Negative evidence is per identity and verified surface, never array subtraction.
+  absenceChecks?: readonly Readonly<{
+    sourceUid: string
+    sourceUrl: string
+    contract: string
+    outcome: 'absent' | 'inconclusive'
+  }>[]
 }>
 
 export type StoreAdapter = (

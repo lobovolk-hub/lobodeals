@@ -1471,6 +1471,12 @@ test('PlayStation incomplete, failed, redirected or ambiguous commercial evidenc
       return Response.json(data)
     }, psTokyo, mode === 'deadline' ? 0 : undefined)
     assert.equal(result.status, 'UNKNOWN', mode)
+    assert.ok(result.reason, `UNKNOWN must explain its uncertainty: ${mode}`)
+    const reasons = { deadline: 'DEADLINE_EXCEEDED', region: 'REDIRECTED_RESPONSE',
+      price: 'AMBIGUOUS_PRICE', json: 'INVALID_JSON', 'count-change': 'COLLECTION_CHANGED',
+      network: 'SOURCE_FETCH_FAILED', timeout: 'SOURCE_TIMEOUT', truncated: 'INCOMPLETE_PAGE' }
+    if (reasons[mode]) assert.equal(result.reason, reasons[mode], mode)
+    if (/^\d+$/.test(mode)) assert.equal(result.reason, `HTTP_${mode}`)
   }
 })
 
@@ -1532,6 +1538,12 @@ test('PlayStation known-only lifecycle retires Tokyo zero-discount fixtures and 
     if (mode === 'zero') assert.equal(gridCalls, 181, 'complete Tokyo-shaped collection with 59 non-sale commercial states')
     if (['rediscovered','upcoming','foreign','no-known'].includes(mode)) assert.equal(gridCalls, 0)
     if (mode === 'rediscovered') assert.equal(result.campaigns[0].state, 'live')
+    const diagnostic = result.diagnostics?.find(d => d.sourceUrl === known.officialUrl)
+    if (['zero', 'discount', 'ambiguous', 'failure'].includes(mode)) {
+      assert.equal(diagnostic.code, `PLAYSTATION_COMMERCIAL_${mode === 'zero' ? 'VERIFIED_ZERO_DISCOUNTS' : mode === 'discount' ? 'ACTIVE_DISCOUNT_FOUND' : 'UNKNOWN'}`)
+      if (mode === 'ambiguous') assert.equal(diagnostic.reason, 'AMBIGUOUS_PRICE')
+      if (mode === 'failure') assert.equal(diagnostic.reason, 'HTTP_403')
+    } else assert.equal(diagnostic, undefined)
   }
 })
 
@@ -1548,6 +1560,88 @@ test('PlayStation approved artwork name is guarded, subordinate to structured na
     if (publish) {
       assert.equal(result.campaigns[0].name, mode === 'structured' ? 'New Autumn Sale' : 'Games Under $15')
       assert.equal(result.campaigns[0].sourceUid, psCategoryUrl(psUnder15))
+    }
+  }
+})
+
+test('PlayStation October 12 artwork identity requires current US category, exact artwork and reporting name', async () => {
+  const under20 = '3e5a4aeb-33af-442a-ab10-61d946d3b33c'
+  const artwork = 'https://image.api.playstation.com/pr/bam-art/234/820/b9eb2ddd-0fda-42b0-accf-f74fb1d9d4f9.png'
+  for (const mode of ['verified', 'structured', 'other-artwork', 'other-category', 'other-reporting', 'absent', 'navigation', 'duplicate']) {
+    const id = mode === 'other-category' ? psUnder15 : under20
+    const view = psDefaultView(mode === 'structured' ? 'Replacement Sale' : 'Deals')
+    view.data.emsDefaultViewRetrieve.reportingName = mode === 'other-reporting' ? 'AM_GAMES_UNDER_15' : 'AM_GAMES_UNDER_20'
+    const candidate = psDealsCampaign({ categoryId: id, label: 'Deals',
+      artwork: mode === 'other-artwork' ? 'https://image.api.playstation.com/replacement.png' : artwork,
+      action: '[CRO]_1007_GAMES_UNDER_20_20_2000_(GLOBAL)_-_WEB_TD_S26' })
+    if (mode === 'navigation') candidate.reportingName = 'DEALSLINKS'
+    const fixture = psFixtureFetch({ dealsViews: mode === 'absent' ? undefined :
+      [psDealsNavigation(), candidate, ...(mode === 'duplicate' ? [candidate] : [])], defaultViews: { [id]: view } })
+    const result = await runPlayStationStoreAdapter({ now: new Date('2026-10-12T18:00:00Z'), fetch: fixture.fetch })
+    const publish = ['verified', 'structured', 'duplicate'].includes(mode)
+    assert.equal(result.campaigns.length, publish ? 1 : 0, mode)
+    assert.deepEqual(result.explicitlyEndedSourceUids, [], mode)
+    if (publish) {
+      assert.equal(result.campaigns[0].name, mode === 'structured' ? 'Replacement Sale' : 'Games Under $20')
+      assert.equal(result.campaigns[0].sourceUid, psCategoryUrl(under20))
+      assert.equal(result.campaigns[0].ends, undefined, 'ENDS 10/21 pixels cannot invent a year or instant')
+      assert.equal(result.campaigns[0].starts, undefined)
+    } else if (!['absent', 'navigation'].includes(mode)) {
+      assert.ok(result.diagnostics.some(d => d.code === 'PLAYSTATION_CURRENT_IDENTITY_UNRESOLVED'))
+    }
+    assert.equal(fixture.calls.some(c => c.href.includes('categoryGridRetrieve')), false, 'no product discovery')
+  }
+})
+
+test('PlayStation complementary Blog failure is observable without removing valid Store campaigns', async () => {
+  const fixture = psFixtureFetch({ dealsViews: [psDealsCampaign()], intercept: async href => {
+    if (href === psBlogUrl) return new Response('', { status: 503 })
+  } })
+  const result = await runPlayStationStoreAdapter({ now: new Date('2026-10-12T18:00:00Z'), fetch: fixture.fetch })
+  assert.equal(result.campaigns.length, 1)
+  assert.equal(result.coverage, 'partial')
+  assert.deepEqual(result.explicitlyEndedSourceUids, [])
+  assert.deepEqual(result.diagnostics, [{ code: 'PLAYSTATION_BLOG_DISCOVERY_FAILED', sourceUrl: psBlogUrl }])
+})
+
+test('PlayStation valid absence is scoped to intact EMS surfaces, not partial arrays or commercial discounts', async () => {
+  const player = '52e149ff-ec0d-4492-8fd9-a7df289f0ec9'
+  for (const [oldId, name] of [['56f636cb-c476-40b8-9ffd-b17f3f5cf5ad', 'Autumn Adventures'], [psUnder15, 'Games Under $15']]) {
+    for (const mode of ['absent', 'discount', 'observed-placeholder', 'observed-concept', 'reappeared', 'unknown-node', 'missing-link', 'missing-hero', 'linked-but-unresolved', 'upcoming', 'dated', 'foreign', 'failed']) {
+      const current = psDealsCampaign({ categoryId: player, label: "Player's Choice" })
+      const known = { campaignKey: 'known', sourceUid: psCategoryUrl(oldId), officialUrl: psCategoryUrl(oldId),
+        sourceUrl: 'https://store.playstation.com/en-us/pages/deals', name, state: 'live' }
+      const dealsViews = [current]
+      if (mode === 'observed-placeholder') dealsViews.push({ __typename: 'EMSView', purpose: null, reportingName: null, components: [] })
+      if (mode === 'unknown-node') current.components.push({ __typename: 'NewComponent' })
+      if (mode === 'missing-link') {
+        delete current.components[0].link
+        dealsViews.push(psDealsCampaign({ categoryId: '3e5a4aeb-33af-442a-ab10-61d946d3b33c', label: 'Games Under $20' }))
+      }
+      if (mode === 'reappeared') dealsViews.push(psDealsCampaign({ categoryId: oldId, label: name }))
+      if (mode === 'linked-but-unresolved') dealsViews.push(psDealsCampaign({ categoryId: oldId, label: 'Deals' }))
+      if (mode === 'upcoming') known.state = 'upcoming'
+      if (mode === 'dated') known.endsOn = '2026-10-21'
+      if (mode === 'foreign') known.sourceUrl = 'https://store.playstation.com/en-gb/pages/deals'
+      const latestViews = mode === 'missing-hero' ? [psLatestNavigation()] : [psHero({ categoryId: player, title: "Player's Choice" })]
+      if (mode === 'observed-concept') latestViews.push(psView({ purpose: 'COLLECTION', reportingName: 'LATESTWHATSHOT',
+        components: [{ __typename: 'EMSImageComponent', link: { type: 'CONCEPT', target: '10017332' } }] }))
+      const fixture = psFixtureFetch({ dealsViews, latestViews,
+        defaultViews: { [oldId]: psDefaultView('Deals') }, intercept: async href => {
+          const u = new URL(href)
+          if (mode === 'failed' && u.searchParams.get('operationName') === 'getExperience') return new Response('', { status: 503 })
+          if (u.searchParams.get('operationName') !== 'categoryGridRetrieve') return
+          if (mode !== 'discount') return new Response('', { status: 503 })
+          const grid = psGrid(oldId, 0, 1); grid.data.categoryGridRetrieve.products[0].price = psReduced()
+          return Response.json(grid)
+        } })
+      const run = () => runPlayStationStoreAdapter({ now: new Date('2026-10-12T18:00:00Z'), fetch: fixture.fetch, knownCampaigns: [known] })
+      if (mode === 'failed') { await assert.rejects(run); continue }
+      const result = await run()
+      assert.deepEqual(result.explicitlyEndedSourceUids, [])
+      if (['reappeared', 'upcoming', 'dated', 'foreign'].includes(mode)) assert.deepEqual(result.absenceChecks, [], mode)
+      else assert.equal(result.absenceChecks[0].outcome, ['absent', 'discount', 'observed-placeholder', 'observed-concept'].includes(mode) ? 'absent' : 'inconclusive', mode)
+      if (mode === 'reappeared') assert.ok(result.campaigns.some(c => c.sourceUid === known.sourceUid))
     }
   }
 })

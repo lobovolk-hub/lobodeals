@@ -19,6 +19,8 @@ out/
 docs/*
 !docs/service-brand-assets.md
 !docs/sales-backend.md
+!docs/sales-visibility-rollback-compatibility.sql
+!docs/sales-visibility-rollback-projection.sql
 
 # Supabase CLI local state
 supabase/.temp/

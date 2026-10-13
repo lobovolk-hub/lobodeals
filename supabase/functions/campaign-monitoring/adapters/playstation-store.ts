@@ -14,6 +14,7 @@ import {
 import { AdapterError } from '../_shared/types.ts'
 import type {
   AdapterResult,
+  AdapterDiagnostic,
   DetectedCampaign,
   KnownCampaign,
   SourceBoundary,
@@ -35,9 +36,15 @@ const CATEGORY_GRID_HASH =
 // Johan approved this exact official artwork name on 2026-10-03/04.
 // Source: https://image.api.playstation.com/pr/bam-art/234/264/4b969a64-2296-4df5-8df3-8d659e609c25.png
 // Names only: never discover a candidate or assign lifecycle from this registry.
-const APPROVED_ARTWORK_NAMES: Readonly<Record<string, { name: string; reportingName: string }>> = {
+const APPROVED_ARTWORK_NAMES: Readonly<Record<string, { name: string; reportingName: string; artworkUrl?: string }>> = {
   '5931f998-d583-4643-85e0-e890480fcff9': {
     name: 'Games Under $15', reportingName: 'AM_GAMES_UNDER_15',
+  },
+  // Incident 2026-10-12: visual US name corroborated by Deals' category link
+  // and its default-view reporting name. Never infer a name from telemetry alone.
+  '3e5a4aeb-33af-442a-ab10-61d946d3b33c': {
+    name: 'Games Under $20', reportingName: 'AM_GAMES_UNDER_20',
+    artworkUrl: 'https://image.api.playstation.com/pr/bam-art/234/820/b9eb2ddd-0fda-42b0-accf-f74fb1d9d4f9.png',
   },
 }
 
@@ -81,6 +88,8 @@ type EmsExperience = Readonly<{
   id: string
   roots: readonly JsonObject[]
   views: readonly EmsView[]
+  absenceVerifiable: boolean
+  linkedCategoryIds: readonly string[]
 }>
 
 type NameCandidate = Readonly<{
@@ -452,6 +461,7 @@ function parseExperienceEnvelope(
     id: string(retrieved.id)!,
     roots,
     views,
+    ...absenceSurfaceContract(retrieved.views, requestedAlias),
   }
   const rootNames = roots
     .map((root) => string(root.reportingName) ?? '')
@@ -472,6 +482,53 @@ function parseExperienceEnvelope(
   }
   validateRegion(experience)
   return experience
+}
+
+// Stronger than positive discovery: an unfamiliar/malformed node makes negative
+// evidence inconclusive. Never interpret discarded parser input as an absence.
+function absenceSurfaceContract(rawViews: readonly unknown[], alias: 'deals' | 'latest') {
+  let valid = true, relevant = 0
+  const linkedCategoryIds = new Set<string>()
+  const walk = (raw: unknown) => {
+    const entry = object(raw)
+    if (!entry) { valid = false; return }
+    if (entry.__typename === 'EMSViewCollection') {
+      if (!Array.isArray(entry.childViews)) { valid = false; return }
+      entry.childViews.forEach(walk)
+      return
+    }
+    // Observed official empty layout slot; it cannot replace the required
+    // DEALSTOP / HERO surface below. Undefined/malformed content is not empty.
+    if (entry.__typename === 'EMSView' && entry.purpose === null && entry.reportingName === null &&
+        Array.isArray(entry.components) && entry.components.length === 0) return
+    if (entry.__typename !== 'EMSView' || !Array.isArray(entry.components) || typeof entry.purpose !== 'string') {
+      valid = false; return
+    }
+    const relevantView = alias === 'deals' ? entry.purpose === 'COLLECTION' && entry.reportingName === 'DEALSTOP'
+      : entry.purpose === 'HERO'
+    if (relevantView) relevant++
+    if (relevantView && alias === 'latest' && entry.components.length > 0 &&
+        !entry.components.some(raw => object(object(raw)?.link)?.target)) valid = false
+    for (const rawComponent of entry.components) {
+      const c = object(rawComponent)
+      if (!c || !component(c)) { valid = false; continue }
+      if (c.link !== undefined && c.link !== null) {
+        const link = object(c.link)
+        if (!link || typeof link.type !== 'string' || typeof link.target !== 'string' || !link.target) {
+          valid = false; continue
+        }
+        if (link.type === 'EMS_CATEGORY') {
+          if (!/^[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}$/i.test(link.target)) valid = false
+          linkedCategoryIds.add(link.target.toLowerCase())
+        } else if (link.type !== 'URI' &&
+          !(link.type === 'CONCEPT' && !relevantView && /^\d+$/.test(link.target))) valid = false
+      } else if (relevantView && alias === 'deals' && c.__typename === 'EMSImageComponent') {
+        valid = false // A promotion image with no identifiable target is not an empty slot.
+      }
+    }
+  }
+  rawViews.forEach(walk)
+  return { absenceVerifiable: valid && relevant > 0, linkedCategoryIds: [...linkedCategoryIds] }
 }
 
 async function getExperience(
@@ -854,7 +911,8 @@ function detectedStoreCampaign(
 ): Readonly<{ campaign: DetectedCampaign | null; endedIdentity?: string }> {
   const approved = APPROVED_ARTWORK_NAMES[candidate.categoryId]
   const name = bestName(candidate.names) ?? (candidate.current && approved &&
-    candidate.defaultReportingName === approved.reportingName ? approved.name : null)
+    candidate.defaultReportingName === approved.reportingName &&
+    (!approved.artworkUrl || candidate.images.includes(approved.artworkUrl)) ? approved.name : null)
   const officialUrl = canonicalCategoryUrl(candidate.categoryId)
   const timing = campaignTiming(
     candidate.publicText.join(' '),
@@ -1089,7 +1147,8 @@ function articleExplicitlyEndsKnownCampaign(
 
 async function verifyKnownBlogCampaigns(
   fetcher: typeof fetch,
-  knownCampaigns: readonly KnownCampaign[]
+  knownCampaigns: readonly KnownCampaign[],
+  diagnostics: AdapterDiagnostic[]
 ): Promise<readonly string[]> {
   const byUrl = new Map<string, KnownCampaign[]>()
   for (const known of knownCampaigns) {
@@ -1119,9 +1178,11 @@ async function verifyKnownBlogCampaigns(
       )
     })
   )
-  return settled.flatMap((result) =>
-    result.status === 'fulfilled' ? result.value : []
-  )
+  return settled.flatMap((result, index) => {
+    if (result.status === 'fulfilled') return result.value
+    diagnostics.push({ code: 'PLAYSTATION_BLOG_VERIFICATION_FAILED', sourceUrl: [...byUrl.keys()][index] })
+    return []
+  })
 }
 
 function linkedStoreCampaign(
@@ -1405,6 +1466,7 @@ type CommercialResult = Readonly<{
   status: 'ACTIVE_DISCOUNT_FOUND' | 'VERIFIED_ZERO_DISCOUNTS' | 'UNKNOWN'
   pages: number
   inspected: number
+  reason?: string
 }>
 
 // Approved 2026-10-03/04: complete known-collection zero discounts can retire
@@ -1417,8 +1479,9 @@ export async function verifyPlayStationCommercialState(
   let pages = 0, inspected = 0, offset = 0, total: number | undefined
   let ambiguous = false
   const seen = new Set<string>()
-  const result = (status: CommercialResult['status']): CommercialResult => ({ status, pages, inspected })
-  if (!/^[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}$/i.test(categoryId)) return result('UNKNOWN')
+  const result = (status: CommercialResult['status'], reason?: string): CommercialResult =>
+    ({ status, pages, inspected, ...(reason ? { reason } : {}) })
+  if (!/^[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}$/i.test(categoryId)) return result('UNKNOWN', 'INVALID_CATEGORY_ID')
   try {
     while (offset < 10_000 && Date.now() < deadline) {
       // First establish the count, then fetch at most three demonstrated pages
@@ -1438,50 +1501,55 @@ export async function verifyPlayStationCommercialState(
         })
         return { pageOffset, size, url, page }
       }))
-      if (batch.some(entry => entry.status === 'rejected')) return result('UNKNOWN')
+      const rejected = batch.find(entry => entry.status === 'rejected')
+      if (rejected?.status === 'rejected') return result('UNKNOWN',
+        rejected.reason instanceof AdapterError ? rejected.reason.code : 'SOURCE_FETCH_FAILED')
       for (const entry of batch) {
-        if (entry.status !== 'fulfilled') return result('UNKNOWN')
+        if (entry.status !== 'fulfilled') return result('UNKNOWN', 'SOURCE_FETCH_FAILED')
         const { pageOffset, size, url, page } = entry.value
         // Redirects may discard the region or query. Never use them as negative evidence.
-        if (page.url !== url || Date.now() >= deadline) return result('UNKNOWN')
+        if (page.url !== url) return result('UNKNOWN', 'REDIRECTED_RESPONSE')
+        if (Date.now() >= deadline) return result('UNKNOWN', 'DEADLINE_EXCEEDED')
         const envelope = object(JSON.parse(page.text))
         if (!envelope || (envelope.errors !== undefined &&
-            (!Array.isArray(envelope.errors) || envelope.errors.length > 0))) return result('UNKNOWN')
+            (!Array.isArray(envelope.errors) || envelope.errors.length > 0))) return result('UNKNOWN', 'INVALID_GRAPHQL_ENVELOPE')
         const grid = object(object(envelope.data)?.categoryGridRetrieve)
         const info = object(grid?.pageInfo), order = object(grid?.sortedBy)
         if (!grid || grid.__typename !== 'CategoryGrid' || grid.id !== categoryId || !info ||
             order?.name !== 'default' || order?.isAscending !== true ||
             typeof info.totalCount !== 'number' || !Number.isSafeInteger(info.totalCount) ||
             info.totalCount < 0 || info.totalCount > 10_000 ||
-            info.offset !== pageOffset || info.size !== size || typeof info.isLast !== 'boolean') return result('UNKNOWN')
-        if (total !== undefined && total !== info.totalCount) return result('UNKNOWN')
+            info.offset !== pageOffset || info.size !== size || typeof info.isLast !== 'boolean') return result('UNKNOWN', 'INVALID_GRID_CONTRACT')
+        if (total !== undefined && total !== info.totalCount) return result('UNKNOWN', 'COLLECTION_CHANGED')
         total = info.totalCount
         const items = Array.isArray(grid.products) && grid.concepts === null ? grid.products :
           Array.isArray(grid.concepts) && grid.products === null ? grid.concepts : null
         if (!items || items.length !== Math.min(size, total - pageOffset) ||
-            info.isLast !== (pageOffset + items.length === total)) return result('UNKNOWN')
+            info.isLast !== (pageOffset + items.length === total)) return result('UNKNOWN', 'INCOMPLETE_PAGE')
         pages++
         for (const raw of items) {
           const item = object(raw)
-          if (!item || typeof item.id !== 'string' || !item.id || seen.has(item.id)) return result('UNKNOWN')
+          if (!item || typeof item.id !== 'string' || !item.id || seen.has(item.id)) return result('UNKNOWN', 'INVALID_OR_DUPLICATE_ITEM')
           seen.add(item.id)
           inspected++
           const discounted = isCurrentlyDiscounted(item.price)
           if (discounted === true) return result('ACTIVE_DISCOUNT_FOUND')
           if (discounted === null) ambiguous = true
         }
-        if (info.isLast) return result(ambiguous ? 'UNKNOWN' : 'VERIFIED_ZERO_DISCOUNTS')
+        if (info.isLast) return ambiguous ? result('UNKNOWN', 'AMBIGUOUS_PRICE') : result('VERIFIED_ZERO_DISCOUNTS')
         offset = pageOffset + items.length
       }
     }
-  } catch {
+  } catch (error) {
     // HTTP, timeout, JSON, GraphQL and contract failures preserve the known row.
+    return result('UNKNOWN', error instanceof SyntaxError ? 'INVALID_JSON' : 'VERIFICATION_FAILED')
   }
-  return result('UNKNOWN')
+  return result('UNKNOWN', 'DEADLINE_EXCEEDED')
 }
 
 async function knownCommercialEnds(
-  fetcher: typeof fetch, known: readonly KnownCampaign[], current: ReadonlySet<string>
+  fetcher: typeof fetch, known: readonly KnownCampaign[], current: ReadonlySet<string>,
+  diagnostics: AdapterDiagnostic[]
 ): Promise<readonly string[]> {
   const ended: string[] = []
   const checked = new Map<string, CommercialResult>()
@@ -1493,6 +1561,11 @@ async function knownCommercialEnds(
     if (!match || comparableIdentity(entry.sourceUid) !== comparableIdentity(entry.officialUrl)) continue
     const categoryId = match[1]
     const evidence = checked.get(categoryId) ?? await verifyPlayStationCommercialState(fetcher, categoryId, deadline)
+    if (!checked.has(categoryId)) diagnostics.push({
+      code: `PLAYSTATION_COMMERCIAL_${evidence.status}`, sourceUrl: entry.officialUrl,
+      pages: evidence.pages, inspected: evidence.inspected,
+      ...(evidence.reason ? { reason: evidence.reason } : {}),
+    })
     checked.set(categoryId, evidence)
     if (evidence.status === 'VERIFIED_ZERO_DISCOUNTS') ended.push(entry.sourceUid)
   }
@@ -1509,6 +1582,7 @@ export const runPlayStationStoreAdapter: StoreAdapter = async ({
     getExperience(fetch, 'latest'),
   ])
   const candidates = storeCandidates([deals, latest])
+  const diagnostics: AdapterDiagnostic[] = []
 
   for (const candidate of candidates.values()) {
     if (bestName(candidate.names) || !candidate.localizedKeyId) continue
@@ -1523,6 +1597,9 @@ export const runPlayStationStoreAdapter: StoreAdapter = async ({
   const storeCampaigns = [...candidates.values()].flatMap((candidate) => {
     const result = detectedStoreCampaign(candidate, now)
     if (result.endedIdentity) endedIdentities.add(result.endedIdentity)
+    if (!result.campaign && !result.endedIdentity && candidate.current) diagnostics.push({
+      code: 'PLAYSTATION_CURRENT_IDENTITY_UNRESOLVED', sourceUrl: canonicalCategoryUrl(candidate.categoryId),
+    })
     return result.campaign ? [result.campaign] : []
   })
 
@@ -1531,6 +1608,7 @@ export const runPlayStationStoreAdapter: StoreAdapter = async ({
     blogHtml = await fetchOfficialText(fetch, BLOG_URL)
   } catch {
     // Blog is complementary; the required Store persisted contracts succeeded.
+    diagnostics.push({ code: 'PLAYSTATION_BLOG_DISCOVERY_FAILED', sourceUrl: BLOG_URL })
   }
   const blogResults = blogHtml
     ? await Promise.allSettled(
@@ -1540,7 +1618,10 @@ export const runPlayStationStoreAdapter: StoreAdapter = async ({
       )
     : []
   const blogCampaigns = blogResults.flatMap((result) => {
-    if (result.status !== 'fulfilled') return []
+    if (result.status !== 'fulfilled') {
+      diagnostics.push({ code: 'PLAYSTATION_BLOG_ARTICLE_FAILED', sourceUrl: BLOG_URL })
+      return []
+    }
     if (result.value.endedIdentity) {
       endedIdentities.add(result.value.endedIdentity)
     }
@@ -1562,8 +1643,8 @@ export const runPlayStationStoreAdapter: StoreAdapter = async ({
   for (const candidate of candidates.values()) {
     if (candidate.current) currentSourceUids.add(comparableIdentity(canonicalCategoryUrl(candidate.categoryId)))
   }
-  const verifiedBlogEnds = await verifyKnownBlogCampaigns(fetch, knownCampaigns)
-  const commercialEnds = await knownCommercialEnds(fetch, knownCampaigns, currentSourceUids)
+  const verifiedBlogEnds = await verifyKnownBlogCampaigns(fetch, knownCampaigns, diagnostics)
+  const commercialEnds = await knownCommercialEnds(fetch, knownCampaigns, currentSourceUids, diagnostics)
   const explicitlyEndedSourceUids = uniqueBy(
     [
       ...knownExplicitEnds(knownCampaigns, endedIdentities, now),
@@ -1573,6 +1654,19 @@ export const runPlayStationStoreAdapter: StoreAdapter = async ({
     (value) => value
   ).filter((sourceUid) => !currentSourceUids.has(comparableIdentity(sourceUid)))
 
+  const detected = new Set(campaigns.map(c => c.sourceUid))
+  const linked = new Set([...deals.linkedCategoryIds, ...latest.linkedCategoryIds])
+  const absenceChecks: NonNullable<AdapterResult['absenceChecks']> = knownCampaigns.flatMap(known => {
+    if (known.state !== 'live' || known.endsOn || known.endsAt || detected.has(known.sourceUid) ||
+        ![DEALS_URL, LATEST_URL].includes(known.sourceUrl) || known.sourceUid !== known.officialUrl) return []
+    const category = /^https:\/\/store\.playstation\.com\/en-us\/category\/([a-f0-9-]+)\/1$/i.exec(known.officialUrl)?.[1]
+    if (!category) return []
+    return [{ sourceUid: known.sourceUid, sourceUrl: known.sourceUrl,
+      contract: 'playstation-ems-promotions-v1',
+      outcome: deals.absenceVerifiable && latest.absenceVerifiable && !linked.has(category.toLowerCase())
+        ? 'absent' as const : 'inconclusive' as const }]
+  })
+
   return {
     storeSlug: 'playstation-store',
     sourceUrl: DEALS_URL,
@@ -1580,5 +1674,7 @@ export const runPlayStationStoreAdapter: StoreAdapter = async ({
     coverage: 'partial',
     campaigns,
     explicitlyEndedSourceUids,
+    ...(diagnostics.length ? { diagnostics } : {}),
+    absenceChecks,
   } satisfies AdapterResult
 }

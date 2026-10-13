@@ -226,20 +226,20 @@ try {
   }
 
   const socialTitles = new Map([
-    ['/', 'LoboDeals \u2014 Official game sales'],
-    ['/playstation', 'PlayStation'],
-    ['/pc', 'PC'],
-    ['/nintendo', 'Nintendo'],
-    ['/xbox', 'Xbox'],
-    ['/sales', 'Sales'],
-    ['/about', 'About'],
-    ['/services/steam', 'Steam'],
-    ['/services/epic-games-store', 'Epic Games Store'],
-    ['/services/gog', 'GOG'],
-    ['/services/ea-app', 'EA app'],
-    ['/services/ubisoft-store', 'Ubisoft Store'],
-    ['/services/battle-net', 'Battle.net'],
-    ['/services/rockstar-store', 'Rockstar Store'],
+    ['/', 'LoboDeals — Official Game Stores & Sales'],
+    ['/playstation', 'PlayStation Store Sales — Live & Upcoming'],
+    ['/pc', 'Official PC Game Stores & Sales'],
+    ['/nintendo', 'Nintendo eShop Sales — Live & Upcoming'],
+    ['/xbox', 'Xbox Store Sales — Live & Upcoming'],
+    ['/sales', 'Official Game Sales — Live & Upcoming'],
+    ['/about', 'About Official Stores & Sales'],
+    ['/services/steam', 'Steam Sales — Live & Upcoming'],
+    ['/services/epic-games-store', 'Epic Games Store Sales — Live & Upcoming'],
+    ['/services/gog', 'GOG Sales — Live & Upcoming'],
+    ['/services/ea-app', 'EA app Sales — Live & Upcoming'],
+    ['/services/ubisoft-store', 'Ubisoft Store Sales — Live & Upcoming'],
+    ['/services/battle-net', 'Battle.net Sales — Live & Upcoming'],
+    ['/services/rockstar-store', 'Rockstar Store Sales — Live & Upcoming'],
   ])
 
   for (const [route, expectedTitle] of socialTitles) {
@@ -247,15 +247,17 @@ try {
     const expectedCanonical = canonicalRoutes.get(route)
 
     assert.ok(expectedCanonical, route)
+    const documentTitle = body.match(/<title>([^<]+)<\/title>/)?.[1]?.replaceAll('&amp;', '&')
+    assert.equal(documentTitle, route === '/' ? expectedTitle : `${expectedTitle} | LoboDeals`, `${route} title template`)
 
     assert.equal(
-      readMetaContent(body, 'property', 'og:title'),
+      readMetaContent(body, 'property', 'og:title').replaceAll('&amp;', '&'),
       expectedTitle,
       `${route} og:title`
     )
 
     assert.equal(
-      readMetaContent(body, 'name', 'twitter:title'),
+      readMetaContent(body, 'name', 'twitter:title').replaceAll('&amp;', '&'),
       expectedTitle,
       `${route} twitter:title`
     )

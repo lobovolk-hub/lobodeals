@@ -46,8 +46,10 @@ export async function generateMetadata({
   return createPageMetadata({
     locale,
     localizedDescription: true,
-    title: store.name,
-    description: localizedStoreDescription(locale, store),
+    title: locale === 'en' ? `${store.name} Sales — Live & Upcoming` : store.name,
+    description: locale === 'en'
+      ? `${localizedStoreDescription(locale, store)} Follow its live and officially announced sale campaigns.`
+      : localizedStoreDescription(locale, store),
     canonical: `/services/${store.slug}`,
   })
 }

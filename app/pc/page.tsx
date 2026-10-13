@@ -2,8 +2,9 @@ import { PlatformPage } from '@/components/platform-page'
 import { createPageMetadata } from '@/lib/seo'
 
 export const metadata = createPageMetadata({
-  title: 'PC',
-  description: 'Official digital PC store sales, live and announced.',
+  title: 'Official PC Game Stores & Sales',
+  description: 'Find official digital PC stores, from Steam to Xbox Store, and follow their live and officially announced sale campaigns.',
+  localizedDescription: true,
   canonical: '/pc',
 })
 

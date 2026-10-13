@@ -150,7 +150,7 @@ test('each metadata route keeps EN canonical, ES noindex/no canonical and V2 soc
     assert.equal(metadata.title, 'Steam')
     assert.equal(metadata.alternates.languages, undefined)
   }
-  assert.equal(createHomeMetadata('en').title.absolute, 'LoboDeals — Official game sales')
+  assert.equal(createHomeMetadata('en').title.absolute, 'LoboDeals — Official Game Stores & Sales')
   assert.equal(createPageMetadata({ title: 'Sales', description: 'Live and upcoming official digital store sale campaigns.', canonical: '/sales', locale: 'es' }).title, 'Ofertas')
 })
 

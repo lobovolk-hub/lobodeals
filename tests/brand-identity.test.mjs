@@ -96,7 +96,7 @@ test('home route metadata preserves English canonical/indexing and Spanish Phase
     assert.equal(metadata.alternates.languages, undefined)
     if (english) {
       assert.equal(new URL(metadata.alternates.canonical, 'https://lobodeals.com').href, 'https://lobodeals.com/')
-      assert.equal(metadata.title.absolute, 'LoboDeals — Official game sales')
+      assert.equal(metadata.title.absolute, 'LoboDeals — Official Game Stores & Sales')
     }
   }
 })

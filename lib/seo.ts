@@ -31,7 +31,9 @@ export function createPageMetadata({ title, description, canonical, locale = 'en
 }
 
 export function createHomeMetadata(locale: Locale): Metadata {
-  const title = t(locale, 'LoboDeals — Official game sales')
+  const title = locale === 'en'
+    ? 'LoboDeals — Official Game Stores & Sales'
+    : t(locale, 'LoboDeals — Official game sales')
   const metadata = createPageMetadata({
     title,
     description: 'Find official digital game stores and see their live or announced sale campaigns.',

@@ -101,6 +101,94 @@ test('Steam relates seasonal sections through current official structure, preser
   }
 })
 
+
+function steamFestFixture(options = {}) {
+  const name = options.name ?? 'Steam Cooking Fest'
+  const slug = options.slug ?? 'cooking'
+  const destination = `https://store.steampowered.com/${options.kind ?? 'category'}/${slug}`
+  const announcement = 'https://steamcommunity.com/ogg/593110/announcements/detail/710037059469838010'
+  const sourceUid = `steamworks-${name.toLowerCase().replace(/[^a-z0-9]+/g, '-')}-2026`
+  const artwork = 'https://cdn.steamstatic.com/events/fest-campaign.jpg'
+  const calls = []
+  const fetcher = async input => {
+    const url = String(input); calls.push(url)
+    if (url.includes('partner.steamgames.com')) return new Response(`<main>Upcoming Steam Events 2026 Fests Oct 12 Oct 19 ${name} Registration details</main>`)
+    if (url.includes('api.steampowered.com')) return Response.json({ appnews: { newsitems: [{
+      title: `Now simmering: ${name}`, feedname: 'steam_community_blog',
+      date: Date.parse(options.published ?? '2026-10-12T18:24:28Z') / 1000, url: announcement,
+      contents: `Join us now for ${options.noLink ? name : options.htmlLink
+        ? `<a href="${destination}">${name}</a>`
+        : `[url="${options.link ?? destination}"]${options.label ?? name}[/url]`}, on through October 19th at 10 am Pacific on Steam.
+        ${options.ambiguous ? `[url="https://store.steampowered.com/category/second"]${name}[/url]` : ''}`,
+    }] } })
+    if (url === steamSeasonalHome) return new Response('<main>Steam Store</main>')
+    if (url === announcement) return new Response('<main>Official announcement</main>')
+    if (url.startsWith(destination) || url.startsWith('https://store.steampowered.com/category/second')) {
+      if (options.failure) return new Response('', { status: 503 })
+      const metadata = options.generic ? 'Browse cooking games' : options.wrongEvent ? 'Steam Racing Fest 2026' : `${name} ${options.oldEdition ? 2025 : 2026}`
+      const response = new Response(`<title>Cooking</title><meta property="og:title" content="Cooking">
+        <meta property="og:description" content="${metadata}">
+        ${options.noArt ? '' : `<meta property="og:image" content="${artwork}">`}
+        <div data-partnereventstore='${JSON.stringify([{ event_name: 'Content Hub - Default', rtime32_start_time: 1635440400, rtime32_end_time: 1647467700 }])}'></div>
+        <p>${name} 2026</p>`)
+      if (options.redirect) Object.defineProperty(response, 'url', { value: options.redirect })
+      return response
+    }
+    throw new Error(`Unexpected URL ${url}`)
+  }
+  const known = { campaignKey: 'stable-key', sourceUid, name, state: 'live', officialUrl: announcement,
+    sourceUrl: 'https://api.steampowered.com/ISteamNews/GetNewsForApp/v2/?appid=593110&count=30&maxlength=0',
+    startsOn: '2026-10-12', endsAt: '2026-10-19T17:00:00Z' }
+  return { sourceUid, name, destination, announcement, artwork, calls, known,
+    run: () => runSteamAdapter({ now: new Date('2026-10-13T12:00:00Z'), fetch: fetcher, knownCampaigns: [known] }) }
+}
+
+test('Steam verified News landing promotes Cooking Fest without changing identity, commercial dates or evidence', async () => {
+  for (const options of [{}, { name: 'Steam Gardening Fest', slug: 'gardening', htmlLink: true },
+    { name: 'Steam Puzzle Fest', slug: 'puzzlefest', kind: 'sale' }, { noArt: true }]) {
+    const fixture = steamFestFixture(options)
+    const result = await fixture.run()
+    assert.equal(result.campaigns.length, 1)
+    const entry = result.campaigns[0]
+    assert.equal(entry.sourceUid, fixture.sourceUid)
+    assert.equal(entry.name, fixture.name)
+    assert.equal(entry.officialUrl, fixture.destination)
+    assert.equal(entry.sourceUrl, fixture.announcement)
+    assert.equal(entry.artworkUrl, options.noArt ? undefined : fixture.artwork)
+    assert.deepEqual(entry.starts, { precision: 'date', value: '2026-10-12' })
+    assert.equal(Date.parse(entry.ends.value), Date.parse('2026-10-19T17:00:00Z'))
+    assert.equal(entry.state, 'live')
+    assert.equal(entry.lifecycleBasis, 'official-source')
+    assert.deepEqual(result.explicitlyEndedSourceUids, [])
+    const row = campaignBaseRow(entry, fixture.known.campaignKey, '2026-10-13T12:00:00Z', fixture.known)
+    assert.equal(row.campaign_key, 'stable-key')
+    assert.equal(row.source_uid, fixture.known.sourceUid)
+    assert.equal(row.official_url, fixture.destination)
+    assert.equal(row.source_url, fixture.announcement)
+    assert.equal(Object.hasOwn(row, 'artwork_url'), false, 'base upsert never clears saved artwork')
+    assert.equal(artworkPatch(entry, 'stable-key')?.artworkUrl, options.noArt ? undefined : fixture.artwork)
+    assert.equal(fixture.calls.some(url => /\/app\/|\/search\//.test(url)), false)
+  }
+})
+
+test('Steam generic, unrelated, old, redirected, ambiguous or unavailable landings retain the announcement fallback', async () => {
+  for (const options of [{ generic: true }, { wrongEvent: true }, { oldEdition: true },
+    { redirect: 'https://store.steampowered.com/category/unrelated' }, { redirect: 'https://example.com/category/cooking' },
+    { failure: true }, { ambiguous: true }, { noLink: true }, { label: 'All cooking games' },
+    { link: 'https://store.steampowered.com/app/12345' }, { link: 'https://store.steampowered.com.evil.test/category/cooking' },
+    { published: '2026-10-01T17:00:00Z' }, { published: '2026-10-14T17:00:00Z' }]) {
+    const fixture = steamFestFixture(options)
+    const result = await fixture.run()
+    assert.equal(result.campaigns.length, 1, JSON.stringify(options))
+    const entry = result.campaigns[0]
+    assert.equal(entry.officialUrl, fixture.announcement, JSON.stringify(options))
+    assert.equal(entry.sourceUid, fixture.sourceUid)
+    assert.equal(entry.starts.precision, 'date')
+    assert.equal(Date.parse(entry.ends.value), Date.parse('2026-10-19T17:00:00Z'))
+    assert.equal(entry.artworkUrl, undefined)
+  }
+})
+
 const steamSeasonalHome = 'https://store.steampowered.com/?cc=us&l=english'
 const steamSeasonalNews = 'https://steamcommunity.com/ogg/593110/announcements/detail/12345'
 const steamParentArt = 'https://cdn.steamstatic.com/seasonal/parent.jpg'

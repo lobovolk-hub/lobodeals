@@ -614,7 +614,62 @@ async function discoverSteamNewsCampaigns(
     )
   }
 
-  return campaigns
+  return Promise.all(campaigns.map(entry =>
+    seasonalYear(entry) ? entry : steamNewsPresentation(entry, matchedNews.get(entry.sourceUid)!, now, fetcher)
+  ))
+}
+
+async function steamNewsPresentation(
+  entry: DetectedCampaign,
+  item: SteamNewsItem,
+  now: Date,
+  fetcher: typeof fetch
+): Promise<DetectedCampaign> {
+  // Reusable category hubs are presentation only, never timing authority.
+  // Require a current dated announcement, its named link, and matching landing
+  // metadata. Neither a category slug nor embedded product/event rows suffice.
+  if (entry.state !== 'live' || entry.starts?.precision !== 'date' || !entry.ends) return entry
+  const year = entry.starts.value.slice(0, 4)
+  const today = steamCalendarDay({ precision: 'datetime', value: now.toISOString() })
+  const published = new Date(Number(item.date) * 1_000)
+  const publishedDay = steamCalendarDay({ precision: 'datetime', value: published.toISOString() })
+  if (today < entry.starts.value || today > steamCalendarDay(entry.ends) ||
+      publishedDay < entry.starts.value || publishedDay > today ||
+      !matchesSeasonalEdition(normalizeSteamNewsText(item.title), year)) return entry
+
+  const destinations = uniqueBy(steamNewsLinks(item).flatMap(link => {
+    try {
+      const url = new URL(link.href)
+      if (url.protocol !== 'https:' || url.hostname !== 'store.steampowered.com' ||
+          url.username || url.password || url.port ||
+          !/^\/(?:sale|category)\/[^/]+\/?$/.test(url.pathname) ||
+          comparableName(link.label) !== comparableName(entry.name) ||
+          !matchesSeasonalEdition(link.label, year)) return []
+      url.search = ''; url.hash = ''
+      return [url.toString()]
+    } catch { return [] }
+  }), url => url)
+  const verified = await Promise.all(destinations.map(async destination => {
+    try {
+      const page = await fetchOfficialPage(fetcher, `${destination}?cc=us&l=english`)
+      const finalUrl = new URL(page.url)
+      finalUrl.search = ''; finalUrl.hash = ''
+      if (finalUrl.toString() !== destination) return null
+      // Top-level campaign metadata only: category event timestamps may belong
+      // to an old content hub or to individual games, not this sale campaign.
+      const identity = extractMeta(page.text, 'og:description') ?? extractMeta(page.text, 'description') ?? ''
+      const title = extractMeta(page.text, 'og:title') ?? ''
+      if (![identity, title].some(value => comparableName(value) === comparableName(entry.name) &&
+          matchesSeasonalEdition(value, year)) ||
+          !matchesSeasonalEdition(identity, year) || !matchesSeasonalEdition(title, year) ||
+          isExcludedCampaignText(`${title} ${identity}`)) return null
+      return { destination, artworkUrl: extractOfficialArtwork(page.text, destination) }
+    } catch { return null /* Optional landing failure retains confirmed News. */ }
+  }))
+  const matches = verified.filter(candidate => candidate !== null)
+  if (matches.length !== 1) return entry
+  return { ...entry, officialUrl: matches[0].destination,
+    sourceUrl: entry.officialUrl, artworkUrl: matches[0].artworkUrl ?? entry.artworkUrl }
 }
 
 function seasonalYear(entry: DetectedCampaign): string | undefined {
@@ -649,14 +704,17 @@ function isSteamRoot(value: string): boolean {
   } catch { return false }
 }
 
-function newsLinksParentDestination(item: SteamNewsItem, parent: DetectedCampaign, destination: string): boolean {
-  if (typeof item.contents !== 'string') return false
-  const links = [
+function steamNewsLinks(item: SteamNewsItem): readonly { href: string; label: string }[] {
+  if (typeof item.contents !== 'string') return []
+  return [
     ...extractAnchors(item.contents, NEWS_API_URL),
     ...[...item.contents.matchAll(/\[url=(?:"([^"]+)"|([^\]]+))\]([\s\S]*?)\[\/url\]/gi)]
       .map(match => ({ href: decodeHtml(match[1] ?? match[2]), label: normalizeSteamNewsText(match[3]) })),
   ]
-  return links.some(link => {
+}
+
+function newsLinksParentDestination(item: SteamNewsItem, parent: DetectedCampaign, destination: string): boolean {
+  return steamNewsLinks(item).some(link => {
     try {
       const url = new URL(link.href)
       const target = new URL(destination)

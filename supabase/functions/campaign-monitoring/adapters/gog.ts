@@ -17,6 +17,7 @@ import {
 } from '../_shared/artwork.ts'
 import { fetchOfficialPage, fetchOfficialText, type OfficialPage } from '../_shared/http.ts'
 import { extractExactEnglishDateTimes } from '../_shared/time.ts'
+import { campaignTimingPhrases } from '../_shared/timing-phrases.ts'
 import { currentCampaignEvidence, sourceExplicitlyEndsCampaign } from '../_shared/verification.ts'
 import {
   AdapterError,
@@ -417,11 +418,7 @@ function exactSaleEnd(
 ): SourceBoundary | undefined {
   const text = textFromHtml(html)
   const publication = articlePublicationDate(html) ?? fallbackPublication ?? null
-  const phrases = [
-    ...text.matchAll(
-      /[^.!?]*(?:sale|promotion|event|campaign)[^.!?]*(?:ends?|lasts|until|through)[^.!?]*/gi
-    ),
-  ].map((match) => match[0])
+  const phrases = campaignTimingPhrases(text, true)
 
   for (const phrase of phrases) {
     if (/\bgiveaway\b[^.!?]{0,100}\b(?:ends?|until|through)\b/i.test(phrase)) {

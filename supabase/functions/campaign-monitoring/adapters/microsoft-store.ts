@@ -11,6 +11,7 @@ import { discoverOfficialArtwork } from '../_shared/artwork.ts'
 import { extractAnchors, textFromHtml, uniqueBy } from '../_shared/html.ts'
 import { fetchOfficialText } from '../_shared/http.ts'
 import { extractExactEnglishDateTimes } from '../_shared/time.ts'
+import { campaignTimingPhrases } from '../_shared/timing-phrases.ts'
 import { currentCampaignEvidence, sourceExplicitlyEndsCampaign } from '../_shared/verification.ts'
 import type {
   AdapterResult,
@@ -159,11 +160,7 @@ function campaignEndBoundary(
 ): SourceBoundary | undefined {
   const defaultYear = identityYear(identity)
 
-  const phrases = [
-    ...text.matchAll(
-      /[^.!?]*(?:sale|promotion|event|campaign)[^.!?]*(?:ends?|until|through)[^.!?]*/gi
-    ),
-  ].map((match) => match[0])
+  const phrases = campaignTimingPhrases(text)
 
   for (const phrase of phrases) {
     const exact = extractExactEnglishDateTimes(

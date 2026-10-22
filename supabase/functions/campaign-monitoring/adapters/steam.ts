@@ -62,13 +62,13 @@ function normalizeTitle(value: string): string {
 function extractDataAttributeJson(html: string, attribute: string): unknown {
   const escaped = attribute.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
   const match = new RegExp(
-    `\\b${escaped}=(["'])([\\s\\S]*?)\\1`,
+    `\\b${escaped}=(?:"([^"]*)"|'([^']*)')`,
     'i'
   ).exec(html)
   if (!match) return null
 
   try {
-    return JSON.parse(decodeHtml(match[2])) as unknown
+    return JSON.parse(decodeHtml(match[1] ?? match[2])) as unknown
   } catch {
     return null
   }

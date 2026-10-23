@@ -316,6 +316,6 @@ test('campaign monitor retries only transient backend gateway failures and repor
 
   assert.match(
     monitor,
-    /runStore\(storeSlug, parsed\.mode, now, parsed\.simulateFailure\)/
+    /runAdmittedStore\(storeSlug, parsed, now\)/
   )
 })

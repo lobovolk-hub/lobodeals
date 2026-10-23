@@ -42,6 +42,7 @@ type MonitorRequest = Readonly<{
   mode?: 'probe' | 'persist'
   stores?: readonly string[]
   simulateFailure?: string
+  cycleId?: string
 }>
 
 type StoreOutcome = Readonly<{
@@ -51,6 +52,7 @@ type StoreOutcome = Readonly<{
   campaignsDetected: number
   campaignsUpserted: number
   campaignsEnded: number
+  persistenceStatus?: 'not-requested' | 'not-started' | 'incomplete-or-unknown' | 'completed' | 'conflict'
   coverage?: SourceCoverage
   sourceUrls?: readonly string[]
   diagnostics?: readonly AdapterDiagnostic[]
@@ -109,6 +111,7 @@ function parseRequest(body: MonitorRequest): {
   mode: 'probe' | 'persist'
   stores: readonly StoreSlug[]
   simulateFailure?: StoreSlug
+  cycleId?: string
 } {
   const mode = body.mode ?? 'probe'
   if (mode !== 'probe' && mode !== 'persist') {
@@ -144,7 +147,14 @@ function parseRequest(body: MonitorRequest): {
     simulateFailure = body.simulateFailure as StoreSlug
   }
 
-  return { mode, stores, simulateFailure }
+  const cycleId = body.cycleId
+  if (cycleId !== undefined && (typeof cycleId !== 'string' ||
+      !/^\d{4}-\d{2}-\d{2}T(?:00|04|08|12|16|20):00:00Z$/.test(cycleId) ||
+      !Number.isFinite(Date.parse(cycleId)) || new Date(cycleId).toISOString() !== cycleId.replace('Z', '.000Z') ||
+      mode !== 'persist' || stores.length !== 1)) {
+    throw new AdapterError('INVALID_REQUEST', 'Scheduled cycles require one store and an exact four-hour UTC slot')
+  }
+  return { mode, stores, simulateFailure, cycleId }
 }
 
 function assertCampaign(campaign: DetectedCampaign, expectedStore: StoreSlug): void {
@@ -383,7 +393,7 @@ async function endCampaigns(
   campaignKeys: readonly string[],
   confirmedAt: string
 ): Promise<number> {
-  await Promise.all(
+  const results = await Promise.allSettled(
     campaignKeys.map((key) =>
       restRequest(`sales_campaigns?campaign_key=eq.${key}`, {
         method: 'PATCH',
@@ -392,6 +402,8 @@ async function endCampaigns(
       })
     )
   )
+  const failed = results.find(result => result.status === 'rejected')
+  if (failed?.status === 'rejected') throw failed.reason
   return campaignKeys.length
 }
 
@@ -452,9 +464,11 @@ export async function runStore(
   storeSlug: StoreSlug,
   mode: 'probe' | 'persist',
   now: Date,
-  simulateFailure?: StoreSlug
+  simulateFailure?: StoreSlug,
+  observe?: (event: string, fields?: Record<string, unknown>) => void
 ): Promise<StoreOutcome> {
   const startedAt = new Date().toISOString()
+  let persistenceStatus: StoreOutcome['persistenceStatus'] = mode === 'persist' ? 'not-started' : 'not-requested'
 
   try {
     if (simulateFailure === storeSlug) {
@@ -526,6 +540,8 @@ export async function runStore(
     let snapshotPublication: EpicPublicationStatus | undefined
     let visibilityPublication: ReturnType<typeof parseVisibilityPublication> | undefined
     if (mode === 'persist') {
+      persistenceStatus = 'incomplete-or-unknown'
+      observe?.('persistence-start')
       const endKeys = campaignKeysToEnd({
           sourceSucceeded: true,
           coverage: result.coverage,
@@ -586,6 +602,9 @@ export async function runStore(
     }
     const snapshotConflict = [snapshotPublication, visibilityPublication?.status]
       .some(status => status === 'obsolete' || status === 'baseline-conflict')
+    if (mode === 'persist') persistenceStatus = snapshotConflict ? 'conflict' : 'completed'
+    if (mode === 'persist') observe?.('persistence-complete', { persistenceStatus,
+      campaignsUpserted, campaignsEnded })
     if (mode === 'persist' && !snapshotConflict) {
       const healthWrite = updateHealth({
         store_slug: storeSlug,
@@ -604,9 +623,10 @@ export async function runStore(
       })
       if (reservation || visibilityReservation) {
         // Diagnostic failure cannot turn a committed snapshot into a failed scan.
-        await healthWrite.catch(() => console.error(JSON.stringify({
-          event: 'campaign-monitoring.health-write-failed', storeSlug,
-        })))
+        await healthWrite.catch(() => {
+          observe?.('health-write-failed')
+          console.error(JSON.stringify({ event: 'campaign-monitoring.health-write-failed', storeSlug }))
+        })
       } else {
         await healthWrite
       }
@@ -619,6 +639,7 @@ export async function runStore(
       campaignsDetected: result.campaigns.length,
       campaignsUpserted,
       campaignsEnded,
+      persistenceStatus,
       ...(snapshotPublication ? { snapshotPublication } : {}),
       ...(visibilityPublication ? { visibilityPublication: visibilityPublication.status,
         campaignsHidden: visibilityPublication.hidden, campaignsOperationallyClosed: visibilityPublication.operationallyClosed } : {}),
@@ -675,6 +696,7 @@ export async function runStore(
       campaignsDetected: 0,
       campaignsUpserted: 0,
       campaignsEnded: 0,
+      persistenceStatus,
       campaigns: [],
       errorCode: failure.code,
       errorMessage: failure.message,
@@ -682,7 +704,65 @@ export async function runStore(
   }
 }
 
-Deno.serve(async (request: Request) => {
+// Admission lives at the HTTP boundary; all persist callers use it, including
+// legacy manual multi-store calls. A killed worker leaves a bounded lease.
+async function runAdmittedStore(storeSlug: StoreSlug, parsed: ReturnType<typeof parseRequest>, now: Date) {
+  const invocationId = crypto.randomUUID()
+  const context = { cycleId: parsed.cycleId ?? null, invocationId, storeSlug, mode: parsed.mode }
+  const log = (event: string, fields: Record<string, unknown> = {}) =>
+    console.log(JSON.stringify({ event: `campaign-monitoring.${event}`, ...context, ...fields }))
+  log('store-start')
+  let acquired = false
+  let healthWriteFailed = false
+  let outcome: StoreOutcome | undefined
+  try {
+    if (parsed.mode === 'persist') {
+      const admission = await (await restRequest('rpc/claim_campaign_monitor_store', {
+        method: 'POST', signal: AbortSignal.timeout(10000), body: JSON.stringify({ p_store_slug: storeSlug, p_invocation: invocationId,
+          p_cycle: parsed.cycleId ?? null }),
+      })).json()
+      if (admission !== 'acquired') {
+        const code = ['busy', 'duplicate-cycle', 'stale-cycle'].includes(admission)
+          ? `MONITOR_${String(admission).replaceAll('-', '_').toUpperCase()}` : 'MONITOR_ADMISSION_INVALID'
+        throw new AdapterError(code, 'Store execution was not admitted')
+      }
+      acquired = true
+    }
+    log('store-admitted')
+    outcome = await runStore(storeSlug, parsed.mode, now, parsed.simulateFailure, (event, fields) => {
+      if (event === 'health-write-failed') healthWriteFailed = true
+      log(event, fields)
+    })
+  } catch (error) {
+    const failure = safeError(error)
+    outcome = { storeSlug, ok: false, blocked: false, campaignsDetected: 0, campaignsUpserted: 0,
+      campaignsEnded: 0, campaigns: [], persistenceStatus: 'not-started', errorCode: failure.code }
+  } finally {
+    // An uncertain commit must retain admission until the lease expires. Do not
+    // let a new manual invocation race writes whose response was lost.
+    if (acquired && outcome?.ok && !healthWriteFailed && outcome.persistenceStatus !== 'incomplete-or-unknown') {
+      try {
+        const released = await (await restRequest('rpc/release_campaign_monitor_store', {
+          method: 'POST', signal: AbortSignal.timeout(5000), body: JSON.stringify({ p_store_slug: storeSlug, p_invocation: invocationId }),
+        })).json()
+        if (released !== true) log('admission-release-failed')
+      } catch { log('admission-release-failed') }
+    }
+  }
+  // Allowlisted metadata only: never log request headers, tokens, source bodies,
+  // arbitrary exception text or URLs containing source-controlled query strings.
+  const code = (value: string) => value.replace(/[^A-Z0-9_]/g, '_').slice(0, 100)
+  log('store-complete', { ok: outcome.ok, blocked: outcome.blocked,
+    persistenceStatus: outcome.persistenceStatus, coverage: outcome.coverage ?? null,
+    campaignsDetected: outcome.campaignsDetected, campaignsUpserted: outcome.campaignsUpserted,
+    campaignsEnded: outcome.campaignsEnded, errorCode: outcome.errorCode ? code(outcome.errorCode) : null,
+    diagnosticCount: outcome.diagnostics?.length ?? 0,
+    diagnosticCodes: [...new Set((outcome.diagnostics ?? []).map(d => code(d.code)))],
+    elapsedMs: Date.now() - now.getTime() })
+  return { ...outcome, invocationId, cycleId: parsed.cycleId ?? null }
+}
+
+export async function handleMonitorRequest(request: Request): Promise<Response> {
   if (request.method === 'GET') {
     try {
       return jsonResponse(await publicAvailability())
@@ -703,15 +783,19 @@ Deno.serve(async (request: Request) => {
   }
 
   try {
-    const body = (await request.json().catch(() => ({}))) as MonitorRequest
-    const parsed = parseRequest(body)
+    const body: unknown = await request.json().catch(() => null)
+    if (!body || typeof body !== 'object' || Array.isArray(body)) {
+      throw new AdapterError('INVALID_REQUEST', 'Expected a JSON object')
+    }
+    const parsed = parseRequest(body as MonitorRequest)
     const now = new Date()
     const outcomes = await Promise.all(
       parsed.stores.map((storeSlug) =>
-        runStore(storeSlug, parsed.mode, now, parsed.simulateFailure)
+        runAdmittedStore(storeSlug, parsed, now)
       )
     )
     const response = {
+      cycleId: parsed.cycleId ?? null,
       mode: parsed.mode,
       startedAt: now.toISOString(),
       finishedAt: new Date().toISOString(),
@@ -723,6 +807,8 @@ Deno.serve(async (request: Request) => {
     console.log(
       JSON.stringify({
         event: 'campaign-monitoring.complete',
+        cycleId: response.cycleId,
+        stores: parsed.stores,
         mode: response.mode,
         requestedStores: response.requestedStores,
         succeeded: response.succeeded,
@@ -737,4 +823,6 @@ Deno.serve(async (request: Request) => {
       failure.code === 'INVALID_REQUEST' ? 400 : 500
     )
   }
-})
+}
+
+Deno.serve(handleMonitorRequest)
